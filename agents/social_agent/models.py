@@ -6,7 +6,7 @@ import uuid
 from datetime import timedelta
 from django.db import models
 from django.utils import timezone
-from django_cryptography.fields import encrypt
+
 
 
 class PlatformAccount(models.Model):
@@ -45,12 +45,12 @@ class PlatformAccount(models.Model):
         blank=True,
         help_text="Authorized OAuth permission scopes"
     )
-    api_key = encrypt(models.CharField(max_length=255, blank=True, null=True, help_text="API Key or Client ID"))
-    api_secret = encrypt(models.CharField(max_length=255, blank=True, null=True, help_text="API Secret or Client Secret"))
-    webhook_secret = encrypt(models.CharField(max_length=255, blank=True, null=True, help_text="Webhook validation secret"))
+    api_key = models.CharField(max_length=255, blank=True, null=True, help_text="API Key or Client ID")
+    api_secret = models.CharField(max_length=255, blank=True, null=True, help_text="API Secret or Client Secret")
+    webhook_secret = models.CharField(max_length=255, blank=True, null=True, help_text="Webhook validation secret")
     
-    encrypted_access_token = encrypt(models.TextField(help_text="Encrypted OAuth2 Bearer Token", blank=True, null=True))
-    encrypted_refresh_token = encrypt(models.TextField(blank=True, null=True))
+    encrypted_access_token = models.TextField(help_text="Encrypted OAuth2 Bearer Token", blank=True, null=True)
+    encrypted_refresh_token = models.TextField(blank=True, null=True)
     token_expires_at = models.DateTimeField(null=True, blank=True)
     rate_limit_remaining = models.IntegerField(default=100)
     rate_limit_reset_at = models.DateTimeField(null=True, blank=True)
@@ -223,3 +223,49 @@ class AgentAuditLog(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValueError("AgentAuditLog entries are immutable and cannot be deleted.")
+
+
+class ChatSession(models.Model):
+    """
+    State tracking object for conversational flows, mapped to LangGraph thread_id.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255, default="New Conversation")
+    thread_id = models.CharField(max_length=128, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.title} ({self.thread_id})"
+
+
+class ChatMessage(models.Model):
+    """
+    Immutable records of messages within a conversation matching openAI roles
+    """
+    ROLE_CHOICES = [
+        ("user", "User"),
+        ("assistant", "Assistant"),
+        ("system", "System"),
+        ("tool", "Tool"),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        ChatSession,
+        on_delete=models.CASCADE,
+        related_name="messages"
+    )
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES)
+    content = models.TextField()
+    metadata = models.JSONField(default=dict, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["timestamp"]
+
+    def __str__(self):
+        return f"{self.role}: {self.content[:40]}..."

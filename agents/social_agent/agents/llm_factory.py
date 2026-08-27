@@ -41,39 +41,39 @@ logger = logging.getLogger(__name__)
 # Model Configuration Mapping per Role
 MODEL_ROSTER_CONFIG: Dict[str, Dict[str, Any]] = {
     "copywriter": {
-        "model": os.environ.get("COPYWRITER_LLM_MODEL", "llama3.3:70b-instruct"),
+        "model": os.environ.get("COPYWRITER_LLM_MODEL", "llama3.2:3b"),
         "temperature": 0.70,
         "max_tokens": 4096,
         "timeout": 60.0,
         "model_kwargs": {"top_p": 0.95}
     },
     "researcher": {
-        "model": os.environ.get("RESEARCHER_LLM_MODEL", "qwen2.5:32b-instruct"),
+        "model": os.environ.get("RESEARCHER_LLM_MODEL", "llama3.2:3b"),
         "temperature": 0.20,
         "max_tokens": 2048,
         "timeout": 30.0,
         "model_kwargs": {"top_p": 0.90}
     },
     "vision": {
-        "model": os.environ.get("VISION_LLM_MODEL", "llama3.2:11b-vision"),
+        "model": os.environ.get("VISION_LLM_MODEL", "llama3.2:3b"),
         "temperature": 0.10,
         "max_tokens": 1024,
         "timeout": 20.0,
         "model_kwargs": {"top_p": 0.80}
     },
     "evaluator": {
-        "model": os.environ.get("EVALUATOR_LLM_MODEL", "llama3.3:70b-instruct"),
+        "model": os.environ.get("EVALUATOR_LLM_MODEL", "llama3.2:3b"),
         "temperature": 0.00,
         "max_tokens": 2048,
         "timeout": 30.0,
-        "model_kwargs": {"response_format": {"type": "json_object"}}
+        "model_kwargs": {}
     },
     "publisher": {
-        "model": os.environ.get("PUBLISHER_LLM_MODEL", "mistral-small:24b"),
+        "model": os.environ.get("PUBLISHER_LLM_MODEL", "llama3.2:3b"),
         "temperature": 0.00,
         "max_tokens": 1024,
         "timeout": 15.0,
-        "model_kwargs": {"response_format": {"type": "json_object"}}
+        "model_kwargs": {}
     }
 }
 
@@ -81,7 +81,8 @@ MODEL_ROSTER_CONFIG: Dict[str, Dict[str, Any]] = {
 def get_chat_model(
     role: str = "copywriter",
     temperature: Optional[float] = None,
-    timeout: Optional[float] = None
+    timeout: Optional[float] = None,
+    model_name_override: Optional[str] = None
 ) -> ChatOpenAI:
     """
     Returns an initialized ChatOpenAI client bound to the specified agent role and local Ollama endpoint.
@@ -106,7 +107,7 @@ def get_chat_model(
     except (ImportError, Exception) as exc:
         logger.debug("Dynamic agent configuration lookup failed for role '%s', using defaults: %s", role, exc)
 
-    model_name = cfg["model"]
+    model_name = model_name_override if model_name_override else cfg["model"]
     temp = temperature if temperature is not None else cfg["temperature"]
     t_out = timeout if timeout is not None else cfg["timeout"]
     max_tokens = cfg["max_tokens"]

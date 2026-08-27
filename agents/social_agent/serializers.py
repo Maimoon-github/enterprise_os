@@ -3,7 +3,7 @@ social_agent/serializers.py
 Django REST Framework serializers with explicit field definitions and input validation.
 """
 from rest_framework import serializers
-from social_agent.models import PlatformAccount, SocialCampaign, SocialPost, AgentAuditLog
+from social_agent.models import PlatformAccount, SocialCampaign, SocialPost, AgentAuditLog, ChatSession, ChatMessage
 
 
 class PlatformAccountSerializer(serializers.ModelSerializer):
@@ -106,3 +106,26 @@ class CampaignDetailSerializer(serializers.ModelSerializer):
             "audit_logs"
         ]
         read_only_fields = fields
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatMessage
+        fields = ["id", "session", "role", "content", "metadata", "timestamp"]
+        read_only_fields = ["id", "timestamp"]
+
+
+class ChatSessionSerializer(serializers.ModelSerializer):
+    messages = ChatMessageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ChatSession
+        fields = ["id", "title", "thread_id", "messages", "created_at", "updated_at", "is_active"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ChatInputSerializer(serializers.Serializer):
+    content = serializers.CharField(min_length=1)
+    agent_role = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    session_id = serializers.UUIDField(required=False, allow_null=True)
+    model = serializers.CharField(required=False, allow_blank=True, allow_null=True)

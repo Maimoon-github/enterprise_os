@@ -13,14 +13,18 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework.pagination import PageNumberPagination
 
-from social_agent.models import SocialCampaign, AgentAuditLog
+from social_agent.models import SocialCampaign, AgentAuditLog, ChatSession, ChatMessage
 from social_agent.serializers import (
     CampaignCreateSerializer,
     HITLApprovalSerializer,
     CampaignDetailSerializer,
     AgentAuditLogSerializer,
+    ChatSessionSerializer,
+    ChatMessageSerializer,
+    ChatInputSerializer,
 )
 from social_agent.tasks import run_campaign_workflow_task, resume_hitl_workflow_task
+from social_agent.agents.orchestrator import triage_intent
 
 logger = logging.getLogger("social_agent")
 
@@ -155,3 +159,133 @@ class PlatformWebhookView(APIView):
     def post(self, request, platform, *args, **kwargs):
         logger.info("Received inbound webhook event from platform '%s'", platform)
         return Response({"status": "received", "platform": platform}, status=status.HTTP_200_OK)
+from django.views.generic import TemplateView
+
+class DashboardView(TemplateView):
+    """
+    GET /dashboard/
+    Serves the agentic social media control plane frontend.
+    """
+    template_name = "social_agent/dashboard.html"
+
+class CampaignListView(ListAPIView):
+    """
+    GET /api/campaigns/
+    Retrieves the list of active campaigns for the dashboard.
+    """
+    permission_classes = [AllowAny]
+    serializer_class = CampaignDetailSerializer
+    queryset = SocialCampaign.objects.all().order_by("-updated_at")
+
+class ChatSessionListCreateView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        sessions = ChatSession.objects.filter(is_active=True)
+        serializer = ChatSessionSerializer(sessions, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        thread_id = f"thread_{uuid.uuid4()}"
+        session = ChatSession.objects.create(thread_id=thread_id)
+        serializer = ChatSessionSerializer(session)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+class ChatMessageView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, id, *args, **kwargs):
+        session = get_object_or_404(ChatSession, id=id)
+        messages = session.messages.all().order_by("timestamp")
+        serializer = ChatMessageSerializer(messages, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, id, *args, **kwargs):
+        session = get_object_or_404(ChatSession, id=id)
+        serializer = ChatInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        content = serializer.validated_data["content"]
+        agent_role = serializer.validated_data.get("agent_role")
+
+        # Save user message
+        user_msg = ChatMessage.objects.create(
+            session=session,
+            role="user",
+            content=content,
+            metadata={"agent_role": agent_role} if agent_role else {}
+        )
+
+        history = session.messages.filter(role__in=["user", "assistant"]).order_by("-timestamp")[:10][::-1]
+        model_name = serializer.validated_data.get("model")
+        triage_res = triage_intent(content, history[:-1], model_name) # exclude current user message
+
+        if triage_res.get("mode") == "B":
+            # Actionable Intention
+            prompt = content
+            platforms = triage_res.get("platforms", ["x_twitter", "instagram"])
+            if not platforms:
+                platforms = ["x_twitter", "instagram"]
+            
+            with transaction.atomic():
+                campaign = SocialCampaign.objects.create(
+                    title=f"Campaign: {prompt[:20]}",
+                    raw_prompt=prompt,
+                    target_platforms=platforms,
+                    langgraph_thread_id=session.thread_id,
+                    status="PENDING"
+                )
+                transaction.on_commit(lambda: run_campaign_workflow_task.delay(str(campaign.id)))
+
+            assistant_msg = ChatMessage.objects.create(
+                session=session,
+                role="assistant",
+                content=triage_res.get("response", f"Initialized campaign on {', '.join(platforms)}."),
+                metadata={
+                    "intent": "CAMPAIGN_TRIGGER",
+                    "campaign_id": str(campaign.id),
+                    "thread_id": session.thread_id,
+                    "status": "RUNNING",
+                    "target_platforms": platforms
+                }
+            )
+            
+            return Response({
+                "session_id": str(session.id),
+                "message": ChatMessageSerializer(assistant_msg).data
+            }, status=status.HTTP_200_OK)
+        else:
+            # Advisory / Consultative Intent
+            assistant_msg = ChatMessage.objects.create(
+                session=session,
+                role="assistant",
+                content=triage_res.get("response", "Consultative response."),
+                metadata={"intent": "ADVISORY"}
+            )
+            return Response({
+                "session_id": str(session.id),
+                "message": ChatMessageSerializer(assistant_msg).data
+            }, status=status.HTTP_200_OK)
+
+
+import urllib.request
+import json
+
+class AvailableModelsView(APIView):
+    """
+    GET /api/models/
+    Retrieves locally available models from Ollama to populate the UI.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            url = "http://127.0.0.1:11434/api/tags"
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=3) as response:
+                data = json.loads(response.read().decode())
+                
+            models = [m["name"] for m in data.get("models", []) if "embed" not in m["name"].lower()]
+            return Response({"models": models})
+        except Exception as e:
+            logger.warning("Could not fetch Ollama models: %s", e)
+            return Response({"models": ["llama3.3:70b-instruct", "gpt-4"]})

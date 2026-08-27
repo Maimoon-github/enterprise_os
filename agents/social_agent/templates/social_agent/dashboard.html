@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antigravity Agent - Social Media Ops</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'social_agent/css/chat.css' %}">
+</head>
+
+<body>
+    <div class="chat-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Antigravity Core</h2>
+                <div class="badge">Online</div>
+            </div>
+            <div class="agent-config">
+                <h3>Agent Configuration</h3>
+                <label>Model Selector
+                    <select id="model-select">
+                        <option value="llama3.3:70b">Llama 3.3 (70b)</option>
+                        <option value="gpt-4">GPT-4</option>
+                    </select>
+                </label>
+                <label>Active Role
+                    <select id="agent-role">
+                        <option value="">Auto-Detect</option>
+                        <option value="researcher">Trend Researcher</option>
+                        <option value="copywriter">Copywriter</option>
+                        <option value="media_specialist">Media Specialist</option>
+                    </select>
+                </label>
+                <label>Temperature (<span id="temp-val">0.7</span>)
+                    <input type="range" id="temp-slider" min="0" max="1" step="0.1" value="0.7">
+                </label>
+            </div>
+
+            <div class="agent-config" style="border-top:none;">
+                <h3>Connected Platforms</h3>
+                <div
+                    style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.5rem; color: var(--text-secondary);">
+                    <div style="display:flex; justify-content:space-between;"><span>X (Twitter)</span><span
+                            style="color:var(--success)">Online</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Instagram</span><span
+                            style="color:var(--success)">Online</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>TikTok</span><span
+                            style="color:var(--danger)">Offline</span></div>
+                </div>
+            </div>
+
+            <div class="sidebar-header" style="border-top:1px solid var(--border);">
+                <h2>Sessions</h2>
+                <button id="new-session-btn" class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.8rem;">+</button>
+            </div>
+            <div class="campaign-history" id="session-history">
+                <!-- Javascript will populate sessions here -->
+            </div>
+        </aside>
+
+        <!-- Main Chat -->
+        <main class="chat-main">
+            <div class="chat-header">
+                <div class="agent-info">
+                    <div class="agent-avatar">AG</div>
+                    <div class="agent-details">
+                        <h3 id="current-session-title">Social Media Agent</h3>
+                        <span>MCP · LangGraph · System Online</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-drawer-toggle" id="toggle-telemetry">Telemetry</button>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chat-messages">
+                <!-- Welcome Message dynamically loaded via JS or here -->
+            </div>
+
+            <div class="chat-input-area">
+                <form id="chat-form">
+                    <textarea id="chat-input" rows="1"
+                        placeholder="Ask questions or say 'Launch a campaign...'"></textarea>
+                    <button type="submit" id="send-btn" title="Send Request">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </main>
+
+        <!-- Right Drawer: Telemetry -->
+        <aside class="right-drawer telemetry-drawer hidden" id="telemetry-drawer">
+            <div class="sidebar-header">
+                <h2>Live Telemetry</h2>
+            </div>
+            <div class="telemetry-content">
+                <div class="stat-box">
+                    <span>Token Consumption</span>
+                    <strong id="tokens-consumed">0</strong>
+                </div>
+                <div class="stat-box">
+                    <span>Est. Cost (USD)</span>
+                    <strong id="est-cost">$0.00</strong>
+                </div>
+                <div class="stat-box">
+                    <span>Avg Latency</span>
+                    <strong id="avg-latency">0ms</strong>
+                </div>
+                <h3>Audit Steps</h3>
+                <div class="audit-steps" id="audit-steps">
+                    <!-- Dynamic audit logs added here -->
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="{% static 'social_agent/js/chat.js' %}"></script>
+</body>
+
+</html>
