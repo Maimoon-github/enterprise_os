@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import httpx
 import time
 from urllib.parse import urlparse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
 
 try:
     from fastmcp import FastMCP, Context
@@ -58,22 +58,22 @@ class PostInstagramInput(BaseModel):
     account_handle: Optional[str] = Field(default=None, description="Instagram business account handle.")
     graph_version: str = Field(default="v25.0", description="Meta Graph API version.")
 
-    @validator("media_url")
-    def validate_https_url(cls, v):
-        if not v.startswith("https://"):
+    @model_validator(mode="after")
+    def validate_https_url(self) -> 'PostInstagramInput':
+        if not self.media_url.startswith("https://"):
             raise ValueError("media_url must be an absolute HTTPS URL to prevent SSRF.")
-        parsed = urlparse(v)
+        parsed = urlparse(self.media_url)
         hostname = (parsed.hostname or "").lower()
         if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1") or hostname.startswith("192.168.") or hostname.startswith("10."):
             raise ValueError(f"SSRF Attempt Blocked: media_url resolves to a private or loopback address.")
-        return v
+        return self
 
-    @validator("caption")
-    def validate_hashtag_count(cls, v):
-        hashtags = re.findall(r"#\w+", v)
+    @model_validator(mode="after")
+    def validate_hashtag_count(self) -> 'PostInstagramInput':
+        hashtags = re.findall(r"#\w+", self.caption)
         if len(hashtags) > 30:
             raise ValueError(f"Caption exceeds Instagram maximum of 30 hashtags ({len(hashtags)} found).")
-        return v
+        return self
 
 
 @mcp.tool(

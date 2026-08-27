@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Literal
 from datetime import datetime, timezone
 import httpx
 import time
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
 
 try:
     from fastmcp import FastMCP, Context
@@ -55,13 +55,13 @@ class PostXTweetInput(BaseModel):
     account_handle: Optional[str] = Field(default=None, description="Target X handle to resolve OAuth token from PlatformAccount.")
     is_verified_tier: bool = Field(default=False, description="Whether the account supports long-form tweets (up to 25k chars).")
 
-    @validator("text")
-    def validate_length(cls, v, values):
-        is_verified = values.get("is_verified_tier", False)
+    @model_validator(mode="after")
+    def validate_length(self) -> 'PostXTweetInput':
+        is_verified = self.is_verified_tier
         max_len = 25000 if is_verified else 280
-        if len(v) > max_len:
-            raise ValueError(f"Tweet exceeds maximum permitted length ({len(v)} > {max_len} characters).")
-        return v
+        if len(self.text) > max_len:
+            raise ValueError(f"Tweet exceeds maximum permitted length ({len(self.text)} > {max_len} characters).")
+        return self
 
 
 @mcp.tool(

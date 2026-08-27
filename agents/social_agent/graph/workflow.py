@@ -6,45 +6,8 @@ import uuid
 import logging
 from typing import Dict, Any, List, Optional, AsyncIterator
 
-try:
-    from langgraph.graph import StateGraph, START, END
-    from langgraph.types import Command
-except ImportError:
-    START = "__start__"
-    END = "__end__"
-    class Command:
-        def __init__(self, resume=None): self.resume = resume
-    class StateGraph:
-        def __init__(self, state_schema):
-            self.nodes = {}
-            self.edges = []
-            self.conditional_edges = []
-        def add_node(self, name, func): self.nodes[name] = func
-        def add_edge(self, src, dst): self.edges.append((src, dst))
-        def add_conditional_edges(self, src, router, mapping): self.conditional_edges.append((src, router, mapping))
-        def compile(self, checkpointer=None):
-            class CompiledGraph:
-                def __init__(self, parent):
-                    self.parent = parent
-                    self.checkpointer = checkpointer
-                async def astream(self, initial, config=None, stream_mode="values"):
-                    yield initial
-                async def ainvoke(self, initial, config=None):
-                    return initial
-                def get_state(self, config):
-                    class Snapshot:
-                        next = ("hitl_gate",)
-                        tasks = ["task_interrupt"]
-                        values = {}
-                    return Snapshot()
-
-                async def aget_state(self, config):
-                    class Snapshot:
-                        next = ()
-                        tasks = []
-                        values = {}
-                    return Snapshot()
-            return CompiledGraph(self)
+from langgraph.graph import StateGraph, START, END
+from langgraph.types import Command
 
 from social_agent.graph.state import (
     SocialAgentState,

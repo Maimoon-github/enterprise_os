@@ -5,10 +5,7 @@ Uses imported LangGraph END constant to guarantee deterministic routing.
 """
 from typing import Any, Union
 
-try:
-    from langgraph.graph import END
-except ImportError:
-    END = "__end__"
+from langgraph.graph import START, END
 
 from social_agent.graph.state import SocialAgentState
 

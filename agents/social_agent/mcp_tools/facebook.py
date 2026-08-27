@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 import httpx
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
 
 try:
     from fastmcp import FastMCP, Context
@@ -53,11 +53,11 @@ class PostFacebookInput(BaseModel):
     account_handle: Optional[str] = Field(default=None, description="Target Facebook page handle.")
     graph_version: str = Field(default="v25.0", description="Meta Graph API version.")
 
-    @validator("link")
-    def validate_link_https(cls, v):
-        if v and not v.startswith("https://") and not v.startswith("http://"):
+    @model_validator(mode="after")
+    def validate_link_https(self) -> 'PostFacebookInput':
+        if self.link and not self.link.startswith("https://") and not self.link.startswith("http://"):
             raise ValueError("link must be a valid HTTP/HTTPS URL.")
-        return v
+        return self
 
 
 @mcp.tool(

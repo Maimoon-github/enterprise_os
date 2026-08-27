@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import httpx
 import time
 from urllib.parse import urlparse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
 
 try:
     from fastmcp import FastMCP, Context
@@ -60,11 +60,11 @@ class PostTikTokInput(BaseModel):
     brand_content_toggle: bool = Field(default=False, description="Commercial disclosure flag.")
     account_handle: Optional[str] = Field(default=None, description="TikTok user account handle.")
 
-    @validator("video_url")
-    def validate_secure_video_url(cls, v):
-        if not v.startswith("https://"):
+    @model_validator(mode="after")
+    def validate_secure_video_url(self) -> 'PostTikTokInput':
+        if not self.video_url.startswith("https://"):
             raise ValueError("video_url must be an absolute HTTPS URL to prevent SSRF.")
-        return v
+        return self
 
 
 @mcp.tool(
