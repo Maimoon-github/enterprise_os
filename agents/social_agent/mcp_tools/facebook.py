@@ -42,7 +42,7 @@ from social_agent.auth import resolve_platform_credentials
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("facebook", version="1.0.0", stateless_http=True, json_response=True)
+mcp = FastMCP("facebook", version="1.0.0")
 
 
 class PostFacebookInput(BaseModel):

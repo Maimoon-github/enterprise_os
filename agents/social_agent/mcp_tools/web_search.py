@@ -67,7 +67,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Initialize FastMCP Server Instance (Port 8004)
-mcp = FastMCP("web_search", version="1.1.0", stateless_http=True, json_response=True)
+mcp = FastMCP("web_search", version="1.1.0")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ def _validate_ssrf_safety(url: str) -> Tuple[bool, str]:
             try:
                 addr_info = socket.getaddrinfo(hostname, None)
                 for item in addr_info:
-                    resolved_ip_str = item[0]
+                    resolved_ip_str = item[4][0]
                     ip = ipaddress.ip_address(resolved_ip_str)
                     if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                         return False, f"Security Violation: Domain '{hostname}' resolves to private IP ({resolved_ip_str})."
