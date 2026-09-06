@@ -1,0 +1,174 @@
+flowchart TB
+%% =========================================================================
+%% STYLING & CLASS DEFINITIONS
+%% =========================================================================
+classDef gov fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#991b1b;
+classDef orch fill:#f5f3ff,stroke:#7c3aed,stroke-width:2.5px,color:#4c1d95;
+classDef rag fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#0f172a;
+classDef store fill:#ede9fe,stroke:#6d28d9,stroke-width:2.5px,color:#2e1065;
+classDef worker fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d;
+classDef sub fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,stroke-dasharray:3 3,color:#78350f;
+classDef mcp fill:#f1f5f9,stroke:#475569,stroke-width:2px,color:#0f172a;
+classDef ext fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#1e293b;
+classDef audit fill:#fdf4ff,stroke:#c026d3,stroke-width:2px,color:#701a75;
+classDef gate fill:#fefce8,stroke:#ca8a04,stroke-width:2.5px,color:#713f12;
+classDef edgebus fill:#ffffff,stroke:#6b7280,stroke-width:1.5px,stroke-dasharray:4 4,color:#374151;
+
+%% =========================================================================
+%% LAYER 0: GOVERNANCE, POLICY & HUMAN AUTHORITY
+%% =========================================================================
+subgraph L0["1 · Governance, Policy & Human Authority Plane"]
+    direction LR
+    OWNER["<b>Brand / Business Owner</b><br/>Strategic Objectives • Budget Envelopes • Risk Thresholds"]:::gov
+    POLICY["<b>Enterprise Policy Engine</b><br/>Brand Rules • Autonomy Tiers • Claim Restrictions • Prohibited Actions"]:::gov
+    HITL{"<b>Human-in-the-Loop (HITL) Gate</b><br/>Quality, Spend, Legal, Security & Deployment Clearances"}:::gate
+end
+
+%% =========================================================================
+%% LAYER 1: CENTRAL CONTROL PLANE (INTELLIGENCE ENGINE)
+%% =========================================================================
+subgraph L1["2 · Central Control Plane: Governable Intelligence Engine"]
+    direction TB
+    IE["<b>Intelligence Engine (Central Orchestrator / MCP Host)</b><br/>• Brand Persona Layer & Dynamic Context Assembly<br/>• Canonical Task State Machine & Workstream Decomposition<br/>• Monotonic Attenuation & Capability Allowlisting<br/>• Upward Evidence Synthesis, Conflict Arbitration & Release Approval"]:::orch
+    PAB["<b>Policy & Authorization Boundary</b><br/>Contextual Checks: Identity • Tenant Scope • Action Risk Tier"]:::orch
+    CTS[["<b>Canonical Task State Ledger</b><br/>Lifecycle States • Checkpoints • Dependency Graphs • Exception Logs"]]:::orch
+    IE <--> PAB
+    IE <--> CTS
+end
+
+OWNER -->|"1. Objective, Budget & Tenant Context"| IE
+POLICY -->|"Versioned Policy Envelopes & Persona Guardrails"| PAB
+IE <-->|"Action Previews • Evidence Dossiers • Uncertainty Flags"| HITL
+
+%% =========================================================================
+%% LAYER 2: AGENTIC RAG & GOVERNED KNOWLEDGE ACCESS LAYER
+%% =========================================================================
+subgraph L2["3 · Agentic RAG & Governed Knowledge Layer"]
+    direction TB
+    RAG["<b>Agentic RAG Controller</b><br/>Query Decomposition • Semantic Search • Freshness Verification<br/>Tenant Partitioning • Row/Document Filtering • Provenance Tagging"]:::rag
+    MCP_DATA["<b>Data Access MCP Boundary</b><br/>Mediated Read-Only Capability Facades • Scoped DB Gateways"]:::mcp
+    RAG <--> MCP_DATA
+end
+
+IE <-->|"<b>Authorized Read-Only Queries</b><br/>[Tenant Filtered • Scoped Evidence Requests]"| RAG
+
+%% =========================================================================
+%% LAYER 3: CENTRAL ENTERPRISE DATA LAYER (SYSTEM OF RECORD)
+%% =========================================================================
+subgraph L_DATA["4 · Central Enterprise Database & Systems of Record"]
+    direction LR
+    CDB[("<b>Central Enterprise Database</b><br/>• Catalogs, SKUs & Specs<br/>• Vector Chunks & Embeddings<br/>• Customer Reviews & Feedback<br/>• Scraped Competitor Intel<br/>• Strategy Briefs & Bids<br/>• Code Diffs & Schemas<br/>• Telemetry & Financial Logs")]:::store
+    CMS[("<b>Headless CMS & Web Store</b><br/>• Product Models<br/>• Staged Page Schemas<br/>• UI Design Tokens")]:::store
+    MEM[("<b>Institutional Memory Store</b><br/>• Promoted Long-Term Insights<br/>• Attribution Decay Models<br/>• Brand Books & Rules")]:::store
+    ART[("<b>Artifact & Evidence Registry</b><br/>• Versioned Deliverables (UUID)<br/>• Asset Hashes & Copy Packs<br/>• Proof Packages & Dossiers")]:::store
+end
+
+MCP_DATA <-->|"Grounded Retrieval & Indexed Schema Sync"| CDB
+MCP_DATA <-->|"Catalog Query & Staged Content Sync"| CMS
+MCP_DATA <-->|"Governed Heuristics & Persona Query"| MEM
+MCP_DATA <-->|"Artifact Resolution by URI / Hash"| ART
+
+%% =========================================================================
+%% INGRESS / EGRESS BUSES
+%% =========================================================================
+GRANT["<b>Bounded Task Grants (Downward)</b><br/>Scope Boundary • Token Budget • Tool/Skill Allowlist • Stop Rules • Constraints"]:::edgebus
+EVID["<b>Evidence Envelopes (Upward)</b><br/>Validated Findings • Confidence Intervals • Artifact UUIDs • Proposed State Deltas"]:::edgebus
+
+IE ==> GRANT
+GRANT ==> L3_WORKERS
+L3_WORKERS ==> EVID
+EVID ==> IE
+
+%% =========================================================================
+%% LAYER 4: BOUNDED WORKER AGENT LAYER
+%% =========================================================================
+subgraph L3_WORKERS["5 · Worker Agent Layer: Bounded Domain Execution"]
+    direction TB
+    W_PROD["<b>Product / Knowledge & Evidence Engine</b><br/>Formulation Specs • Clinical Evidence • Regulatory Dossiers"]:::worker
+    W_VOICE["<b>Customer Voice Engine</b><br/>CX Feedback • Ticket Parsing • Sentiment Mining • Objections"]:::worker
+    W_COMP["<b>Competitor Intel Engine</b><br/>Pricing Trajectories • Ad Libraries • Market Positioning Shifts"]:::worker
+    W_STRAT["<b>Strategy Engine</b><br/>Omnichannel Allocations • Funnel Architecture • Target Segments"]:::worker
+    W_CREAT["<b>Creative & Content Engine</b><br/>Hooks & Angles • Multi-Channel Copy • Visual/Video Briefs"]:::worker
+    W_DEV["<b>Development / Website & CMS Engine</b><br/>UI Components • Schema Migrations • Code Diffs • App Workflows"]:::worker
+    W_PERF["<b>Performance & Learning Engine</b><br/>Attribution Models • Ad Fatigue Detection • Decay Weights"]:::worker
+end
+
+%% Mediated Knowledge Flow for Workers (Read-Only)
+W_PROD -.->|"Mediated Retrieval Requests"| RAG
+W_VOICE -.->|"Mediated Retrieval Requests"| RAG
+W_COMP -.->|"Mediated Retrieval Requests"| RAG
+W_STRAT -.->|"Mediated Retrieval Requests"| RAG
+W_CREAT -.->|"Mediated Retrieval Requests"| RAG
+W_DEV -.->|"Mediated Retrieval Requests"| RAG
+W_PERF -.->|"Mediated Retrieval Requests"| RAG
+
+RAG -.->|"Policy-Filtered Evidence + Provenance"| L3_WORKERS
+
+%% =========================================================================
+%% LAYER 5: AGENT-SPECIFIC SUB-AGENTS (SPECIALIST EXECUTION)
+%% =========================================================================
+subgraph L4_SUBS["6 · Agent-Specific Sub-Agents (Ephemeral Specialist Execution)"]
+    direction LR
+    S_VAL["<b>Claim / Schema Validator</b><br/><i>Linter & Proof Checker</i>"]:::sub
+    S_PARSE["<b>Sentiment / Ticket Parser</b><br/><i>Intent Classifier</i>"]:::sub
+    S_SCRAPE["<b>Price & Ad Scraper</b><br/><i>External Tracker</i>"]:::sub
+    S_ALLOC["<b>Budget / Media Allocator</b><br/><i>Optimization Modeler</i>"]:::sub
+    S_COPY["<b>Copy Drafter & Critic</b><br/><i>Variant Generator</i>"]:::sub
+    S_CODE["<b>Component Coder</b><br/><i>Syntax & Unit Checker</i>"]:::sub
+    S_ATTR["<b>Attribution Modeler</b><br/><i>ROAS & Decay Estimator</i>"]:::sub
+end
+
+W_PROD <-->|"Narrow Verification Subtask / Verification Docs"| S_VAL
+W_VOICE <-->|"Narrow Parsing Subtask / Structured CX Tags"| S_PARSE
+W_COMP <-->|"Narrow Scraping Subtask / Market Snapshots"| S_SCRAPE
+W_STRAT <-->|"Narrow Allocation Subtask / Media Plan Models"| S_ALLOC
+W_CREAT <-->|"Narrow Drafting Subtask / Candidate Copy Packs"| S_COPY
+W_DEV <-->|"Narrow Linting Subtask / Component Diffs"| S_CODE
+W_PERF <-->|"Narrow Modeling Subtask / Metric Weights"| S_ATTR
+
+%% =========================================================================
+%% LAYER 6: OUTBOUND EXECUTION GATEWAYS
+%% =========================================================================
+subgraph L5_GATEWAY["7 · Governed Execution Gateways"]
+    direction TB
+    MCP_ACT["<b>Actuation & Publishing MCP Gateway</b><br/>Payload Validation • Packaging • Protocol Security • Signed Dispatch"]:::mcp
+end
+
+HITL -->|"Signed Execution Grants (Post-Approval)"| IE
+IE ==>|"Validated Execution Directives"| MCP_ACT
+
+%% =========================================================================
+%% LAYER 7: EXTERNAL RUNTIMES & CONTINUOUS LEARNING
+%% =========================================================================
+subgraph L6_EXT["8 · External Runtimes, Endpoints & Closed-Loop Telemetry"]
+    direction LR
+    CH_STORE["<b>Live Website / CMS / Storefront</b><br/>Production Frontend • Headless Store • Blog • SaaS App"]:::ext
+    CH_ADS["<b>Paid Ad Platforms</b><br/>Meta • Google • TikTok • LinkedIn Ads"]:::ext
+    CH_SOC["<b>Organic Social Channels</b><br/>Instagram • X • YouTube • TikTok"]:::ext
+    TELEMETRY["<b>Omnichannel Telemetry Engine</b><br/>Server Logs • Webhooks • Conversions • ROAS • Error Traces"]:::ext
+end
+
+MCP_ACT -->|"Staged Code & CMS Releases"| CH_STORE
+MCP_ACT -->|"Campaign Invocations & Budgets"| CH_ADS
+MCP_ACT -->|"Scheduled Media & Copy Posts"| CH_SOC
+
+CH_STORE -.->|"Traffic & Order Events"| TELEMETRY
+CH_ADS -.->|"Ad Spend & Conversion Data"| TELEMETRY
+CH_SOC -.->|"Engagement & Reach Signals"| TELEMETRY
+
+TELEMETRY -.->|"Raw Ingestion Stream"| CDB
+CDB -.->|"Timeseries Telemetry Feed"| W_PERF
+W_PERF -.->|"<b>Continuous Learning Loop</b><br/>[Validated Hypotheses • Attribution Weights • Memory Deltas]"| IE
+
+%% =========================================================================
+%% LAYER 8: IMMUTABLE AUDIT & PROVENANCE LEDGER
+%% =========================================================================
+subgraph L_AUDIT["9 · Immutable Audit, Provenance & Lineage Ledger"]
+    AUDIT[("<b>W3C PROV Immutable Registry</b><br/>• Delegations & Invocations<br/>• Policy Decisions & Denials<br/>• HITL Approvals & Overrides<br/>• Tool Executions & External Dispatches<br/>• Source Evidence Provenance")]:::audit
+end
+
+IE -.->|"Record State Deltas & Task Contracts"| AUDIT
+PAB -.->|"Log Policy Evaluations & Boundary Traversals"| AUDIT
+HITL -.->|"Store Signatures, Overrides & Reviewer Identity"| AUDIT
+RAG -.->|"Log Retrieval Queries, Freshness & Access Filtering"| AUDIT
+MCP_ACT -.->|"Record Dispatched Payloads & External IDs"| AUDIT

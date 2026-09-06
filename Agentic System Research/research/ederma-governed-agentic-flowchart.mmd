@@ -1,0 +1,119 @@
+%% eDerma governed agentic AI architecture — surface level
+flowchart TB
+    U[Users and business channels\nWebsite • customer interactions • internal teams]
+
+    subgraph CONTROL[1. Governance and control]
+        INTAKE[Task intake\nIntent • purpose • scope • risk]
+        ORCH[eDerma Governable Orchestrator\nCoordinates • delegates • tracks state\nApplies policy • routes approval • accepts results]
+        DECIDE{Human approval\nrequired?}
+        HITL[Authorized human reviewer\nApprove • revise • reject • pause]
+        RECOVER[Escalate, revise, or stop]
+        AUDIT[Observability and evaluation\nQuality • safety • provenance • feedback]
+        INTAKE --> ORCH --> DECIDE
+        DECIDE -->|Yes| HITL -->|Decision and constraints| ORCH
+        HITL -->|Rejected or paused| RECOVER --> ORCH
+    end
+
+    U --> INTAKE
+
+    subgraph WORK[2. Worker-agent layer — bounded workstreams]
+        PLAN[Workstream planning and capability routing]
+        COMP[Competitor intelligence\nMarket and competitor view]
+        VOICE[Customer voice\nFeedback and sentiment view]
+        STRAT[Strategy\nStrategic interpretation]
+        CREATIVE[Creative\nContent and campaign direction]
+        PRODUCT[Product and evidence\nEvidence and product view]
+        PLAN --> COMP
+        PLAN --> VOICE
+        PLAN --> STRAT
+        PLAN --> CREATIVE
+        PLAN --> PRODUCT
+    end
+
+    DECIDE -->|No / within policy| PLAN
+    ORCH -. bounded task grant .-> PLAN
+
+    subgraph SUB[3. Agent-specific sub-agent layer — narrow specialist tasks]
+        SCOMP[Research • compare • validate]
+        SVOICE[Classify • summarize • detect themes]
+        SSTRAT[Analyze options • test assumptions]
+        SCREATIVE[Draft • critique • adapt]
+        SPRODUCT[Verify evidence • map claims]
+        COMP --> SCOMP
+        VOICE --> SVOICE
+        STRAT --> SSTRAT
+        CREATIVE --> SCREATIVE
+        PRODUCT --> SPRODUCT
+    end
+
+    subgraph CAP[4. Shared governed capability and knowledge boundary]
+        ROUTE[Capability routing\nSkills • approved tools • scoped permissions]
+        MCP[MCP access boundary\nAuthorized tools • resources • prompts]
+        RETRIEVE[Agentic RAG and data access\nSearch • filter • rank • freshness • provenance]
+        MEMORY[Memory and context\nSession context • durable memory • task state]
+        ARTIFACT[Artifacts and evidence\nSources • outputs • lineage • versions]
+        ROUTE --> MCP --> RETRIEVE
+        ROUTE --> MEMORY
+        ROUTE --> ARTIFACT
+    end
+
+    ORCH -. policy envelope .-> ROUTE
+    PLAN -. approved capability request .-> ROUTE
+    SCOMP -. narrow request .-> ROUTE
+    SVOICE -. narrow request .-> ROUTE
+    SSTRAT -. narrow request .-> ROUTE
+    SCREATIVE -. narrow request .-> ROUTE
+    SPRODUCT -. narrow request .-> ROUTE
+    RETRIEVE -. approved context and evidence .-> SCOMP
+    RETRIEVE -. approved context and evidence .-> SVOICE
+    RETRIEVE -. approved context and evidence .-> SSTRAT
+    RETRIEVE -. approved context and evidence .-> SCREATIVE
+    RETRIEVE -. approved context and evidence .-> SPRODUCT
+    MEMORY -. governed context and state .-> ORCH
+    ARTIFACT -. evidence and artifact references .-> ORCH
+
+    subgraph EXT[5. External sources and services]
+        SOCIAL[External channels\nMeta • TikTok • Google]
+        CRM[Customer and product data]
+        DB[Authoritative databases and records]
+        API[Approved external APIs and services]
+    end
+
+    SOCIAL --> MCP
+    CRM --> MCP
+    DB --> RETRIEVE
+    API --> MCP
+
+    SCOMP -->|Validated findings| COMP
+    SVOICE -->|Validated themes| VOICE
+    SSTRAT -->|Options and rationale| STRAT
+    SCREATIVE -->|Drafts and critiques| CREATIVE
+    SPRODUCT -->|Verified claims| PRODUCT
+
+    COMP --> ORCH
+    VOICE --> ORCH
+    STRAT --> ORCH
+    CREATIVE --> ORCH
+    PRODUCT --> ORCH
+
+    ORCH -->|Synthesized result, status, evidence| OUT[Business outcome\nDecision support • approved content • action proposal]
+    OUT --> AUDIT
+    AUDIT -->|Feedback and lessons| MEMORY
+    AUDIT -->|Policy or routing adjustment| ORCH
+    AUDIT -. continuous learning .-> PLAN
+
+    classDef control fill:#eadcff,stroke:#7c3aed,color:#21113d,stroke-width:2px;
+    classDef worker fill:#dbeafe,stroke:#2563eb,color:#172554,stroke-width:1.5px;
+    classDef sub fill:#ede9fe,stroke:#6d28d9,color:#2e1065;
+    classDef capability fill:#fef3c7,stroke:#d97706,color:#451a03,stroke-width:1.5px;
+    classDef external fill:#f3f4f6,stroke:#6b7280,color:#111827;
+    classDef decision fill:#e5e7eb,stroke:#4b5563,color:#111827;
+    classDef outcome fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
+
+    class INTAKE,ORCH,HITL,RECOVER,AUDIT control;
+    class PLAN,COMP,VOICE,STRAT,CREATIVE,PRODUCT worker;
+    class SCOMP,SVOICE,SSTRAT,SCREATIVE,SPRODUCT sub;
+    class ROUTE,MCP,RETRIEVE,MEMORY,ARTIFACT capability;
+    class SOCIAL,CRM,DB,API,U external;
+    class DECIDE decision;
+    class OUT outcome;
