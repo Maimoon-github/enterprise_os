@@ -33,6 +33,7 @@ env/
 ENV/
 env.bak/
 venv.bak/
+os_env/
 
 # Environment variables, credentials, and local secrets
 .env
