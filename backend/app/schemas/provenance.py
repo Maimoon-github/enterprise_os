@@ -1,15 +1,24 @@
-"""W3C PROV audit-event contracts."""
+"""W3C PROV-inspired audit-event contracts.
+
+Each record references the hash of the record immediately before it,
+forming an append-only, tamper-evident chain per tenant.
+"""
+
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
 
-class ProvRecord(BaseModel):
+class ProvenanceRecord(BaseModel):
+    """A single immutable entity/activity/agent audit-lineage entry."""
+
+    record_id: str
+    tenant_id: str
     entity_id: str
-    activity_id: str
-    agent_id: str
-    started_at: datetime
-    ended_at: datetime | None = None
-    attributes: dict = Field(default_factory=dict)
+    activity: str
+    agent: str
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    prev_record_hash: str | None = None
+    record_hash: str

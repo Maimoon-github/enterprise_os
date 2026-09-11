@@ -1,33 +1,55 @@
-"""CTS lifecycle, checkpoints, dependencies, holds, and state deltas."""
+"""Canonical Task State (CTS) lifecycle, checkpoints, dependencies, and holds."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from app.schemas.governance import WorkerRole
 
-class TaskStatus(str, Enum):
+
+class TaskStatus(StrEnum):
+    """Authoritative lifecycle states for a task under the task-state machine."""
+
     PENDING = "pending"
-    READY = "ready"
-    RUNNING = "running"
-    BLOCKED = "blocked"
-    HELD = "held"
+    GRANTED = "granted"
+    IN_PROGRESS = "in_progress"
+    AWAITING_APPROVAL = "awaiting_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    DISPATCHED = "dispatched"
     COMPLETED = "completed"
     FAILED = "failed"
-    CANCELLED = "cancelled"
+    HELD = "held"
 
 
-class Checkpoint(BaseModel):
-    name: str
-    created_at: datetime
+class TaskDependency(BaseModel):
+    """A directed dependency edge in the canonical task DAG."""
+
+    upstream_task_id: str
+    downstream_task_id: str
 
 
-class TaskState(BaseModel):
+class TaskCheckpoint(BaseModel):
+    """An immutable, timestamped snapshot of task progress."""
+
+    checkpoint_id: str
+    task_id: str
+    status: TaskStatus
+    note: str = ""
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class CanonicalTaskState(BaseModel):
+    """The single source of truth for a task's lifecycle position."""
+
     task_id: str
     directive_id: str
-    tenant_id: str
+    worker_role: WorkerRole
     status: TaskStatus = TaskStatus.PENDING
-    depends_on: list[str] = Field(default_factory=list)
-    checkpoints: list[Checkpoint] = Field(default_factory=list)
+    dependencies: list[TaskDependency] = Field(default_factory=list)
+    checkpoints: list[TaskCheckpoint] = Field(default_factory=list)
     hold_reason: str | None = None
+    version: int = Field(default=0, ge=0, description="Optimistic-concurrency version.")
