@@ -53,3 +53,6 @@ class CanonicalTaskState(BaseModel):
     checkpoints: list[TaskCheckpoint] = Field(default_factory=list)
     hold_reason: str | None = None
     version: int = Field(default=0, ge=0, description="Optimistic-concurrency version.")
+
+
+TaskState = CanonicalTaskState

@@ -1,19 +1,14 @@
-"""W_LEARN: attribution, fatigue, decay, ROAS, and validated learning deltas."""
+"""Evaluates tenant scope and delegated authority."""
 
 from __future__ import annotations
 
-from app.agents.base import BoundedWorkerAgent
-from app.schemas.agent_contracts import TaskGrant
-from app.schemas.sandbox import SandboxCapability
+from app.schemas.governance import TenantScope
 
 
-class LearningPerformanceAgent(BoundedWorkerAgent):
-    """Requests S_ATTR execution through the sandbox wrapper."""
+class ScopeEvaluator:
+    """Evaluates whether a requested scope is within delegated tenant authority."""
 
-    capability = SandboxCapability.ATTR
+    def evaluate(self, requested_scope: TenantScope, delegated_scope: TenantScope) -> bool:
+        """Return True if ``requested_scope`` is a subset of ``delegated_scope``."""
 
-    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
-        return {
-            "task_id": grant.task_id,
-            "objective": "compute_attribution_and_decay",
-        }
+        return requested_scope.is_subset_of(delegated_scope)
