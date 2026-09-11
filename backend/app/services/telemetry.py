@@ -1,15 +1,62 @@
 """Normalizes and persists omnichannel performance events."""
+
 from __future__ import annotations
 
-from app.schemas.telemetry import TelemetryEvent
+import uuid
+from datetime import datetime
+
+from app.persistence.repositories.telemetry import TelemetryRepository
+from app.schemas.telemetry import TelemetryEvent, TelemetryEventType
 
 
-class TelemetryService:
-    def __init__(self) -> None:
-        self._events: list[TelemetryEvent] = []
+class TelemetryNormalizer:
+    """Normalizes raw webhook/pixel/event payloads into ``TelemetryEvent`` records."""
 
-    def ingest(self, event: TelemetryEvent) -> None:
-        self._events.append(event)
+    def __init__(self, repository: TelemetryRepository) -> None:
+        self._repository = repository
 
-    def all(self) -> list[TelemetryEvent]:
-        return list(self._events)
+    def normalize(
+        self,
+        *,
+        tenant_id: str,
+        event_type: TelemetryEventType,
+        channel: str,
+        occurred_at: datetime,
+        metrics: dict[str, float],
+    ) -> TelemetryEvent:
+        """Build a normalized ``TelemetryEvent`` from raw fields."""
+
+        return TelemetryEvent(
+            event_id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            event_type=event_type,
+            channel=channel,
+            occurred_at=occurred_at,
+            metrics=metrics,
+        )
+
+    async def ingest(
+        self,
+        *,
+        tenant_id: str,
+        event_type: TelemetryEventType,
+        channel: str,
+        occurred_at: datetime,
+        metrics: dict[str, float],
+    ) -> TelemetryEvent:
+        """Normalize and persist a raw telemetry payload, returning the stored event."""
+
+        event = self.normalize(
+            tenant_id=tenant_id,
+            event_type=event_type,
+            channel=channel,
+            occurred_at=occurred_at,
+            metrics=metrics,
+        )
+        await self._repository.record(event)
+        return event
+
+    async def for_learning_loop(self, tenant_id: str) -> list[TelemetryEvent]:
+        """Return ROAS events feeding W_LEARN's attribution and decay analysis."""
+
+        return await self._repository.list_by_type(tenant_id, TelemetryEventType.ROAS.value)
