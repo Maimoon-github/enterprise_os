@@ -1,12 +1,23 @@
 """YouTube publishing and engagement adapter."""
+
 from __future__ import annotations
 
+from app.integrations.social.base import SocialAdapter
 
-class YouTubeAdapter:
-    name = "youtube"
+_API_BASE = "https://www.googleapis.com/upload/youtube/v3"
 
-    def __init__(self, credentials: dict) -> None:
-        self._credentials = credentials
 
-    def publish(self, payload: dict) -> dict:
-        raise PermissionError("social writes require signed HITL dispatch")
+class YouTubeAdapter(SocialAdapter):
+    """Adapter for the YouTube Data API."""
+
+    channel = "youtube"
+
+    async def publish(self, payload: dict[str, str]) -> dict[str, str]:
+        response = await self._client.post(
+            f"{_API_BASE}/videos",
+            params={"part": "snippet,status"},
+            json=payload,
+            headers={"Authorization": f"Bearer {self._access_token}"},
+        )
+        response.raise_for_status()
+        return {"status_code": str(response.status_code), "channel": self.channel}

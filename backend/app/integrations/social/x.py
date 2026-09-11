@@ -1,12 +1,22 @@
 """X publishing and engagement adapter."""
+
 from __future__ import annotations
 
+from app.integrations.social.base import SocialAdapter
 
-class XAdapter:
-    name = "x"
+_API_BASE = "https://api.x.com/2"
 
-    def __init__(self, credentials: dict) -> None:
-        self._credentials = credentials
 
-    def publish(self, payload: dict) -> dict:
-        raise PermissionError("social writes require signed HITL dispatch")
+class XAdapter(SocialAdapter):
+    """Adapter for the X API."""
+
+    channel = "x"
+
+    async def publish(self, payload: dict[str, str]) -> dict[str, str]:
+        response = await self._client.post(
+            f"{_API_BASE}/tweets",
+            json={"text": payload.get("text", "")},
+            headers={"Authorization": f"Bearer {self._access_token}"},
+        )
+        response.raise_for_status()
+        return {"status_code": str(response.status_code), "channel": self.channel}
