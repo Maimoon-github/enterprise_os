@@ -1,13 +1,46 @@
-"""Persists promoted brand knowledge, heuristics, and model deltas."""
+"""Persists promoted brand knowledge, heuristics, and model deltas.
+
+The source architecture describes an Institutional Memory Store without
+specifying its record shape, so ``MemoryRecord`` is defined here as the
+minimal contract ``app.services.memory_promotion`` needs to promote a
+validated learning delta.
+"""
+
 from __future__ import annotations
 
+from datetime import UTC, datetime
 
-class MemoryRepository:
-    def __init__(self) -> None:
-        self._store: dict[str, list[dict]] = {}
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    def promote(self, tenant_id: str, delta: dict) -> None:
-        self._store.setdefault(tenant_id, []).append(delta)
+from app.persistence.database import metadata
+from app.persistence.repositories.base import BaseJsonRepository, standard_table
 
-    def all(self, tenant_id: str) -> list[dict]:
-        return list(self._store.get(tenant_id, []))
+_table = standard_table("institutional_memory", metadata)
+
+
+class MemoryRecord(BaseModel):
+    """A single piece of promoted, validated institutional knowledge."""
+
+    memory_id: str
+    tenant_id: str
+    category: str
+    statement: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_task_ids: list[str] = Field(default_factory=list)
+    promoted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class MemoryRepository(BaseJsonRepository[MemoryRecord]):
+    """Persists promoted ``MemoryRecord`` entries."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        super().__init__(
+            session_factory,
+            _table,
+            serialize=lambda model: model.model_dump(mode="json"),
+            deserialize=lambda doc: MemoryRecord.model_validate(doc),
+        )
+
+    async def promote(self, record: MemoryRecord) -> None:
+        await self.save(record.memory_id, record.tenant_id, record)

@@ -1,15 +1,26 @@
 """Persists enterprise directives and generated operational records."""
+
 from __future__ import annotations
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.persistence.database import metadata
+from app.persistence.repositories.base import BaseJsonRepository, standard_table
 from app.schemas.governance import Directive
 
+_table = standard_table("operational_directives", metadata)
 
-class OperationalRepository:
-    def __init__(self) -> None:
-        self._directives: dict[str, Directive] = {}
 
-    def save_directive(self, directive: Directive) -> None:
-        self._directives[directive.directive_id] = directive
+class OperationalRepository(BaseJsonRepository[Directive]):
+    """Persists ``Directive`` records issued by tenant owners."""
 
-    def get_directive(self, directive_id: str) -> Directive | None:
-        return self._directives.get(directive_id)
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        super().__init__(
+            session_factory,
+            _table,
+            serialize=lambda model: model.model_dump(mode="json"),
+            deserialize=lambda doc: Directive.model_validate(doc),
+        )
+
+    async def save_directive(self, directive: Directive) -> None:
+        await self.save(directive.directive_id, directive.tenant_id, directive)
