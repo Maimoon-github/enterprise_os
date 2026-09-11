@@ -1,15 +1,21 @@
 """W_CREAT: copy variants, hooks, visual briefs, and social schedules."""
+
 from __future__ import annotations
 
-from app.integrations.sandbox.client import SandboxClient
+from app.agents.base import BoundedWorkerAgent
+from app.schemas.agent_contracts import TaskGrant
+from app.schemas.sandbox import SandboxCapability
 
 
-class CreativeContentAgent:
-    worker_id = "W_CREAT"
-    capability = "S_COPY"
+class CreativeContentAgent(BoundedWorkerAgent):
+    """Requests S_COPY execution through the sandbox wrapper."""
 
-    def __init__(self, sandbox: SandboxClient | None = None) -> None:
-        self.sandbox = sandbox or SandboxClient()
+    capability = SandboxCapability.COPY
 
-    def execute(self, payload: dict) -> dict:
-        return self.sandbox.invoke(self.capability, self.worker_id, payload)
+    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        persona = context.get("brand_persona")
+        return {
+            "task_id": grant.task_id,
+            "objective": "generate_copy_variants",
+            "brand_voice": getattr(persona, "voice", "neutral"),
+        }

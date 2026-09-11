@@ -1,15 +1,20 @@
 """W_STRAT: omnichannel roadmaps, funnels, media mix, and budgets."""
+
 from __future__ import annotations
 
-from app.integrations.sandbox.client import SandboxClient
+from app.agents.base import BoundedWorkerAgent
+from app.schemas.agent_contracts import TaskGrant
+from app.schemas.sandbox import SandboxCapability
 
 
-class StrategyAgent:
-    worker_id = "W_STRAT"
-    capability = "S_ALLOC"
+class StrategyAgent(BoundedWorkerAgent):
+    """Requests S_ALLOC execution through the sandbox wrapper."""
 
-    def __init__(self, sandbox: SandboxClient | None = None) -> None:
-        self.sandbox = sandbox or SandboxClient()
+    capability = SandboxCapability.ALLOC
 
-    def execute(self, payload: dict) -> dict:
-        return self.sandbox.invoke(self.capability, self.worker_id, payload)
+    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        return {
+            "task_id": grant.task_id,
+            "objective": "propose_media_mix_allocation",
+            "allowed_channels": ",".join(grant.tenant_scope.allowed_channels),
+        }

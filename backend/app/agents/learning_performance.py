@@ -1,15 +1,19 @@
 """W_LEARN: attribution, fatigue, decay, ROAS, and validated learning deltas."""
+
 from __future__ import annotations
 
-from app.integrations.sandbox.client import SandboxClient
+from app.agents.base import BoundedWorkerAgent
+from app.schemas.agent_contracts import TaskGrant
+from app.schemas.sandbox import SandboxCapability
 
 
-class LearningPerformanceAgent:
-    worker_id = "W_LEARN"
-    capability = "S_ATTR"
+class LearningPerformanceAgent(BoundedWorkerAgent):
+    """Requests S_ATTR execution through the sandbox wrapper."""
 
-    def __init__(self, sandbox: SandboxClient | None = None) -> None:
-        self.sandbox = sandbox or SandboxClient()
+    capability = SandboxCapability.ATTR
 
-    def execute(self, payload: dict) -> dict:
-        return self.sandbox.invoke(self.capability, self.worker_id, payload)
+    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        return {
+            "task_id": grant.task_id,
+            "objective": "compute_attribution_and_decay",
+        }

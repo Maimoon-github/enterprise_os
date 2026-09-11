@@ -1,15 +1,19 @@
 """W_PROD: product specifications, evidence, claims, and compliance dossiers."""
+
 from __future__ import annotations
 
-from app.integrations.sandbox.client import SandboxClient
+from app.agents.base import BoundedWorkerAgent
+from app.schemas.agent_contracts import TaskGrant
+from app.schemas.sandbox import SandboxCapability
 
 
-class ProductEvidenceAgent:
-    worker_id = "W_PROD"
-    capability = "S_VAL"
+class ProductEvidenceAgent(BoundedWorkerAgent):
+    """Requests S_VAL execution through the sandbox wrapper."""
 
-    def __init__(self, sandbox: SandboxClient | None = None) -> None:
-        self.sandbox = sandbox or SandboxClient()
+    capability = SandboxCapability.VAL
 
-    def execute(self, payload: dict) -> dict:
-        return self.sandbox.invoke(self.capability, self.worker_id, payload)
+    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        return {
+            "task_id": grant.task_id,
+            "objective": "validate_product_claims",
+        }

@@ -1,15 +1,21 @@
 """W_DEV: CMS schemas, UI layouts, code diffs, and web-development work."""
+
 from __future__ import annotations
 
-from app.integrations.sandbox.client import SandboxClient
+from app.agents.base import BoundedWorkerAgent
+from app.schemas.agent_contracts import TaskGrant
+from app.schemas.sandbox import SandboxCapability
 
 
-class DevelopmentAgent:
-    worker_id = "W_DEV"
-    capability = "S_CODE"
+class DevelopmentAgent(BoundedWorkerAgent):
+    """Requests S_CODE execution through the sandbox wrapper."""
 
-    def __init__(self, sandbox: SandboxClient | None = None) -> None:
-        self.sandbox = sandbox or SandboxClient()
+    capability = SandboxCapability.CODE
 
-    def execute(self, payload: dict) -> dict:
-        return self.sandbox.invoke(self.capability, self.worker_id, payload)
+    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        persona = context.get("brand_persona")
+        return {
+            "task_id": grant.task_id,
+            "objective": "generate_code_diff",
+            "brand_voice": getattr(persona, "voice", "neutral"),
+        }
