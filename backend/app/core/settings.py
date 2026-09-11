@@ -1,23 +1,118 @@
-"""Runtime settings and external credential/reference configuration."""
+"""Runtime settings and external credential/reference configuration.
+
+All environment-specific values and secrets are sourced exclusively from the
+process environment (or an ``.env`` file in local development). Nothing in
+this module hard-codes a secret, hostname, or environment-specific value.
+See ``.env.example`` at the repository root for the full list of supported
+variables.
+"""
+
 from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BACKEND_", env_file=".env", extra="ignore")
+class DatabaseSettings(BaseSettings):
+    """PostgreSQL/pgvector/TimescaleDB connection boundary configuration."""
 
-    app_name: str = "governed-backend"
-    version: str = "0.1.0"
-    host: str = "0.0.0.0"
-    port: int = 8000
-    database_url: str = "postgresql+psycopg://localhost:5432/backend"
-    llm_provider: str = "openai-compatible"
-    sandbox_sdk_path: str | None = None
+    model_config = SettingsConfigDict(env_prefix="DB_", extra="ignore")
+
+    dsn: str = Field(
+        default="postgresql+asyncpg://localhost:5432/governed_backend",
+        description="SQLAlchemy async connection string for the system of record.",
+    )
+    pool_min_size: int = Field(default=1, ge=0)
+    pool_max_size: int = Field(default=10, ge=1)
+    statement_timeout_seconds: int = Field(default=30, ge=1)
+
+
+class LlmSettings(BaseSettings):
+    """Provider-neutral AI model boundary configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="LLM_", extra="ignore")
+
+    provider: str = Field(
+        default="unset",
+        description="Configured model provider identifier (e.g. 'openai', 'anthropic').",
+    )
+    api_key: str | None = Field(default=None, repr=False)
+    base_url: str | None = Field(default=None)
+    model_name: str = Field(default="unset")
+    request_timeout_seconds: int = Field(default=60, ge=1)
+
+
+class SandboxSettings(BaseSettings):
+    """Thin boundary configuration for the existing agent_sandbox SDK."""
+
+    model_config = SettingsConfigDict(env_prefix="SANDBOX_", extra="ignore")
+
+    endpoint: str | None = Field(default=None)
+    api_key: str | None = Field(default=None, repr=False)
+    default_timeout_seconds: int = Field(default=120, ge=1)
+
+
+class CmsSettings(BaseSettings):
+    """Headless CMS integration boundary configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="CMS_", extra="ignore")
+
+    base_url: str | None = Field(default=None)
+    api_key: str | None = Field(default=None, repr=False)
+
+
+class AdsSettings(BaseSettings):
+    """Paid-media platform adapter configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="ADS_", extra="ignore")
+
+    meta_access_token: str | None = Field(default=None, repr=False)
+    google_access_token: str | None = Field(default=None, repr=False)
+    tiktok_access_token: str | None = Field(default=None, repr=False)
+    linkedin_access_token: str | None = Field(default=None, repr=False)
+
+
+class SocialSettings(BaseSettings):
+    """Organic social-channel adapter configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="SOCIAL_", extra="ignore")
+
+    instagram_access_token: str | None = Field(default=None, repr=False)
+    x_access_token: str | None = Field(default=None, repr=False)
+    tiktok_access_token: str | None = Field(default=None, repr=False)
+    youtube_access_token: str | None = Field(default=None, repr=False)
+
+
+class SecuritySettings(BaseSettings):
+    """Cryptographic and authorization configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="SECURITY_", extra="ignore")
+
+    signing_public_key_pem: str | None = Field(default=None, repr=False)
+    require_signed_dispatch: bool = Field(default=True)
+
+
+class Settings(BaseSettings):
+    """Aggregate application settings composition root."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    environment: str = Field(default="development")
+    log_level: str = Field(default="INFO")
+
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    llm: LlmSettings = Field(default_factory=LlmSettings)
+    sandbox: SandboxSettings = Field(default_factory=SandboxSettings)
+    cms: CmsSettings = Field(default_factory=CmsSettings)
+    ads: AdsSettings = Field(default_factory=AdsSettings)
+    social: SocialSettings = Field(default_factory=SocialSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Return the process-wide cached settings instance."""
+
     return Settings()
