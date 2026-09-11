@@ -1,0 +1,1 @@
+"""Paid-media platform adapters."""

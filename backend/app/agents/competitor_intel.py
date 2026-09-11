@@ -1,0 +1,15 @@
+"""W_COMP: pricing, ad-library, SERP, trend, and positioning intelligence."""
+from __future__ import annotations
+
+from app.integrations.sandbox.client import SandboxClient
+
+
+class CompetitorIntelAgent:
+    worker_id = "W_COMP"
+    capability = "S_SCRAPE"
+
+    def __init__(self, sandbox: SandboxClient | None = None) -> None:
+        self.sandbox = sandbox or SandboxClient()
+
+    def execute(self, payload: dict) -> dict:
+        return self.sandbox.invoke(self.capability, self.worker_id, payload)
