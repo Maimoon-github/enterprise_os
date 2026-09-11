@@ -75,7 +75,6 @@ agent_sandbox/
 tool_output_artifacts/
 *.trace
 /tmp/
-sandbox
 
 # IDEs and editors
 .idea/
