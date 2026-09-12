@@ -25,6 +25,7 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
 
         return {
             "task_id": grant.task_id,
+            "operation": "calculate_attribution",
             "objective": "compute_attribution_and_decay",
             "roas": roas,
             "days_active": str(context.get("days_active", "14.0")),
