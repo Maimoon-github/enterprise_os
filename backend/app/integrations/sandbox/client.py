@@ -66,6 +66,7 @@ class SandboxClient:
     def __init__(self, settings: SandboxSettings | None = None) -> None:
         self._settings = settings
         self._sandbox = None
+        self._active_sessions: dict[str, dict[str, Any]] = {}
 
     def _get_sandbox(self):
         """Lazily import and construct the agent_sandbox client on first use."""
@@ -86,15 +87,24 @@ class SandboxClient:
             self._sandbox = None
         return self._sandbox
 
+    async def teardown_session(self, session_id: str) -> bool:
+        """Deterministic cleanup and scrubbing of ephemeral execution session state."""
+        if session_id in self._active_sessions:
+            del self._active_sessions[session_id]
+            return True
+        return False
+
     async def invoke(self, mandate: SandboxInvocationMandate) -> SandboxResult:
         """Execute ``mandate`` against the sandbox and return a sanitized result.
 
         Enforces capability allowlisting:
         1. Validates capability against registry (worker role, operation, network policy).
-        2. Dispatches to remote agent_sandbox or isolated specialist micro-tool runtime.
-        3. Enforces execution timeout and resource boundaries.
-        4. Sanitizes outputs, redacting secrets and hostile execution traces.
-        5. Returns structured SandboxResult with complete provenance and metrics.
+        2. Validates egress grant and destination domains fail-closed under DENY_ALL.
+        3. Dispatches to remote agent_sandbox or isolated specialist micro-tool runtime.
+        4. Enforces execution timeout and resource boundaries.
+        5. Sanitizes outputs, redacting secrets and hostile execution traces.
+        6. Deterministically scrubs ephemeral session state on completion or failure.
+        7. Returns structured SandboxResult with complete provenance and metrics.
         """
         start_time = time.perf_counter()
 
@@ -104,11 +114,51 @@ class SandboxClient:
             worker_role=mandate.worker_role,
             operation=mandate.operation,
             requested_network=mandate.network_policy,
+            egress_grant=mandate.egress_grant,
         )
 
-        timeout = mandate.timeout_seconds or profile.default_timeout_seconds
+        # 2. Strict Network Egress Enforcement (DENY_ALL by default)
+        if mandate.network_policy != NetworkPolicy.DISABLED:
+            if mandate.egress_grant is None:
+                raise SandboxInvocationError(
+                    f"Network egress policy violation: Capability '{mandate.capability.value}' requested "
+                    f"network '{mandate.network_policy.value}' without an authorized SandboxEgressGrant (default DENY_ALL)."
+                )
 
-        # 2. Execution under timeout control
+            # Check for target destination in payload
+            target = (
+                mandate.payload.get("url")
+                or mandate.payload.get("target_url")
+                or mandate.payload.get("target_domain")
+                or mandate.payload.get("domain")
+                or mandate.payload.get("competitor_url")
+            )
+            if target:
+                validate_egress_target(str(target), mandate.egress_grant)
+        else:
+            # Network disabled: reject any attempt to pass external URLs
+            target = (
+                mandate.payload.get("url")
+                or mandate.payload.get("target_url")
+                or mandate.payload.get("competitor_url")
+            )
+            if target:
+                raise SandboxInvocationError(
+                    f"Network access denied: Capability '{mandate.capability.value}' has network_policy 'disabled' "
+                    f"and cannot access external targets: '{target}'."
+                )
+
+        timeout = mandate.timeout_seconds or profile.default_timeout_seconds
+        session_id = f"session-{mandate.execution_id}"
+        self._active_sessions[session_id] = {
+            "execution_id": mandate.execution_id,
+            "task_id": mandate.task_id,
+            "tenant_id": mandate.tenant_id,
+            "working_directory": f"/workspace/{mandate.execution_id}",
+            "created_at": time.time(),
+        }
+
+        # 3. Execution under timeout control & deterministic session teardown
         try:
             raw_result = await asyncio.wait_for(
                 asyncio.to_thread(self._execute_specialist, mandate),
@@ -141,6 +191,9 @@ class SandboxClient:
                 execution_duration_ms=round(duration_ms, 2),
                 provenance=self._build_provenance(mandate, "failed"),
             )
+        finally:
+            await self.teardown_session(session_id)
+
 
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -204,7 +257,7 @@ class SandboxClient:
 
     def _build_provenance(self, mandate: SandboxInvocationMandate, status: str) -> dict[str, str]:
         """Generate provenance audit tracking context for the execution."""
-        return {
+        prov = {
             "execution_id": mandate.execution_id,
             "task_id": mandate.task_id,
             "worker_role": mandate.worker_role.value if mandate.worker_role else "unknown",
@@ -214,3 +267,7 @@ class SandboxClient:
             "network_policy": mandate.network_policy.value,
             "status": status,
         }
+        if mandate.egress_grant is not None:
+            prov["egress_grant_id"] = mandate.egress_grant.grant_id
+            prov["egress_allowed_domains"] = ",".join(mandate.egress_grant.allowed_domains)
+        return prov

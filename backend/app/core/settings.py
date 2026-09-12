@@ -51,6 +51,8 @@ class SandboxSettings(BaseSettings):
 
     endpoint: str | None = Field(default=None)
     api_key: str | None = Field(default=None, repr=False)
+    proxy_endpoint: str | None = Field(default=None)
+    default_network_policy: str = Field(default="deny_all")
     default_timeout_seconds: int = Field(default=120, ge=1)
 
 

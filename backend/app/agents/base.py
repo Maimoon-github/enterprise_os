@@ -54,6 +54,7 @@ class BoundedWorkerAgent(ABC):
             else NetworkPolicy.DISABLED
         )
 
+        egress_grant = context.get("egress_grant")
         mandate = SandboxInvocationMandate(
             task_id=grant.task_id,
             worker_role=grant.worker_role,
@@ -62,6 +63,7 @@ class BoundedWorkerAgent(ABC):
             operation=operation,
             payload=payload,
             network_policy=network_policy,
+            egress_grant=egress_grant,  # type: ignore[arg-type]
             timeout_seconds=grant.token_budget if grant.token_budget > 0 else 120,
         )
         result = await self._sandbox_client.invoke(mandate)
