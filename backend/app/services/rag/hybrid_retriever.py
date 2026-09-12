@@ -56,8 +56,15 @@ def _keyword_score(query: str, text: str) -> float:
 class HybridRetriever:
     """Combines dense vector similarity with sparse keyword overlap scoring."""
 
-    def __init__(self, vector_repository: VectorRepository, *, vector_weight: float = 0.7) -> None:
+    def __init__(
+        self,
+        vector_repository: VectorRepository | None = None,
+        *,
+        data_gateway: Any | None = None,
+        vector_weight: float = 0.7,
+    ) -> None:
         self._vector_repository = vector_repository
+        self._data_gateway = data_gateway
         self._vector_weight = vector_weight
         self._keyword_weight = 1.0 - vector_weight
 
@@ -66,9 +73,25 @@ class HybridRetriever:
     ) -> list[dict[str, Any]]:
         """Return documents ranked by a blended vector/keyword score."""
 
-        candidates = await self._vector_repository.similarity_search(
-            tenant_id=tenant_id, query=query, top_k=top_k
-        )
+        if self._data_gateway is not None:
+            from app.schemas.governance import RiskLevel, TenantScope
+            from app.security.authorization_boundary import CallerIdentity
+
+            caller = CallerIdentity(
+                subject="rag_controller",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.MEDIUM,
+            )
+            candidates = await self._data_gateway.query(
+                caller, tenant_id=tenant_id, query=query, top_k=top_k
+            )
+        elif self._vector_repository is not None:
+            candidates = await self._vector_repository.similarity_search(
+                tenant_id=tenant_id, query=query, top_k=top_k
+            )
+        else:
+            candidates = []
+
         scored: list[dict[str, Any]] = []
         for doc in candidates:
             vector_score = float(doc.get("score", 0.0))
