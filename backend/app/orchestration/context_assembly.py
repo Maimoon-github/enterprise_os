@@ -35,10 +35,14 @@ class ContextAssembler:
         documents = await self._rag_dispatcher.dispatch(
             token, tenant_id=tenant_id, query=request.query, top_k=request.max_items
         )
-        persona = self._brand_persona_resolver.resolve(tenant_id=tenant_id)
+        if hasattr(self._brand_persona_resolver, "resolve_with_memory"):
+            persona = await self._brand_persona_resolver.resolve_with_memory(tenant_id=tenant_id)
+        else:
+            persona = self._brand_persona_resolver.resolve(tenant_id=tenant_id)
         return {
             "task_id": request.task_id,
             "worker_role": request.worker_role.value,
+            "query": request.query,
             "documents": documents,
             "brand_persona": persona,
         }
