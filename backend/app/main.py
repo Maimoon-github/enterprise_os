@@ -119,9 +119,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     artifact_repository = ArtifactRepository(database.session_factory)
     provenance_repository = ProvenanceRepository(database.session_factory)
 
+    from app.services.task_state import TaskStateService
+
     telemetry_normalizer = TelemetryNormalizer(telemetry_repository)
     memory_promotion_service = MemoryPromotionService(memory_repository)
     provenance_recorder = ProvenanceRecorder(provenance_repository)
+    task_state_service = TaskStateService(
+        task_state_repository, TaskStateMachine(), provenance_recorder
+    )
 
     hybrid_retriever = HybridRetriever(vector_repository)
     rag_controller = RagController(hybrid_retriever, FreshnessPolicy(), SchemaValidator())
@@ -155,14 +160,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cms_client=cms_client,
         require_signature=settings.security.require_signed_dispatch,
     )
-    data_gateway = DataGateway(vector_repository, AuthorizationBoundary(ScopeEvaluator()))
+    data_gateway = DataGateway(
+        vector_repository,
+        AuthorizationBoundary(ScopeEvaluator()),
+        operational_repository=operational_repository,
+        memory_repository=memory_repository,
+        artifact_repository=artifact_repository,
+        cms_client=cms_client,
+    )
     mcp_host = McpHost(data_gateway, outbound_gateway)
+
+    brand_persona_resolver = BrandPersonaResolver(memory_repository=memory_repository)
 
     intelligence_engine = IntelligenceEngine(
         policy_evaluator=PolicyEvaluator(PolicyEngine()),
         dag_scheduler=DagScheduler(),
         task_state_machine=TaskStateMachine(),
-        context_assembler=ContextAssembler(rag_dispatcher, BrandPersonaResolver()),
+        context_assembler=ContextAssembler(rag_dispatcher, brand_persona_resolver),
         evidence_synthesizer=EvidenceSynthesizer(),
         hitl_preview_generator=HitlPreviewGenerator(),
         hitl_coordinator=hitl_coordinator,
@@ -174,6 +188,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.database = database
     app.state.operational_repository = operational_repository
     app.state.task_state_repository = task_state_repository
+    app.state.task_state_service = task_state_service
     app.state.artifact_repository = artifact_repository
     app.state.telemetry_normalizer = telemetry_normalizer
     app.state.memory_promotion_service = memory_promotion_service

@@ -92,6 +92,10 @@ class IntelligenceEngine:
             task_id=task.task_id,
             worker_role=task.worker_role,
             tenant_scope=directive.scope,
+            task_scope=f"{task.worker_role.value} task for {directive.directive_id}",
+            sandbox_capabilities=[self._workers[task.worker_role].capability.value],
+            token_budget=10000,
+            risk_tier=directive.risk_ceiling,
             expires_at=datetime.now(UTC) + timedelta(minutes=30),
         )
         context = await self._context_assembler.assemble(
@@ -99,9 +103,20 @@ class IntelligenceEngine:
             tenant_id=directive.tenant_id,
             request=ContextRequest(task_id=task.task_id, worker_role=task.worker_role, query=query),
         )
+        context["budget_cap"] = directive.budget_cap
+        context["directive_id"] = directive.directive_id
 
         worker = self._workers[task.worker_role]
         envelope = await worker.run(grant, context)
+
+        if envelope.confidence.point_estimate > 0.0:
+            self._task_state_machine.transition(
+                task, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
+            )
+        else:
+            self._task_state_machine.transition(
+                task, TaskStatus.HELD, checkpoint_id=str(uuid.uuid4()), note="Execution produced zero confidence"
+            )
 
         await self._provenance_recorder.record(
             tenant_id=directive.tenant_id,
@@ -112,6 +127,38 @@ class IntelligenceEngine:
 
         return envelope
 
+    async def execute_dag(
+        self,
+        directive: Directive,
+        tasks: list[CanonicalTaskState],
+        *,
+        queries: dict[str, str] | None = None,
+    ) -> dict[str, EvidenceEnvelope]:
+        """Execute a full DAG of tasks for ``directive`` in topological dependency order."""
+        queries = queries or {}
+        ordered_ids = self._dag_scheduler.topological_order(tasks)
+        tasks_by_id = {t.task_id: t for t in tasks}
+        completed_tasks: dict[str, CanonicalTaskState] = {}
+        envelopes: dict[str, EvidenceEnvelope] = {}
+
+        for task_id in ordered_ids:
+            task = tasks_by_id[task_id]
+            # Verify upstream dependencies completed
+            upstream_ids = {
+                dep.upstream_task_id
+                for dep in task.dependencies
+                if dep.downstream_task_id == task_id
+            }
+            if not all(uid in completed_tasks and completed_tasks[uid].status == TaskStatus.COMPLETED for uid in upstream_ids):
+                raise PolicyViolationError(f"Task {task_id} dependencies are not completed.")
+
+            query = queries.get(task_id, f"{task.worker_role.value} execution for {directive.objective}")
+            envelope = await self.delegate_task(directive, task, query=query)
+            envelopes[task_id] = envelope
+            completed_tasks[task_id] = task.model_copy(update={"status": TaskStatus.COMPLETED})
+
+        return envelopes
+
     def ready_tasks(self, tasks: list[CanonicalTaskState]) -> list[CanonicalTaskState]:
         """Return the subset of ``tasks`` whose dependencies are satisfied."""
 
@@ -120,7 +167,14 @@ class IntelligenceEngine:
     async def dispatch_after_approval(self, dispatch: DispatchDirective) -> dict[str, str]:
         """Actuate an approved, signed dispatch through the MCP host."""
 
-        return await self._mcp_host.actuate(dispatch)
+        result = await self._mcp_host.actuate(dispatch)
+        await self._provenance_recorder.record(
+            tenant_id="global",
+            entity_id=dispatch.dispatch_id,
+            activity="actuation_dispatched",
+            agent="mcp_host",
+        )
+        return result
 
     async def build_preview(
         self,
@@ -129,16 +183,35 @@ class IntelligenceEngine:
         kind: ActionPreviewKind,
         risk_level: RiskLevel,
         spend_amount: float | None = None,
+        diff: str | None = None,
     ) -> ActionPreview:
         """Synthesize evidence and produce a mandatory human-review preview."""
 
         synthesized = self._evidence_synthesizer.synthesize(envelopes)
+        # Extract diff if not provided
+        if diff is None and kind == ActionPreviewKind.CODE_DIFF:
+            for env in envelopes:
+                if "diff" in env.payload:
+                    diff = env.payload["diff"]
+                    break
+
+        # Extract spend if not provided
+        if spend_amount is None and kind == ActionPreviewKind.SPEND:
+            for env in envelopes:
+                if "budget_total" in env.payload:
+                    try:
+                        spend_amount = float(env.payload["budget_total"])
+                    except ValueError:
+                        pass
+                    break
+
         preview = self._hitl_preview_generator.generate(
             preview_id=str(uuid.uuid4()),
             evidence=synthesized,
             kind=kind,
             risk_level=risk_level,
             spend_amount=spend_amount,
+            diff=diff,
         )
         self._hitl_coordinator.submit_for_approval(preview)
         return preview
