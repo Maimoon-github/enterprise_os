@@ -35,6 +35,7 @@ class MemoryRepository(BaseJsonRepository[MemoryRecord]):
     """Persists promoted ``MemoryRecord`` entries."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
         super().__init__(
             session_factory,
             _table,
@@ -44,3 +45,20 @@ class MemoryRepository(BaseJsonRepository[MemoryRecord]):
 
     async def promote(self, record: MemoryRecord) -> None:
         await self.save(record.memory_id, record.tenant_id, record)
+
+    async def list_by_tenant(
+        self, tenant_id: str, category: str | None = None
+    ) -> list[MemoryRecord]:
+        """Return all memory records for ``tenant_id``, optionally filtered by ``category``."""
+        if self._session_factory is None:
+            return []
+        from sqlalchemy import select
+
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                select(self._table.c.document).where(self._table.c.tenant_id == tenant_id)
+            )
+            records = [MemoryRecord.model_validate(doc) for (doc,) in rows.all()]
+        if category is not None:
+            records = [r for r in records if r.category == category]
+        return records

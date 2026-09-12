@@ -43,3 +43,47 @@ class McpHost:
         """Route a signed, approved dispatch through the outbound gateway."""
 
         return await self._outbound_gateway.execute(dispatch)
+
+    async def query_memory(
+        self, caller: CallerIdentity, *, tenant_id: str, category: str | None = None
+    ) -> list[Any]:
+        """Route an institutional memory query through the data gateway."""
+        return await self._data_gateway.query_memory(caller, tenant_id=tenant_id, category=category)
+
+    async def promote_memory(
+        self, caller: CallerIdentity, *, tenant_id: str, record: Any
+    ) -> None:
+        """Route an institutional memory promotion through the data gateway."""
+        await self._data_gateway.promote_memory(caller, tenant_id=tenant_id, record=record)
+
+    async def resolve_artifact(
+        self, caller: CallerIdentity, *, tenant_id: str, artifact_id: str
+    ) -> Any:
+        """Route an artifact resolution through the data gateway."""
+        return await self._data_gateway.resolve_artifact(caller, tenant_id=tenant_id, artifact_id=artifact_id)
+
+    async def register_artifact(
+        self, caller: CallerIdentity, *, tenant_id: str, artifact: Any
+    ) -> None:
+        """Route an artifact registration through the data gateway."""
+        await self._data_gateway.register_artifact(caller, tenant_id=tenant_id, artifact=artifact)
+
+    async def read_cms_staged(
+        self, caller: CallerIdentity, *, tenant_id: str, content_type: str
+    ) -> list[dict[str, str]]:
+        """Route a staged CMS query through the data gateway."""
+        return await self._data_gateway.read_cms_staged(caller, tenant_id=tenant_id, content_type=content_type)
+
+    async def apply_cms_changes(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        content_type: str,
+        entry_id: str,
+        diff: dict[str, str],
+    ) -> dict[str, str]:
+        """Route CMS changes through the data gateway."""
+        return await self._data_gateway.apply_cms_changes(
+            caller, tenant_id=tenant_id, content_type=content_type, entry_id=entry_id, diff=diff
+        )
