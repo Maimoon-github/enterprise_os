@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from app.agents.base import BoundedWorkerAgent
 from app.schemas.agent_contracts import TaskGrant
 from app.schemas.governance import TenantScope
 from tests.conftest import FakeSandboxClient
@@ -37,6 +38,7 @@ _DISALLOWED_IMPORT_PREFIXES = (
 
 def _imported_module_names(module_dotted_path: str) -> list[str]:
     module = importlib.import_module(module_dotted_path)
+    assert module.__file__ is not None
     source = Path(module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
 
@@ -65,10 +67,13 @@ async def test_worker_executes_only_through_sandbox_client(
     module_path: str, sample_task
 ) -> None:
     module = importlib.import_module(module_path)
-    agent_classes = [
+    agent_classes: list[type[BoundedWorkerAgent]] = [
         obj
         for name, obj in vars(module).items()
-        if isinstance(obj, type) and name.endswith("Agent") and obj.__module__ == module.__name__
+        if isinstance(obj, type)
+        and issubclass(obj, BoundedWorkerAgent)
+        and name.endswith("Agent")
+        and obj.__module__ == module.__name__
     ]
     assert len(agent_classes) == 1
     agent_class = agent_classes[0]

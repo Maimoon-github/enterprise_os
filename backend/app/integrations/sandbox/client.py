@@ -50,8 +50,8 @@ def _sanitize_payload(payload: dict[str, Any]) -> tuple[dict[str, str], dict[str
         cleaned_str = _sanitize_string(val_str)
         if cleaned_str != val_str:
             warnings.append(f"Sensitive content in field '{key}' was redacted.")
-        sanitized_str[str(key)] = cleaned_str
-        structured[str(key)] = val
+        sanitized_str[key] = cleaned_str
+        structured[key] = val
 
     return sanitized_str, structured, warnings
 
