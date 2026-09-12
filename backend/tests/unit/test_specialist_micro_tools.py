@@ -157,3 +157,59 @@ def test_dispatch_micro_tool_dispatches_correct_capability() -> None:
         res = dispatch_micro_tool(cap, {"task_id": f"test-{cap.value}"})
         assert "status" in res
         assert res["task_id"] == f"test-{cap.value}"
+
+
+def test_dispatch_micro_tool_unknown_capability_raises() -> None:
+    with pytest.raises(ValueError, match="No specialist micro-tool found"):
+        dispatch_micro_tool("S_NONEXISTENT", {"task_id": "test-invalid"})  # type: ignore[arg-type]
+
+
+def test_s_alloc_handles_malformed_and_negative_inputs() -> None:
+    # Negative budget should be normalized to 0.0
+    res1 = execute_s_alloc({"budget": "-5000", "channels": "meta,google"})
+    assert res1["status"] == "success"
+    assert float(res1["budget_total"]) == 0.0
+
+    # Non-numeric budget should fall back to default
+    res2 = execute_s_alloc({"budget": "not-a-number", "channels": ""})
+    assert res2["status"] == "success"
+    assert float(res2["budget_total"]) == 10000.0
+    allocations = json.loads(res2["allocations"])
+    assert len(allocations) > 0
+
+
+def test_s_scrape_handles_malformed_inputs() -> None:
+    payload = {
+        "task_id": "task-scrape-malformed",
+        "benchmark_price": "invalid-price",
+        "active_ads": "invalid-ads",
+    }
+    result = execute_s_scrape(payload)
+    assert result["status"] == "success"
+    assert result["benchmark_price"] == "49.99"
+    assert result["active_ads"] == "14"
+
+
+def test_s_parse_handles_empty_and_neutral_text() -> None:
+    result = execute_s_parse({"task_id": "task-parse-neutral", "feedback_text": "The box is blue."})
+    assert result["status"] == "success"
+    assert result["primary_sentiment"] == "neutral"
+    assert "none_detected" in json.loads(result["objections"])
+
+
+def test_s_attr_handles_extreme_and_negative_days() -> None:
+    # Negative days should be clamped to 0.0 (no decay)
+    res1 = execute_s_attr({"roas": "4.0", "days_active": "-10.0"})
+    assert res1["status"] == "success"
+    assert float(res1["decay_multiplier"]) == pytest.approx(1.0, abs=0.01)
+    assert float(res1["projected_roas"]) == pytest.approx(4.0, abs=0.01)
+    assert res1["fatigue_detected"] == "False"
+    assert res1["recommended_action"] == "scale_spend"
+
+    # Extreme days active should trigger fatigue
+    res2 = execute_s_attr({"roas": "4.0", "days_active": "60.0"})
+    assert res2["status"] == "success"
+    assert float(res2["decay_multiplier"]) < 0.2
+    assert res2["fatigue_detected"] == "True"
+    assert res2["recommended_action"] == "refresh_creative_hooks"
+

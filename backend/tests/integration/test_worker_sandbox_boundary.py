@@ -372,3 +372,104 @@ async def test_worker_agent_with_provenance_recording(sample_task) -> None:
     assert chain[1].metadata["lifecycle_stage"] == "completed"
     assert chain[1].w3c_prov is not None
     assert await recorder.verify_chain("acme") is True
+
+
+def test_complete_cross_worker_specialist_authorization_matrix() -> None:
+    """Verifies that each of the 7 workers is strictly limited to its authorized capability."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY, validate_capability_access
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability
+
+    all_roles = list(WorkerRole)
+    all_capabilities = list(SandboxCapability)
+
+    for role in all_roles:
+        for cap in all_capabilities:
+            profile = CAPABILITY_REGISTRY[cap]
+            network_req = NetworkPolicy.CONTROLLED if cap == SandboxCapability.SCRAPE else NetworkPolicy.DISABLED
+
+            if profile.allowed_worker == role:
+                # Authorized call must succeed
+                res_profile = validate_capability_access(
+                    capability=cap,
+                    worker_role=role,
+                    operation=profile.allowed_operations[0],
+                    requested_network=network_req,
+                )
+                assert res_profile.capability == cap
+                assert res_profile.allowed_worker == role
+            else:
+                # Unauthorized call must fail closed
+                with pytest.raises(SandboxInvocationError, match="not authorized"):
+                    validate_capability_access(
+                        capability=cap,
+                        worker_role=role,
+                        operation=profile.allowed_operations[0],
+                        requested_network=network_req,
+                    )
+
+
+@pytest.mark.asyncio
+async def test_all_seven_specialists_structured_result_contracts() -> None:
+    """Verifies that all 7 specialists produce typed SandboxResult with required fields."""
+    from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxEgressGrant, SandboxExecutionStatus, SandboxInvocationMandate
+
+    client = SandboxClient()
+
+    payloads = {
+        SandboxCapability.CODE: {"code": "def render(): return 42"},
+        SandboxCapability.ALLOC: {"budget": "50000", "channels": "google,meta"},
+        SandboxCapability.COPY: {"objective": "scale ad conversions", "brand_voice": "punchy"},
+        SandboxCapability.VAL: {"claim": "100% organic growth *results may vary", "required_disclaimer": "*results may vary"},
+        SandboxCapability.SCRAPE: {"competitor": "AlphaCorp", "benchmark_price": "89.00"},
+        SandboxCapability.PARSE: {"feedback_text": "Great service and fast delivery!"},
+        SandboxCapability.ATTR: {"roas": "4.2", "days_active": "7.0"},
+    }
+
+    for cap, payload in payloads.items():
+        profile = CAPABILITY_REGISTRY[cap]
+        grant = None
+        net_pol = NetworkPolicy.DISABLED
+
+        if cap == SandboxCapability.SCRAPE:
+            net_pol = NetworkPolicy.CONTROLLED
+            grant = SandboxEgressGrant(
+                grant_id="grant-test-all",
+                tenant_id="acme",
+                task_id=f"task-{cap.value}",
+                worker_role=profile.allowed_worker,
+                capability=cap,
+                allowed_domains=["alphacorp.com"],
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            )
+
+        mandate = SandboxInvocationMandate(
+            execution_id=f"exec-{cap.value}",
+            task_id=f"task-{cap.value}",
+            worker_role=profile.allowed_worker,
+            tenant_id="acme",
+            capability=cap,
+            operation=profile.allowed_operations[0],
+            payload=payload,
+            network_policy=net_pol,
+            egress_grant=grant,
+            stop_rules=["max_duration_120s"],
+        )
+
+        res = await client.execute(mandate)
+
+        assert res.success is True
+        assert res.status == SandboxExecutionStatus.COMPLETED
+        assert res.specialist_id == cap.value
+        assert res.worker_id == profile.allowed_worker.value
+        assert res.worker_role == profile.allowed_worker
+        assert isinstance(res.validated_findings, list)
+        assert isinstance(res.confidence_score, float)
+        assert res.confidence_score >= 0.0
+        assert isinstance(res.execution_metadata, dict)
+        assert "execution_duration_ms" in res.execution_metadata
+        assert "stop_rules" in res.execution_metadata
+        assert res.execution_metadata["stop_rules"] == ["max_duration_120s"]
