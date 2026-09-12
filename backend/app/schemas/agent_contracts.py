@@ -7,7 +7,8 @@ the seven bounded worker agents. Workers never see more than what a
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -20,15 +21,26 @@ class TaskGrant(BaseModel):
     task_id: str
     worker_role: WorkerRole
     tenant_scope: TenantScope
+    brand_id: str = "default"
+    objective: str = ""
+    task_scope: str = ""
+    task_slice: str = ""
+    cts_state: dict[str, Any] = Field(default_factory=dict)
+    brand_rules: dict[str, Any] = Field(default_factory=dict)
+    validated_evidence: list[dict[str, Any]] = Field(default_factory=list)
+    provenance_references: list[str] = Field(default_factory=list)
+    freshness_metadata: dict[str, Any] = Field(default_factory=dict)
+    policy_constraints: list[str] = Field(default_factory=list)
     context_ids: list[str] = Field(default_factory=list)
     expires_at: datetime
-    task_scope: str = ""
     tool_permissions: list[str] = Field(default_factory=list)
     sandbox_capabilities: list[str] = Field(default_factory=list)
     token_budget: int = 10000
+    budget_breakdown: dict[str, int] = Field(default_factory=dict)
     risk_tier: RiskLevel = RiskLevel.LOW
     stop_conditions: list[str] = Field(default_factory=list)
     expected_outputs: list[str] = Field(default_factory=list)
+    expected_output_schema: dict[str, Any] = Field(default_factory=dict)
 
 
 class ContextRequest(BaseModel):
@@ -37,7 +49,12 @@ class ContextRequest(BaseModel):
     task_id: str
     worker_role: WorkerRole
     query: str
+    brand_id: str = "default"
+    purpose: str = ""
+    freshness_target: timedelta | None = None
+    provenance_required: bool = True
     max_items: int = Field(default=10, ge=1, le=100)
+    max_tokens: int = Field(default=4000, ge=100, le=32000)
 
 
 class ConfidenceInterval(BaseModel):

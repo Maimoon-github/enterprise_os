@@ -142,18 +142,61 @@ class IntelligenceEngine:
     def _mint_token(self) -> IntelligenceEngineToken:
         return IntelligenceEngineToken(issued_to="intelligence_engine")
 
-    async def delegate_task(
+    async def assemble_task_grant(
         self,
         directive: Directive,
         task: CanonicalTaskState,
         *,
         query: str,
-    ) -> EvidenceEnvelope:
-        """Delegate a single bounded task grant to its worker and return its evidence.
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        purpose: str = "",
+        completed_upstream_task_ids: set[str] | None = None,
+    ) -> tuple[TaskGrant, dict[str, object]]:
+        """Assemble a bounded, policy-screened, tenant/brand-scoped TaskGrant and context.
 
-        Raises ``PolicyViolationError`` if the delegation is not permitted
-        under the parent directive's scope and risk ceiling.
+        Fails closed on:
+        - Active CTS holds, blocked states, terminal states, or unresolved locks.
+        - Unmet upstream DAG dependencies.
+        - Tenant scope mismatches or policy ceiling violations.
         """
+
+        # 1. CTS State Validation (Fail-closed)
+        if task.status == TaskStatus.HELD or task.hold_reason:
+            raise PolicyViolationError(
+                f"Cannot issue execution grant for task {task.task_id}: active hold in place ('{task.hold_reason or 'held'}')."
+            )
+        if task.status in (TaskStatus.FAILED, TaskStatus.COMPLETED):
+            raise PolicyViolationError(
+                f"Cannot issue execution grant for task {task.task_id}: already in terminal state '{task.status.value}'."
+            )
+        if task.prerequisite_locks:
+            raise PolicyViolationError(
+                f"Cannot issue execution grant for task {task.task_id}: unresolved prerequisite locks: {sorted(task.prerequisite_locks)}."
+            )
+        if not task.governance_approved:
+            raise PolicyViolationError(
+                f"Cannot issue execution grant for task {task.task_id}: governance approval is unresolved."
+            )
+
+        if task.dependencies:
+            upstream_ids = {
+                dep.upstream_task_id
+                for dep in task.dependencies
+                if dep.downstream_task_id == task.task_id
+            }
+            completed = completed_upstream_task_ids or set()
+            unmet = upstream_ids - completed
+            if unmet:
+                raise PolicyViolationError(
+                    f"Cannot issue execution grant for task {task.task_id}: unmet upstream dependencies: {sorted(unmet)}."
+                )
+
+        # 2. Authority & Policy Validation
+        if directive.tenant_id != directive.scope.tenant_id:
+            raise PolicyViolationError(
+                f"Directive tenant '{directive.tenant_id}' does not match scope tenant '{directive.scope.tenant_id}'."
+            )
 
         decision = self._policy_evaluator.evaluate_delegation(
             directive, directive.scope, directive.risk_ceiling
@@ -161,30 +204,101 @@ class IntelligenceEngine:
         if not decision.allowed:
             raise PolicyViolationError(decision.reason)
 
+        # 3. Context Assembly under Precedence Model & Token Budgeting
+        req = ContextRequest(
+            task_id=task.task_id,
+            worker_role=task.worker_role,
+            query=query,
+            brand_id=brand_id,
+            purpose=purpose or f"{task.worker_role.value} execution for {directive.objective}",
+            max_tokens=token_budget,
+        )
+        policy_constraints = [
+            f"directive_id:{directive.directive_id}",
+            f"max_budget:{directive.budget_cap}",
+        ]
+        context = await self._context_assembler.assemble(
+            self._mint_token(),
+            tenant_id=directive.tenant_id,
+            request=req,
+            cts_state=task,
+            policy_constraints=policy_constraints,
+            risk_tier=directive.risk_ceiling.value,
+            objective=directive.objective,
+        )
+        context["budget_cap"] = directive.budget_cap
+        context["directive_id"] = directive.directive_id
+
+        # 4. Derive Tool & Capability Permissions (Monotonic Attenuation)
+        worker = self._workers.get(task.worker_role)
+        sandbox_capabilities = [worker.capability.value] if worker else []
+        allowed_tools = []
+        if worker and hasattr(worker, "capability"):
+            from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY
+
+            if worker.capability in CAPABILITY_REGISTRY:
+                allowed_tools = list(CAPABILITY_REGISTRY[worker.capability].allowed_tools)
+
+        # 5. Formulate Bounded TaskGrant
+        grant = TaskGrant(
+            task_id=task.task_id,
+            worker_role=task.worker_role,
+            tenant_scope=directive.scope,
+            brand_id=brand_id,
+            objective=directive.objective,
+            task_scope=f"{task.worker_role.value} task for {directive.directive_id}",
+            task_slice=f"slice-{task.task_id[:8]}",
+            cts_state=context.get("cts_state", {}),  # type: ignore[arg-type]
+            brand_rules=context.get("brand_rules", {}),  # type: ignore[arg-type]
+            validated_evidence=context.get("documents", []),  # type: ignore[arg-type]
+            provenance_references=context.get("provenance_references", []),  # type: ignore[arg-type]
+            freshness_metadata=context.get("freshness_metadata", {}),  # type: ignore[arg-type]
+            policy_constraints=context.get("policy_constraints", []),  # type: ignore[arg-type]
+            context_ids=[str(doc.get("doc_id")) for doc in context.get("documents", []) if isinstance(doc, dict) and doc.get("doc_id")],  # type: ignore[arg-type]
+            tool_permissions=allowed_tools,
+            sandbox_capabilities=sandbox_capabilities,
+            token_budget=token_budget,
+            budget_breakdown=context.get("budget_breakdown", {}),  # type: ignore[arg-type]
+            risk_tier=directive.risk_ceiling,
+            stop_conditions=["max_tokens_exceeded", "timeout_120s", "confidence_zero"],
+            expected_outputs=["findings", "confidence", "provenance"],
+            expected_output_schema=context.get("expected_output_schema", {}),  # type: ignore[arg-type]
+            expires_at=datetime.now(UTC) + timedelta(minutes=30),
+        )
+
+        return grant, context
+
+    async def delegate_task(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        *,
+        query: str,
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        completed_upstream_task_ids: set[str] | None = None,
+    ) -> EvidenceEnvelope:
+        """Delegate a single bounded task grant to its worker and return its evidence.
+
+        Raises ``PolicyViolationError`` if the delegation is not permitted
+        under the parent directive's scope, risk ceiling, or CTS lifecycle constraints.
+        """
+
+        grant, context = await self.assemble_task_grant(
+            directive,
+            task,
+            query=query,
+            brand_id=brand_id,
+            token_budget=token_budget,
+            completed_upstream_task_ids=completed_upstream_task_ids,
+        )
+
         granted_state = self._task_state_machine.transition(
             task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
         )
         in_prog_state = self._task_state_machine.transition(
             granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
         )
-
-        grant = TaskGrant(
-            task_id=task.task_id,
-            worker_role=task.worker_role,
-            tenant_scope=directive.scope,
-            task_scope=f"{task.worker_role.value} task for {directive.directive_id}",
-            sandbox_capabilities=[self._workers[task.worker_role].capability.value],
-            token_budget=10000,
-            risk_tier=directive.risk_ceiling,
-            expires_at=datetime.now(UTC) + timedelta(minutes=30),
-        )
-        context = await self._context_assembler.assemble(
-            self._mint_token(),
-            tenant_id=directive.tenant_id,
-            request=ContextRequest(task_id=task.task_id, worker_role=task.worker_role, query=query),
-        )
-        context["budget_cap"] = directive.budget_cap
-        context["directive_id"] = directive.directive_id
 
         worker = self._workers[task.worker_role]
         envelope = await worker.run(grant, context)
@@ -233,7 +347,9 @@ class IntelligenceEngine:
                 raise PolicyViolationError(f"Task {task_id} dependencies are not completed.")
 
             query = queries.get(task_id, f"{task.worker_role.value} execution for {directive.objective}")
-            envelope = await self.delegate_task(directive, task, query=query)
+            envelope = await self.delegate_task(
+                directive, task, query=query, completed_upstream_task_ids=set(completed_tasks.keys())
+            )
             envelopes[task_id] = envelope
             completed_tasks[task_id] = task.model_copy(update={"status": TaskStatus.COMPLETED})
 

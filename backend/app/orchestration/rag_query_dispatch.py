@@ -9,9 +9,10 @@ convention: callers must present an ``IntelligenceEngineToken`` that only
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from app.core.exceptions import AuthorizationError
+from app.core.exceptions import AuthorizationError, RetrievalGovernanceError
 from app.services.rag.controller import RagController
 
 
@@ -43,6 +44,9 @@ class RagQueryDispatcher:
         tenant_id: str,
         query: str,
         top_k: int = 10,
+        purpose: str = "",
+        freshness_target: timedelta | None = None,
+        provenance_required: bool = True,
     ) -> list[dict[str, Any]]:
         """Execute a governed retrieval request on behalf of the Intelligence Engine."""
 
@@ -50,4 +54,40 @@ class RagQueryDispatcher:
             raise AuthorizationError(
                 "RAG retrieval was requested without a valid Intelligence Engine token."
             )
-        return await self._rag_controller.retrieve(tenant_id=tenant_id, query=query, top_k=top_k)
+        if not tenant_id:
+            raise RetrievalGovernanceError("Tenant ID is required for governed RAG retrieval.")
+
+        docs = await self._rag_controller.retrieve(tenant_id=tenant_id, query=query, top_k=top_k)
+
+        validated_docs: list[dict[str, Any]] = []
+        now = datetime.now(UTC)
+
+        for doc in docs:
+            # 1. Strict tenant isolation
+            doc_tenant = doc.get("tenant_id")
+            if doc_tenant not in (None, tenant_id):
+                raise RetrievalGovernanceError(
+                    f"Cross-tenant retrieval detected: requested '{tenant_id}', got '{doc_tenant}'."
+                )
+
+            # 2. Provenance enforcement
+            if provenance_required and not doc.get("provenance_hash"):
+                continue
+
+            # 3. Custom freshness target enforcement
+            if freshness_target is not None:
+                retrieved_at = doc.get("retrieved_at")
+                if isinstance(retrieved_at, str):
+                    try:
+                        retrieved_at = datetime.fromisoformat(retrieved_at)
+                    except ValueError:
+                        continue
+                if isinstance(retrieved_at, datetime):
+                    if retrieved_at.tzinfo is None:
+                        retrieved_at = retrieved_at.replace(tzinfo=UTC)
+                    if (now - retrieved_at) > freshness_target:
+                        continue
+
+            validated_docs.append(doc)
+
+        return validated_docs
