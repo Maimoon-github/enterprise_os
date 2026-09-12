@@ -89,18 +89,41 @@ def execute_s_alloc(payload: dict[str, str]) -> dict[str, str]:
     Applies ROAS-weighted, risk-adjusted budget optimization across omnichannel ad networks.
     """
     task_id = payload.get("task_id", "unknown")
-    budget_total = float(payload.get("budget", payload.get("budget_cap", "10000.0")))
+    try:
+        budget_total = float(payload.get("budget", payload.get("budget_cap", "10000.0")))
+        if budget_total < 0:
+            budget_total = 0.0
+    except (ValueError, TypeError):
+        budget_total = 10000.0
+
     channels_raw = payload.get("channels", "meta,google,tiktok,linkedin")
     channels = [c.strip() for c in channels_raw.split(",") if c.strip()]
     if not channels:
         channels = ["meta", "google", "tiktok"]
 
     # Target ROAS priors per channel
+    try:
+        prior_meta = float(payload.get("prior_roas_meta", "3.2"))
+    except (ValueError, TypeError):
+        prior_meta = 3.2
+    try:
+        prior_google = float(payload.get("prior_roas_google", "3.8"))
+    except (ValueError, TypeError):
+        prior_google = 3.8
+    try:
+        prior_tiktok = float(payload.get("prior_roas_tiktok", "2.6"))
+    except (ValueError, TypeError):
+        prior_tiktok = 2.6
+    try:
+        prior_linkedin = float(payload.get("prior_roas_linkedin", "2.1"))
+    except (ValueError, TypeError):
+        prior_linkedin = 2.1
+
     roas_priors = {
-        "meta": float(payload.get("prior_roas_meta", "3.2")),
-        "google": float(payload.get("prior_roas_google", "3.8")),
-        "tiktok": float(payload.get("prior_roas_tiktok", "2.6")),
-        "linkedin": float(payload.get("prior_roas_linkedin", "2.1")),
+        "meta": prior_meta,
+        "google": prior_google,
+        "tiktok": prior_tiktok,
+        "linkedin": prior_linkedin,
     }
 
     # Weight proportional to expected ROAS
@@ -121,7 +144,7 @@ def execute_s_alloc(payload: dict[str, str]) -> dict[str, str]:
         "budget_total": str(budget_total),
         "allocations": json.dumps(allocations),
         "expected_blended_roas": f"{expected_blended_roas:.2f}",
-        "primary_channel": max(allocations, key=allocations.get),  # type: ignore[arg-type]
+        "primary_channel": max(allocations, key=allocations.get) if allocations else "none",
     }
 
 
@@ -220,9 +243,17 @@ def execute_s_scrape(payload: dict[str, str]) -> dict[str, str]:
     competitor = payload.get("competitor", "CompetitorCorp")
 
     # Benchmarks extracted from simulated competitor feed
-    price_point = float(payload.get("benchmark_price", "49.99"))
-    active_ad_count = int(payload.get("active_ads", "14"))
-    top_ad_hook = f"Save 25% on our premium bundle this week only."
+    try:
+        price_point = float(payload.get("benchmark_price", "49.99"))
+    except (ValueError, TypeError):
+        price_point = 49.99
+
+    try:
+        active_ad_count = int(payload.get("active_ads", "14"))
+    except (ValueError, TypeError):
+        active_ad_count = 14
+
+    top_ad_hook = "Save 25% on our premium bundle this week only."
 
     return {
         "status": "success",
@@ -280,8 +311,17 @@ def execute_s_attr(payload: dict[str, str]) -> dict[str, str]:
     Computes multi-touch attribution, creative decay rates, and ROAS optimization adjustments.
     """
     task_id = payload.get("task_id", "unknown")
-    reported_roas = float(payload.get("roas", payload.get("metrics_roas", "3.4")))
-    days_active = float(payload.get("days_active", "14.0"))
+    try:
+        reported_roas = float(payload.get("roas", payload.get("metrics_roas", "3.4")))
+    except (ValueError, TypeError):
+        reported_roas = 3.4
+
+    try:
+        days_active = float(payload.get("days_active", "14.0"))
+        if days_active < 0:
+            days_active = 0.0
+    except (ValueError, TypeError):
+        days_active = 14.0
 
     # Half-life exponential decay model: decay = e^(-lambda * t)
     decay_rate = 0.05
