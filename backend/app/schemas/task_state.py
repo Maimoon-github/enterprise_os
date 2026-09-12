@@ -52,6 +52,12 @@ class CanonicalTaskState(BaseModel):
     dependencies: list[TaskDependency] = Field(default_factory=list)
     checkpoints: list[TaskCheckpoint] = Field(default_factory=list)
     hold_reason: str | None = None
+    prerequisite_locks: list[str] = Field(default_factory=list)
+    governance_approved: bool = True
+    retry_count: int = Field(default=0, ge=0)
+    max_retries: int = Field(default=3, ge=0)
+    failure_reason: str | None = None
+    completion_criteria: list[str] = Field(default_factory=list)
     version: int = Field(default=0, ge=0, description="Optimistic-concurrency version.")
 
 

@@ -34,7 +34,8 @@ backend/
 │   │   ├── policy_evaluator.py
 │   │   ├── rag_query_dispatch.py
 │   │   ├── evidence_synthesis.py
-│   │   └── hitl_preview_generator.py
+│   │   ├── hitl_preview_generator.py
+│   │   └── governance_milestone.py
 │   ├── agents/
 │   │   ├── development.py
 │   │   ├── strategy.py

@@ -45,13 +45,39 @@ class DagScheduler:
             raise CyclicDependencyError("Task dependency graph contains a cycle.")
         return ordered
 
+    def unresolved_reasons(
+        self, task: CanonicalTaskState, tasks: list[CanonicalTaskState]
+    ) -> list[str]:
+        """Return diagnostic reasons why a task cannot advance."""
+
+        reasons: list[str] = []
+        if task.status not in (TaskStatus.PENDING, TaskStatus.GRANTED):
+            reasons.append(f"Task is in status '{task.status.value}'")
+        if task.prerequisite_locks:
+            reasons.append(f"Unresolved prerequisite locks: {sorted(task.prerequisite_locks)}")
+        if not task.governance_approved:
+            reasons.append("Governance authorization condition is unresolved")
+
+        by_id = {t.task_id: t for t in tasks}
+        upstream_ids = self._upstream_ids(task)
+        incomplete = [
+            uid for uid in upstream_ids if uid not in by_id or by_id[uid].status != TaskStatus.COMPLETED
+        ]
+        if incomplete:
+            reasons.append(f"Incomplete upstream dependencies: {sorted(incomplete)}")
+        return reasons
+
     def next_ready_tasks(self, tasks: list[CanonicalTaskState]) -> list[CanonicalTaskState]:
-        """Return pending/granted tasks whose upstream dependencies are complete."""
+        """Return pending/granted tasks whose upstream dependencies and governance prerequisites are complete."""
 
         by_id = {task.task_id: task for task in tasks}
         ready: list[CanonicalTaskState] = []
         for task in tasks:
             if task.status not in (TaskStatus.PENDING, TaskStatus.GRANTED):
+                continue
+            if task.prerequisite_locks:
+                continue
+            if not task.governance_approved:
                 continue
             upstream_ids = self._upstream_ids(task)
             if all(

@@ -40,6 +40,105 @@ class TaskStateMachine:
 
         return _ALLOWED_TRANSITIONS.get(current, frozenset())
 
+    def can_retry(self, state: CanonicalTaskState) -> bool:
+        """Return True if a failed task may be retried under resumability rules."""
+
+        return state.status is TaskStatus.FAILED and state.retry_count < state.max_retries
+
+    def retry(
+        self,
+        state: CanonicalTaskState,
+        checkpoint_id: str,
+        note: str = "Retrying failed task under resumability policy",
+    ) -> CanonicalTaskState:
+        """Advance a failed task back to PENDING if retry limits permit."""
+
+        if not self.can_retry(state):
+            raise InvalidTransitionError(
+                f"Task {state.task_id} cannot be retried (status={state.status.value}, "
+                f"retries={state.retry_count}/{state.max_retries})"
+            )
+
+        checkpoint = TaskCheckpoint(
+            checkpoint_id=checkpoint_id,
+            task_id=state.task_id,
+            status=TaskStatus.PENDING,
+            note=note,
+        )
+        return state.model_copy(
+            update={
+                "status": TaskStatus.PENDING,
+                "retry_count": state.retry_count + 1,
+                "failure_reason": None,
+                "checkpoints": [*state.checkpoints, checkpoint],
+                "version": state.version + 1,
+            }
+        )
+
+    def acquire_lock(
+        self, state: CanonicalTaskState, lock_name: str, checkpoint_id: str, note: str = ""
+    ) -> CanonicalTaskState:
+        """Add a prerequisite lock to task state."""
+
+        if lock_name in state.prerequisite_locks:
+            return state
+
+        checkpoint = TaskCheckpoint(
+            checkpoint_id=checkpoint_id,
+            task_id=state.task_id,
+            status=state.status,
+            note=note or f"Acquired prerequisite lock '{lock_name}'",
+        )
+        return state.model_copy(
+            update={
+                "prerequisite_locks": [*state.prerequisite_locks, lock_name],
+                "checkpoints": [*state.checkpoints, checkpoint],
+                "version": state.version + 1,
+            }
+        )
+
+    def release_lock(
+        self, state: CanonicalTaskState, lock_name: str, checkpoint_id: str, note: str = ""
+    ) -> CanonicalTaskState:
+        """Release a prerequisite lock from task state."""
+
+        if lock_name not in state.prerequisite_locks:
+            return state
+
+        remaining = [k for k in state.prerequisite_locks if k != lock_name]
+        checkpoint = TaskCheckpoint(
+            checkpoint_id=checkpoint_id,
+            task_id=state.task_id,
+            status=state.status,
+            note=note or f"Released prerequisite lock '{lock_name}'",
+        )
+        return state.model_copy(
+            update={
+                "prerequisite_locks": remaining,
+                "checkpoints": [*state.checkpoints, checkpoint],
+                "version": state.version + 1,
+            }
+        )
+
+    def set_governance_approval(
+        self, state: CanonicalTaskState, approved: bool, checkpoint_id: str, note: str = ""
+    ) -> CanonicalTaskState:
+        """Update governance approval flag with checkpoint audit."""
+
+        checkpoint = TaskCheckpoint(
+            checkpoint_id=checkpoint_id,
+            task_id=state.task_id,
+            status=state.status,
+            note=note or f"Governance approval set to {approved}",
+        )
+        return state.model_copy(
+            update={
+                "governance_approved": approved,
+                "checkpoints": [*state.checkpoints, checkpoint],
+                "version": state.version + 1,
+            }
+        )
+
     def transition(
         self,
         state: CanonicalTaskState,
@@ -50,8 +149,8 @@ class TaskStateMachine:
         """Return a new ``CanonicalTaskState`` advanced to ``new_status``.
 
         Raises ``InvalidTransitionError`` if the transition is not legal from
-        the state's current status. The input state is never mutated in
-        place; a new instance is returned to keep transitions explicit.
+        the state's current status or if prerequisite locks / governance checks
+        remain unresolved.
         """
 
         if new_status not in self.legal_next_states(state.status):
@@ -59,6 +158,18 @@ class TaskStateMachine:
                 f"Cannot transition task {state.task_id} from "
                 f"{state.status.value} to {new_status.value}"
             )
+
+        if new_status in (TaskStatus.GRANTED, TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED):
+            if state.prerequisite_locks:
+                raise InvalidTransitionError(
+                    f"Cannot advance task {state.task_id} to {new_status.value}: "
+                    f"unresolved prerequisite locks: {sorted(state.prerequisite_locks)}"
+                )
+            if not state.governance_approved:
+                raise InvalidTransitionError(
+                    f"Cannot advance task {state.task_id} to {new_status.value}: "
+                    "governance approval condition is unresolved"
+                )
 
         checkpoint = TaskCheckpoint(
             checkpoint_id=checkpoint_id,
@@ -72,5 +183,6 @@ class TaskStateMachine:
                 "checkpoints": [*state.checkpoints, checkpoint],
                 "version": state.version + 1,
                 "hold_reason": note if new_status is TaskStatus.HELD else None,
+                "failure_reason": note if new_status is TaskStatus.FAILED else state.failure_reason,
             }
         )

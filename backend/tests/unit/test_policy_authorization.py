@@ -91,3 +91,181 @@ def test_authorization_boundary_rejects_scope_outside_delegation(
         boundary.authorize(
             caller, requested_scope=other_tenant_scope, requested_risk=RiskLevel.LOW
         )
+
+
+def test_autonomy_tier_monotonic_attenuation() -> None:
+    from app.schemas.governance import AutonomyTier
+
+    assert AutonomyTier.TIER_0_INFORMATIONAL.rank < AutonomyTier.TIER_1_ASSISTED.rank
+    assert AutonomyTier.TIER_1_ASSISTED.rank < AutonomyTier.TIER_2_AUTONOMOUS.rank
+    assert AutonomyTier.TIER_2_AUTONOMOUS.rank < AutonomyTier.TIER_3_HIGH_RISK_GATED.rank
+    assert AutonomyTier.TIER_3_HIGH_RISK_GATED.exceeds(AutonomyTier.TIER_2_AUTONOMOUS)
+    assert not AutonomyTier.TIER_1_ASSISTED.exceeds(AutonomyTier.TIER_2_AUTONOMOUS)
+
+
+def test_authorization_boundary_enforces_autonomy_tier(sample_tenant_scope: TenantScope) -> None:
+    from app.schemas.governance import AutonomyTier
+
+    boundary = AuthorizationBoundary()
+    caller = CallerIdentity(
+        subject="worker-1",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.MEDIUM,
+        autonomy_tier=AutonomyTier.TIER_1_ASSISTED,
+    )
+
+    # Within autonomy tier
+    boundary.authorize(
+        caller,
+        requested_scope=sample_tenant_scope,
+        requested_risk=RiskLevel.LOW,
+        requested_autonomy=AutonomyTier.TIER_1_ASSISTED,
+    )
+
+    # Exceeds autonomy tier
+    with pytest.raises(AuthorizationError) as exc_info:
+        boundary.authorize(
+            caller,
+            requested_scope=sample_tenant_scope,
+            requested_risk=RiskLevel.LOW,
+            requested_autonomy=AutonomyTier.TIER_2_AUTONOMOUS,
+        )
+    assert "autonomy tier" in str(exc_info.value).lower()
+
+
+def test_authorization_boundary_enforces_capabilities(sample_tenant_scope: TenantScope) -> None:
+    boundary = AuthorizationBoundary()
+    caller = CallerIdentity(
+        subject="worker-scrape",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.MEDIUM,
+        allowed_capabilities=frozenset({"S_SCRAPE", "S_PARSE"}),
+    )
+
+    # Permitted capability
+    boundary.authorize(
+        caller,
+        requested_scope=sample_tenant_scope,
+        requested_risk=RiskLevel.LOW,
+        requested_capability="S_SCRAPE",
+    )
+
+    # Denied capability
+    with pytest.raises(AuthorizationError) as exc_info:
+        boundary.authorize(
+            caller,
+            requested_scope=sample_tenant_scope,
+            requested_risk=RiskLevel.LOW,
+            requested_capability="S_CODE",
+        )
+    assert "lacks capability" in str(exc_info.value).lower()
+
+
+def test_authorization_boundary_enforces_delegation_chain(sample_tenant_scope: TenantScope) -> None:
+    boundary = AuthorizationBoundary()
+    caller = CallerIdentity(
+        subject="worker-sub",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.MEDIUM,
+        delegation_chain=("root", "portfolio-owner", "ie", "worker-sub"),
+    )
+
+    # Valid delegation parent
+    boundary.authorize(
+        caller,
+        requested_scope=sample_tenant_scope,
+        requested_risk=RiskLevel.LOW,
+        delegation_parent="ie",
+    )
+
+    # Invalid delegation parent
+    with pytest.raises(AuthorizationError) as exc_info:
+        boundary.authorize(
+            caller,
+            requested_scope=sample_tenant_scope,
+            requested_risk=RiskLevel.LOW,
+            delegation_parent="unauthorized-agent",
+        )
+    assert "delegation parent" in str(exc_info.value).lower()
+
+
+def test_authorization_boundary_verifies_cryptographic_signatures(sample_tenant_scope: TenantScope) -> None:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from app.security.cryptographic_validator import CryptographicValidator, sign_payload
+
+    private_key = Ed25519PrivateKey.generate()
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode("utf-8")
+
+    validator = CryptographicValidator(public_key_pem=public_pem)
+    boundary = AuthorizationBoundary(crypto_validator=validator)
+
+    payload = b"grant-task-12345"
+    valid_sig = sign_payload(payload, private_key)
+
+    caller = CallerIdentity(
+        subject="ie",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.HIGH,
+        signature=valid_sig,
+    )
+
+    # Valid signature
+    boundary.authorize(
+        caller,
+        requested_scope=sample_tenant_scope,
+        requested_risk=RiskLevel.LOW,
+        verification_payload=payload,
+    )
+
+    # Tampered payload fails
+    with pytest.raises(AuthorizationError):
+        boundary.authorize(
+            caller,
+            requested_scope=sample_tenant_scope,
+            requested_risk=RiskLevel.LOW,
+            verification_payload=b"tampered-payload",
+        )
+
+
+def test_versioned_policy_envelope_and_evaluation(sample_directive: Directive) -> None:
+    from app.schemas.governance import AutonomyTier
+    from app.services.policy_engine import PolicyEngine
+
+    engine = PolicyEngine()
+    directive = sample_directive.model_copy(
+        update={
+            "permitted_claims": ["Clinically backed", "Organic ingredients"],
+            "prohibited_actions": ["direct_db_write", "bypass_pab"],
+            "autonomy_limit": AutonomyTier.TIER_2_AUTONOMOUS,
+        }
+    )
+
+    versioned = engine.build_versioned_envelope(directive, directive.scope, version="1.0.0")
+    assert versioned.version == "1.0.0"
+    assert engine.get_envelope(directive.tenant_id, "1.0.0") is not None
+
+    evaluator = PolicyEvaluator(policy_engine=engine)
+
+    # Prohibited action is rejected
+    decision = evaluator.evaluate_delegation(
+        directive, directive.scope, RiskLevel.LOW, requested_action="direct_db_write"
+    )
+    assert decision.allowed is False
+    assert "prohibited" in decision.reason
+
+    # Non-permitted claim is rejected
+    decision = evaluator.evaluate_delegation(
+        directive, directive.scope, RiskLevel.LOW, requested_claim="Cures all diseases"
+    )
+    assert decision.allowed is False
+    assert "not permitted" in decision.reason
+
+    # Permitted claim is allowed
+    decision = evaluator.evaluate_delegation(
+        directive, directive.scope, RiskLevel.LOW, requested_claim="Clinically backed formula"
+    )
+    assert decision.allowed is True
