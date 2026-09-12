@@ -45,7 +45,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   ├── 📁 sandbox/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 capabilities.py
-│   │   │   └── 🐍 client.py
+│   │   │   ├── 🐍 client.py
+│   │   │   └── 🐍 micro_tools.py
 │   │   ├── 📁 social/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 base.py
@@ -88,6 +89,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   ├── 🐍 action_preview.py
 │   │   ├── 🐍 agent_contracts.py
 │   │   ├── 🐍 artifact.py
+│   │   ├── 🐍 cms.py
 │   │   ├── 🐍 dispatch.py
 │   │   ├── 🐍 governance.py
 │   │   ├── 🐍 provenance.py
@@ -132,15 +134,19 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   ├── 🐍 test_model_a_data_access.py
 │   │   ├── 🐍 test_outbound_after_approval.py
 │   │   ├── 🐍 test_provenance_persistence.py
+│   │   ├── 🐍 test_security_boundaries_negative.py
 │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   └── 🐍 test_worker_sandbox_boundary.py
 │   ├── 📁 unit/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_evidence_synthesis.py
+│   │   ├── 🐍 test_governed_mcp_data_gateway.py
 │   │   ├── 🐍 test_hitl_gate.py
 │   │   ├── 🐍 test_policy_authorization.py
 │   │   ├── 🐍 test_rag_governance.py
-│   │   └── 🐍 test_task_state_machine.py
+│   │   ├── 🐍 test_specialist_micro_tools.py
+│   │   ├── 🐍 test_task_state_machine.py
+│   │   └── 🐍 test_task_state_service_and_recovery.py
 │   ├── 🐍 __init__.py
 │   └── 🐍 conftest.py
 ├── ⚙️ .env.example
