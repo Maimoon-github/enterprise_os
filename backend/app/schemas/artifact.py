@@ -48,6 +48,11 @@ class ArtifactReference(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @staticmethod
+    def compute_hash(content: str | bytes) -> str:
+        """Helper to compute deterministic SHA-256 content hash."""
+        return compute_content_hash(content)
+
     def verify_integrity(self, content: str | bytes) -> bool:
         """Verify whether candidate content matches the recorded SHA-256 hash."""
         return compute_content_hash(content) == self.content_hash
