@@ -251,3 +251,91 @@ async def test_sandbox_client_provenance_and_duration() -> None:
     assert result.provenance["capability"] == "S_ALLOC"
     assert result.provenance["worker_role"] == "W_STRAT"
     assert result.provenance["tenant_id"] == "tenant-xyz"
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_egress_authorized_flow() -> None:
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.sandbox import NetworkPolicy, SandboxEgressGrant, SandboxExecutionStatus, SandboxInvocationMandate
+
+    client = SandboxClient()
+    grant = SandboxEgressGrant(
+        grant_id="grant-comp-1",
+        tenant_id="acme",
+        task_id="task-scrape-1",
+        worker_id="W_COMP",
+        worker_role="W_COMP",
+        capability="S_SCRAPE",
+        allowed_domains=["*.competitor.com", "example.com"],
+        allowed_ports=[80, 443],
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-scrape-1",
+        task_id="task-scrape-1",
+        worker_role="W_COMP",
+        tenant_id="acme",
+        capability="S_SCRAPE",
+        operation="scrape_prices",
+        network_policy=NetworkPolicy.CONTROLLED,
+        egress_grant=grant,
+        payload={"url": "https://pricing.competitor.com/index.html"},
+    )
+
+    result = await client.execute(mandate)
+    assert result.success is True
+    assert result.status == SandboxExecutionStatus.COMPLETED
+    assert result.provenance["egress_grant_id"] == "grant-comp-1"
+    assert "*.competitor.com" in result.provenance["egress_allowed_domains"]
+    # Ephemeral session should be deterministically wiped
+    assert len(client._active_sessions) == 0
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_deterministic_session_teardown_on_error() -> None:
+    from unittest.mock import patch
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.sandbox import SandboxExecutionStatus, SandboxInvocationMandate
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-err-teardown",
+        task_id="task-err-teardown",
+        worker_role="W_DEV",
+        tenant_id="acme",
+        capability="S_CODE",
+        operation="generate_diff",
+        payload={"code": "crash"},
+    )
+
+    with patch.object(client, "_execute_in_isolated_runtime", side_effect=RuntimeError("Container OOM")):
+        result = await client.execute(mandate)
+        assert result.success is False
+        assert result.status == SandboxExecutionStatus.FAILED
+        assert "Container OOM" in result.error
+        # Session state wiped
+        assert len(client._active_sessions) == 0
+
+
+def test_sandbox_wildcard_domain_matching() -> None:
+    from app.schemas.sandbox import SandboxEgressGrant
+
+    grant = SandboxEgressGrant(
+        grant_id="grant-wc",
+        tenant_id="acme",
+        task_id="task-wc",
+        worker_role="W_COMP",
+        capability="S_SCRAPE",
+        allowed_domains=["*.example.com", "exact-target.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    # Allowed exact and subdomains
+    assert grant.is_destination_allowed("https://exact-target.com/page")[0] is True
+    assert grant.is_destination_allowed("https://sub.example.com/api")[0] is True
+    assert grant.is_destination_allowed("https://deep.sub.example.com")[0] is True
+    assert grant.is_destination_allowed("example.com")[0] is True
+
+    # Denied unapproved domains
+    assert grant.is_destination_allowed("https://evil-example.com")[0] is False
+    assert grant.is_destination_allowed("https://otherdomain.org")[0] is False
