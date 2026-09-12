@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.governance import TenantScope, WorkerRole
+from app.schemas.governance import RiskLevel, TenantScope, WorkerRole
 
 
 class TaskGrant(BaseModel):
@@ -22,6 +22,13 @@ class TaskGrant(BaseModel):
     tenant_scope: TenantScope
     context_ids: list[str] = Field(default_factory=list)
     expires_at: datetime
+    task_scope: str = ""
+    tool_permissions: list[str] = Field(default_factory=list)
+    sandbox_capabilities: list[str] = Field(default_factory=list)
+    token_budget: int = 10000
+    risk_tier: RiskLevel = RiskLevel.LOW
+    stop_conditions: list[str] = Field(default_factory=list)
+    expected_outputs: list[str] = Field(default_factory=list)
 
 
 class ContextRequest(BaseModel):
@@ -50,3 +57,9 @@ class EvidenceEnvelope(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     payload: dict[str, str] = Field(default_factory=dict)
     produced_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    findings: list[str] = Field(default_factory=list)
+    generated_artifacts: list[str] = Field(default_factory=list)
+    supporting_evidence: list[str] = Field(default_factory=list)
+    provenance: dict[str, str] = Field(default_factory=dict)
+    proposed_state_changes: dict[str, str] = Field(default_factory=dict)
+    unresolved_risks_or_assumptions: list[str] = Field(default_factory=list)
