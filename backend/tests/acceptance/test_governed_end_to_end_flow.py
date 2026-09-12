@@ -166,3 +166,126 @@ async def test_governed_end_to_end_flow(
     assert await provenance_recorder.verify_chain(sample_directive.tenant_id) is True
     chain = await provenance_recorder.audit_chain(sample_directive.tenant_id)
     assert any(record.activity == "worker_execution" for record in chain)
+
+    # -- 8. Closed-loop verification: BrandPersonaResolver dynamically absorbs promoted insight --
+    persona_resolver = BrandPersonaResolver(memory_repository=memory_repository)
+    resolved_persona = await persona_resolver.resolve_with_memory(tenant_id=sample_directive.tenant_id)
+    assert any("Hook-led copy variants outperform" in h for h in resolved_persona.learned_heuristics)
+
+
+@pytest.mark.asyncio
+async def test_governed_multi_worker_dag_pipeline(
+    sample_directive: Directive, ed25519_keypair
+) -> None:
+    """Executes a multi-worker DAG across Strategy, Product Evidence, Creative Content, and Dev."""
+    from app.agents.creative_content import CreativeContentAgent
+    from app.agents.development import DevelopmentAgent
+    from app.agents.product_evidence import ProductEvidenceAgent
+    from app.agents.strategy import StrategyAgent
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.governance import WorkerRole
+    from app.schemas.task_state import CanonicalTaskState, TaskDependency, TaskStatus
+
+    # Set up real SandboxClient backed by specialist micro-tools
+    sandbox_client = SandboxClient()
+
+    workers = {
+        WorkerRole.STRATEGY: StrategyAgent(sandbox_client),
+        WorkerRole.PRODUCT_EVIDENCE: ProductEvidenceAgent(sandbox_client),
+        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(sandbox_client),
+        WorkerRole.DEVELOPMENT: DevelopmentAgent(sandbox_client),
+    }
+
+    vector_repository = FakeVectorRepository()
+    vector_repository.seed(tenant_id=sample_directive.tenant_id, text="Q3 strategic positioning")
+    rag_controller = RagController(
+        HybridRetriever(vector_repository), FreshnessPolicy(), SchemaValidator()
+    )
+    rag_dispatcher = RagQueryDispatcher(rag_controller)
+
+    hitl_coordinator = HitlCoordinator()
+    _, public_pem = ed25519_keypair
+    crypto_validator = CryptographicValidator(public_pem)
+    outbound_gateway = OutboundGateway(
+        hitl_coordinator, crypto_validator, ads_adapters={"meta": _RecordingAdsAdapter()}
+    )
+    data_gateway = DataGateway(vector_repository, AuthorizationBoundary(ScopeEvaluator()))
+    mcp_host = McpHost(data_gateway, outbound_gateway)
+    provenance_recorder = ProvenanceRecorder(FakeProvenanceRepository())
+
+    engine = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=ContextAssembler(rag_dispatcher, BrandPersonaResolver()),
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=hitl_coordinator,
+        mcp_host=mcp_host,
+        provenance_recorder=provenance_recorder,
+        workers=workers,
+    )
+
+    # Construct DAG: Strategy -> Product Evidence -> Creative Content -> Development
+    task_strat = CanonicalTaskState(
+        task_id="task-strat",
+        directive_id=sample_directive.directive_id,
+        worker_role=WorkerRole.STRATEGY,
+        status=TaskStatus.PENDING,
+    )
+    task_prod = CanonicalTaskState(
+        task_id="task-prod",
+        directive_id=sample_directive.directive_id,
+        worker_role=WorkerRole.PRODUCT_EVIDENCE,
+        status=TaskStatus.PENDING,
+        dependencies=[TaskDependency(upstream_task_id="task-strat", downstream_task_id="task-prod")],
+    )
+    task_creat = CanonicalTaskState(
+        task_id="task-creat",
+        directive_id=sample_directive.directive_id,
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        status=TaskStatus.PENDING,
+        dependencies=[TaskDependency(upstream_task_id="task-prod", downstream_task_id="task-creat")],
+    )
+    task_dev = CanonicalTaskState(
+        task_id="task-dev",
+        directive_id=sample_directive.directive_id,
+        worker_role=WorkerRole.DEVELOPMENT,
+        status=TaskStatus.PENDING,
+        dependencies=[TaskDependency(upstream_task_id="task-creat", downstream_task_id="task-dev")],
+    )
+
+    dag_tasks = [task_strat, task_prod, task_creat, task_dev]
+
+    # Execute DAG
+    envelopes = await engine.execute_dag(sample_directive, dag_tasks)
+
+    assert len(envelopes) == 4
+    for t_id, env in envelopes.items():
+        assert env.task_id == t_id
+        assert env.confidence.point_estimate >= 0.5
+
+    from app.schemas.artifact import compute_content_hash
+
+    # Development and Creative workers generate immutable artifacts
+    dev_envelope = envelopes["task-dev"]
+    assert len(dev_envelope.generated_artifacts) > 0
+    assert any("diff:task-dev" in art for art in dev_envelope.generated_artifacts)
+
+    creative_envelope = envelopes["task-creat"]
+    assert len(creative_envelope.generated_artifacts) > 0
+    assert any("copy:task-creat" in art for art in creative_envelope.generated_artifacts)
+
+    # Artifact hashing generates valid 64-char SHA-256 digest
+    diff_content = dev_envelope.payload.get("diff", "diff output")
+    assert len(compute_content_hash(diff_content)) == 64
+
+    # Build action preview from all worker outputs
+    all_envelopes = list(envelopes.values())
+    preview = await engine.build_preview(
+        all_envelopes, kind=ActionPreviewKind.CODE_DIFF, risk_level=RiskLevel.MEDIUM
+    )
+    assert preview.requires_approval is True
+    assert hitl_coordinator.is_pending(preview.preview_id)
+    assert preview.diff is not None
+    assert "LandingHeader" in preview.diff

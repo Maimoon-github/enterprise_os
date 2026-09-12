@@ -68,6 +68,25 @@ class FakeVectorRepository:
             }
         )
 
+    async def index_document(
+        self,
+        *,
+        doc_id: str,
+        tenant_id: str,
+        text: str,
+        source: str,
+    ) -> None:
+        self._documents.append(
+            {
+                "doc_id": doc_id,
+                "tenant_id": tenant_id,
+                "text": text,
+                "source": source,
+                "retrieved_at": datetime.now(UTC),
+                "score": 0.9,
+            }
+        )
+
     async def similarity_search(
         self, *, tenant_id: str, query: str, top_k: int
     ) -> list[dict[str, Any]]:

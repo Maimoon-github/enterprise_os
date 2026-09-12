@@ -45,6 +45,12 @@ class _InMemoryMemoryRepository(MemoryRepository):
     async def promote(self, record) -> None:  # type: ignore[override]
         self._store[record.memory_id] = record
 
+    async def list_by_tenant(self, tenant_id: str, category: str | None = None) -> list:
+        records = [r for r in self._store.values() if getattr(r, "tenant_id", None) == tenant_id]
+        if category:
+            records = [r for r in records if getattr(r, "category", None) == category]
+        return records
+
     def all(self) -> list:
         return list(self._store.values())
 
