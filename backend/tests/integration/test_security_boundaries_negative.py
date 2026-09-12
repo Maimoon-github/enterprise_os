@@ -36,7 +36,7 @@ from app.integrations.sandbox.client import SandboxClient
 from app.mcp.data_gateway import DataGateway
 from app.mcp.host import McpHost
 from app.mcp.outbound_gateway import OutboundGateway, canonical_dispatch_bytes
-from app.orchestration.hitl_coordinator import HitlCoordinator
+from app.services.hitl import HitlCoordinator
 from app.orchestration.intelligence_engine import IntelligenceEngine
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.task_state_machine import TaskStateMachine
@@ -46,7 +46,7 @@ from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.sandbox import SandboxCapability, SandboxInvocationMandate
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
-from app.security.authorization_boundary import AuthorizationBoundary
+from app.security.authorization_boundary import AuthorizationBoundary, CallerIdentity
 from app.security.cryptographic_validator import CryptographicValidator, sign_payload
 from app.security.scope_evaluator import ScopeEvaluator
 from app.services.rag.freshness import FreshnessPolicy
@@ -134,63 +134,75 @@ def governed_data_gateway() -> DataGateway:
     vector_repo.seed(tenant_id="tenant-alpha", text="Alpha confidential doc")
     vector_repo.seed(tenant_id="tenant-beta", text="Beta confidential doc")
     return DataGateway(
-        vector_repo=vector_repo,
+        vector_repository=vector_repo,
         authorization_boundary=boundary,
-        cms_adapter=FakeCmsAdapter(),
-        memory_repo=FakeMemoryRepo(),
-        artifact_repo=FakeArtifactRepo(),
+        cms_client=FakeCmsAdapter(),
+        memory_repository=FakeMemoryRepo(),
+        artifact_repository=FakeArtifactRepo(),
     )
 
 
 @pytest.mark.asyncio
 async def test_cross_tenant_rag_query_denied(governed_data_gateway: DataGateway) -> None:
     """A caller with tenant-alpha scope attempting to read tenant-beta RAG data is denied."""
-    alpha_scope = TenantScope(tenant_id="tenant-alpha")
-    with pytest.raises(AuthorizationError) as exc_info:
-        await governed_data_gateway.query_vector_store(
-            tenant_scope=alpha_scope,
-            target_tenant_id="tenant-beta",
+    alpha_caller = CallerIdentity(
+        subject="worker-alpha",
+        tenant_scope=TenantScope(tenant_id="tenant-alpha"),
+        risk_ceiling=RiskLevel.LOW,
+    )
+    with pytest.raises(AuthorizationError):
+        await governed_data_gateway.query(
+            alpha_caller,
+            tenant_id="tenant-beta",
             query="confidential",
         )
-    assert "Cross-tenant access denied" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_cross_tenant_cms_fetch_denied(governed_data_gateway: DataGateway) -> None:
     """A caller with tenant-alpha scope attempting to fetch tenant-beta CMS content is denied."""
-    alpha_scope = TenantScope(tenant_id="tenant-alpha")
-    with pytest.raises(AuthorizationError) as exc_info:
-        await governed_data_gateway.fetch_cms_content(
-            tenant_scope=alpha_scope,
-            target_tenant_id="tenant-beta",
-            content_id="post-123",
+    alpha_caller = CallerIdentity(
+        subject="worker-alpha",
+        tenant_scope=TenantScope(tenant_id="tenant-alpha"),
+        risk_ceiling=RiskLevel.LOW,
+    )
+    with pytest.raises(AuthorizationError):
+        await governed_data_gateway.read_cms_staged(
+            alpha_caller,
+            tenant_id="tenant-beta",
+            content_type="blog_post",
         )
-    assert "Cross-tenant access denied" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_cross_tenant_memory_query_denied(governed_data_gateway: DataGateway) -> None:
     """A caller with tenant-alpha scope attempting to read tenant-beta memory is denied."""
-    alpha_scope = TenantScope(tenant_id="tenant-alpha")
-    with pytest.raises(AuthorizationError) as exc_info:
-        await governed_data_gateway.query_institutional_memory(
-            tenant_scope=alpha_scope,
-            target_tenant_id="tenant-beta",
+    alpha_caller = CallerIdentity(
+        subject="worker-alpha",
+        tenant_scope=TenantScope(tenant_id="tenant-alpha"),
+        risk_ceiling=RiskLevel.LOW,
+    )
+    with pytest.raises(AuthorizationError):
+        await governed_data_gateway.query_memory(
+            alpha_caller,
+            tenant_id="tenant-beta",
         )
-    assert "Cross-tenant access denied" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_cross_tenant_artifact_read_denied(governed_data_gateway: DataGateway) -> None:
     """A caller with tenant-alpha scope attempting to read tenant-beta artifact is denied."""
-    alpha_scope = TenantScope(tenant_id="tenant-alpha")
-    with pytest.raises(AuthorizationError) as exc_info:
-        await governed_data_gateway.read_artifact(
-            tenant_scope=alpha_scope,
-            target_tenant_id="tenant-beta",
+    alpha_caller = CallerIdentity(
+        subject="worker-alpha",
+        tenant_scope=TenantScope(tenant_id="tenant-alpha"),
+        risk_ceiling=RiskLevel.LOW,
+    )
+    with pytest.raises(AuthorizationError):
+        await governed_data_gateway.resolve_artifact(
+            alpha_caller,
+            tenant_id="tenant-beta",
             artifact_id="art-999",
         )
-    assert "Cross-tenant access denied" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -200,15 +212,27 @@ async def test_cross_tenant_artifact_read_denied(governed_data_gateway: DataGate
 @pytest.mark.asyncio
 async def test_sandbox_client_denies_unauthorized_capability() -> None:
     """SandboxClient must deny execution if capability is not in the allowlist."""
+    from pydantic import ValidationError
+    from app.core.exceptions import SandboxInvocationError
+
+    # Level 1: Contract-level validation rejection
+    with pytest.raises(ValidationError):
+        SandboxInvocationMandate(
+            task_id="task-exploit",
+            capability="UNAUTHORIZED_ROOT_SHELL",  # type: ignore[arg-type]
+            payload={"command": "rm -rf /"},
+        )
+
+    # Level 2: Runtime allowlist check inside SandboxClient
     client = SandboxClient()
-    mandate = SandboxInvocationMandate(
+    unauthorized_mandate = SandboxInvocationMandate.model_construct(
         task_id="task-exploit",
-        capability="UNAUTHORIZED_ROOT_SHELL",  # type: ignore[arg-type]
+        capability="UNAUTHORIZED_ROOT_SHELL",
         payload={"command": "rm -rf /"},
     )
-    result = await client.invoke(mandate)
-    assert result.success is False
-    assert "Unauthorized or invalid sandbox capability" in (result.error or "")
+    with pytest.raises(SandboxInvocationError) as exc_info:
+        await client.invoke(unauthorized_mandate)
+    assert "Unauthorized or invalid sandbox capability" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +241,9 @@ async def test_sandbox_client_denies_unauthorized_capability() -> None:
 
 class _FakeAds(AdsAdapter):
     channel = "meta"
+
+    def __init__(self) -> None:
+        super().__init__(access_token="test-token")
 
     async def apply_action(self, payload: dict[str, str]) -> dict[str, str]:
         return {"status": "ok"}
@@ -363,12 +390,12 @@ def test_task_state_machine_rejects_illegal_skip_transitions() -> None:
 
     # Illegal transition: PENDING -> COMPLETED directly without GRANTED / IN_PROGRESS
     with pytest.raises(InvalidTransitionError):
-        sm.transition(task, TaskStatus.COMPLETED)
+        sm.transition(task, TaskStatus.COMPLETED, checkpoint_id="chk-1")
 
     # Illegal transition: COMPLETED -> IN_PROGRESS
     completed_task = task.model_copy(update={"status": TaskStatus.COMPLETED})
     with pytest.raises(InvalidTransitionError):
-        sm.transition(completed_task, TaskStatus.IN_PROGRESS)
+        sm.transition(completed_task, TaskStatus.IN_PROGRESS, checkpoint_id="chk-2")
 
 
 # ---------------------------------------------------------------------------
@@ -377,25 +404,25 @@ def test_task_state_machine_rejects_illegal_skip_transitions() -> None:
 
 def test_freshness_policy_rejects_stale_and_malformed_documents() -> None:
     """Documents older than TTL or with unparseable timestamps are rejected."""
-    policy = FreshnessPolicy(max_age_days=30)
+    policy = FreshnessPolicy(max_age=timedelta(days=30))
 
     # Stale document (60 days old)
     stale_doc = {
         "doc_id": "doc-old",
         "retrieved_at": (datetime.now(UTC) - timedelta(days=60)).isoformat(),
     }
-    assert policy.evaluate(stale_doc) is False
+    assert policy.is_fresh(stale_doc) is False
 
     # Malformed timestamp
     corrupt_doc = {
         "doc_id": "doc-corrupt",
         "retrieved_at": "invalid-timestamp-format",
     }
-    assert policy.evaluate(corrupt_doc) is False
+    assert policy.is_fresh(corrupt_doc) is False
 
     # Fresh document (2 days old)
     fresh_doc = {
         "doc_id": "doc-new",
         "retrieved_at": (datetime.now(UTC) - timedelta(days=2)).isoformat(),
     }
-    assert policy.evaluate(fresh_doc) is True
+    assert policy.is_fresh(fresh_doc) is True

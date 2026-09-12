@@ -51,11 +51,8 @@ class SandboxClient:
         """
 
         if not isinstance(mandate.capability, SandboxCapability):
-            return SandboxResult(
-                task_id=mandate.task_id,
-                capability=mandate.capability,
-                success=False,
-                error=f"Unauthorized or invalid sandbox capability: {mandate.capability}",
+            raise SandboxInvocationError(
+                f"Unauthorized or invalid sandbox capability: {mandate.capability}"
             )
 
         try:
