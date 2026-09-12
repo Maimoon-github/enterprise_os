@@ -52,11 +52,25 @@ class BoundedWorkerAgent(ABC):
         )
         result = await self._sandbox_client.invoke(mandate)
 
+        findings: list[str] = []
+        artifacts: list[str] = []
+        risks: list[str] = []
+
         if not result.success:
             evidence = [f"sandbox execution failed: {result.error or 'unknown error'}"]
             confidence = ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0)
+            risks.append(result.error or "sandbox execution failed")
         else:
             evidence, confidence = self.interpret_result(result.sanitized_output)
+            findings = [line for line in evidence if not line.startswith("error")]
+            if "diff" in result.sanitized_output:
+                artifacts.append(f"diff:{grant.task_id}")
+            if "copy_body" in result.sanitized_output or "headline" in result.sanitized_output:
+                artifacts.append(f"copy:{grant.task_id}")
+            if "verified_dossier" in result.sanitized_output:
+                artifacts.append(f"dossier:{grant.task_id}")
+            if "learning_delta" in result.sanitized_output:
+                artifacts.append(f"learning:{grant.task_id}")
 
         return EvidenceEnvelope(
             task_id=grant.task_id,
@@ -64,4 +78,17 @@ class BoundedWorkerAgent(ABC):
             confidence=confidence,
             evidence=evidence,
             payload=result.sanitized_output,
+            findings=findings,
+            generated_artifacts=artifacts,
+            supporting_evidence=evidence,
+            provenance={
+                "agent": grant.worker_role.value,
+                "capability": self.capability.value,
+                "task_id": grant.task_id,
+            },
+            proposed_state_changes={
+                "status": "completed" if result.success else "failed",
+                "capability": self.capability.value,
+            },
+            unresolved_risks_or_assumptions=risks,
         )

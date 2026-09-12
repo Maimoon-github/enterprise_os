@@ -13,7 +13,9 @@ class CompetitorIntelAgent(BoundedWorkerAgent):
     capability = SandboxCapability.SCRAPE
 
     def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        competitor = str(context.get("competitor", "CompetitorCorp"))
         return {
             "task_id": grant.task_id,
             "objective": "gather_competitor_intelligence",
+            "competitor": competitor,
         }

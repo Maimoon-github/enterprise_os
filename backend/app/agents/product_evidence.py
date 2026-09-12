@@ -13,7 +13,13 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
     capability = SandboxCapability.VAL
 
     def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        claim = str(context.get("claim", context.get("statement", "Clinically tested to improve performance by 40%.")))
+        persona = context.get("brand_persona")
+        disclaimers = getattr(persona, "required_disclaimers", ())
+        disclaimer = disclaimers[0] if disclaimers else "*Results may vary based on usage."
         return {
             "task_id": grant.task_id,
             "objective": "validate_product_claims",
+            "claim": claim,
+            "required_disclaimer": disclaimer,
         }

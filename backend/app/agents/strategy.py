@@ -13,8 +13,12 @@ class StrategyAgent(BoundedWorkerAgent):
     capability = SandboxCapability.ALLOC
 
     def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+        channels = ",".join(grant.tenant_scope.allowed_channels) or "meta,google,tiktok,linkedin"
+        budget = str(context.get("budget_cap", context.get("budget", "10000.0")))
         return {
             "task_id": grant.task_id,
             "objective": "propose_media_mix_allocation",
-            "allowed_channels": ",".join(grant.tenant_scope.allowed_channels),
+            "channels": channels,
+            "budget": budget,
+            "allowed_channels": channels,
         }
