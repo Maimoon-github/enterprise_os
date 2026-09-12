@@ -113,11 +113,11 @@ def get_capability_for_role(role: WorkerRole) -> SandboxCapability:
 
 
 def validate_capability_access(
-    *,
-    capability: SandboxCapability,
-    worker_role: WorkerRole | None = None,
+    capability: SandboxCapability | str,
+    worker_role: WorkerRole | str | None = None,
     operation: str = "default",
-    requested_network: NetworkPolicy = NetworkPolicy.DISABLED,
+    *,
+    requested_network: NetworkPolicy | str = NetworkPolicy.DISABLED,
 ) -> CapabilityProfile:
     """Validate that a requested sandbox execution adheres to capability allowlisting.
 
@@ -129,16 +129,29 @@ def validate_capability_access(
 
     Raises SandboxInvocationError on any policy breach (fail-closed).
     """
-    if not isinstance(capability, SandboxCapability) or capability not in CAPABILITY_REGISTRY:
+    if isinstance(capability, str):
+        try:
+            capability = SandboxCapability(capability)
+        except ValueError:
+            raise SandboxInvocationError(f"Unknown sandbox capability: {capability}")
+
+    if capability not in CAPABILITY_REGISTRY:
         raise SandboxInvocationError(f"Unauthorized or unregistered sandbox capability: {capability}")
 
     profile = CAPABILITY_REGISTRY[capability]
 
-    if worker_role is not None and worker_role != profile.allowed_worker:
-        raise SandboxInvocationError(
-            f"Capability access denied: worker '{worker_role.value}' is not authorized to request "
-            f"'{capability.value}' (authorized worker is '{profile.allowed_worker.value}')."
-        )
+    if worker_role is not None:
+        if isinstance(worker_role, str):
+            try:
+                worker_role = WorkerRole(worker_role)
+            except ValueError:
+                raise SandboxInvocationError(f"Unknown worker role: {worker_role}")
+
+        if worker_role != profile.allowed_worker:
+            raise SandboxInvocationError(
+                f"Capability access denied: worker '{worker_role.value}' is not authorized to request "
+                f"'{capability.value}' (authorized worker is '{profile.allowed_worker.value}')."
+            )
 
     if operation not in profile.allowed_operations:
         raise SandboxInvocationError(
@@ -147,6 +160,9 @@ def validate_capability_access(
         )
 
     # Validate network egress permissions
+    if isinstance(requested_network, str):
+        requested_network = NetworkPolicy(requested_network)
+
     if requested_network != NetworkPolicy.DISABLED and profile.network_policy == NetworkPolicy.DISABLED:
         raise SandboxInvocationError(
             f"Network access policy violation: capability '{capability.value}' does not permit "

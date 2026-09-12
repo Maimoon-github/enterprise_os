@@ -73,11 +73,14 @@ async def test_worker_executes_only_through_sandbox_client(
     assert len(agent_classes) == 1
     agent_class = agent_classes[0]
 
+    from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY
+    authorized_role = CAPABILITY_REGISTRY[agent_class.capability].allowed_worker
+
     fake_sandbox = FakeSandboxClient()
     agent = agent_class(fake_sandbox)
     grant = TaskGrant(
         task_id=sample_task.task_id,
-        worker_role=sample_task.worker_role,
+        worker_role=authorized_role,
         tenant_scope=TenantScope(tenant_id="acme"),
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
@@ -87,7 +90,7 @@ async def test_worker_executes_only_through_sandbox_client(
     assert len(fake_sandbox.invocations) == 1
     inv = fake_sandbox.invocations[0]
     assert inv.capability == agent_class.capability
-    assert inv.worker_role == sample_task.worker_role
+    assert inv.worker_role == authorized_role
     assert inv.tenant_id == "acme"
     assert inv.execution_id.startswith("exec-")
     assert inv.operation is not None
@@ -106,12 +109,12 @@ def test_validate_capability_access_authorized_cases() -> None:
 
     # S_CODE
     p1 = validate_capability_access("S_CODE", "W_DEV", "generate_diff")
-    assert p1.worker_role == "W_DEV"
+    assert p1.allowed_worker == "W_DEV"
     assert p1.network_policy == NetworkPolicy.DISABLED
 
     # S_SCRAPE
     p2 = validate_capability_access("S_SCRAPE", "W_COMP", "scrape_prices", requested_network=NetworkPolicy.CONTROLLED)
-    assert p2.worker_role == "W_COMP"
+    assert p2.allowed_worker == "W_COMP"
     assert p2.network_policy == NetworkPolicy.CONTROLLED
 
 
@@ -138,8 +141,8 @@ def test_validate_capability_access_unauthorized_operation_raises() -> None:
     from app.core.exceptions import SandboxInvocationError
     from app.integrations.sandbox.capabilities import validate_capability_access
 
-    with pytest.raises(SandboxInvocationError, match="not allowed"):
-        validate_capability_access("S_STRAT", "W_STRAT", "unauthorized_operation")
+    with pytest.raises(SandboxInvocationError, match="not permitted"):
+        validate_capability_access("S_ALLOC", "W_STRAT", "unauthorized_operation")
 
 
 def test_validate_capability_access_network_policy_violation_raises() -> None:
@@ -147,43 +150,50 @@ def test_validate_capability_access_network_policy_violation_raises() -> None:
     from app.integrations.sandbox.capabilities import validate_capability_access
     from app.schemas.sandbox import NetworkPolicy
 
-    with pytest.raises(SandboxInvocationError, match="Egress network policy"):
+    with pytest.raises(SandboxInvocationError, match="Network access policy violation"):
         validate_capability_access("S_CODE", "W_DEV", "generate_diff", requested_network=NetworkPolicy.CONTROLLED)
 
 
 @pytest.mark.asyncio
 async def test_sandbox_client_sanitizes_credentials() -> None:
+    from unittest.mock import patch
     from app.integrations.sandbox.client import SandboxClient
     from app.schemas.sandbox import SandboxInvocationMandate
 
     client = SandboxClient()
     mandate = SandboxInvocationMandate(
         execution_id="exec-sec-1",
+        task_id="task-sec-1",
         worker_role="W_DEV",
         tenant_id="acme",
         capability="S_CODE",
         operation="generate_diff",
         payload={
-            "api_key": "supersecretkey123",
-            "bearer_header": "Bearer secret_token_xyz",
-            "password": "mypassword456",
-            "safe_data": "public_info",
+            "code": "pass",
         },
     )
 
-    result = await client.execute(mandate)
-    assert result.success is True
-    # Verify outputs are sanitized
-    for key, val in result.output.items():
-        if isinstance(val, str):
-            assert "supersecretkey123" not in val
-            assert "secret_token_xyz" not in val
-            assert "mypassword456" not in val
+    with patch.object(
+        client,
+        "_execute_in_isolated_runtime",
+        return_value={
+            "stdout": "Loaded api_key=supersecretkey123 and token Bearer secret_token_xyz",
+            "debug": "password=mypassword456",
+            "safe_data": "public_info",
+        },
+    ):
+        result = await client.execute(mandate)
+        assert result.success is True
+        assert "supersecretkey123" not in result.stdout
+        assert "secret_token_xyz" not in result.stdout
+        assert "mypassword456" not in result.sanitized_output.get("debug", "")
+        assert "[REDACTED]" in result.stdout
+        assert len(result.warnings) > 0
 
 
 @pytest.mark.asyncio
 async def test_sandbox_client_timeout_handling() -> None:
-    import asyncio
+    import time
     from unittest.mock import patch
     from app.integrations.sandbox.client import SandboxClient
     from app.schemas.sandbox import SandboxExecutionStatus, SandboxInvocationMandate
@@ -191,17 +201,18 @@ async def test_sandbox_client_timeout_handling() -> None:
     client = SandboxClient()
     mandate = SandboxInvocationMandate(
         execution_id="exec-time-1",
+        task_id="task-time-1",
         worker_role="W_DEV",
         tenant_id="acme",
         capability="S_CODE",
         operation="generate_diff",
-        payload={"diff": "content"},
+        payload={"code": "pass"},
         timeout_seconds=1,
     )
 
-    async def slow_execution(*args, **kwargs):
-        await asyncio.sleep(5)
-        return {"output": "never"}
+    def slow_execution(*args, **kwargs):
+        time.sleep(2)
+        return {"stdout": "never"}
 
     with patch.object(client, "_execute_in_isolated_runtime", side_effect=slow_execution):
         result = await client.execute(mandate)
@@ -218,11 +229,12 @@ async def test_sandbox_client_provenance_and_duration() -> None:
     client = SandboxClient()
     mandate = SandboxInvocationMandate(
         execution_id="exec-prov-1",
+        task_id="task-prov-1",
         worker_role="W_STRAT",
         tenant_id="tenant-xyz",
         capability="S_ALLOC",
         operation="optimize_budget",
-        payload={"budget": 10000},
+        payload={"budget": "10000"},
     )
 
     result = await client.execute(mandate)

@@ -26,16 +26,16 @@ from app.schemas.sandbox import (
 )
 
 _SENSITIVE_PATTERNS = [
-    re.compile(r"(?i)(api[_-]?key|secret|token|password|auth|bearer)\s*[:=]\s*['\"]?([A-Za-z0-9_\-\.]{8,})['\"]?"),
-    re.compile(r"(?i)bearer\s+([A-Za-z0-9_\-\.]{16,})"),
+    (re.compile(r"(?i)(api[_-]?key|secret|token|password|auth)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.]{8,}['\"]?"), r"\1: [REDACTED]"),
+    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9_\-\.]{8,}"), r"\1[REDACTED]"),
 ]
 
 
 def _sanitize_string(text: str) -> str:
     """Redact sensitive credentials, auth tokens, and secret patterns from text."""
     sanitized = text
-    for pattern in _SENSITIVE_PATTERNS:
-        sanitized = pattern.sub(r"\1: [REDACTED]", sanitized)
+    for pattern, replacement in _SENSITIVE_PATTERNS:
+        sanitized = pattern.sub(replacement, sanitized)
     return sanitized
 
 
@@ -110,7 +110,7 @@ class SandboxClient:
                 asyncio.to_thread(self._execute_specialist, mandate),
                 timeout=float(timeout),
             )
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             duration_ms = (time.perf_counter() - start_time) * 1000.0
             return SandboxResult(
                 execution_id=mandate.execution_id,
@@ -120,6 +120,7 @@ class SandboxClient:
                 status=SandboxExecutionStatus.TIMEOUT,
                 success=False,
                 error=f"Sandbox execution timed out after {timeout} seconds.",
+                warnings=[f"Sandbox execution timed out after {timeout} seconds."],
                 execution_duration_ms=round(duration_ms, 2),
                 provenance=self._build_provenance(mandate, "timeout"),
             )
@@ -173,6 +174,13 @@ class SandboxClient:
             provenance=self._build_provenance(mandate, "completed"),
         )
 
+    # Alias for flexibility
+    execute = invoke
+
+    def _execute_in_isolated_runtime(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
+        """Execute micro-tool inside sandbox boundary."""
+        return dispatch_micro_tool(mandate.capability, mandate.payload)
+
     def _execute_specialist(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
         """Dispatch mandate to the appropriate sandbox specialist runtime."""
         remote_client = self._get_sandbox()
@@ -188,8 +196,7 @@ class SandboxClient:
                 # Fall back to local specialist micro-tool execution
                 pass
 
-        # Execute micro-tool inside sandbox boundary
-        return dispatch_micro_tool(mandate.capability, mandate.payload)
+        return self._execute_in_isolated_runtime(mandate)
 
     def _build_provenance(self, mandate: SandboxInvocationMandate, status: str) -> dict[str, str]:
         """Generate provenance audit tracking context for the execution."""
