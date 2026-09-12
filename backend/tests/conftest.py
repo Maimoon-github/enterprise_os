@@ -21,7 +21,12 @@ from app.persistence.repositories.provenance import ProvenanceRepository, _compu
 from app.persistence.repositories.vector import VectorRepository
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.provenance import ProvenanceRecord
-from app.schemas.sandbox import SandboxInvocationMandate, SandboxResult
+from app.schemas.sandbox import (
+    SandboxCapability,
+    SandboxExecutionStatus,
+    SandboxInvocationMandate,
+    SandboxResult,
+)
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 
 
@@ -37,19 +42,27 @@ class FakeSandboxClient(SandboxClient):
         self.invocations.append(mandate)
         if self.should_fail:
             return SandboxResult(
+                execution_id=mandate.execution_id,
                 task_id=mandate.task_id,
+                worker_role=mandate.worker_role,
                 capability=mandate.capability,
+                status=SandboxExecutionStatus.FAILED,
                 success=False,
                 error="simulated sandbox failure",
+                provenance={"status": "failed", "execution_id": mandate.execution_id},
             )
         return SandboxResult(
+            execution_id=mandate.execution_id,
             task_id=mandate.task_id,
+            worker_role=mandate.worker_role,
             capability=mandate.capability,
+            status=SandboxExecutionStatus.COMPLETED,
             success=True,
             sanitized_output={
                 "objective": mandate.payload.get("objective", "unknown"),
                 "result": f"{mandate.capability.value} completed for {mandate.task_id}",
             },
+            provenance={"status": "completed", "execution_id": mandate.execution_id},
         )
 
 

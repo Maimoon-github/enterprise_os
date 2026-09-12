@@ -85,5 +85,152 @@ async def test_worker_executes_only_through_sandbox_client(
     envelope = await agent.run(grant, context={})
 
     assert len(fake_sandbox.invocations) == 1
-    assert fake_sandbox.invocations[0].capability == agent_class.capability
+    inv = fake_sandbox.invocations[0]
+    assert inv.capability == agent_class.capability
+    assert inv.worker_role == sample_task.worker_role
+    assert inv.tenant_id == "acme"
+    assert inv.execution_id.startswith("exec-")
+    assert inv.operation is not None
+    if inv.capability == "S_SCRAPE":
+        from app.schemas.sandbox import NetworkPolicy
+        assert inv.network_policy == NetworkPolicy.CONTROLLED
+    else:
+        from app.schemas.sandbox import NetworkPolicy
+        assert inv.network_policy == NetworkPolicy.DISABLED
     assert envelope.task_id == sample_task.task_id
+
+
+def test_validate_capability_access_authorized_cases() -> None:
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.schemas.sandbox import NetworkPolicy
+
+    # S_CODE
+    p1 = validate_capability_access("S_CODE", "W_DEV", "generate_diff")
+    assert p1.worker_role == "W_DEV"
+    assert p1.network_policy == NetworkPolicy.DISABLED
+
+    # S_SCRAPE
+    p2 = validate_capability_access("S_SCRAPE", "W_COMP", "scrape_prices", requested_network=NetworkPolicy.CONTROLLED)
+    assert p2.worker_role == "W_COMP"
+    assert p2.network_policy == NetworkPolicy.CONTROLLED
+
+
+def test_validate_capability_access_unauthorized_role_raises() -> None:
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+
+    with pytest.raises(SandboxInvocationError, match="not authorized"):
+        validate_capability_access("S_SCRAPE", "W_DEV", "scrape_prices")
+
+    with pytest.raises(SandboxInvocationError, match="not authorized"):
+        validate_capability_access("S_CODE", "W_STRAT", "generate_diff")
+
+
+def test_validate_capability_access_unknown_capability_raises() -> None:
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+
+    with pytest.raises(SandboxInvocationError, match="Unknown sandbox capability"):
+        validate_capability_access("S_UNKNOWN", "W_DEV", "op")
+
+
+def test_validate_capability_access_unauthorized_operation_raises() -> None:
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+
+    with pytest.raises(SandboxInvocationError, match="not allowed"):
+        validate_capability_access("S_STRAT", "W_STRAT", "unauthorized_operation")
+
+
+def test_validate_capability_access_network_policy_violation_raises() -> None:
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.schemas.sandbox import NetworkPolicy
+
+    with pytest.raises(SandboxInvocationError, match="Egress network policy"):
+        validate_capability_access("S_CODE", "W_DEV", "generate_diff", requested_network=NetworkPolicy.CONTROLLED)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_sanitizes_credentials() -> None:
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.sandbox import SandboxInvocationMandate
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-sec-1",
+        worker_role="W_DEV",
+        tenant_id="acme",
+        capability="S_CODE",
+        operation="generate_diff",
+        payload={
+            "api_key": "supersecretkey123",
+            "bearer_header": "Bearer secret_token_xyz",
+            "password": "mypassword456",
+            "safe_data": "public_info",
+        },
+    )
+
+    result = await client.execute(mandate)
+    assert result.success is True
+    # Verify outputs are sanitized
+    for key, val in result.output.items():
+        if isinstance(val, str):
+            assert "supersecretkey123" not in val
+            assert "secret_token_xyz" not in val
+            assert "mypassword456" not in val
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_timeout_handling() -> None:
+    import asyncio
+    from unittest.mock import patch
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.sandbox import SandboxExecutionStatus, SandboxInvocationMandate
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-time-1",
+        worker_role="W_DEV",
+        tenant_id="acme",
+        capability="S_CODE",
+        operation="generate_diff",
+        payload={"diff": "content"},
+        timeout_seconds=1,
+    )
+
+    async def slow_execution(*args, **kwargs):
+        await asyncio.sleep(5)
+        return {"output": "never"}
+
+    with patch.object(client, "_execute_in_isolated_runtime", side_effect=slow_execution):
+        result = await client.execute(mandate)
+        assert result.success is False
+        assert result.status == SandboxExecutionStatus.TIMEOUT
+        assert any("timed out" in w for w in result.warnings)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_provenance_and_duration() -> None:
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.sandbox import SandboxExecutionStatus, SandboxInvocationMandate
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-prov-1",
+        worker_role="W_STRAT",
+        tenant_id="tenant-xyz",
+        capability="S_ALLOC",
+        operation="optimize_budget",
+        payload={"budget": 10000},
+    )
+
+    result = await client.execute(mandate)
+    assert result.success is True
+    assert result.status == SandboxExecutionStatus.COMPLETED
+    assert result.execution_duration_ms is not None
+    assert result.execution_duration_ms >= 0
+    assert result.provenance is not None
+    assert result.provenance["capability"] == "S_ALLOC"
+    assert result.provenance["worker_role"] == "W_STRAT"
+    assert result.provenance["tenant_id"] == "tenant-xyz"

@@ -56,14 +56,14 @@ class SandboxExecutionStatus(StrEnum):
 class SandboxInvocationMandate(BaseModel):
     """A single, explicit, typed request to execute one sandbox capability."""
 
-    execution_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    task_id: str
+    execution_id: str = Field(default_factory=lambda: f"exec-{uuid.uuid4()}")
+    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     worker_role: WorkerRole | None = None
     tenant_id: str = "default"
     capability: SandboxCapability
     specialist_agent: str = ""
     operation: str = "default"
-    payload: dict[str, str] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     allowed_tools: list[str] = Field(default_factory=list)
     resource_limits: ResourceLimits = Field(default_factory=ResourceLimits)
     network_policy: NetworkPolicy = NetworkPolicy.DISABLED
@@ -76,8 +76,8 @@ class SandboxInvocationMandate(BaseModel):
 class SandboxResult(BaseModel):
     """A sanitized, typed result returned from the sandbox boundary."""
 
-    execution_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    task_id: str
+    execution_id: str = Field(default_factory=lambda: f"exec-{uuid.uuid4()}")
+    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     worker_role: WorkerRole | None = None
     capability: SandboxCapability
     status: SandboxExecutionStatus = SandboxExecutionStatus.COMPLETED
