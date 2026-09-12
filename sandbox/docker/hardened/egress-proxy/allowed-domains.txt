@@ -1,0 +1,6 @@
+# Default Egress Allowlist (Dynamic grants are written per-task by backend lifecycle controller)
+# Supports exact domains and regex subdomains. DENY_ALL is default.
+^([a-zA-Z0-9-]+\.)*google\.com$
+^([a-zA-Z0-9-]+\.)*googleapis\.com$
+^([a-zA-Z0-9-]+\.)*github\.com$
+^([a-zA-Z0-9-]+\.)*githubusercontent\.com$

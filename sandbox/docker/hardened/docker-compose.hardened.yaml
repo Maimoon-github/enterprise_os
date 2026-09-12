@@ -1,0 +1,85 @@
+# Hardened AIO Sandbox Deployment Specification
+# Pinned Version: ghcr.io/agent-infra/sandbox:1.11.0
+# Reference Digest: ghcr.io/agent-infra/sandbox@sha256:d8c83df2357b98d197621c17830cbdfc63b860b73dfeb46487e8e4533dae5d95
+# Enforces:
+# 1. Cgroup resource boundaries (CPU, Memory, PIDs)
+# 2. Ephemeral tmpfs mounts for execution and browser state
+# 3. Custom Chromium seccomp profile + no-new-privileges
+# 4. Strict DENY_ALL default network isolation via internal-only Docker network + egress proxy sidecar
+# 5. Private loopback binding for control planes (REST API, VNC, CDP)
+
+services:
+  egress-proxy:
+    container_name: aio-egress-proxy
+    image: vimagick/tinyproxy:latest
+    restart: "unless-stopped"
+    mem_limit: "512m"
+    cpus: "0.5"
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./egress-proxy/tinyproxy-allowlist.conf:/etc/tinyproxy/tinyproxy.conf:ro
+      - ./egress-proxy/allowed-domains.txt:/etc/tinyproxy/allowed-domains.txt:ro
+    networks:
+      - sandbox-internal
+      - egress-external
+
+  sandbox:
+    container_name: aio-sandbox
+    image: ghcr.io/agent-infra/sandbox:1.11.0
+    restart: "unless-stopped"
+    depends_on:
+      - egress-proxy
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp/chromium-seccomp.json
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN # Explicitly required by Chromium internal sandbox for setns/clone namespaces
+    shm_size: "2gb"
+    mem_limit: "4g"
+    cpus: "2"
+    pids_limit: 1024
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1024m
+      - /run:rw,noexec,nosuid,size=256m
+      - /home/gem/Downloads:rw,size=512m
+      - /workspace:rw,size=2048m
+    ports:
+      # Privileged control planes bound strictly to localhost / loopback
+      - "127.0.0.1:${HOST_PORT:-8080}:8080"
+    environment:
+      EGRESS_NETWORK_POLICY: DENY_ALL
+      PROXY_SERVER: http://aio-egress-proxy:8118
+      HTTP_PROXY: http://aio-egress-proxy:8118
+      HTTPS_PROXY: http://aio-egress-proxy:8118
+      ALL_PROXY: http://aio-egress-proxy:8118
+      NO_PROXY: localhost,127.0.0.1,aio-egress-proxy
+      BROWSER_EXTRA_ARGS: "--disable-quic --proxy-server=http://aio-egress-proxy:8118 --disable-dev-shm-usage"
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      SANDBOX_API_KEY: ${SANDBOX_API_KEY:-}
+      WORKSPACE: /workspace
+      HOMEPAGE: ""
+      TZ: UTC
+      DISPLAY_WIDTH: 1280
+      DISPLAY_HEIGHT: 1024
+      WAIT_PORTS: "8079,8091"
+      VNC_SERVER_PORT: 5900
+      PUBLIC_PORT: 8080
+      WEBSOCKET_PROXY_PORT: 6080
+      SANDBOX_SRV_PORT: 8091
+      CHROME_DEVTOOLS_PORT: 8102
+      BROWSER_REMOTE_DEBUGGING_PORT: 9222
+      DISABLE_JUPYTER: "true"
+      DISABLE_CODE_SERVER: "true"
+    networks:
+      - sandbox-internal # Isolated network with NO direct internet routing
+
+networks:
+  # Internal bridge network has no gateway to external networks; direct egress blocked
+  sandbox-internal:
+    internal: true
+  egress-external:
+    driver: bridge
