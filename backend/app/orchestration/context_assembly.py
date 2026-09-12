@@ -52,7 +52,7 @@ class ContextAssembler:
         policy_constraints: list[str] | None = None,
         risk_tier: str = "low",
         objective: str = "",
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         """Assemble bounded, budgeted context under strict deterministic precedence."""
 
         # Stage 1: Authority & Tenant Scope (Fail-closed)

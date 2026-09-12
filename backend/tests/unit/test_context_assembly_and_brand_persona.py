@@ -100,11 +100,12 @@ def context_assembler(
 def intelligence_engine(
     context_assembler: ContextAssembler,
 ) -> IntelligenceEngine:
+    from app.agents.base import BoundedWorkerAgent
     from app.agents.creative_content import CreativeContentAgent
     from app.agents.development import DevelopmentAgent
 
     fake_sandbox = FakeSandboxClient()
-    workers = {
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(fake_sandbox),
         WorkerRole.DEVELOPMENT: DevelopmentAgent(fake_sandbox),
     }

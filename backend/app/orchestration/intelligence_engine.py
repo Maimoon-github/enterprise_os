@@ -152,7 +152,7 @@ class IntelligenceEngine:
         token_budget: int = 10000,
         purpose: str = "",
         completed_upstream_task_ids: set[str] | None = None,
-    ) -> tuple[TaskGrant, dict[str, object]]:
+    ) -> tuple[TaskGrant, dict[str, Any]]:
         """Assemble a bounded, policy-screened, tenant/brand-scoped TaskGrant and context.
 
         Fails closed on:

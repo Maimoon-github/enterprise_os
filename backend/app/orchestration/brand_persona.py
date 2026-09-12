@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-
 
 from app.persistence.repositories.memory import MemoryRepository
 
@@ -43,7 +43,7 @@ class BrandPersonaResolver:
                 if isinstance(k, tuple):
                     self._personas[k] = p
                 else:
-                    self._personas[(str(k), p.brand_id)] = p
+                    self._personas[(k, p.brand_id)] = p
         self._memory_repository = memory_repository
 
     def register(self, persona: BrandPersona) -> None:
