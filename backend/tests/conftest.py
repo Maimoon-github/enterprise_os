@@ -16,17 +16,20 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from app.integrations.sandbox.client import SandboxClient
 from app.persistence.repositories.provenance import ProvenanceRepository, _compute_hash
+from app.persistence.repositories.vector import VectorRepository
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.provenance import ProvenanceRecord
 from app.schemas.sandbox import SandboxInvocationMandate, SandboxResult
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 
 
-class FakeSandboxClient:
+class FakeSandboxClient(SandboxClient):
     """A drop-in stand-in for ``SandboxClient`` that never touches agent_sandbox."""
 
     def __init__(self, *, should_fail: bool = False) -> None:
+        super().__init__(settings=None)
         self.should_fail = should_fail
         self.invocations: list[SandboxInvocationMandate] = []
 
@@ -50,10 +53,11 @@ class FakeSandboxClient:
         )
 
 
-class FakeVectorRepository:
+class FakeVectorRepository(VectorRepository):
     """A drop-in stand-in for ``VectorRepository`` satisfying the retriever protocol."""
 
     def __init__(self, documents: list[dict[str, Any]] | None = None) -> None:
+        super().__init__(session_factory=None)  # type: ignore[arg-type]
         self._documents = documents or []
 
     def seed(self, *, tenant_id: str, text: str, source: str = "test") -> None:

@@ -138,30 +138,35 @@ def execute_s_copy(payload: dict[str, str]) -> dict[str, str]:
     prohibited_terms = [t.strip().lower() for t in prohibited_raw.split(",") if t.strip()]
 
     # Generate distinct hook angles
-    candidates = [
-        {"hook": f"Stop guessing with your {objective}—here is the proven formula.", "angle": "pain_point", "score": 0.88},
-        {"hook": f"Why leading brands are upgrading their {objective} today.", "angle": "social_proof", "score": 0.92},
-        {"hook": f"The hidden secret to 3x better results in {objective}.", "angle": "curiosity", "score": 0.85},
+    candidates: list[tuple[str, str, float]] = [
+        (f"Stop guessing with your {objective}—here is the proven formula.", "pain_point", 0.88),
+        (f"Why leading brands are upgrading their {objective} today.", "social_proof", 0.92),
+        (f"The hidden secret to 3x better results in {objective}.", "curiosity", 0.85),
     ]
 
-    filtered_variants = []
-    for cand in candidates:
-        text = cand["hook"]
-        contains_prohibited = any(term in text.lower() for term in prohibited_terms)
+    filtered_variants: list[tuple[str, str, float]] = []
+    for hook_text, angle, score in candidates:
+        contains_prohibited = any(term in hook_text.lower() for term in prohibited_terms)
         if not contains_prohibited:
-            filtered_variants.append(cand)
+            filtered_variants.append((hook_text, angle, score))
 
-    best_hook = max(filtered_variants, key=lambda x: x["score"]) if filtered_variants else candidates[0]
+    best_hook = max(filtered_variants, key=lambda x: x[2]) if filtered_variants else candidates[0]
+    best_headline, best_angle, best_score = best_hook
+
+    variants_json = [
+        {"hook": h, "angle": a, "score": s}
+        for h, a, s in (filtered_variants or candidates)
+    ]
 
     return {
         "status": "success",
         "task_id": task_id,
         "brand_voice": brand_voice,
-        "headline": best_hook["hook"],
-        "hook_score": str(best_hook["score"]),
-        "hook_angle": best_hook["angle"],
-        "variants": json.dumps(filtered_variants),
-        "copy_body": f"Designed for performance in {brand_voice} voice. {best_hook['hook']} Unlock enterprise scalability with verified evidence.",
+        "headline": best_headline,
+        "hook_score": str(best_score),
+        "hook_angle": best_angle,
+        "variants": json.dumps(variants_json),
+        "copy_body": f"Designed for performance in {brand_voice} voice. {best_headline} Unlock enterprise scalability with verified evidence.",
     }
 
 

@@ -87,6 +87,7 @@ _RESTRICTED_IMPORT_PREFIXES = (
 
 def _get_imports(module_name: str) -> list[str]:
     module = importlib.import_module(module_name)
+    assert module.__file__ is not None
     tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     imported: list[str] = []
     for node in ast.walk(tree):
@@ -136,9 +137,9 @@ def governed_data_gateway() -> DataGateway:
     return DataGateway(
         vector_repository=vector_repo,
         authorization_boundary=boundary,
-        cms_client=FakeCmsAdapter(),
-        memory_repository=FakeMemoryRepo(),
-        artifact_repository=FakeArtifactRepo(),
+        cms_client=FakeCmsAdapter(),  # type: ignore[arg-type]
+        memory_repository=FakeMemoryRepo(),  # type: ignore[arg-type]
+        artifact_repository=FakeArtifactRepo(),  # type: ignore[arg-type]
     )
 
 

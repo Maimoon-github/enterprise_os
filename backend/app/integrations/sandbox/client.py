@@ -65,7 +65,7 @@ class SandboxClient:
                 error=str(exc),
             )
 
-        sanitized_output = {str(key): str(value) for key, value in dict(raw_result).items()}
+        sanitized_output = dict(raw_result)
         return SandboxResult(
             task_id=mandate.task_id,
             capability=mandate.capability,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -32,6 +32,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import configure_logging, get_logger
 from app.core.settings import get_settings
+from app.integrations.ads.base import AdsAdapter
 from app.integrations.ads.google import GoogleAdsAdapter
 from app.integrations.ads.linkedin import LinkedInAdsAdapter
 from app.integrations.ads.meta import MetaAdsAdapter
@@ -39,6 +40,7 @@ from app.integrations.ads.tiktok import TikTokAdsAdapter
 from app.integrations.cms.client import CmsClient
 from app.integrations.sandbox.capabilities import get_capability_for_role
 from app.integrations.sandbox.client import SandboxClient
+from app.integrations.social.base import SocialAdapter
 from app.integrations.social.instagram import InstagramAdapter
 from app.integrations.social.tiktok import TikTokSocialAdapter
 from app.integrations.social.x import XAdapter
@@ -101,7 +103,7 @@ def _build_workers(sandbox_client: SandboxClient) -> dict[WorkerRole, BoundedWor
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Compose every backend dependency once at startup and dispose at shutdown."""
 
     settings = get_settings()
@@ -138,13 +140,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     hitl_coordinator = HitlCoordinator()
     crypto_validator = CryptographicValidator(settings.security.signing_public_key_pem)
 
-    ads_adapters = {
+    ads_adapters: dict[str, AdsAdapter] = {
         "meta": MetaAdsAdapter(settings.ads.meta_access_token),
         "google": GoogleAdsAdapter(settings.ads.google_access_token),
         "tiktok": TikTokAdsAdapter(settings.ads.tiktok_access_token),
         "linkedin": LinkedInAdsAdapter(settings.ads.linkedin_access_token),
     }
-    social_adapters = {
+    social_adapters: dict[str, SocialAdapter] = {
         "instagram": InstagramAdapter(settings.social.instagram_access_token),
         "x": XAdapter(settings.social.x_access_token),
         "tiktok_social": TikTokSocialAdapter(settings.social.tiktok_access_token),

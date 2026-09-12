@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ class _InMemoryTelemetryRepository(TelemetryRepository):
 
     # Intentionally bypasses DB init; every inherited method is overridden below.
     def __init__(self) -> None:
-        self._store: dict[str, object] = {}
+        self._store: dict[str, Any] = {}
 
     async def record(self, event) -> None:  # type: ignore[override]
         self._store[event.event_id] = event
@@ -40,7 +41,7 @@ class _InMemoryMemoryRepository(MemoryRepository):
 
     # Intentionally bypasses DB init; every inherited method is overridden below.
     def __init__(self) -> None:
-        self._store: dict[str, object] = {}
+        self._store: dict[str, Any] = {}
 
     async def promote(self, record) -> None:  # type: ignore[override]
         self._store[record.memory_id] = record

@@ -20,9 +20,10 @@ from app.orchestration.intelligence_engine import IntelligenceEngine
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.rag_query_dispatch import RagQueryDispatcher
 from app.orchestration.task_state_machine import TaskStateMachine
+from app.agents.base import BoundedWorkerAgent
 from app.schemas.action_preview import ActionPreviewKind
 from app.schemas.dispatch import DispatchDirective
-from app.schemas.governance import Directive, RiskLevel
+from app.schemas.governance import Directive, RiskLevel, WorkerRole
 from app.schemas.telemetry import TelemetryEventType
 from app.security.authorization_boundary import AuthorizationBoundary
 from app.security.cryptographic_validator import CryptographicValidator, sign_payload
@@ -72,7 +73,9 @@ async def test_governed_end_to_end_flow(
     fake_sandbox = FakeSandboxClient()
     from app.agents.creative_content import CreativeContentAgent
 
-    workers = {sample_task.worker_role: CreativeContentAgent(fake_sandbox)}
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {
+        sample_task.worker_role: CreativeContentAgent(fake_sandbox)
+    }
 
     hitl_coordinator = HitlCoordinator()
     crypto_validator = CryptographicValidator(public_pem)
@@ -183,13 +186,12 @@ async def test_governed_multi_worker_dag_pipeline(
     from app.agents.product_evidence import ProductEvidenceAgent
     from app.agents.strategy import StrategyAgent
     from app.integrations.sandbox.client import SandboxClient
-    from app.schemas.governance import WorkerRole
     from app.schemas.task_state import CanonicalTaskState, TaskDependency, TaskStatus
 
     # Set up real SandboxClient backed by specialist micro-tools
     sandbox_client = SandboxClient()
 
-    workers = {
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.STRATEGY: StrategyAgent(sandbox_client),
         WorkerRole.PRODUCT_EVIDENCE: ProductEvidenceAgent(sandbox_client),
         WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(sandbox_client),
