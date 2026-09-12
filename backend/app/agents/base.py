@@ -1,9 +1,10 @@
 """Common base for the seven bounded worker agents.
 
 Every worker follows the same shape: accept a ``TaskGrant`` and assembled
-context, request exactly one sandbox capability, and return an
-``EvidenceEnvelope``. Centralizing that shape here means each worker file
-only needs to declare its capability and interpret its own sandbox output.
+context, formulate an explicit bounded sandbox invocation mandate, invoke
+the sandbox adapter, and return an ``EvidenceEnvelope``. Centralizing that
+shape here means each worker file only needs to declare its capability and
+interpret its own sandbox output.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from abc import ABC, abstractmethod
 
 from app.integrations.sandbox.client import SandboxClient
 from app.schemas.agent_contracts import ConfidenceInterval, EvidenceEnvelope, TaskGrant
-from app.schemas.sandbox import SandboxCapability, SandboxInvocationMandate
+from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
 
 
 class BoundedWorkerAgent(ABC):
@@ -45,10 +46,23 @@ class BoundedWorkerAgent(ABC):
     async def run(self, grant: TaskGrant, context: dict[str, object]) -> EvidenceEnvelope:
         """Execute this worker's bounded task grant and return its evidence."""
 
+        payload = self.build_payload(grant, context)
+        operation = payload.get("operation", "default")
+        network_policy = (
+            NetworkPolicy.CONTROLLED
+            if self.capability == SandboxCapability.SCRAPE
+            else NetworkPolicy.DISABLED
+        )
+
         mandate = SandboxInvocationMandate(
             task_id=grant.task_id,
+            worker_role=grant.worker_role,
+            tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
             capability=self.capability,
-            payload=self.build_payload(grant, context),
+            operation=operation,
+            payload=payload,
+            network_policy=network_policy,
+            timeout_seconds=grant.token_budget if grant.token_budget > 0 else 120,
         )
         result = await self._sandbox_client.invoke(mandate)
 
@@ -71,6 +85,20 @@ class BoundedWorkerAgent(ABC):
                 artifacts.append(f"dossier:{grant.task_id}")
             if "learning_delta" in result.sanitized_output:
                 artifacts.append(f"learning:{grant.task_id}")
+            if result.generated_artifacts:
+                artifacts.extend(result.generated_artifacts)
+
+        artifacts = sorted(list(set(artifacts)))
+
+        provenance = {
+            "agent": grant.worker_role.value if grant.worker_role else "unknown",
+            "capability": self.capability.value,
+            "task_id": grant.task_id,
+            "execution_id": result.execution_id,
+            "status": result.status.value,
+        }
+        if result.provenance:
+            provenance.update(result.provenance)
 
         return EvidenceEnvelope(
             task_id=grant.task_id,
@@ -81,11 +109,7 @@ class BoundedWorkerAgent(ABC):
             findings=findings,
             generated_artifacts=artifacts,
             supporting_evidence=evidence,
-            provenance={
-                "agent": grant.worker_role.value,
-                "capability": self.capability.value,
-                "task_id": grant.task_id,
-            },
+            provenance=provenance,
             proposed_state_changes={
                 "status": "completed" if result.success else "failed",
                 "capability": self.capability.value,

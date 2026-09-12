@@ -17,6 +17,7 @@ class StrategyAgent(BoundedWorkerAgent):
         budget = str(context.get("budget_cap", context.get("budget", "10000.0")))
         return {
             "task_id": grant.task_id,
+            "operation": "optimize_budget",
             "objective": "propose_media_mix_allocation",
             "channels": channels,
             "budget": budget,

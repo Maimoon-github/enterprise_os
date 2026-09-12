@@ -18,6 +18,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         code = str(context.get("code", context.get("schema_content", "")))
         return {
             "task_id": grant.task_id,
+            "operation": "generate_diff",
             "objective": "generate_code_diff",
             "component_name": component,
             "code": code,

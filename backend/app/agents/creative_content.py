@@ -18,6 +18,7 @@ class CreativeContentAgent(BoundedWorkerAgent):
         objective = str(context.get("objective", context.get("query", "generate_copy_variants")))
         return {
             "task_id": grant.task_id,
+            "operation": "generate_variants",
             "objective": objective,
             "brand_voice": getattr(persona, "voice", "neutral"),
             "prohibited_terms": ",".join(prohibited),

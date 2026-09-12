@@ -19,6 +19,7 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
         disclaimer = disclaimers[0] if disclaimers else "*Results may vary based on usage."
         return {
             "task_id": grant.task_id,
+            "operation": "validate_claim",
             "objective": "validate_product_claims",
             "claim": claim,
             "required_disclaimer": disclaimer,

@@ -16,6 +16,7 @@ class CompetitorIntelAgent(BoundedWorkerAgent):
         competitor = str(context.get("competitor", "CompetitorCorp"))
         return {
             "task_id": grant.task_id,
+            "operation": "scrape_prices",
             "objective": "gather_competitor_intelligence",
             "competitor": competitor,
         }

@@ -16,6 +16,7 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         feedback = str(context.get("feedback_text", context.get("query", "Customer reviews and feedback.")))
         return {
             "task_id": grant.task_id,
+            "operation": "parse_sentiment",
             "objective": "parse_customer_sentiment",
             "feedback_text": feedback,
         }
