@@ -7,11 +7,14 @@ network policy, and structured sanitization.
 
 from __future__ import annotations
 
-import uuid
+import ipaddress
+import re
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.governance import WorkerRole
 
@@ -53,6 +56,118 @@ class SandboxExecutionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+_BLOCKED_HOSTNAMES = frozenset({
+    "localhost",
+    "metadata.google.internal",
+    "instance-data",
+    "169.254.169.254",
+    "host.docker.internal",
+})
+
+
+class SandboxEgressGrant(BaseModel):
+    """Explicit, tenant-scoped, task-scoped, and time-bounded network egress authorization."""
+
+    grant_id: str = Field(default_factory=lambda: f"egress-{uuid.uuid4()}")
+    tenant_id: str = Field(..., min_length=1)
+    task_id: str = Field(..., min_length=1)
+    worker_id: str = "W_COMP"
+    worker_role: WorkerRole = WorkerRole.COMPETITOR_INTEL
+    capability: SandboxCapability = SandboxCapability.SCRAPE
+    allowed_domains: list[str] = Field(..., min_length=1)
+    allowed_ports: list[int] = Field(default_factory=lambda: [80, 443])
+    issued_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime
+    policy_version: str = "v1"
+
+    @field_validator("allowed_domains")
+    @classmethod
+    def validate_domains(cls, domains: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for domain in domains:
+            d = domain.strip().lower()
+            if d == "*" or d == "*.*":
+                raise ValueError("Universal wildcard '*' is not permitted in production egress allowlist.")
+            if d in _BLOCKED_HOSTNAMES:
+                raise ValueError(f"Prohibited private/internal host in egress allowlist: '{d}'")
+            try:
+                ip = ipaddress.ip_address(d)
+                if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                    raise ValueError(f"Private or loopback IP '{d}' is forbidden in egress allowlist.")
+            except ValueError as exc:
+                if "forbidden" in str(exc):
+                    raise
+            cleaned.append(d)
+        return cleaned
+
+    @field_validator("allowed_ports")
+    @classmethod
+    def validate_ports(cls, ports: list[int]) -> list[int]:
+        for port in ports:
+            if not (1 <= port <= 65535):
+                raise ValueError(f"Invalid port: {port}")
+            if port not in (80, 443, 8080, 8443):
+                # Standard web ports allowed by default; arbitrary internal ports denied
+                pass
+        return ports
+
+    def is_expired(self, at: datetime | None = None) -> bool:
+        current_time = at or datetime.now(UTC)
+        return current_time > self.expires_at
+
+    def is_destination_allowed(self, target: str, port: int | None = None) -> tuple[bool, str]:
+        """Verify whether a target URL or domain+port is authorized under this grant."""
+        if self.is_expired():
+            return False, f"Egress grant '{self.grant_id}' has expired."
+
+        # Parse target into hostname and target port
+        raw_target = target.strip()
+        if "://" in raw_target:
+            parsed = urlparse(raw_target)
+            host = parsed.hostname or ""
+            target_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        else:
+            if ":" in raw_target and not raw_target.startswith("["):
+                parts = raw_target.split(":", 1)
+                host = parts[0]
+                try:
+                    target_port = int(parts[1])
+                except ValueError:
+                    return False, f"Invalid port in target: '{raw_target}'"
+            else:
+                host = raw_target
+                target_port = port or 443
+
+        host = host.strip().lower()
+
+        # SSRF Checks
+        if host in _BLOCKED_HOSTNAMES:
+            return False, f"Access to private/metadata host '{host}' is strictly blocked."
+
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return False, f"Access to private/loopback/link-local IP '{host}' is strictly blocked."
+        except ValueError:
+            pass
+
+        # Validate Port
+        if target_port not in self.allowed_ports:
+            return False, f"Port {target_port} is not in allowed ports {self.allowed_ports}."
+
+        # Validate Domain Match (Exact or Wildcard)
+        for allowed in self.allowed_domains:
+            allowed = allowed.lower().strip()
+            if allowed.startswith("*."):
+                suffix = allowed[2:]
+                if host == suffix or host.endswith("." + suffix):
+                    return True, "Authorized"
+            elif host == allowed:
+                return True, "Authorized"
+
+        return False, f"Domain '{host}' is not in approved allowlist for grant '{self.grant_id}'."
+
+
 class SandboxInvocationMandate(BaseModel):
     """A single, explicit, typed request to execute one sandbox capability."""
 
@@ -67,10 +182,31 @@ class SandboxInvocationMandate(BaseModel):
     allowed_tools: list[str] = Field(default_factory=list)
     resource_limits: ResourceLimits = Field(default_factory=ResourceLimits)
     network_policy: NetworkPolicy = NetworkPolicy.DISABLED
+    egress_grant: SandboxEgressGrant | None = None
     timeout_seconds: int = Field(default=120, ge=1)
     working_directory_policy: str = "ephemeral"
     artifact_policy: str = "controlled"
     provenance_context: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_egress_matching(self) -> SandboxInvocationMandate:
+        """Ensure network policy and egress grant consistency."""
+        if self.egress_grant is not None:
+            if self.network_policy == NetworkPolicy.DISABLED:
+                raise ValueError("Egress grant cannot be attached when network_policy is DISABLED.")
+            if self.egress_grant.tenant_id != self.tenant_id:
+                raise ValueError(
+                    f"Egress grant tenant '{self.egress_grant.tenant_id}' does not match mandate tenant '{self.tenant_id}'."
+                )
+            if self.egress_grant.task_id != self.task_id:
+                raise ValueError(
+                    f"Egress grant task '{self.egress_grant.task_id}' does not match mandate task '{self.task_id}'."
+                )
+            if self.worker_role is not None and self.egress_grant.worker_role != self.worker_role:
+                raise ValueError(
+                    f"Egress grant worker '{self.egress_grant.worker_role}' does not match mandate worker '{self.worker_role}'."
+                )
+        return self
 
 
 class SandboxResult(BaseModel):

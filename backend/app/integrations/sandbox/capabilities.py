@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from app.core.exceptions import SandboxInvocationError
 from app.schemas.governance import WorkerRole
-from app.schemas.sandbox import NetworkPolicy, SandboxCapability
+from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxEgressGrant
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,7 @@ def validate_capability_access(
     operation: str = "default",
     *,
     requested_network: NetworkPolicy | str = NetworkPolicy.DISABLED,
+    egress_grant: SandboxEgressGrant | None = None,
 ) -> CapabilityProfile:
     """Validate that a requested sandbox execution adheres to capability allowlisting.
 
@@ -126,6 +127,7 @@ def validate_capability_access(
     2. If worker_role is provided, it must match the capability's authorized worker.
     3. Operation must be in the profile's allowed_operations.
     4. Requested network access must not exceed the capability's allowed network policy.
+    5. If an egress grant is attached, its worker, capability, and expiry are strictly validated.
 
     Raises SandboxInvocationError on any policy breach (fail-closed).
     """
@@ -169,4 +171,37 @@ def validate_capability_access(
             f"network access (requested: '{requested_network.value}')."
         )
 
+    if egress_grant is not None:
+        if egress_grant.is_expired():
+            raise SandboxInvocationError(f"Egress grant '{egress_grant.grant_id}' has expired.")
+        if worker_role is not None and egress_grant.worker_role != worker_role:
+            raise SandboxInvocationError(
+                f"Egress grant worker role mismatch: grant worker '{egress_grant.worker_role.value}' "
+                f"does not match executing worker '{worker_role.value}'."
+            )
+        if egress_grant.capability != capability:
+            raise SandboxInvocationError(
+                f"Egress grant capability mismatch: grant capability '{egress_grant.capability.value}' "
+                f"does not match executing capability '{capability.value}'."
+            )
+
     return profile
+
+
+def validate_egress_target(
+    target: str,
+    grant: SandboxEgressGrant | None,
+    port: int | None = None,
+) -> None:
+    """Validate that a destination URL/domain is authorized under the active egress grant.
+
+    Raises SandboxInvocationError if unauthorized, expired, or targeting SSRF destinations (fail-closed).
+    """
+    if grant is None:
+        raise SandboxInvocationError(
+            "Network egress denied: No active SandboxEgressGrant attached (DENY_ALL default)."
+        )
+
+    allowed, reason = grant.is_destination_allowed(target, port=port)
+    if not allowed:
+        raise SandboxInvocationError(f"Network egress policy violation: {reason}")

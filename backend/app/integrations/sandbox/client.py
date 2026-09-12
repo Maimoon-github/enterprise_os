@@ -16,9 +16,13 @@ from typing import Any
 
 from app.core.exceptions import SandboxInvocationError
 from app.core.settings import SandboxSettings
-from app.integrations.sandbox.capabilities import validate_capability_access
+from app.integrations.sandbox.capabilities import (
+    validate_capability_access,
+    validate_egress_target,
+)
 from app.integrations.sandbox.micro_tools import dispatch_micro_tool
 from app.schemas.sandbox import (
+    NetworkPolicy,
     SandboxCapability,
     SandboxExecutionStatus,
     SandboxInvocationMandate,
