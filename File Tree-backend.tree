@@ -1,0 +1,152 @@
+File Tree: backend
+Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
+
+────────────────────────────────────────────────────────────────────────────────
+
+├── 📁 app/
+│   ├── 📁 agents/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 base.py
+│   │   ├── 🐍 competitor_intel.py
+│   │   ├── 🐍 creative_content.py
+│   │   ├── 🐍 customer_voice.py
+│   │   ├── 🐍 development.py
+│   │   ├── 🐍 learning_performance.py
+│   │   ├── 🐍 product_evidence.py
+│   │   └── 🐍 strategy.py
+│   ├── 📁 api/
+│   │   ├── 📁 routes/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 approvals.py
+│   │   │   ├── 🐍 directives.py
+│   │   │   ├── 🐍 tasks.py
+│   │   │   └── 🐍 telemetry.py
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 router.py
+│   ├── 📁 core/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 exceptions.py
+│   │   ├── 🐍 logging.py
+│   │   └── 🐍 settings.py
+│   ├── 📁 integrations/
+│   │   ├── 📁 ads/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 base.py
+│   │   │   ├── 🐍 google.py
+│   │   │   ├── 🐍 linkedin.py
+│   │   │   ├── 🐍 meta.py
+│   │   │   └── 🐍 tiktok.py
+│   │   ├── 📁 cms/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   └── 🐍 client.py
+│   │   ├── 📁 llm/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   └── 🐍 client.py
+│   │   ├── 📁 sandbox/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 capabilities.py
+│   │   │   └── 🐍 client.py
+│   │   ├── 📁 social/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 base.py
+│   │   │   ├── 🐍 instagram.py
+│   │   │   ├── 🐍 tiktok.py
+│   │   │   ├── 🐍 x.py
+│   │   │   └── 🐍 youtube.py
+│   │   └── 🐍 __init__.py
+│   ├── 📁 mcp/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 data_gateway.py
+│   │   ├── 🐍 host.py
+│   │   └── 🐍 outbound_gateway.py
+│   ├── 📁 orchestration/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 brand_persona.py
+│   │   ├── 🐍 context_assembly.py
+│   │   ├── 🐍 dag_scheduler.py
+│   │   ├── 🐍 evidence_synthesis.py
+│   │   ├── 🐍 hitl_preview_generator.py
+│   │   ├── 🐍 intelligence_engine.py
+│   │   ├── 🐍 policy_evaluator.py
+│   │   ├── 🐍 rag_query_dispatch.py
+│   │   └── 🐍 task_state_machine.py
+│   ├── 📁 persistence/
+│   │   ├── 📁 repositories/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 artifact.py
+│   │   │   ├── 🐍 base.py
+│   │   │   ├── 🐍 memory.py
+│   │   │   ├── 🐍 operational.py
+│   │   │   ├── 🐍 provenance.py
+│   │   │   ├── 🐍 task_state.py
+│   │   │   ├── 🐍 telemetry.py
+│   │   │   └── 🐍 vector.py
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 database.py
+│   ├── 📁 schemas/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 action_preview.py
+│   │   ├── 🐍 agent_contracts.py
+│   │   ├── 🐍 artifact.py
+│   │   ├── 🐍 dispatch.py
+│   │   ├── 🐍 governance.py
+│   │   ├── 🐍 provenance.py
+│   │   ├── 🐍 sandbox.py
+│   │   ├── 🐍 task_state.py
+│   │   └── 🐍 telemetry.py
+│   ├── 📁 security/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 authorization_boundary.py
+│   │   ├── 🐍 cryptographic_validator.py
+│   │   └── 🐍 scope_evaluator.py
+│   ├── 📁 services/
+│   │   ├── 📁 rag/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 controller.py
+│   │   │   ├── 🐍 freshness.py
+│   │   │   ├── 🐍 hybrid_retriever.py
+│   │   │   └── 🐍 schema_validator.py
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 hitl.py
+│   │   ├── 🐍 memory_promotion.py
+│   │   ├── 🐍 policy_engine.py
+│   │   ├── 🐍 provenance.py
+│   │   ├── 🐍 task_state.py
+│   │   └── 🐍 telemetry.py
+│   ├── 🐍 __init__.py
+│   └── 🐍 main.py
+├── 📁 scripts/
+│   ├── 📁 lib/
+│   │   └── 📄 common.sh
+│   ├── 📄 bootstrap.sh
+│   ├── 📄 lint.sh
+│   ├── 📄 run_dev_server.sh
+│   ├── 📄 run_tests.sh
+│   └── 📄 test.sh
+├── 📁 tests/
+│   ├── 📁 acceptance/
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 test_governed_end_to_end_flow.py
+│   ├── 📁 integration/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_model_a_data_access.py
+│   │   ├── 🐍 test_outbound_after_approval.py
+│   │   ├── 🐍 test_provenance_persistence.py
+│   │   ├── 🐍 test_telemetry_learning_loop.py
+│   │   └── 🐍 test_worker_sandbox_boundary.py
+│   ├── 📁 unit/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_evidence_synthesis.py
+│   │   ├── 🐍 test_hitl_gate.py
+│   │   ├── 🐍 test_policy_authorization.py
+│   │   ├── 🐍 test_rag_governance.py
+│   │   └── 🐍 test_task_state_machine.py
+│   ├── 🐍 __init__.py
+│   └── 🐍 conftest.py
+├── ⚙️ .env.example
+├── ⚙️ .gitignore
+├── 📄 Makefile
+├── 📝 README.md
+└── ⚙️ pyproject.toml
+
+────────────────────────────────────────────────────────────────────────────────
