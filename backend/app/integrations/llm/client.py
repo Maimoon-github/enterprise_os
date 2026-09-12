@@ -9,10 +9,21 @@ purely through configuration, with zero vendor-specific code in callers.
 
 from __future__ import annotations
 
+import json
+from typing import TypeVar
+
 import httpx
+from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import ConfigurationError
 from app.core.settings import LlmSettings
+
+
+ResponseModelT = TypeVar("ResponseModelT", bound=BaseModel)
+
+
+class LlmResponseError(RuntimeError):
+    """Raised when a model response cannot be converted to the requested schema."""
 
 
 class LlmClient:
@@ -45,6 +56,64 @@ class LlmClient:
         response.raise_for_status()
         body = response.json()
         return body["choices"][0]["message"]["content"]
+
+    async def generate_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[ResponseModelT],
+    ) -> ResponseModelT:
+        """Generate and validate a JSON response against ``response_model``.
+
+        Structured generation is implemented above the provider transport
+        instead of relying on a vendor-specific response-format API. The
+        Intelligence Engine therefore depends only on this typed contract.
+        """
+
+        schema = json.dumps(
+            response_model.model_json_schema(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        structured_system = (
+            f"{system_prompt.rstrip()}\n\n"
+            "Return exactly one JSON object matching the supplied JSON Schema. "
+            "Do not wrap it in markdown and do not add explanatory text.\n"
+            f"JSON Schema:\n{schema}"
+        )
+
+        content = await self.complete(user_prompt, system=structured_system)
+        payload = self._parse_json_object(content)
+
+        try:
+            return response_model.model_validate(payload)
+        except ValidationError as exc:
+            raise LlmResponseError(
+                f"LLM response did not satisfy {response_model.__name__}"
+            ) from exc
+
+    @staticmethod
+    def _parse_json_object(content: str) -> dict[str, object]:
+        """Parse one JSON object while tolerating an accidental code fence."""
+
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines:
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise LlmResponseError("LLM response was not valid JSON") from exc
+
+        if not isinstance(payload, dict):
+            raise LlmResponseError("LLM structured response must be a JSON object")
+        return payload
 
     async def aclose(self) -> None:
         await self._client.aclose()
