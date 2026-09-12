@@ -84,7 +84,7 @@ class IntelligenceEngine:
         granted_state = self._task_state_machine.transition(
             task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
         )
-        self._task_state_machine.transition(
+        in_prog_state = self._task_state_machine.transition(
             granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
         )
 
@@ -111,11 +111,11 @@ class IntelligenceEngine:
 
         if envelope.confidence.point_estimate > 0.0:
             self._task_state_machine.transition(
-                task, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
+                in_prog_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
             )
         else:
             self._task_state_machine.transition(
-                task, TaskStatus.HELD, checkpoint_id=str(uuid.uuid4()), note="Execution produced zero confidence"
+                in_prog_state, TaskStatus.HELD, checkpoint_id=str(uuid.uuid4()), note="Execution produced zero confidence"
             )
 
         await self._provenance_recorder.record(
