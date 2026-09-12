@@ -79,3 +79,38 @@ def test_schema_validator_rejects_incomplete_documents(fresh_document: dict[str,
     filtered = validator.filter_valid([fresh_document, incomplete])
 
     assert filtered == [fresh_document]
+
+
+@pytest.mark.asyncio
+async def test_rag_controller_via_governed_data_gateway_tags_provenance() -> None:
+    from app.mcp.data_gateway import DataGateway
+    from app.schemas.governance import RiskLevel, TenantScope
+    from app.security.authorization_boundary import AuthorizationBoundary, CallerIdentity
+
+    vector_repo = FakeVectorRepository()
+    gateway = DataGateway(
+        vector_repository=vector_repo,
+        authorization_boundary=AuthorizationBoundary(),
+    )
+    scope = TenantScope(tenant_id="acme")
+    caller = CallerIdentity(subject="ie", tenant_scope=scope, risk_ceiling=RiskLevel.HIGH)
+
+    retriever = HybridRetriever(data_gateway=gateway)
+    controller = RagController(retriever, data_gateway=gateway)
+
+    # Ingest document via RagController -> Governed DataGateway
+    await controller.ingest(
+        tenant_id="acme",
+        doc_id="doc-governed-1",
+        text="Authoritative brand strategy guidelines for Q3",
+        source="brand_book_2026",
+    )
+
+    # Retrieve via RagController -> HybridRetriever -> DataGateway
+    results = await controller.retrieve(tenant_id="acme", query="brand strategy guidelines")
+    assert len(results) == 1
+    doc = results[0]
+    assert doc["tenant_id"] == "acme"
+    assert "provenance_hash" in doc
+    assert doc["source_authority"] == "brand_book_2026"
+    assert doc["provenance_tracked"] is True

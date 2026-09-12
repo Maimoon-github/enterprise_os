@@ -17,13 +17,22 @@ class _FakeMemoryRepository:
     def __init__(self) -> None:
         self._records: dict[str, list[MemoryRecord]] = {}
 
-    async def promote(self, record: MemoryRecord) -> None:
+    async def promote(self, record: MemoryRecord, min_confidence: float = 0.6) -> None:
+        if record.confidence < min_confidence:
+            raise ValueError("Below confidence threshold")
         self._records.setdefault(record.tenant_id, []).append(record)
 
-    async def list_by_tenant(self, tenant_id: str, category: str | None = None) -> list[MemoryRecord]:
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        category: str | None = None,
+        namespace: str | None = None,
+    ) -> list[MemoryRecord]:
         recs = self._records.get(tenant_id, [])
         if category:
-            return [r for r in recs if r.category == category]
+            recs = [r for r in recs if r.category == category]
+        if namespace:
+            recs = [r for r in recs if r.namespace == namespace]
         return recs
 
 
@@ -38,6 +47,12 @@ class _FakeArtifactRepository:
         if artifact_id not in self._artifacts:
             raise KeyError(f"Artifact {artifact_id} not found")
         return self._artifacts[artifact_id]
+
+    async def resolve_by_hash(self, content_hash: str, tenant_id: str | None = None) -> ArtifactReference | None:
+        for art in self._artifacts.values():
+            if art.content_hash == content_hash:
+                return art
+        return None
 
 
 @pytest.mark.asyncio
@@ -106,3 +121,82 @@ async def test_data_gateway_rejects_cross_tenant_access() -> None:
         await gateway.ingest(
             caller, tenant_id="tenant-bravo", doc_id="doc-x", text="injected", source="hack"
         )
+
+
+@pytest.mark.asyncio
+async def test_data_gateway_cms_and_artifact_hash_and_memory_namespaces() -> None:
+    from app.integrations.cms.client import CmsClient
+    from app.schemas.artifact import ArtifactReference
+
+    scope = TenantScope(tenant_id="tenant-alpha")
+    caller = CallerIdentity(subject="ie", tenant_scope=scope, risk_ceiling=RiskLevel.HIGH)
+
+    memory_repo = _FakeMemoryRepository()
+    artifact_repo = _FakeArtifactRepository()
+    cms_client = CmsClient()  # uses in-memory fallback
+
+    gateway = DataGateway(
+        vector_repository=FakeVectorRepository(),
+        authorization_boundary=AuthorizationBoundary(),
+        memory_repository=memory_repo,  # type: ignore[arg-type]
+        artifact_repository=artifact_repo,  # type: ignore[arg-type]
+        cms_client=cms_client,
+    )
+
+    # 1. CMS Staging through DataGateway
+    await gateway.stage_cms_entry(
+        caller,
+        tenant_id="tenant-alpha",
+        content_type="pages",
+        entry_id="landing-hero",
+        data={"title": "Enterprise OS", "status": "draft"},
+    )
+    staged_pages = await gateway.read_cms_staged(caller, tenant_id="tenant-alpha", content_type="pages")
+    assert len(staged_pages) == 1
+    assert staged_pages[0]["title"] == "Enterprise OS"
+
+    # 2. Artifact Hash Resolution and Integrity Check
+    test_content = b"artifact cryptographic payload"
+    computed_hash = ArtifactReference.compute_hash(test_content)
+    art = ArtifactReference(
+        artifact_id="art-hash-1",
+        content_hash=computed_hash,
+        uri="enterprise://artifacts/art-hash-1",
+        media_type="application/octet-stream",
+        deliverable_type="evidence_dossier",
+    )
+    assert art.verify_integrity(test_content) is True
+    assert art.verify_integrity(b"tampered payload") is False
+
+    await gateway.register_artifact(caller, tenant_id="tenant-alpha", artifact=art)
+    by_hash = await gateway.resolve_artifact_by_hash(caller, tenant_id="tenant-alpha", content_hash=computed_hash)
+    assert by_hash is not None
+    assert by_hash.artifact_id == "art-hash-1"
+
+    # 3. Institutional Memory Namespace Filtering
+    rule_mem = MemoryRecord(
+        memory_id="mem-rule-1",
+        tenant_id="tenant-alpha",
+        category="brand_rules",
+        namespace="brand_rules",
+        statement="Always use active voice",
+        confidence=0.95,
+    )
+    heuristic_mem = MemoryRecord(
+        memory_id="mem-heur-1",
+        tenant_id="tenant-alpha",
+        category="heuristics",
+        namespace="attribution_heuristics",
+        statement="Weight first-touch 40%",
+        confidence=0.85,
+    )
+    await gateway.promote_memory(caller, tenant_id="tenant-alpha", record=rule_mem)
+    await gateway.promote_memory(caller, tenant_id="tenant-alpha", record=heuristic_mem)
+
+    brand_rules = await gateway.query_memory(caller, tenant_id="tenant-alpha", namespace="brand_rules")
+    assert len(brand_rules) == 1
+    assert brand_rules[0].memory_id == "mem-rule-1"
+
+    heuristics = await gateway.query_memory(caller, tenant_id="tenant-alpha", namespace="attribution_heuristics")
+    assert len(heuristics) == 1
+    assert heuristics[0].memory_id == "mem-heur-1"

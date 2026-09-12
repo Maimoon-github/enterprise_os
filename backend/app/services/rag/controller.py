@@ -48,8 +48,8 @@ class RagController:
             if "provenance_hash" not in doc:
                 raw_sig = f"{doc.get('source', 'rag')}::{tenant_id}::{str(doc.get('text', '')).strip()}"
                 doc["provenance_hash"] = hashlib.sha256(raw_sig.encode("utf-8")).hexdigest()
-            if "source_authority" not in doc:
-                doc["source_authority"] = doc.get("source", "governed_knowledge_store")
+            doc.setdefault("source_authority", doc.get("source") or "governed_mcp_data_plane")
+            doc["provenance_tracked"] = True
 
         return fresh
 

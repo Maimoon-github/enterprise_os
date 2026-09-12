@@ -114,16 +114,23 @@ class DataGateway:
 
     # -- Institutional Memory Store (MEM) --
     async def query_memory(
-        self, caller: CallerIdentity, *, tenant_id: str, category: str | None = None
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        category: str | None = None,
+        namespace: str | None = None,
     ) -> list[MemoryRecord]:
         """Authorize and query institutional memory records."""
         self._authorize_tenant(caller, tenant_id)
         recs: list[MemoryRecord] = []
         if self._memory_repository is not None and hasattr(self._memory_repository, "list_by_tenant"):
-            recs = await self._memory_repository.list_by_tenant(tenant_id, category=category)
+            recs = await self._memory_repository.list_by_tenant(
+                tenant_id, category=category, namespace=namespace
+            )
         await self._record_audit(
             tenant_id=tenant_id,
-            entity_id=f"mem_query:{category or 'all'}",
+            entity_id=f"mem_query:{namespace or category or 'all'}",
             activity="mcp_data_memory_read",
             agent=caller.subject,
         )

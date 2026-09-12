@@ -17,7 +17,11 @@ class CmsClient:
     """Thin HTTP boundary around a configured headless CMS with staged-content fallback."""
 
     def __init__(
-        self, base_url: str | None, api_key: str | None, *, client: httpx.AsyncClient | None = None
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        *,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url
         self._api_key = api_key

@@ -11,24 +11,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from app.persistence.database import metadata
-from app.persistence.repositories.base import BaseJsonRepository, standard_table
-
-_table = standard_table("institutional_memory", metadata)
-
-
 from enum import StrEnum
 from typing import Any
-
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from app.persistence.database import metadata
-from app.persistence.repositories.base import BaseJsonRepository, standard_table
-
-_table = standard_table("institutional_memory", metadata)
 
 
 class MemoryNamespace(StrEnum):
@@ -60,6 +44,14 @@ class MemoryRecord(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     source_task_ids: list[str] = Field(default_factory=list)
     promoted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.persistence.database import metadata
+from app.persistence.repositories.base import BaseJsonRepository, standard_table
+
+_table = standard_table("institutional_memory", metadata)
 
 
 class MemoryRepository(BaseJsonRepository[MemoryRecord]):
