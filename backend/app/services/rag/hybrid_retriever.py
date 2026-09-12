@@ -20,15 +20,37 @@ class VectorRepository(Protocol):
         ...
 
 
-def _keyword_score(query: str, text: str) -> float:
-    """Return a simple normalized keyword-overlap score in ``[0, 1]``."""
+def _bm25_score(query: str, text: str, avg_doc_len: float = 50.0, k1: float = 1.5, b: float = 0.75) -> float:
+    """Return a BM25 normalized keyword relevance score in [0, 1]."""
+    query_terms = [t.lower() for t in query.split() if t]
+    if not query_terms:
+        return 0.0
+    text_terms = [t.lower() for t in text.split() if t]
+    doc_len = len(text_terms)
+    if doc_len == 0:
+        return 0.0
 
+    score = 0.0
+    for q in set(query_terms):
+        tf = text_terms.count(q)
+        if tf > 0:
+            numerator = tf * (k1 + 1)
+            denominator = tf + k1 * (1 - b + b * (doc_len / avg_doc_len))
+            score += numerator / denominator
+
+    max_possible = len(set(query_terms)) * (k1 + 1)
+    return min(1.0, score / max_possible) if max_possible > 0 else 0.0
+
+
+def _keyword_score(query: str, text: str) -> float:
+    """Keyword score combining exact token overlap and BM25 term saturation."""
     query_terms = {term.lower() for term in query.split() if term}
     if not query_terms:
         return 0.0
     text_terms = {term.lower() for term in text.split() if term}
-    overlap = query_terms & text_terms
-    return len(overlap) / len(query_terms)
+    overlap = len(query_terms & text_terms) / len(query_terms)
+    bm25 = _bm25_score(query, text)
+    return 0.5 * overlap + 0.5 * bm25
 
 
 class HybridRetriever:

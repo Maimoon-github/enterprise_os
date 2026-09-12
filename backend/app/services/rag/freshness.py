@@ -16,9 +16,18 @@ class FreshnessPolicy:
         """Return True if ``document['retrieved_at']`` is within the freshness window."""
 
         retrieved_at = document.get("retrieved_at")
+        if isinstance(retrieved_at, str):
+            try:
+                retrieved_at = datetime.fromisoformat(retrieved_at)
+            except ValueError:
+                return False
         if not isinstance(retrieved_at, datetime):
             return False
+        if retrieved_at.tzinfo is None:
+            retrieved_at = retrieved_at.replace(tzinfo=UTC)
         reference = now or datetime.now(UTC)
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=UTC)
         return (reference - retrieved_at) <= self._max_age
 
     def filter_fresh(
