@@ -427,3 +427,197 @@ def test_freshness_policy_rejects_stale_and_malformed_documents() -> None:
         "retrieved_at": (datetime.now(UTC) - timedelta(days=2)).isoformat(),
     }
     assert policy.is_fresh(fresh_doc) is True
+
+
+# ---------------------------------------------------------------------------
+# 9. Sandbox Network Egress & SSRF Protection Boundary
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_sandbox_client_denies_network_without_egress_grant() -> None:
+    """Network egress is DENY_ALL by default: invocation fails without an egress grant."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.sandbox import NetworkPolicy
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-deny-all",
+        task_id="task-deny-all",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        tenant_id="acme",
+        capability=SandboxCapability.SCRAPE,
+        operation="scrape_prices",
+        network_policy=NetworkPolicy.CONTROLLED,
+        egress_grant=None,
+    )
+
+    with pytest.raises(SandboxInvocationError, match="Network egress policy violation"):
+        await client.invoke(mandate)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_denies_unapproved_domain() -> None:
+    """A browser or tool attempting to access an unapproved domain is blocked fail-closed."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.sandbox import NetworkPolicy, SandboxEgressGrant
+
+    client = SandboxClient()
+    grant = SandboxEgressGrant(
+        grant_id="grant-approved-only",
+        tenant_id="acme",
+        task_id="task-egress-test",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["*.competitor.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-unapproved",
+        task_id="task-egress-test",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        tenant_id="acme",
+        capability=SandboxCapability.SCRAPE,
+        operation="scrape_prices",
+        network_policy=NetworkPolicy.CONTROLLED,
+        egress_grant=grant,
+        payload={"url": "https://malicious-exfiltration.com/data"},
+    )
+
+    with pytest.raises(SandboxInvocationError, match="Network egress policy violation"):
+        await client.invoke(mandate)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ssrf_target",
+    [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://127.0.0.1:8080/admin",
+        "http://localhost:5900",
+        "http://10.0.0.1/internal",
+        "http://192.168.1.1/",
+    ],
+)
+async def test_sandbox_client_denies_ssrf_and_metadata_destinations(ssrf_target: str) -> None:
+    """Sandbox network egress strictly rejects loopback, RFC1918, and cloud metadata targets."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.sandbox import NetworkPolicy, SandboxEgressGrant
+
+    client = SandboxClient()
+    grant = SandboxEgressGrant(
+        grant_id="grant-ssrf",
+        tenant_id="acme",
+        task_id="task-ssrf",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["*.competitor.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-ssrf",
+        task_id="task-ssrf",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        tenant_id="acme",
+        capability=SandboxCapability.SCRAPE,
+        operation="scrape_prices",
+        network_policy=NetworkPolicy.CONTROLLED,
+        egress_grant=grant,
+        payload={"url": ssrf_target},
+    )
+
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|not in approved allowlist"):
+        await client.invoke(mandate)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_client_denies_expired_egress_grant() -> None:
+    """An expired egress grant is rejected immediately fail-closed."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.sandbox import NetworkPolicy, SandboxEgressGrant
+
+    client = SandboxClient()
+    expired_grant = SandboxEgressGrant(
+        grant_id="grant-expired",
+        tenant_id="acme",
+        task_id="task-expired",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["*.competitor.com"],
+        issued_at=datetime.now(UTC) - timedelta(minutes=30),
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-expired",
+        task_id="task-expired",
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        tenant_id="acme",
+        capability=SandboxCapability.SCRAPE,
+        operation="scrape_prices",
+        network_policy=NetworkPolicy.CONTROLLED,
+        egress_grant=expired_grant,
+        payload={"url": "https://pricing.competitor.com"},
+    )
+
+    with pytest.raises(SandboxInvocationError, match="has expired"):
+        await client.invoke(mandate)
+
+
+def test_sandbox_egress_grant_rejects_universal_wildcard() -> None:
+    """A universal wildcard '*' in allowed_domains is rejected at schema construction."""
+    from pydantic import ValidationError
+    from app.schemas.sandbox import SandboxEgressGrant
+
+    with pytest.raises(ValidationError, match="Universal wildcard"):
+        SandboxEgressGrant(
+            tenant_id="acme",
+            task_id="task-1",
+            allowed_domains=["*"],
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+        )
+
+
+def test_sandbox_mandate_rejects_tenant_mismatch() -> None:
+    """A mandate attempting to execute with an egress grant belonging to another tenant fails validation."""
+    from pydantic import ValidationError
+    from app.schemas.sandbox import NetworkPolicy, SandboxEgressGrant
+
+    grant = SandboxEgressGrant(
+        grant_id="grant-tenant-b",
+        tenant_id="tenant-b",
+        task_id="task-1",
+        allowed_domains=["example.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    with pytest.raises(ValidationError, match="does not match mandate tenant"):
+        SandboxInvocationMandate(
+            task_id="task-1",
+            tenant_id="tenant-a",
+            worker_role=WorkerRole.COMPETITOR_INTEL,
+            capability=SandboxCapability.SCRAPE,
+            network_policy=NetworkPolicy.CONTROLLED,
+            egress_grant=grant,
+        )
+
+
+@pytest.mark.asyncio
+async def test_sandbox_disabled_network_cannot_pass_external_urls() -> None:
+    """Capabilities with network disabled cannot pass external targets to evade policy."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.sandbox import NetworkPolicy
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        execution_id="exec-evade",
+        task_id="task-evade",
+        worker_role=WorkerRole.DEVELOPMENT,
+        tenant_id="acme",
+        capability=SandboxCapability.CODE,
+        operation="generate_diff",
+        network_policy=NetworkPolicy.DISABLED,
+        payload={"code": "pass", "url": "https://malicious.com"},
+    )
+
+    with pytest.raises(SandboxInvocationError, match="network_policy 'disabled'"):
+        await client.invoke(mandate)
+
