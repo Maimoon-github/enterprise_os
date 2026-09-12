@@ -17,7 +17,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from app.integrations.sandbox.client import SandboxClient
-from app.persistence.repositories.provenance import ProvenanceRepository, _compute_hash
+from app.persistence.repositories.provenance import (
+    ProvenanceRepository,
+    _compute_hash,
+    _compute_metadata_hash,
+)
 from app.persistence.repositories.vector import VectorRepository
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.provenance import ProvenanceRecord
@@ -123,23 +127,42 @@ class FakeProvenanceRepository(ProvenanceRepository):
         return records[-1] if records else None
 
     async def append(
-        self, *, tenant_id: str, entity_id: str, activity: str, agent: str
+        self,
+        *,
+        tenant_id: str,
+        entity_id: str,
+        activity: str,
+        agent: str,
+        record_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        w3c_prov: dict[str, Any] | None = None,
     ) -> ProvenanceRecord:
+        # Idempotency check: return existing record if record_id already in tenant chain
+        if record_id is not None:
+            for existing in self._chains.get(tenant_id, []):
+                if existing.record_id == record_id:
+                    return existing
+
         occurred_at = datetime.now(UTC)
         latest = await self._latest(tenant_id)
         prev_hash = latest.record_hash if latest else None
+        meta_hash = _compute_metadata_hash(metadata, w3c_prov)
         record = ProvenanceRecord(
-            record_id=str(uuid.uuid4()),
+            record_id=record_id or str(uuid.uuid4()),
             tenant_id=tenant_id,
             entity_id=entity_id,
             activity=activity,
             agent=agent,
             occurred_at=occurred_at,
             prev_record_hash=prev_hash,
-            record_hash=_compute_hash(prev_hash, entity_id, activity, agent, occurred_at),
+            metadata_hash=meta_hash,
+            record_hash=_compute_hash(prev_hash, entity_id, activity, agent, occurred_at, meta_hash),
+            metadata=metadata or {},
+            w3c_prov=w3c_prov or {},
         )
         self._chains.setdefault(tenant_id, []).append(record)
         return record
+
 
     async def chain(self, tenant_id: str) -> list[ProvenanceRecord]:
         return list(self._chains.get(tenant_id, []))

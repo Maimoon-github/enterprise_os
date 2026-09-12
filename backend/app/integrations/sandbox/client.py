@@ -12,7 +12,8 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 from app.core.exceptions import SandboxInvocationError
 from app.core.settings import SandboxSettings
@@ -28,6 +29,10 @@ from app.schemas.sandbox import (
     SandboxInvocationMandate,
     SandboxResult,
 )
+
+if TYPE_CHECKING:
+    from app.services.provenance import ProvenanceRecorder
+
 
 _SENSITIVE_PATTERNS = [
     (re.compile(r"(?i)(api[_-]?key|secret|token|password|auth)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.]{8,}['\"]?"), r"\1: [REDACTED]"),
@@ -63,8 +68,13 @@ def _sanitize_payload(payload: dict[str, Any]) -> tuple[dict[str, str], dict[str
 class SandboxClient:
     """Invokes existing sandbox capabilities and returns sanitized results."""
 
-    def __init__(self, settings: SandboxSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: SandboxSettings | None = None,
+        provenance_recorder: ProvenanceRecorder | None = None,
+    ) -> None:
         self._settings = settings
+        self._provenance_recorder = provenance_recorder
         self._sandbox = None
         self._active_sessions: dict[str, dict[str, Any]] = {}
 
@@ -94,19 +104,49 @@ class SandboxClient:
             return True
         return False
 
+    def _collect_resource_metrics(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
+        """Query native observation APIs or record container resource boundaries."""
+        metrics: dict[str, Any] = {
+            "cpu_cores_allocated": mandate.resource_limits.cpu_cores,
+            "memory_ceiling_mb": mandate.resource_limits.memory_mb,
+            "timeout_seconds_limit": mandate.resource_limits.timeout_seconds,
+        }
+        remote = self._get_sandbox()
+        if remote is not None and hasattr(remote, "sandbox") and hasattr(remote.sandbox, "observe_live"):
+            try:
+                snapshot = remote.sandbox.observe_live()
+                if snapshot and snapshot.data and snapshot.data.cgroup:
+                    cg = snapshot.data.cgroup
+                    if cg.cpu_usage_pct is not None:
+                        metrics["cpu_usage_pct"] = cg.cpu_usage_pct
+                    if cg.mem_current_bytes is not None:
+                        metrics["mem_current_bytes"] = cg.mem_current_bytes
+                    if cg.mem_max_bytes is not None:
+                        metrics["mem_max_bytes"] = cg.mem_max_bytes
+                    if cg.mem_usage_pct is not None:
+                        metrics["mem_usage_pct"] = cg.mem_usage_pct
+                    if cg.oom_kill is not None:
+                        metrics["oom_kill"] = cg.oom_kill
+            except Exception:
+                pass
+        return metrics
+
     async def invoke(self, mandate: SandboxInvocationMandate) -> SandboxResult:
         """Execute ``mandate`` against the sandbox and return a sanitized result.
 
-        Enforces capability allowlisting:
+        Enforces capability allowlisting and audit interception:
         1. Validates capability against registry (worker role, operation, network policy).
         2. Validates egress grant and destination domains fail-closed under DENY_ALL.
-        3. Dispatches to remote agent_sandbox or isolated specialist micro-tool runtime.
-        4. Enforces execution timeout and resource boundaries.
-        5. Sanitizes outputs, redacting secrets and hostile execution traces.
-        6. Deterministically scrubs ephemeral session state on completion or failure.
-        7. Returns structured SandboxResult with complete provenance and metrics.
+        3. Records mandatory 'started' audit event to W3C PROV ledger (fails closed).
+        4. Dispatches to remote agent_sandbox or isolated specialist micro-tool runtime.
+        5. Enforces execution timeout and resource boundaries.
+        6. Sanitizes outputs, redacting secrets and hostile execution traces.
+        7. Deterministically scrubs ephemeral session state on completion or failure.
+        8. Records terminal audit event ('completed'/'failed'/'timed_out') with W3C PROV graph.
+        9. Returns structured SandboxResult with complete provenance and metrics.
         """
         start_time = time.perf_counter()
+        start_dt = datetime.now(UTC)
 
         # 1. Capability Allowlisting and Policy Validation (fail-closed)
         profile = validate_capability_access(
@@ -148,6 +188,28 @@ class SandboxClient:
                     f"and cannot access external targets: '{target}'."
                 )
 
+        # 3. Mandatory Audit Record: started stage (Fail-Closed)
+        if self._provenance_recorder is not None:
+            try:
+                await self._provenance_recorder.record_sandbox_execution(
+                    tenant_id=mandate.tenant_id,
+                    task_id=mandate.task_id,
+                    execution_id=mandate.execution_id,
+                    worker_role=mandate.worker_role.value if mandate.worker_role else "unknown",
+                    capability=mandate.capability.value,
+                    operation=mandate.operation,
+                    lifecycle_stage="started",
+                    status="running",
+                    command=mandate.operation,
+                    input_payload=mandate.payload,
+                    egress_grant_id=mandate.egress_grant.grant_id if mandate.egress_grant else None,
+                    started_at=start_dt,
+                )
+            except Exception as audit_err:
+                raise SandboxInvocationError(
+                    f"Audit persistence failure: unable to record started audit event for execution '{mandate.execution_id}': {audit_err}"
+                ) from audit_err
+
         timeout = mandate.timeout_seconds or profile.default_timeout_seconds
         session_id = f"session-{mandate.execution_id}"
         self._active_sessions[session_id] = {
@@ -158,7 +220,7 @@ class SandboxClient:
             "created_at": time.time(),
         }
 
-        # 3. Execution under timeout control & deterministic session teardown
+        # 4. Execution under timeout control & deterministic session teardown
         try:
             raw_result = await asyncio.wait_for(
                 asyncio.to_thread(self._execute_specialist, mandate),
@@ -166,6 +228,33 @@ class SandboxClient:
             )
         except (TimeoutError, asyncio.TimeoutError):
             duration_ms = (time.perf_counter() - start_time) * 1000.0
+            timeout_err_msg = f"Sandbox execution timed out after {timeout} seconds."
+
+            # Audit record: timed_out stage (Fail-Closed)
+            if self._provenance_recorder is not None:
+                try:
+                    await self._provenance_recorder.record_sandbox_execution(
+                        tenant_id=mandate.tenant_id,
+                        task_id=mandate.task_id,
+                        execution_id=mandate.execution_id,
+                        worker_role=mandate.worker_role.value if mandate.worker_role else "unknown",
+                        capability=mandate.capability.value,
+                        operation=mandate.operation,
+                        lifecycle_stage="timed_out",
+                        status="timeout",
+                        exit_code=-1,
+                        duration_ms=duration_ms,
+                        command=mandate.operation,
+                        error_details=timeout_err_msg,
+                        egress_grant_id=mandate.egress_grant.grant_id if mandate.egress_grant else None,
+                        started_at=start_dt,
+                        ended_at=datetime.now(UTC),
+                    )
+                except Exception as audit_exc:
+                    raise SandboxInvocationError(
+                        f"Audit persistence failure: unable to record timeout audit event: {audit_exc}"
+                    ) from audit_exc
+
             return SandboxResult(
                 execution_id=mandate.execution_id,
                 task_id=mandate.task_id,
@@ -173,13 +262,39 @@ class SandboxClient:
                 capability=mandate.capability,
                 status=SandboxExecutionStatus.TIMEOUT,
                 success=False,
-                error=f"Sandbox execution timed out after {timeout} seconds.",
-                warnings=[f"Sandbox execution timed out after {timeout} seconds."],
+                error=timeout_err_msg,
+                warnings=[timeout_err_msg],
                 execution_duration_ms=round(duration_ms, 2),
                 provenance=self._build_provenance(mandate, "timeout"),
             )
         except Exception as exc:  # noqa: BLE001 - sandbox internals are opaque by design
             duration_ms = (time.perf_counter() - start_time) * 1000.0
+
+            # Audit record: failed stage (Fail-Closed)
+            if self._provenance_recorder is not None:
+                try:
+                    await self._provenance_recorder.record_sandbox_execution(
+                        tenant_id=mandate.tenant_id,
+                        task_id=mandate.task_id,
+                        execution_id=mandate.execution_id,
+                        worker_role=mandate.worker_role.value if mandate.worker_role else "unknown",
+                        capability=mandate.capability.value,
+                        operation=mandate.operation,
+                        lifecycle_stage="failed",
+                        status="failed",
+                        exit_code=1,
+                        duration_ms=duration_ms,
+                        command=mandate.operation,
+                        error_details=str(exc),
+                        egress_grant_id=mandate.egress_grant.grant_id if mandate.egress_grant else None,
+                        started_at=start_dt,
+                        ended_at=datetime.now(UTC),
+                    )
+                except Exception as audit_exc:
+                    raise SandboxInvocationError(
+                        f"Audit persistence failure: unable to record failure audit event: {audit_exc}"
+                    ) from audit_exc
+
             return SandboxResult(
                 execution_id=mandate.execution_id,
                 task_id=mandate.task_id,
@@ -194,10 +309,9 @@ class SandboxClient:
         finally:
             await self.teardown_session(session_id)
 
-
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
-        # 3. Output Sanitization & Metric Assembly
+        # 5. Output Sanitization & Metric Assembly
         sanitized_output, structured_output, warnings = _sanitize_payload(raw_result)
 
         artifacts: list[str] = []
@@ -208,9 +322,39 @@ class SandboxClient:
         if "verified_dossier" in sanitized_output:
             artifacts.append(f"dossier:{mandate.task_id}")
 
+        cgroup_metrics = self._collect_resource_metrics(mandate)
+
+        # 6. Audit record: completed stage (Fail-Closed)
+        if self._provenance_recorder is not None:
+            try:
+                await self._provenance_recorder.record_sandbox_execution(
+                    tenant_id=mandate.tenant_id,
+                    task_id=mandate.task_id,
+                    execution_id=mandate.execution_id,
+                    worker_role=mandate.worker_role.value if mandate.worker_role else "unknown",
+                    capability=mandate.capability.value,
+                    operation=mandate.operation,
+                    lifecycle_stage="completed",
+                    status="completed",
+                    exit_code=0,
+                    duration_ms=duration_ms,
+                    command=mandate.operation,
+                    resources=cgroup_metrics,
+                    output_summary=sanitized_output,
+                    artifacts=artifacts,
+                    egress_grant_id=mandate.egress_grant.grant_id if mandate.egress_grant else None,
+                    started_at=start_dt,
+                    ended_at=datetime.now(UTC),
+                )
+            except Exception as audit_exc:
+                raise SandboxInvocationError(
+                    f"Audit persistence failure: unable to record completed audit event: {audit_exc}"
+                ) from audit_exc
+
         metrics = {
             "execution_duration_ms": round(duration_ms, 2),
             "payload_fields_count": float(len(sanitized_output)),
+            **{f"resource_{k}": float(v) for k, v in cgroup_metrics.items() if isinstance(v, (int, float))},
         }
 
         return SandboxResult(
@@ -228,8 +372,10 @@ class SandboxClient:
             metrics=metrics,
             warnings=warnings,
             execution_duration_ms=round(duration_ms, 2),
+            resource_usage=cgroup_metrics,
             provenance=self._build_provenance(mandate, "completed"),
         )
+
 
     # Alias for flexibility
     execute = invoke

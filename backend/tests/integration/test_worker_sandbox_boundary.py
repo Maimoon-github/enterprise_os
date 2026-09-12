@@ -339,3 +339,36 @@ def test_sandbox_wildcard_domain_matching() -> None:
     # Denied unapproved domains
     assert grant.is_destination_allowed("https://evil-example.com")[0] is False
     assert grant.is_destination_allowed("https://otherdomain.org")[0] is False
+
+
+@pytest.mark.asyncio
+async def test_worker_agent_with_provenance_recording(sample_task) -> None:
+    """Worker agent running through SandboxClient with ProvenanceRecorder persists W3C PROV audit chain."""
+    from app.agents.development import DevelopmentAgent
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.agent_contracts import TaskGrant
+    from app.schemas.governance import WorkerRole
+    from app.services.provenance import ProvenanceRecorder
+    from tests.conftest import FakeProvenanceRepository
+
+    repo = FakeProvenanceRepository()
+    recorder = ProvenanceRecorder(repo)
+    client = SandboxClient(provenance_recorder=recorder)
+    agent = DevelopmentAgent(client)
+
+    grant = TaskGrant(
+        task_id=sample_task.task_id,
+        worker_role=WorkerRole.DEVELOPMENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+
+    envelope = await agent.run(grant, context={"code": "def hello(): pass"})
+    assert envelope.task_id == sample_task.task_id
+
+    chain = await recorder.audit_chain("acme")
+    assert len(chain) == 2  # started + completed
+    assert chain[0].metadata["lifecycle_stage"] == "started"
+    assert chain[1].metadata["lifecycle_stage"] == "completed"
+    assert chain[1].w3c_prov is not None
+    assert await recorder.verify_chain("acme") is True
