@@ -133,10 +133,10 @@ def validate_capability_access(
         try:
             capability = SandboxCapability(capability)
         except ValueError:
-            raise SandboxInvocationError(f"Unknown sandbox capability: {capability}")
+            raise SandboxInvocationError(f"Unauthorized or invalid sandbox capability: {capability}")
 
     if capability not in CAPABILITY_REGISTRY:
-        raise SandboxInvocationError(f"Unauthorized or unregistered sandbox capability: {capability}")
+        raise SandboxInvocationError(f"Unauthorized or invalid sandbox capability: {capability}")
 
     profile = CAPABILITY_REGISTRY[capability]
 

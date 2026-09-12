@@ -133,7 +133,7 @@ def test_validate_capability_access_unknown_capability_raises() -> None:
     from app.core.exceptions import SandboxInvocationError
     from app.integrations.sandbox.capabilities import validate_capability_access
 
-    with pytest.raises(SandboxInvocationError, match="Unknown sandbox capability"):
+    with pytest.raises(SandboxInvocationError, match="Unauthorized or invalid sandbox capability"):
         validate_capability_access("S_UNKNOWN", "W_DEV", "op")
 
 
