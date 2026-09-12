@@ -14,8 +14,11 @@ class CreativeContentAgent(BoundedWorkerAgent):
 
     def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
         persona = context.get("brand_persona")
+        prohibited = getattr(persona, "prohibited_terms", ())
+        objective = str(context.get("objective", context.get("query", "generate_copy_variants")))
         return {
             "task_id": grant.task_id,
-            "objective": "generate_copy_variants",
+            "objective": objective,
             "brand_voice": getattr(persona, "voice", "neutral"),
+            "prohibited_terms": ",".join(prohibited),
         }
