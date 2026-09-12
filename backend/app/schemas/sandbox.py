@@ -175,9 +175,11 @@ class SandboxInvocationMandate(BaseModel):
     execution_id: str = Field(default_factory=lambda: f"exec-{uuid.uuid4()}")
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     worker_role: WorkerRole | None = None
+    worker_id: str = ""
     tenant_id: str = "default"
     capability: SandboxCapability
     specialist_agent: str = ""
+    specialist_id: str = ""
     operation: str = "default"
     payload: dict[str, Any] = Field(default_factory=dict)
     allowed_tools: list[str] = Field(default_factory=list)
@@ -185,13 +187,20 @@ class SandboxInvocationMandate(BaseModel):
     network_policy: NetworkPolicy = NetworkPolicy.DISABLED
     egress_grant: SandboxEgressGrant | None = None
     timeout_seconds: int = Field(default=120, ge=1)
+    stop_rules: list[str] = Field(default_factory=list)
+    expected_output_schema: dict[str, Any] = Field(default_factory=dict)
     working_directory_policy: str = "ephemeral"
     artifact_policy: str = "controlled"
     provenance_context: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_egress_matching(self) -> SandboxInvocationMandate:
-        """Ensure network policy and egress grant consistency."""
+    def validate_mandate_integrity(self) -> SandboxInvocationMandate:
+        """Ensure network policy, specialist identity, and egress grant consistency."""
+        if not self.specialist_id:
+            self.specialist_id = self.specialist_agent or self.capability.value
+        if not self.worker_id and self.worker_role is not None:
+            self.worker_id = self.worker_role.value
+
         if self.egress_grant is not None:
             if self.network_policy == NetworkPolicy.DISABLED:
                 raise ValueError("Egress grant cannot be attached when network_policy is DISABLED.")
@@ -216,18 +225,25 @@ class SandboxResult(BaseModel):
     execution_id: str = Field(default_factory=lambda: f"exec-{uuid.uuid4()}")
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     worker_role: WorkerRole | None = None
+    worker_id: str = ""
+    specialist_id: str = ""
     capability: SandboxCapability
     status: SandboxExecutionStatus = SandboxExecutionStatus.COMPLETED
     success: bool
     sanitized_output: dict[str, str] = Field(default_factory=dict)
     structured_output: dict[str, Any] = Field(default_factory=dict)
+    validated_findings: list[str] = Field(default_factory=list)
+    confidence_score: float = 1.0
+    generated_diff: str = ""
     stdout: str = ""
     sanitized_stderr: str = ""
     generated_artifacts: list[str] = Field(default_factory=list)
+    artifact_references: list[str] = Field(default_factory=list)
     metrics: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     validation_results: dict[str, Any] = Field(default_factory=dict)
     execution_duration_ms: float = 0.0
     resource_usage: dict[str, Any] = Field(default_factory=dict)
+    execution_metadata: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, str] = Field(default_factory=dict)
     error: str | None = None

@@ -42,6 +42,8 @@ services:
     mem_limit: "4g"
     cpus: "2"
     pids_limit: 1024
+    volumes:
+      - ./skills:/home/gem/skills:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=1024m
       - /run:rw,noexec,nosuid,size=256m
@@ -60,6 +62,7 @@ services:
       BROWSER_EXTRA_ARGS: "--disable-quic --proxy-server=http://aio-egress-proxy:8118 --disable-dev-shm-usage"
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
       SANDBOX_API_KEY: ${SANDBOX_API_KEY:-}
+      AIO_SKILLS_PATH: /home/gem/skills
       WORKSPACE: /workspace
       HOMEPAGE: ""
       TZ: UTC
