@@ -569,6 +569,16 @@ class IntelligenceEngine:
 
         return directive
 
+    async def dispatch_approved_deployment(
+        self,
+        dispatch: DispatchDirective,
+        outbound_gateway: Any,
+        *,
+        task_state_service: Any | None = None,
+    ) -> dict[str, Any]:
+        """Execute an authorized post-HITL dispatch directive through the Outbound Actuation MCP Boundary."""
+        return await outbound_gateway.execute(dispatch)
+
 
     async def build_preview(
         self,

@@ -64,3 +64,26 @@ class DispatchReadiness(BaseModel):
     idempotent_cached: bool = False
     validation_notes: list[str] = Field(default_factory=list)
     certified_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class CmsDeploymentResult(BaseModel):
+    """Structured, provider-neutral record of a website/CMS production deployment."""
+
+    deployment_id: str
+    dispatch_id: str
+    task_id: str
+    tenant_id: str
+    channel: str = "cms"
+    action_type: str = "publish"
+    status_code: str = "200"
+    status: str = "published"  # "published", "updated", "created", "deployed", "failed", "rolled_back"
+    applied_items: list[dict[str, Any]] = Field(default_factory=list)
+    applied_hashes: list[str] = Field(default_factory=list)
+    version: str = "v1.0"
+    target: str = "cms"
+    details: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    deployed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+DeploymentResult = CmsDeploymentResult

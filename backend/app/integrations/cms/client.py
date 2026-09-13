@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import httpx
-
-from app.core.exceptions import ConfigurationError
-
-
+import hashlib
+import json
+from datetime import UTC, datetime
 from typing import Any
+
 import httpx
 
 from app.core.exceptions import ConfigurationError
@@ -27,6 +26,8 @@ class CmsClient:
         self._api_key = api_key
         self._client = client or httpx.AsyncClient()
         self._staged_store: dict[str, dict[str, dict[str, Any]]] = {}
+        self._published_store: dict[str, dict[str, dict[str, Any]]] = {}
+        self._version_history: dict[str, list[dict[str, Any]]] = {}
 
     def _require_configured(self) -> str:
         if not self._base_url:
@@ -67,10 +68,53 @@ class CmsClient:
         response.raise_for_status()
         return response.json()
 
+    async def create_entry(
+        self,
+        content_type: str,
+        entry_id: str,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+        *,
+        publish: bool = False,
+    ) -> dict[str, Any]:
+        """Create a new CMS content entry in staged or live store."""
+
+        if not self._base_url:
+            entry = dict(data)
+            entry["id"] = entry_id
+            if tenant_id:
+                entry["tenant_id"] = tenant_id
+            entry["status"] = "published" if publish else "created"
+            entry["created_at"] = datetime.now(UTC).isoformat()
+            if publish:
+                entry["published_at"] = datetime.now(UTC).isoformat()
+                self._published_store.setdefault(content_type, {})[entry_id] = entry
+            else:
+                self._staged_store.setdefault(content_type, {})[entry_id] = entry
+            return {
+                "status_code": "201",
+                "entry_id": entry_id,
+                "content_type": content_type,
+                "status": entry["status"],
+            }
+
+        base_url = self._require_configured()
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        payload = dict(data)
+        if tenant_id:
+            payload["tenant_id"] = tenant_id
+        response = await self._client.post(
+            f"{base_url}/api/{content_type}",
+            json=payload,
+            headers=headers,
+        )
+        response.raise_for_status()
+        return {"status_code": str(response.status_code), "entry_id": entry_id, "status": "created"}
+
     async def apply_changes(
         self, content_type: str, entry_id: str, diff: dict[str, Any], tenant_id: str | None = None
     ) -> dict[str, str]:
-        """Apply an approved content/schema change to a staged entry."""
+        """Apply an approved content/schema change to a staged or published entry."""
 
         if not self._base_url:
             bucket = self._staged_store.setdefault(content_type, {})
@@ -79,6 +123,11 @@ class CmsClient:
                 current["tenant_id"] = tenant_id
             current.update(diff)
             bucket[entry_id] = current
+
+            # Also update published store if present
+            if content_type in self._published_store and entry_id in self._published_store[content_type]:
+                self._published_store[content_type][entry_id].update(diff)
+
             return {"status_code": "200", "entry_id": entry_id, "status": "updated"}
 
         base_url = self._require_configured()
@@ -89,6 +138,185 @@ class CmsClient:
         )
         response.raise_for_status()
         return {"status_code": str(response.status_code), "entry_id": entry_id}
+
+    async def publish_entry(
+        self,
+        content_type: str,
+        entry_id: str,
+        tenant_id: str | None = None,
+        *,
+        version: str = "v1.0",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Promote an approved staged entry to the live published state with version tracking."""
+
+        now_str = datetime.now(UTC).isoformat()
+        if not self._base_url:
+            staged_bucket = self._staged_store.get(content_type, {})
+            base_entry = dict(staged_bucket.get(entry_id, {"id": entry_id}))
+            if payload:
+                base_entry.update(payload)
+            if tenant_id:
+                base_entry["tenant_id"] = tenant_id
+
+            # Save prior version to history for rollback
+            history_key = f"{content_type}:{entry_id}"
+            if entry_id in self._published_store.get(content_type, {}):
+                prev = dict(self._published_store[content_type][entry_id])
+                self._version_history.setdefault(history_key, []).append(prev)
+
+            base_entry["status"] = "published"
+            base_entry["publish_state"] = "published"
+            base_entry["version"] = version
+            base_entry["published_at"] = now_str
+            self._published_store.setdefault(content_type, {})[entry_id] = base_entry
+
+            return {
+                "status_code": "200",
+                "entry_id": entry_id,
+                "content_type": content_type,
+                "status": "published",
+                "version": version,
+                "published_at": now_str,
+            }
+
+        base_url = self._require_configured()
+        response = await self._client.post(
+            f"{base_url}/api/{content_type}/{entry_id}/publish",
+            json={"version": version, "payload": payload or {}},
+            headers={"Authorization": f"Bearer {self._api_key}"},
+        )
+        response.raise_for_status()
+        return {
+            "status_code": str(response.status_code),
+            "entry_id": entry_id,
+            "content_type": content_type,
+            "status": "published",
+            "version": version,
+            "published_at": now_str,
+        }
+
+    async def rollback_entry(
+        self, content_type: str, entry_id: str, tenant_id: str | None = None
+    ) -> dict[str, Any]:
+        """Roll back a published entry to its previous version."""
+
+        if not self._base_url:
+            history_key = f"{content_type}:{entry_id}"
+            history = self._version_history.get(history_key, [])
+            if not history:
+                return {
+                    "status_code": "404",
+                    "entry_id": entry_id,
+                    "content_type": content_type,
+                    "status": "no_prior_version",
+                }
+            previous = history.pop()
+            self._published_store.setdefault(content_type, {})[entry_id] = previous
+            return {
+                "status_code": "200",
+                "entry_id": entry_id,
+                "content_type": content_type,
+                "status": "rolled_back",
+                "version": previous.get("version", "previous"),
+                "rolled_back_at": datetime.now(UTC).isoformat(),
+            }
+
+        base_url = self._require_configured()
+        response = await self._client.post(
+            f"{base_url}/api/{content_type}/{entry_id}/rollback",
+            headers={"Authorization": f"Bearer {self._api_key}"},
+        )
+        response.raise_for_status()
+        return {"status_code": str(response.status_code), "entry_id": entry_id, "status": "rolled_back"}
+
+    async def read_published(
+        self,
+        content_type: str,
+        tenant_id: str | None = None,
+        entry_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return published entries matching the content type, tenant, and optional entry ID."""
+
+        if not self._base_url:
+            bucket = self._published_store.get(content_type, {})
+            entries = list(bucket.values())
+            if entry_id:
+                entries = [e for e in entries if e.get("id") == entry_id]
+            if tenant_id:
+                entries = [e for e in entries if e.get("tenant_id") in (None, "default", "global", tenant_id)]
+            return entries
+
+        base_url = self._require_configured()
+        params: dict[str, str] = {"status": "published"}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+        if entry_id:
+            params["id"] = entry_id
+        response = await self._client.get(
+            f"{base_url}/api/{content_type}",
+            params=params,
+            headers={"Authorization": f"Bearer {self._api_key}"},
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def deploy_payload(
+        self, payload: dict[str, Any], tenant_id: str | None = None
+    ) -> dict[str, Any]:
+        """Deploy a structured bundle of approved CMS models and changes to the live surface."""
+
+        applied_items: list[dict[str, Any]] = []
+        applied_hashes: list[str] = []
+        version = payload.get("version", "v1.0")
+
+        # 1. Handle explicit items list
+        if "items" in payload and isinstance(payload["items"], list):
+            for item in payload["items"]:
+                ct = item.get("content_type", "pages")
+                eid = item.get("entry_id") or item.get("id") or f"item-{len(applied_items)}"
+                res = await self.publish_entry(ct, eid, tenant_id=tenant_id, version=version, payload=item)
+                applied_items.append(res)
+                item_hash = hashlib.sha256(json.dumps(item, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+                applied_hashes.append(item_hash)
+
+        # 2. Handle categorized models (schemas, products, pages, layouts, assets, code_diffs)
+        category_map = {
+            "schema_diffs": ("schemas", "schema_name"),
+            "products": ("products", "product_id"),
+            "pages": ("pages", "page_id"),
+            "layouts": ("layouts", "layout_id"),
+            "assets": ("assets", "asset_id"),
+            "code_diffs": ("code_diffs", "file_path"),
+        }
+        for cat_key, (ct, id_field) in category_map.items():
+            if cat_key in payload and isinstance(payload[cat_key], list):
+                for model in payload[cat_key]:
+                    model_dict = model if isinstance(model, dict) else (model.model_dump() if hasattr(model, "model_dump") else dict(model))
+                    eid = str(model_dict.get(id_field) or model_dict.get("id") or f"{ct}-{len(applied_items)}")
+                    res = await self.publish_entry(ct, eid, tenant_id=tenant_id, version=version, payload=model_dict)
+                    applied_items.append(res)
+                    h = hashlib.sha256(json.dumps(model_dict, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+                    applied_hashes.append(h)
+
+        # 3. Handle single entry payload
+        if not applied_items:
+            eid = payload.get("entry_id") or payload.get("id") or "entry-1"
+            ct = payload.get("content_type", "pages")
+            res = await self.publish_entry(ct, eid, tenant_id=tenant_id, version=version, payload=payload)
+            applied_items.append(res)
+            h = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+            applied_hashes.append(h)
+
+        return {
+            "status_code": "200",
+            "status": "published",
+            "applied_items": applied_items,
+            "applied_hashes": applied_hashes,
+            "version": version,
+            "target": "cms",
+            "deployed_at": datetime.now(UTC).isoformat(),
+        }
 
     async def aclose(self) -> None:
         await self._client.aclose()
