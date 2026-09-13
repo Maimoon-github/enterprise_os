@@ -435,3 +435,86 @@ class DevelopmentDeliverable(BaseModel):
     security_checks_passed: bool = True
     provenance: dict[str, Any] = Field(default_factory=dict)
     confidence: ConfidenceInterval | None = None
+
+
+class ConflictSeverity(StrEnum):
+    """Classification of cross-envelope contradiction severity."""
+
+    INFO = "INFO"
+    WARNING = "WARNING"
+    BLOCKING = "BLOCKING"
+
+
+class EvidenceConflict(BaseModel):
+    """Structured record of a cross-envelope contradiction or mismatch."""
+
+    conflict_id: str
+    conflict_type: str
+    severity: ConflictSeverity = ConflictSeverity.WARNING
+    conflicting_task_ids: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    description: str
+    field_or_topic: str = ""
+    resolvable_by_hitl: bool = True
+
+
+class RejectedEvidenceItem(BaseModel):
+    """Trackable record of an evidence envelope or finding rejected during consolidation."""
+
+    task_id: str
+    worker_role: str
+    rejection_reason: str
+    rejection_code: str
+    raw_evidence_summary: str = ""
+    rejected_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class CandidateStateDelta(BaseModel):
+    """Validated candidate task or entity state change proposed for CTS adoption."""
+
+    task_id: str
+    tenant_id: str
+    worker_role: WorkerRole | str
+    target_status: str
+    proposed_changes: dict[str, Any] = Field(default_factory=dict)
+    is_authorized: bool = True
+    validation_notes: str = ""
+
+
+class ConsolidatedConfidenceSummary(BaseModel):
+    """Statistical summary of confidence across consolidated worker evidence."""
+
+    weighted_point_estimate: float
+    lower_bound: float
+    upper_bound: float
+    dispersion: float = 0.0
+    confidence_band: str = "MODERATE"
+    is_statistically_sound: bool = True
+    envelope_count: int = 0
+
+
+class ConsolidatedPackageStatus(StrEnum):
+    """Authoritative status of a consolidated evidence package."""
+
+    VALID = "VALID"
+    FLAGGED_WITH_CONFLICTS = "FLAGGED_WITH_CONFLICTS"
+    REJECTED = "REJECTED"
+
+
+class ConsolidatedEvidencePackage(BaseModel):
+    """Consolidated, verified evidence package assembled by the Intelligence Engine."""
+
+    package_id: str
+    tenant_id: str
+    status: ConsolidatedPackageStatus = ConsolidatedPackageStatus.VALID
+    source_task_ids: list[str] = Field(default_factory=list)
+    participating_roles: list[WorkerRole] = Field(default_factory=list)
+    validated_artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    confidence_summary: ConsolidatedConfidenceSummary
+    conflicts: list[EvidenceConflict] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    rejected_items: list[RejectedEvidenceItem] = Field(default_factory=list)
+    proposed_state_deltas: list[CandidateStateDelta] = Field(default_factory=list)
+    synthesized_evidence_summary: list[str] = Field(default_factory=list)
+    provenance_summary: dict[str, Any] = Field(default_factory=dict)
+    consolidated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

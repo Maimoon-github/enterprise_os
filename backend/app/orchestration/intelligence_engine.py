@@ -23,13 +23,19 @@ from app.integrations.llm.client import LlmClient, LlmResponseError
 from app.mcp.host import McpHost
 from app.orchestration.context_assembly import ContextAssembler
 from app.orchestration.dag_scheduler import DagScheduler
-from app.orchestration.evidence_synthesis import EvidenceSynthesizer
+from app.orchestration.evidence_synthesis import EvidenceSynthesizer, SynthesizedEvidence
 from app.orchestration.hitl_preview_generator import HitlPreviewGenerator
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.rag_query_dispatch import IntelligenceEngineToken
 from app.orchestration.task_state_machine import TaskStateMachine
 from app.schemas.action_preview import ActionPreview, ActionPreviewKind
-from app.schemas.agent_contracts import ContextRequest, EvidenceEnvelope, TaskGrant
+from app.schemas.agent_contracts import (
+    ConfidenceInterval,
+    ConsolidatedEvidencePackage,
+    ContextRequest,
+    EvidenceEnvelope,
+    TaskGrant,
+)
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
@@ -372,9 +378,39 @@ class IntelligenceEngine:
         )
         return result
 
+    async def consolidate_evidence(
+        self,
+        directive: Directive,
+        envelopes: list[EvidenceEnvelope],
+        *,
+        required_roles: list[WorkerRole] | None = None,
+    ) -> ConsolidatedEvidencePackage:
+        """Consolidate evidence envelopes across worker tasks into a verified package for T23.
+
+        Validates envelope structure, verifies confidence intervals, enforces tenant boundaries,
+        detects cross-envelope contradictions, validates candidate CTS deltas,
+        and records provenance.
+        """
+
+        package = self._evidence_synthesizer.consolidate(
+            envelopes,
+            expected_tenant_id=directive.tenant_id,
+            required_roles=required_roles,
+            directive_id=directive.directive_id,
+        )
+
+        await self._provenance_recorder.record(
+            tenant_id=directive.tenant_id,
+            entity_id=package.package_id,
+            activity="evidence_consolidation",
+            agent="intelligence_engine",
+        )
+
+        return package
+
     async def build_preview(
         self,
-        envelopes: list[EvidenceEnvelope],
+        envelopes: list[EvidenceEnvelope] | ConsolidatedEvidencePackage,
         *,
         kind: ActionPreviewKind,
         risk_level: RiskLevel,
@@ -383,17 +419,32 @@ class IntelligenceEngine:
     ) -> ActionPreview:
         """Synthesize evidence and produce a mandatory human-review preview."""
 
-        synthesized = self._evidence_synthesizer.synthesize(envelopes)
+        raw_envelopes: list[EvidenceEnvelope] = []
+        if isinstance(envelopes, ConsolidatedEvidencePackage):
+            synthesized = SynthesizedEvidence(
+                task_id=";".join(envelopes.source_task_ids) if envelopes.source_task_ids else "consolidated",
+                evidence=envelopes.synthesized_evidence_summary,
+                confidence=ConfidenceInterval(
+                    point_estimate=envelopes.confidence_summary.weighted_point_estimate,
+                    lower_bound=envelopes.confidence_summary.lower_bound,
+                    upper_bound=envelopes.confidence_summary.upper_bound,
+                ),
+                package=envelopes,
+            )
+        else:
+            raw_envelopes = envelopes
+            synthesized = self._evidence_synthesizer.synthesize(envelopes)
+
         # Extract diff if not provided
         if diff is None and kind == ActionPreviewKind.CODE_DIFF:
-            for env in envelopes:
+            for env in raw_envelopes:
                 if "diff" in env.payload:
                     diff = env.payload["diff"]
                     break
 
         # Extract spend if not provided
         if spend_amount is None and kind == ActionPreviewKind.SPEND:
-            for env in envelopes:
+            for env in raw_envelopes:
                 if "budget_total" in env.payload:
                     try:
                         spend_amount = float(env.payload["budget_total"])
@@ -411,6 +462,7 @@ class IntelligenceEngine:
         )
         self._hitl_coordinator.submit_for_approval(preview)
         return preview
+
 
 
     # ---------------------------------------------------------------------
