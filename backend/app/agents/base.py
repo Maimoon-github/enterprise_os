@@ -81,6 +81,8 @@ class BoundedWorkerAgent(ABC):
             findings = [line for line in evidence if not line.startswith("error")]
             if "diff" in result.sanitized_output:
                 artifacts.append(f"diff:{grant.task_id}")
+            if "dev_deliverable" in result.sanitized_output:
+                artifacts.append(f"dev:{grant.task_id}")
             if "copy_body" in result.sanitized_output or "headline" in result.sanitized_output:
                 artifacts.append(f"copy:{grant.task_id}")
             if "creative_package" in result.sanitized_output:

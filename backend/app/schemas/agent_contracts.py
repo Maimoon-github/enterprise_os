@@ -371,3 +371,67 @@ class CreativePackage(BaseModel):
     persona_voice: str = "authoritative"
     provenance: dict[str, Any] = Field(default_factory=dict)
     confidence: ConfidenceInterval | None = None
+
+
+class ResponsiveBreakpoint(BaseModel):
+    """Layout and responsive styling constraints for a device viewport category."""
+
+    breakpoint: str = "mobile"
+    min_width: int | None = None
+    max_width: int | None = None
+    layout_rules: dict[str, str] = Field(default_factory=dict)
+
+
+class UITemplateDefinition(BaseModel):
+    """Responsive UI template and component definition produced by W_DEV + S_CODE."""
+
+    template_id: str
+    name: str
+    component_type: str = "component"
+    template_markup: str
+    css_styles: str = ""
+    responsive_breakpoints: list[ResponsiveBreakpoint] = Field(default_factory=list)
+    design_tokens: dict[str, str] = Field(default_factory=dict)
+    props_schema: dict[str, Any] = Field(default_factory=dict)
+    is_responsive_validated: bool = True
+
+
+class CmsSchemaDiff(BaseModel):
+    """Structured diff representing schema extensions or modifications for CMS models."""
+
+    schema_name: str
+    target_content_type: str = "pages"
+    operation: str = "extend_fields"
+    added_fields: list[dict[str, Any]] = Field(default_factory=list)
+    modified_fields: list[dict[str, Any]] = Field(default_factory=list)
+    validation_rules: list[str] = Field(default_factory=list)
+    is_backward_compatible: bool = True
+
+
+class CodeDiffEntry(BaseModel):
+    """Structured unified code diff entry for an individual file."""
+
+    file_path: str
+    action: str = "modify"
+    diff_unified: str
+    ast_validated: bool = True
+    syntax_lint_passed: bool = True
+    syntax_errors: list[str] = Field(default_factory=list)
+    scope_boundary_verified: bool = True
+
+
+class DevelopmentDeliverable(BaseModel):
+    """Consolidated engineering deliverable produced by W_DEV + S_CODE."""
+
+    deliverable_id: str
+    tenant_id: str
+    task_id: str
+    component_name: str
+    ui_templates: list[UITemplateDefinition] = Field(default_factory=list)
+    cms_schema_diffs: list[CmsSchemaDiff] = Field(default_factory=list)
+    code_diffs: list[CodeDiffEntry] = Field(default_factory=list)
+    changed_files: list[str] = Field(default_factory=list)
+    validation_findings: list[str] = Field(default_factory=list)
+    security_checks_passed: bool = True
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    confidence: ConfidenceInterval | None = None
