@@ -142,3 +142,82 @@ class ProductSpecification(BaseModel):
     compliance_findings: list[str] = Field(default_factory=list)
     missing_attributes: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class SentimentClassification(StrEnum):
+    """Normalized sentiment categories for customer voice inputs."""
+
+    POSITIVE = "POSITIVE"
+    NEGATIVE = "NEGATIVE"
+    NEUTRAL = "NEUTRAL"
+    MIXED = "MIXED"
+
+
+class CustomerVoiceItem(BaseModel):
+    """Normalized input representation of a support ticket, review, or survey response."""
+
+    item_id: str
+    source_type: str = "feedback"
+    text: str
+    product_id: str | None = None
+    channel: str | None = None
+    timestamp: datetime | None = None
+    tenant_id: str | None = None
+    provenance_ref: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class AnonymizedSentimentVector(BaseModel):
+    """Anonymized, structured sentiment and topic classification for a single customer voice item."""
+
+    vector_id: str
+    source_id_hash: str
+    source_type: str = "feedback"
+    tenant_id: str = "default"
+    product_id: str | None = None
+    channel: str | None = None
+    sanitized_text: str = ""
+    sentiment_label: SentimentClassification = SentimentClassification.NEUTRAL
+    polarity: float = 0.0
+    confidence: float = 0.0
+    topics: list[str] = Field(default_factory=list)
+    intent: str = "general_feedback"
+    urgency: str = "low"
+    detected_objections: list[str] = Field(default_factory=list)
+    pain_points: list[str] = Field(default_factory=list)
+    praise_points: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ObjectionProfile(BaseModel):
+    """Aggregated, recurring customer objection or problem profile with evidence traceability."""
+
+    objection_id: str
+    objection_type: str
+    normalized_theme: str
+    frequency: int = 1
+    affected_products: list[str] = Field(default_factory=list)
+    affected_channels: list[str] = Field(default_factory=list)
+    sentiment_distribution: dict[str, int] = Field(default_factory=dict)
+    representative_evidence_refs: list[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    severity: str = "low"
+    trend: str = "stable"
+    unresolved_ambiguity: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class CustomerVoiceAnalysisResult(BaseModel):
+    """Consolidated customer voice deliverable produced by W_VOICE + S_PARSE."""
+
+    analysis_id: str
+    tenant_id: str
+    product_id: str | None = None
+    total_items_analyzed: int = 0
+    average_polarity: float = 0.0
+    sentiment_breakdown: dict[str, int] = Field(default_factory=dict)
+    sentiment_vectors: list[AnonymizedSentimentVector] = Field(default_factory=list)
+    objection_profiles: list[ObjectionProfile] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    anonymization_stats: dict[str, int] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)

@@ -343,6 +343,10 @@ class SandboxClient:
             artifacts.append(f"dossier:{mandate.task_id}")
         if "product_specification" in sanitized_output:
             artifacts.append(f"spec:{mandate.task_id}")
+        if "customer_voice_analysis" in sanitized_output or "objection_profiles" in sanitized_output:
+            artifacts.append(f"voice:{mandate.task_id}")
+        if "sentiment_vectors" in sanitized_output:
+            artifacts.append(f"sentiment:{mandate.task_id}")
 
         cgroup_metrics = self._collect_resource_metrics(mandate)
 
