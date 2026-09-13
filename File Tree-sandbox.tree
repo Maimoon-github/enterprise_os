@@ -11,6 +11,44 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 ├── 📁 cli/
 │   └── ⚙️ .gitkeep
 ├── 📁 docker/
+│   ├── 📁 hardened/
+│   │   ├── 📁 egress-proxy/
+│   │   │   ├── 📄 allowed-domains.txt
+│   │   │   └── ⚙️ tinyproxy-allowlist.conf
+│   │   ├── 📁 scripts/
+│   │   │   └── 📄 cleanup.sh
+│   │   ├── 📁 seccomp/
+│   │   │   └── ⚙️ chromium-seccomp.json
+│   │   ├── 📁 skills/
+│   │   │   ├── 📁 s-alloc/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
+│   │   │   ├── 📁 s-attr/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
+│   │   │   ├── 📁 s-code/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
+│   │   │   ├── 📁 s-copy/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
+│   │   │   ├── 📁 s-parse/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
+│   │   │   ├── 📁 s-scrape/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
+│   │   │   └── 📁 s-val/
+│   │   │       ├── 📁 scripts/
+│   │   │       │   └── 🐍 run.py
+│   │   │       └── 📝 SKILL.md
+│   │   └── ⚙️ docker-compose.hardened.yaml
 │   └── ⚙️ .gitkeep
 ├── 📁 evaluation/
 │   ├── 📁 dataset/
@@ -829,6 +867,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   └── 📄 index.ts
 │   │   ├── ⚙️ .gitignore
 │   │   ├── 📝 README.md
+│   │   ├── ⚙️ package-lock.json
 │   │   ├── ⚙️ package.json
 │   │   ├── 📄 rslib.config.ts
 │   │   ├── ⚙️ tsconfig.json
@@ -1181,6 +1220,30 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   └── 📄 uv.lock
 │   └── ⚙️ .gitignore
 ├── 📁 website/
+│   ├── 📁 diagrams/
+│   │   ├── 📝 README.md
+│   │   ├── ⚙️ aio-agent-calls-sandbox.architecture.json
+│   │   ├── ⚙️ aio-agent-in-sandbox.architecture.json
+│   │   ├── ⚙️ aio-sandbox-overview.architecture.json
+│   │   ├── 🌐 aiod-agent-task.html
+│   │   ├── 🌐 aiod-boot-to-ready.html
+│   │   ├── ⚙️ aiod-browser-cdp.architecture.json
+│   │   ├── ⚙️ aiod-browser-use-flow.sequence.json
+│   │   ├── 🐍 aiod-capabilities.gen.py
+│   │   ├── ⚙️ aiod-code-backends.sequence.json
+│   │   ├── ⚙️ aiod-code-execution-flow.sequence.json
+│   │   ├── ⚙️ aiod-computer-action.sequence.json
+│   │   ├── 🌐 aiod-computer-use.html
+│   │   ├── ⚙️ aiod-existing-environment.architecture.json
+│   │   ├── ⚙️ aiod-human-in-loop.architecture.json
+│   │   ├── 🌐 aiod-jupyter-footprint.html
+│   │   ├── ⚙️ aiod-jupyter-kernel.architecture.json
+│   │   ├── ⚙️ aiod-mcp-flow.architecture.json
+│   │   ├── ⚙️ aiod-overview.architecture.json
+│   │   ├── ⚙️ aiod-permission-model.architecture.json
+│   │   ├── ⚙️ aiod-terminal-flow.sequence.json
+│   │   ├── ⚙️ aiod-terminal-reconnect.sequence.json
+│   │   └── ⚙️ aiod-watch-flow.sequence.json
 │   ├── 📁 docs/
 │   │   ├── 📁 en/
 │   │   │   ├── 📁 api/
@@ -1190,6 +1253,50 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   │   ├── ⚙️ _meta.json
 │   │   │   │   ├── 📄 announcing-0.mdx
 │   │   │   │   └── 📄 index.mdx
+│   │   │   ├── 📁 daemon/
+│   │   │   │   ├── 📁 basic/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📝 authentication.md
+│   │   │   │   │   ├── 📄 bash.mdx
+│   │   │   │   │   ├── 📄 browser.mdx
+│   │   │   │   │   ├── 📝 cdp.md
+│   │   │   │   │   ├── 📄 code.mdx
+│   │   │   │   │   ├── 📄 display.mdx
+│   │   │   │   │   ├── 📝 error-handling.md
+│   │   │   │   │   ├── 📄 file.mdx
+│   │   │   │   │   ├── 📝 jupyter.md
+│   │   │   │   │   ├── 📄 nodejs.mdx
+│   │   │   │   │   ├── 📝 observability.md
+│   │   │   │   │   ├── 📄 sandbox.mdx
+│   │   │   │   │   ├── 📄 shell.mdx
+│   │   │   │   │   └── 📝 windows.md
+│   │   │   │   ├── 📁 examples/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📄 agent-call-sandbox.mdx
+│   │   │   │   │   ├── 📄 browser-cdp.mdx
+│   │   │   │   │   ├── 📄 browser-use.mdx
+│   │   │   │   │   ├── 📄 code-execution.mdx
+│   │   │   │   │   ├── 📄 computer-use.mdx
+│   │   │   │   │   ├── 📄 file-ops.mdx
+│   │   │   │   │   ├── 📄 index.mdx
+│   │   │   │   │   ├── 📄 mcp.mdx
+│   │   │   │   │   └── 📄 terminal.mdx
+│   │   │   │   ├── 📁 ops/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📝 deployment.md
+│   │   │   │   │   └── 📝 kubernetes.md
+│   │   │   │   ├── 📁 start/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📄 dashboard.mdx
+│   │   │   │   │   ├── 📄 introduction.mdx
+│   │   │   │   │   ├── 📝 migration.md
+│   │   │   │   │   ├── 📄 quick-start.mdx
+│   │   │   │   │   ├── 📄 releases.mdx
+│   │   │   │   │   └── 📄 v1-api.tsx
+│   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   ├── 🎨 api.scss
+│   │   │   │   ├── 📄 api.tsx
+│   │   │   │   └── 📝 architecture.md
 │   │   │   ├── 📁 examples/
 │   │   │   │   ├── 📝 agent.md
 │   │   │   │   ├── 📝 browser.md
@@ -1243,6 +1350,128 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   ├── ⚙️ _nav.json
 │   │   │   └── 📝 index.md
 │   │   ├── 📁 public/
+│   │   │   ├── 📁 architecture/
+│   │   │   │   ├── 🖼️ aio-agent-calls-sandbox.svg
+│   │   │   │   ├── 🖼️ aio-agent-in-sandbox.svg
+│   │   │   │   ├── 🖼️ aio-sandbox-overview.svg
+│   │   │   │   ├── 🖼️ aiod-agent-task.svg
+│   │   │   │   ├── 🖼️ aiod-boot-to-ready.svg
+│   │   │   │   ├── 🖼️ aiod-browser-cdp.svg
+│   │   │   │   ├── 🖼️ aiod-browser-use-flow.svg
+│   │   │   │   ├── 🖼️ aiod-capabilities.svg
+│   │   │   │   ├── 🖼️ aiod-code-backends.svg
+│   │   │   │   ├── 🖼️ aiod-code-execution-flow.svg
+│   │   │   │   ├── 🖼️ aiod-computer-action.svg
+│   │   │   │   ├── 🖼️ aiod-computer-use.svg
+│   │   │   │   ├── 🖼️ aiod-existing-environment.svg
+│   │   │   │   ├── 🖼️ aiod-human-in-loop.svg
+│   │   │   │   ├── 🖼️ aiod-jupyter-footprint.svg
+│   │   │   │   ├── 🖼️ aiod-jupyter-kernel.svg
+│   │   │   │   ├── 🖼️ aiod-mcp-flow.svg
+│   │   │   │   ├── 🖼️ aiod-overview.svg
+│   │   │   │   ├── 🖼️ aiod-permission-model.svg
+│   │   │   │   ├── 🖼️ aiod-terminal-flow.svg
+│   │   │   │   ├── 🖼️ aiod-terminal-reconnect.svg
+│   │   │   │   └── 🖼️ aiod-watch-flow.svg
+│   │   │   ├── 📁 daemon/
+│   │   │   │   ├── 📁 v1/
+│   │   │   │   │   └── ⚙️ openapi.json
+│   │   │   │   └── 📁 v2/
+│   │   │   │       └── ⚙️ openapi.json
+│   │   │   ├── 📁 dashboard/
+│   │   │   │   ├── 📁 assets/
+│   │   │   │   │   ├── 📄 AgentScalarChatInterface.vue-Bm0D6cbH.js
+│   │   │   │   │   ├── 📄 MonacoEditor-Bk-dsVbk.js
+│   │   │   │   │   ├── 📄 ScalarDocs-DCmmQezz.js
+│   │   │   │   │   ├── 🎨 ScalarDocs-DJKejiwx.css
+│   │   │   │   │   ├── 📄 basic-shape-diamond.svg-3tzFV8wO.js
+│   │   │   │   │   ├── 📄 basic-shape-hexagon.svg-DPLmaQyR.js
+│   │   │   │   │   ├── 📄 basic-shape-primary-circle-ellipse-round.svg-yk5yXAu3.js
+│   │   │   │   │   ├── 📄 basic-shape-primary-square-rectangle.svg-Df81WcVm.js
+│   │   │   │   │   ├── 📄 basic-shape-shield.svg-BR3Lhjrn.js
+│   │   │   │   │   ├── 📄 computer-device-desktop-monitor.svg-jL0LUhcy.js
+│   │   │   │   │   ├── 📄 computer-device-desktop.svg-jWF40REF.js
+│   │   │   │   │   ├── 📄 computer-device-laptop.svg-BsH0mHjG.js
+│   │   │   │   │   ├── 📄 computer-device-mobile-phone-android-samsung-back.svg-h38KRbwf.js
+│   │   │   │   │   ├── 📄 computer-device-mobile-phone-android-samsung.svg-9mrhFlcM.js
+│   │   │   │   │   ├── 📄 computer-device-mobile-phone-iphone-x-back.svg-B2grarPh.js
+│   │   │   │   │   ├── 📄 computer-device-mobile-phone-iphone-x.svg-iNijBDhj.js
+│   │   │   │   │   ├── 📄 computer-device-mobile-tablet-touch.svg-Dw7k7n7F.js
+│   │   │   │   │   ├── 📄 computer-device-mobile-tablet.svg-C5TxOvrO.js
+│   │   │   │   │   ├── 📄 computer-device-network-ethernet-cat6.svg-DAlnH8hR.js
+│   │   │   │   │   ├── 📄 computer-device-network-lan-www.svg-D-C_8gWk.js
+│   │   │   │   │   ├── 📄 computer-device-network-wifi-connection.svg-g9FaLrS4.js
+│   │   │   │   │   ├── 📄 computer-device-network-wifi-router.svg-4kO_HpF2.js
+│   │   │   │   │   ├── 📄 ecology-science-erlenmeyer-flask.svg-D6apBQBi.js
+│   │   │   │   │   ├── 📄 image-flash-lightning.svg-DiBecV-N.js
+│   │   │   │   │   ├── 📄 image-picture-flower.svg-DBabRE-B.js
+│   │   │   │   │   ├── 📄 index-BN-P4wVP.js
+│   │   │   │   │   ├── 📄 index-BafZIX1r.js
+│   │   │   │   │   ├── 🎨 index-BmC-YQfe.css
+│   │   │   │   │   ├── 📄 index-gGUCDZRp.js
+│   │   │   │   │   ├── 📄 interface-alert-exclamation-diamond.svg-Dnq9-N3P.js
+│   │   │   │   │   ├── 📄 interface-alert-exclamation-triangle-warning.svg-D61Lw0fT.js
+│   │   │   │   │   ├── 📄 interface-alert-information-circle.svg-BjBt2UhI.js
+│   │   │   │   │   ├── 📄 interface-award-crown.svg-CPhPDiLm.js
+│   │   │   │   │   ├── 📄 interface-bookmark-tag.svg-CGFig3_H.js
+│   │   │   │   │   ├── 📄 interface-bookmark.svg-iGjyQW6G.js
+│   │   │   │   │   ├── 📄 interface-calendar-date-one.svg-BEhSt1kC.js
+│   │   │   │   │   ├── 📄 interface-content-book-open-pages.svg-BkoBJz7T.js
+│   │   │   │   │   ├── 📄 interface-content-book-page.svg-DDZ7Fnj-.js
+│   │   │   │   │   ├── 📄 interface-content-file.svg-C6qz22uo.js
+│   │   │   │   │   ├── 📄 interface-copy-clipboard.svg-DBUoSqLY.js
+│   │   │   │   │   ├── 📄 interface-edit-attachment.svg-C-5fRa7A.js
+│   │   │   │   │   ├── 📄 interface-edit-binocular.svg-DtK0y0kX.js
+│   │   │   │   │   ├── 📄 interface-edit-magic-wand.svg-CY3ibLr1.js
+│   │   │   │   │   ├── 📄 interface-edit-tool-paint-roller.svg-en2P6-ei.js
+│   │   │   │   │   ├── 📄 interface-edit-tool-pencil.svg-D08F0mfJ.js
+│   │   │   │   │   ├── 📄 interface-favorite-award.svg-D_9AYetj.js
+│   │   │   │   │   ├── 📄 interface-favorite-flag.svg-XJ8sfY-J.js
+│   │   │   │   │   ├── 📄 interface-favorite-heart.svg-BO5GAOD9.js
+│   │   │   │   │   ├── 📄 interface-favorite-star.svg-BxbCJ4wq.js
+│   │   │   │   │   ├── 📄 interface-favorite-stars-sparkles.svg-n4EBa-Tl.js
+│   │   │   │   │   ├── 📄 interface-hierarchy-flowchart.svg-BzDduESE.js
+│   │   │   │   │   ├── 📄 interface-home-house.svg-s2W5srN4.js
+│   │   │   │   │   ├── 📄 interface-hyperlink.svg-Dep7yI6r.js
+│   │   │   │   │   ├── 📄 interface-lighting-brightness.svg-CBroNXA2.js
+│   │   │   │   │   ├── 📄 interface-lock-closed.svg-DHK6CXS2.js
+│   │   │   │   │   ├── 📄 interface-lock-open-unlock.svg-Dju9VnXz.js
+│   │   │   │   │   ├── 📄 interface-login-key.svg-CF_kduMi.js
+│   │   │   │   │   ├── 📄 interface-search.svg-Il7Encm1.js
+│   │   │   │   │   ├── 📄 interface-setting-cog.svg-BfYEr6Eg.js
+│   │   │   │   │   ├── 📄 interface-share-megaphone-bullhorn.svg-DDDdq0S7.js
+│   │   │   │   │   ├── 📄 interface-share-rocket.svg-DUDB2C8b.js
+│   │   │   │   │   ├── 📄 interface-share-satellite.svg-Dc6Q_iPM.js
+│   │   │   │   │   ├── 📄 interface-share-space-ship.svg-3phA90JN.js
+│   │   │   │   │   ├── 📄 interface-share.svg-DrAQ_Vrl.js
+│   │   │   │   │   ├── 📄 interface-signal-square.svg-D8Q28uI2.js
+│   │   │   │   │   ├── 📄 interface-time-clock-circle.svg-D89q6Hoa.js
+│   │   │   │   │   ├── 📄 interface-time-hour-glass.svg-IJMyElzI.js
+│   │   │   │   │   ├── 📄 interface-users-multiple.svg-CHDgB4fI.js
+│   │   │   │   │   ├── 📄 interface-weather-moon.svg-C9No57fd.js
+│   │   │   │   │   ├── 📄 mail-chat-bubble-square.svg-CBZyfV6Y.js
+│   │   │   │   │   ├── 📄 mail-send-email-paper-airplane.svg-BEFBIC36.js
+│   │   │   │   │   ├── 📄 mail-send-envelope.svg-CbGRgrjc.js
+│   │   │   │   │   ├── 📄 money-cashier-receipt.svg-TO5nz_I6.js
+│   │   │   │   │   ├── 📄 money-currency-dollar-pay.svg-DO6K6Sl8.js
+│   │   │   │   │   ├── 📄 money-graph-arrow-increase.svg-BsAYYuSU.js
+│   │   │   │   │   ├── 📄 money-graph-bar-chart-increase.svg-BSBL2HiL.js
+│   │   │   │   │   ├── 📄 nature-ecology-leaf.svg-CXO7dUjE.js
+│   │   │   │   │   ├── 📄 phone-telephone.svg-BIC-AkjO.js
+│   │   │   │   │   ├── 📄 programming-bug.svg-xYJW5dzI.js
+│   │   │   │   │   ├── 📄 programming-cloud.svg-BYQYsq9z.js
+│   │   │   │   │   ├── 📄 programming-computer-database-server.svg-Cd9_Sy2Q.js
+│   │   │   │   │   ├── 📄 programming-computer-database.svg-7XO1pH_q.js
+│   │   │   │   │   ├── 📄 programming-module-four-layout.svg-DfUYP_Nw.js
+│   │   │   │   │   ├── 📄 programming-module-three.svg-CDukhipz.js
+│   │   │   │   │   ├── 📄 programming-module.svg-D_WMMxBR.js
+│   │   │   │   │   ├── 📄 programming-script-code.svg-CMcdX5Ei.js
+│   │   │   │   │   ├── 📄 shopping-cart.svg-XMOFNE6k.js
+│   │   │   │   │   ├── 📄 shopping-gift-present.svg-CmO0g7Td.js
+│   │   │   │   │   ├── 📄 shopping-shipping-box-parcel-package.svg-BqPK1YlR.js
+│   │   │   │   │   ├── 📄 tag-new-circle.svg-DMUNUp7v.js
+│   │   │   │   │   └── 📄 travel-map-earth-globe.svg-C-qrHLvL.js
+│   │   │   │   └── 🌐 index.html
 │   │   │   ├── 📁 icons/
 │   │   │   │   └── 🖼️ mcp.png
 │   │   │   ├── 📁 images/
@@ -1271,7 +1500,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   │   │       ├── 🖼️ 27.png
 │   │   │   │   │       ├── 🖼️ 28.png
 │   │   │   │   │       ├── 🖼️ 29.jpeg
-│   │   │   │   │       ├── 🖼️ 3.PNG
+│   │   │   │   │       ├── 🖼️ 3.png
 │   │   │   │   │       ├── 🖼️ 30.png
 │   │   │   │   │       ├── 🖼️ 31.jpeg
 │   │   │   │   │       ├── 🖼️ 32.jpeg
@@ -1299,6 +1528,12 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   │   ├── 🖼️ subdomain-proxy.png
 │   │   │   │   ├── 🖼️ terminal.png
 │   │   │   │   └── 🖼️ vnc.png
+│   │   │   ├── 📁 img/
+│   │   │   │   ├── 🖼️ arch-flow-en.png
+│   │   │   │   └── 🖼️ arch-flow-zh.png
+│   │   │   ├── 📁 screenshots/
+│   │   │   │   ├── 🖼️ aiod-jaeger-trace.png
+│   │   │   │   └── 🖼️ dashboard.png
 │   │   │   ├── 📁 v1/
 │   │   │   │   └── ⚙️ openapi.json
 │   │   │   ├── 🖼️ aio-dark-logo.png
@@ -1312,6 +1547,50 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   │   ├── ⚙️ _meta.json
 │   │   │   │   ├── 📄 announcing-0.mdx
 │   │   │   │   └── 📄 index.mdx
+│   │   │   ├── 📁 daemon/
+│   │   │   │   ├── 📁 basic/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📝 authentication.md
+│   │   │   │   │   ├── 📄 bash.mdx
+│   │   │   │   │   ├── 📄 browser.mdx
+│   │   │   │   │   ├── 📝 cdp.md
+│   │   │   │   │   ├── 📄 code.mdx
+│   │   │   │   │   ├── 📄 display.mdx
+│   │   │   │   │   ├── 📝 error-handling.md
+│   │   │   │   │   ├── 📄 file.mdx
+│   │   │   │   │   ├── 📝 jupyter.md
+│   │   │   │   │   ├── 📄 nodejs.mdx
+│   │   │   │   │   ├── 📝 observability.md
+│   │   │   │   │   ├── 📄 sandbox.mdx
+│   │   │   │   │   ├── 📄 shell.mdx
+│   │   │   │   │   └── 📝 windows.md
+│   │   │   │   ├── 📁 examples/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📄 agent-call-sandbox.mdx
+│   │   │   │   │   ├── 📄 browser-cdp.mdx
+│   │   │   │   │   ├── 📄 browser-use.mdx
+│   │   │   │   │   ├── 📄 code-execution.mdx
+│   │   │   │   │   ├── 📄 computer-use.mdx
+│   │   │   │   │   ├── 📄 file-ops.mdx
+│   │   │   │   │   ├── 📄 index.mdx
+│   │   │   │   │   ├── 📄 mcp.mdx
+│   │   │   │   │   └── 📄 terminal.mdx
+│   │   │   │   ├── 📁 ops/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📝 deployment.md
+│   │   │   │   │   └── 📝 kubernetes.md
+│   │   │   │   ├── 📁 start/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📄 dashboard.mdx
+│   │   │   │   │   ├── 📄 introduction.mdx
+│   │   │   │   │   ├── 📝 migration.md
+│   │   │   │   │   ├── 📄 quick-start.mdx
+│   │   │   │   │   ├── 📄 releases.mdx
+│   │   │   │   │   └── 📄 v1-api.tsx
+│   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   ├── 🎨 api.scss
+│   │   │   │   ├── 📄 api.tsx
+│   │   │   │   └── 📝 architecture.md
 │   │   │   ├── 📁 examples/
 │   │   │   │   ├── 📝 agent.md
 │   │   │   │   ├── 📝 browser.md
@@ -1385,9 +1664,14 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   │   │   ├── 📄 svg.d.ts
 │   │   │   │   ├── 🖼️ terminal.svg
 │   │   │   │   └── 🖼️ vscode.svg
+│   │   │   ├── 🎨 ApiPreference.css
+│   │   │   ├── 📄 ApiPreference.tsx
 │   │   │   ├── 🎨 HomeLayout.scss
 │   │   │   └── 📄 HomeLayout.tsx
+│   │   ├── 🎨 DaemonReleases.css
+│   │   ├── 📄 DaemonReleases.tsx
 │   │   └── 📄 index.tsx
+│   ├── ⚙️ .gitignore
 │   ├── ⚙️ i18n.json
 │   ├── ⚙️ package.json
 │   ├── 📄 rspress.config.ts

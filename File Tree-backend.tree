@@ -131,18 +131,23 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   └── 🐍 test_governed_end_to_end_flow.py
 │   ├── 📁 integration/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_customer_voice_integration.py
 │   │   ├── 🐍 test_model_a_data_access.py
 │   │   ├── 🐍 test_outbound_after_approval.py
+│   │   ├── 🐍 test_product_evidence_integration.py
 │   │   ├── 🐍 test_provenance_persistence.py
 │   │   ├── 🐍 test_security_boundaries_negative.py
 │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   └── 🐍 test_worker_sandbox_boundary.py
 │   ├── 📁 unit/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_context_assembly_and_brand_persona.py
+│   │   ├── 🐍 test_customer_voice_verification.py
 │   │   ├── 🐍 test_evidence_synthesis.py
 │   │   ├── 🐍 test_governed_mcp_data_gateway.py
 │   │   ├── 🐍 test_hitl_gate.py
 │   │   ├── 🐍 test_policy_authorization.py
+│   │   ├── 🐍 test_product_evidence_verification.py
 │   │   ├── 🐍 test_rag_governance.py
 │   │   ├── 🐍 test_specialist_micro_tools.py
 │   │   ├── 🐍 test_task_state_machine.py
