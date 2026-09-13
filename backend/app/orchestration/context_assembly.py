@@ -92,6 +92,8 @@ class ContextAssembler:
                 "version": cts_state.version,
                 "governance_approved": cts_state.governance_approved,
             }
+            if hasattr(cts_state, "cts_state") and isinstance(cts_state.cts_state, dict):
+                cts_snapshot.update(cts_state.cts_state)
 
         # Stage 3: Policy and Risk Constraints
         active_policy_constraints = list(policy_constraints or [])
@@ -218,7 +220,7 @@ class ContextAssembler:
             "requires_provenance": True,
         }
 
-        return {
+        assembled = {
             "task_id": request.task_id,
             "worker_role": request.worker_role.value,
             "query": request.query,
@@ -235,3 +237,8 @@ class ContextAssembler:
             "budget_breakdown": budget_breakdown,
             "expected_output_schema": expected_output_schema,
         }
+        if hasattr(cts_state, "cts_state") and isinstance(cts_state.cts_state, dict):
+            for k, v in cts_state.cts_state.items():
+                if k not in assembled:
+                    assembled[k] = v
+        return assembled

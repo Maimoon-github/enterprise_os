@@ -221,3 +221,67 @@ class CustomerVoiceAnalysisResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     anonymization_stats: dict[str, int] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChannelAllocation(BaseModel):
+    """Media and channel-specific budget allocation produced by W_STRAT + S_ALLOC."""
+
+    channel: str
+    allocated_amount: float
+    percentage_of_total: float
+    role: str = ""
+    primary_kpi: str = "Blended ROAS"
+    prior_roas: float | None = None
+    target_roas_range: tuple[float, float] | None = None
+    constraints: list[str] = Field(default_factory=list)
+
+
+class FunnelStageAllocation(BaseModel):
+    """Full-funnel stage distribution and conversion hypotheses."""
+
+    stage: str
+    stage_name: str
+    allocated_amount: float
+    percentage_of_total: float
+    channels: list[str] = Field(default_factory=list)
+    objective: str = ""
+    transition_hypothesis: str = ""
+    target_metrics: dict[str, str] = Field(default_factory=dict)
+
+
+class StrategyScenario(BaseModel):
+    """Alternative marketing mix scenario comparison model."""
+
+    scenario_id: str
+    scenario_name: str
+    description: str = ""
+    is_recommended: bool = False
+    allocations_by_channel: dict[str, float] = Field(default_factory=dict)
+    allocations_by_stage: dict[str, float] = Field(default_factory=dict)
+    expected_blended_roas: float = 0.0
+    risk_level: str = "medium"
+    key_assumptions: list[str] = Field(default_factory=list)
+
+
+class OmnichannelStrategyPlan(BaseModel):
+    """Consolidated omnichannel marketing roadmap and budget allocation proposal produced by W_STRAT + S_ALLOC."""
+
+    plan_id: str
+    tenant_id: str
+    brand_id: str
+    time_horizon: str = "90_days"
+    budget_ceiling: float
+    total_allocated: float
+    unallocated_contingency: float = 0.0
+    channel_allocations: list[ChannelAllocation] = Field(default_factory=list)
+    funnel_stages: list[FunnelStageAllocation] = Field(default_factory=list)
+    scenarios: list[StrategyScenario] = Field(default_factory=list)
+    recommended_scenario: str = "balanced"
+    approved_claims_applied: list[str] = Field(default_factory=list)
+    objections_addressed: list[str] = Field(default_factory=list)
+    competitor_signals_factored: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    unsupported_estimates_or_caveats: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    confidence: ConfidenceInterval | None = None

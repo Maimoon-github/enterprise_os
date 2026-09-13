@@ -36,7 +36,7 @@ from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
 
 def test_w_prod_module_has_zero_direct_persistence_or_rag_imports() -> None:
     """W_PROD must not directly import persistence, RAG, CMS, DB, or services."""
-    source_file = Path("app/agents/product_evidence.py")
+    source_file = Path(__file__).resolve().parents[2] / "app" / "agents" / "product_evidence.py"
     tree = ast.parse(source_file.read_text(encoding="utf-8"))
 
     disallowed_prefixes = (

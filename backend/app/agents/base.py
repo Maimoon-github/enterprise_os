@@ -87,6 +87,8 @@ class BoundedWorkerAgent(ABC):
                 artifacts.append(f"dossier:{grant.task_id}")
             if "learning_delta" in result.sanitized_output:
                 artifacts.append(f"learning:{grant.task_id}")
+            if "strategy_plan" in result.sanitized_output or "strategy_roadmap" in result.sanitized_output:
+                artifacts.append(f"strategy:{grant.task_id}")
             if result.generated_artifacts:
                 artifacts.extend(result.generated_artifacts)
 

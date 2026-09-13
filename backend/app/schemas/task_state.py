@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +59,7 @@ class CanonicalTaskState(BaseModel):
     max_retries: int = Field(default=3, ge=0)
     failure_reason: str | None = None
     completion_criteria: list[str] = Field(default_factory=list)
+    cts_state: dict[str, Any] = Field(default_factory=dict)
     version: int = Field(default=0, ge=0, description="Optimistic-concurrency version.")
 
 
