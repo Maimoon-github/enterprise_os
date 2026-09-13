@@ -421,6 +421,10 @@ class EvidenceSynthesizer:
                 payload_str = json.dumps(env.payload, sort_keys=True) if env.payload else ";".join(env.evidence)
                 content_hash = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
 
+                art_metadata = {"task_id": env.task_id, "role": env.worker_role.value}
+                if "budget_total" in env.payload:
+                    art_metadata["budget_total"] = env.payload["budget_total"]
+
                 art_ref = ArtifactReference(
                     artifact_id=art_id,
                     content_hash=content_hash,
@@ -431,7 +435,7 @@ class EvidenceSynthesizer:
                     name=f"{env.worker_role.value} deliverable ({art_id})",
                     creator_agent=env.worker_role.value,
                     provenance_ref=env.provenance.get("execution_id"),
-                    metadata={"task_id": env.task_id, "role": env.worker_role.value},
+                    metadata=art_metadata,
                 )
                 validated_artifacts.append(art_ref.model_dump(mode="json"))
 
@@ -535,11 +539,12 @@ class EvidenceSynthesizer:
         synthesized_summary: list[str] = []
         for env in accepted_envelopes:
             role_label = env.worker_role.value if hasattr(env.worker_role, "value") else str(env.worker_role)
+            summary_items = list(env.findings) + [e for e in env.evidence if e not in env.findings]
             synthesized_summary.append(
-                f"[{role_label}] {env.task_id}: {'; '.join(env.findings[:2]) or '; '.join(env.evidence[:2])}"
+                f"[{role_label}] {env.task_id}: {'; '.join(summary_items[:3])}"
             )
 
-        provenance_summary = {
+        provenance_summary: dict[str, Any] = {
             "consolidator": "IntelligenceEngine.EvidenceSynthesizer",
             "accepted_count": len(accepted_envelopes),
             "rejected_count": len(rejected_items),
@@ -547,6 +552,9 @@ class EvidenceSynthesizer:
             "tenant_id": effective_tenant_id,
             "tasks": sorted_task_ids,
         }
+        if strategy_plan:
+            provenance_summary["total_spend"] = float(strategy_plan.total_allocated)
+
 
         return ConsolidatedEvidencePackage(
             package_id=package_id,

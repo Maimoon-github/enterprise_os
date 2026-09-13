@@ -28,7 +28,7 @@ from app.orchestration.hitl_preview_generator import HitlPreviewGenerator
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.rag_query_dispatch import IntelligenceEngineToken
 from app.orchestration.task_state_machine import TaskStateMachine
-from app.schemas.action_preview import ActionPreview, ActionPreviewKind
+from app.schemas.action_preview import ActionPreview, ActionPreviewDossier, ActionPreviewKind
 from app.schemas.agent_contracts import (
     ConfidenceInterval,
     ConsolidatedEvidencePackage,
@@ -407,6 +407,41 @@ class IntelligenceEngine:
         )
 
         return package
+
+    async def generate_action_previews(
+        self,
+        directive: Directive,
+        package: ConsolidatedEvidencePackage,
+        *,
+        risk_level: RiskLevel | None = None,
+    ) -> ActionPreviewDossier:
+        """Generate a complete structured action preview dossier for T24 human review.
+
+        Verifies tenant boundaries, produces categorized SPEND, CLAIM, COPY, and
+        CODE_DIFF previews in PENDING state, registers previews with the HITL coordinator,
+        and records provenance.
+        """
+
+        if directive.tenant_id != package.tenant_id:
+            raise PolicyViolationError(
+                f"Directive tenant '{directive.tenant_id}' does not match package tenant '{package.tenant_id}'."
+            )
+
+        target_risk = risk_level or directive.risk_ceiling
+        dossier = self._hitl_preview_generator.generate_dossier(package, risk_level=target_risk)
+
+        # Register every preview with HITL coordinator
+        for prev in dossier.previews:
+            self._hitl_coordinator.submit_for_approval(prev)
+
+        await self._provenance_recorder.record(
+            tenant_id=directive.tenant_id,
+            entity_id=dossier.dossier_id,
+            activity="action_preview_generation",
+            agent="intelligence_engine",
+        )
+
+        return dossier
 
     async def build_preview(
         self,
