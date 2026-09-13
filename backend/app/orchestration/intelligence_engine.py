@@ -507,6 +507,68 @@ class IntelligenceEngine:
 
         return decision_record
 
+    async def create_authorized_dispatch(
+        self,
+        preview_id: str,
+        *,
+        channel: str,
+        audience: str = "global",
+        action_type: str = "publish",
+        payload: dict[str, Any] | None = None,
+        private_key: Any | None = None,
+        tenant_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> DispatchDirective:
+        """Construct an authorized dispatch directive bound to verified HITL clearance."""
+        decision = self._hitl_coordinator.require_approved(preview_id)
+        clearance = decision.clearance
+
+        target_tenant = tenant_id or decision.tenant_id or (clearance.tenant_id if clearance else "default")
+        dispatch_id = str(uuid.uuid4())
+        task_id = clearance.task_id if clearance else "task-unknown"
+        payload_data = payload or {}
+        preview_hash = clearance.preview_content_hash if clearance else None
+        clearance_id = clearance.clearance_id if clearance else None
+
+        directive = DispatchDirective(
+            dispatch_id=dispatch_id,
+            task_id=task_id,
+            action_preview_id=preview_id,
+            signature="",
+            approved_by=decision.approver,
+            approved_at=decision.decided_at,
+            channel=channel,
+            tenant_id=target_tenant,
+            audience=audience,
+            action_type=action_type,
+            preview_content_hash=preview_hash,
+            clearance_id=clearance_id,
+            idempotency_key=idempotency_key or dispatch_id,
+            payload=payload_data,
+        )
+
+        if private_key is not None:
+            from app.mcp.outbound_gateway import canonical_dispatch_bytes
+            from app.security.cryptographic_validator import sign_payload
+
+            sig = sign_payload(canonical_dispatch_bytes(directive), private_key)
+            directive = directive.model_copy(update={"signature": sig})
+
+        # Record audit provenance
+        await self._provenance_recorder.record(
+            tenant_id=target_tenant,
+            entity_id=dispatch_id,
+            activity="create_authorized_dispatch",
+            agent="intelligence_engine",
+            metadata={
+                "channel": channel,
+                "preview_id": preview_id,
+                "clearance_id": clearance_id,
+            },
+        )
+
+        return directive
+
 
     async def build_preview(
         self,
