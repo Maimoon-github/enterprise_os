@@ -193,17 +193,80 @@ def execute_s_copy(payload: dict[str, str]) -> dict[str, str]:
     }
 
 
-def execute_s_val(payload: dict[str, str]) -> dict[str, str]:
+def execute_s_val(payload: dict[str, Any]) -> dict[str, str]:
     """S_VAL: Claim & Schema Validator [Micro-Tool: Compliance Linter].
 
     Validates proposed advertising or clinical claims against compliance rules,
-    detects unsupported absolutes, and checks required statutory disclaimers.
+    verifies claim-to-evidence linkage, checks evidence sufficiency and freshness,
+    detects conflicting evidence and unsupported absolutes, verifies product
+    formulation completeness, and checks required statutory disclaimers.
     """
-    task_id = payload.get("task_id", "unknown")
-    claim_text = payload.get("claim", payload.get("statement", "Clinically tested to improve performance by 40%."))
-    required_disclaimer = payload.get("required_disclaimer", "*Results may vary based on usage.")
+    task_id = str(payload.get("task_id", "unknown"))
+    tenant_id = str(payload.get("tenant_id", "default"))
+    product_id = str(payload.get("product_id", "default_product"))
+    product_name = str(payload.get("product_name", payload.get("brand_id", "Default Product")))
 
-    # High-risk claim patterns
+    # 1. Parse Claims
+    raw_claims = payload.get("claims")
+    claims_list: list[dict[str, Any]] = []
+    if raw_claims:
+        if isinstance(raw_claims, str):
+            try:
+                parsed = json.loads(raw_claims)
+                claims_list = parsed if isinstance(parsed, list) else [parsed]
+            except Exception:
+                claims_list = [{"text": raw_claims}]
+        elif isinstance(raw_claims, list):
+            claims_list = raw_claims
+    elif "claim" in payload or "statement" in payload:
+        claims_list = [{
+            "id": "claim-0",
+            "text": str(payload.get("claim", payload.get("statement", ""))),
+            "category": str(payload.get("category", "performance")),
+        }]
+
+    # 2. Parse Evidence Pool
+    raw_evidence = payload.get("evidence", payload.get("validated_evidence"))
+    evidence_pool: list[dict[str, Any]] = []
+    evidence_provided = raw_evidence is not None
+    if raw_evidence:
+        if isinstance(raw_evidence, str):
+            try:
+                parsed_ev = json.loads(raw_evidence)
+                evidence_pool = parsed_ev if isinstance(parsed_ev, list) else [parsed_ev]
+            except Exception:
+                evidence_pool = [{"content": raw_evidence, "doc_id": "ev-0"}]
+        elif isinstance(raw_evidence, list):
+            evidence_pool = raw_evidence
+
+    # 3. Parse Formulation / Specifications
+    raw_formulation = payload.get("formulation", payload.get("specifications", payload.get("product_specification")))
+    formulation_data: dict[str, Any] = {}
+    if raw_formulation:
+        if isinstance(raw_formulation, str):
+            try:
+                formulation_data = json.loads(raw_formulation)
+            except Exception:
+                formulation_data = {"raw_notes": raw_formulation}
+        elif isinstance(raw_formulation, dict):
+            formulation_data = raw_formulation
+
+    required_disclaimer = str(payload.get("required_disclaimer", "*Results may vary based on usage."))
+    raw_compliance_rules = payload.get("compliance_rules", payload.get("brand_rules"))
+    custom_rules: list[str] = []
+    if raw_compliance_rules:
+        if isinstance(raw_compliance_rules, str):
+            try:
+                parsed_cr = json.loads(raw_compliance_rules)
+                custom_rules = parsed_cr if isinstance(parsed_cr, list) else [str(parsed_cr)]
+            except Exception:
+                custom_rules = [raw_compliance_rules]
+        elif isinstance(raw_compliance_rules, list):
+            custom_rules = [str(r) for r in raw_compliance_rules]
+        elif isinstance(raw_compliance_rules, dict):
+            custom_rules = [f"{k}:{v}" for k, v in raw_compliance_rules.items()]
+
+    # High-risk / prohibited claim patterns
     prohibited_claim_patterns = [
         r"\bcures?\b",
         r"\b100% guaranteed\b",
@@ -211,26 +274,275 @@ def execute_s_val(payload: dict[str, str]) -> dict[str, str]:
         r"\bpermanent elimination\b",
     ]
 
-    violations = []
-    for pattern in prohibited_claim_patterns:
-        if re.search(pattern, claim_text, re.IGNORECASE):
-            violations.append(f"Prohibited absolute claim pattern detected: {pattern}")
+    all_violations: list[str] = []
 
-    disclaimer_present = required_disclaimer.lower() in claim_text.lower() or "*results" in claim_text.lower()
-    if not disclaimer_present and "%" in claim_text:
-        violations.append("Quantitative claim requires statutory disclaimer footnote.")
+    # 4. Validate Product Formulation & Specifications
+    spec_validation_status = "VALIDATED"
+    spec_findings: list[str] = []
+    missing_attributes: list[str] = []
+    ingredients = formulation_data.get("ingredients", [])
+    if formulation_data:
+        prod_id_spec = formulation_data.get("product_id", product_id)
+        if not prod_id_spec or prod_id_spec == "unknown":
+            missing_attributes.append("product_id")
+        if not formulation_data.get("product_name") and not product_name:
+            missing_attributes.append("product_name")
 
-    compliance_score = max(0.0, 1.0 - (len(violations) * 0.4))
-    is_compliant = len(violations) == 0
+        if isinstance(ingredients, list) and ingredients:
+            total_pct = 0.0
+            has_pct = False
+            for idx, ing in enumerate(ingredients):
+                if isinstance(ing, dict):
+                    pct = ing.get("percentage", ing.get("concentration", ing.get("pct")))
+                    if pct is not None:
+                        try:
+                            val = float(pct)
+                            if val < 0.0:
+                                all_violations.append(f"Negative ingredient concentration in ingredient {ing.get('name', idx)}: {val}%")
+                            total_pct += val
+                            has_pct = True
+                        except (ValueError, TypeError):
+                            all_violations.append(f"Malformed ingredient concentration in ingredient {ing.get('name', idx)}")
+            if has_pct and total_pct > 100.5:
+                all_violations.append(f"Ingredient concentration sum exceeds 100.0%: {total_pct:.1f}%")
+                spec_validation_status = "INCOMPLETE_SPECIFICATION"
+
+        if missing_attributes:
+            spec_validation_status = "INCOMPLETE_SPECIFICATION"
+            spec_findings.append(f"Missing required specification attributes: {', '.join(missing_attributes)}")
+
+    # 5. Validate Each Proposed Claim
+    verified_claim_entries: list[dict[str, Any]] = []
+    supported_count = 0
+    rejected_count = 0
+    insufficient_count = 0
+    conflicting_count = 0
+    requires_review_count = 0
+
+    for idx, c in enumerate(claims_list):
+        claim_id = str(c.get("id", f"claim-{idx + 1}"))
+        claim_text = str(c.get("text", c.get("claim", c.get("statement", ""))))
+        category = str(c.get("category", "performance"))
+        claim_violations: list[str] = []
+        claim_warnings: list[str] = []
+        supporting_refs: list[str] = []
+        contradicting_refs: list[str] = []
+        rule_checks: list[str] = []
+
+        # A. Prohibited absolutes check
+        is_prohibited = False
+        for pattern in prohibited_claim_patterns:
+            if re.search(pattern, claim_text, re.IGNORECASE):
+                violation_msg = f"Prohibited absolute claim pattern detected: {pattern}"
+                claim_violations.append(violation_msg)
+                all_violations.append(violation_msg)
+                is_prohibited = True
+
+        # Custom rules check
+        for rule in custom_rules:
+            rule_checks.append(f"rule:{rule}")
+            if rule.lower() in claim_text.lower() and "prohibit" in rule.lower():
+                violation_msg = f"Custom compliance rule violated: {rule}"
+                claim_violations.append(violation_msg)
+                all_violations.append(violation_msg)
+                is_prohibited = True
+
+        # B. Statutory disclaimer check for quantitative claims
+        disclaimer_present = (
+            required_disclaimer.lower() in claim_text.lower()
+            or "*results" in claim_text.lower()
+            or "*" in claim_text
+        )
+        has_quantitative = "%" in claim_text or bool(re.search(r"\b\d+x\b", claim_text, re.IGNORECASE))
+        if has_quantitative and not disclaimer_present:
+            disclaimer_violation = "Quantitative claim requires statutory disclaimer footnote."
+            claim_violations.append(disclaimer_violation)
+            all_violations.append(disclaimer_violation)
+
+        # C. Evidence linkage, sufficiency, and consistency
+        # Find relevant evidence from pool
+        claim_tokens = {tok.lower() for tok in re.findall(r"\b[A-Za-z]{4,}\b", claim_text)}
+        # Exclude stop words
+        claim_tokens -= {"with", "this", "that", "from", "have", "more", "than", "tested", "clinically", "demonstrated"}
+
+        is_stale_evidence = False
+        has_contradiction = False
+
+        for ev in evidence_pool:
+            ev_id = str(ev.get("doc_id", ev.get("evidence_id", ev.get("id", "ev-ref"))))
+            ev_content = str(ev.get("text", ev.get("content", "")))
+            ev_source = str(ev.get("source", ev.get("source_uri", "dossier")))
+            ev_stale = bool(ev.get("is_stale", ev.get("stale", False)))
+            ev_contradicts = bool(
+                ev.get("contradicts", False)
+                or ev.get("contradictory", False)
+                or "contradicts" in ev_content.lower()
+                or "failed to show" in ev_content.lower()
+                or "no significant improvement" in ev_content.lower()
+                or "adverse reaction" in ev_content.lower()
+            )
+
+            # Check explicit link or keyword match
+            explicit_ids = c.get("evidence_ids", c.get("evidence_references", []))
+            is_linked = ev_id in explicit_ids if explicit_ids else False
+            if not is_linked and claim_tokens:
+                ev_tokens = {tok.lower() for tok in re.findall(r"\b[A-Za-z]{4,}\b", ev_content)}
+                overlap = len(claim_tokens & ev_tokens)
+                if overlap >= 2 or (len(claim_tokens) <= 2 and overlap >= 1):
+                    is_linked = True
+
+            if is_linked:
+                if ev_contradicts:
+                    has_contradiction = True
+                    contradicting_refs.append(ev_id)
+                else:
+                    supporting_refs.append(ev_id)
+                    if ev_stale:
+                        is_stale_evidence = True
+
+        # D. Status classification
+        if is_prohibited:
+            claim_status = "REJECTED"
+            claim_confidence = 0.0
+            rejected_count += 1
+        elif has_contradiction:
+            claim_status = "CONFLICTING_EVIDENCE"
+            claim_confidence = 0.2
+            claim_warnings.append(f"Contradictory findings detected in evidence references: {contradicting_refs}")
+            conflicting_count += 1
+        elif evidence_provided and not supporting_refs:
+            claim_status = "INSUFFICIENT_EVIDENCE"
+            claim_confidence = 0.1
+            claim_warnings.append("No supporting evidence found in authorized evidence context.")
+            insufficient_count += 1
+        elif is_stale_evidence:
+            claim_status = "REQUIRES_REVIEW"
+            claim_confidence = 0.4
+            claim_warnings.append("Supporting evidence is stale or expired; recertification required.")
+            requires_review_count += 1
+        elif not disclaimer_present and has_quantitative:
+            claim_status = "REQUIRES_REVIEW"
+            claim_confidence = 0.5
+            claim_warnings.append("Missing mandatory statutory disclaimer on quantitative claim.")
+            requires_review_count += 1
+        else:
+            # Clean claim
+            if evidence_provided and supporting_refs:
+                claim_status = "SUPPORTED"
+                claim_confidence = min(0.95, 0.75 + (len(supporting_refs) * 0.1))
+                supported_count += 1
+            elif not evidence_provided:
+                # Backward-compatibility for legacy single-claim checks
+                if not claim_violations:
+                    claim_status = "SUPPORTED"
+                    claim_confidence = 0.8
+                    supported_count += 1
+                else:
+                    claim_status = "REJECTED"
+                    claim_confidence = 0.0
+                    rejected_count += 1
+            else:
+                claim_status = "INSUFFICIENT_EVIDENCE"
+                claim_confidence = 0.0
+                insufficient_count += 1
+
+        verified_claim_entries.append({
+            "claim_id": claim_id,
+            "claim_text": claim_text,
+            "category": category,
+            "validation_status": claim_status,
+            "confidence": round(claim_confidence, 2),
+            "evidence_references": supporting_refs,
+            "contradicting_evidence_references": contradicting_refs,
+            "rule_compliance_checks": rule_checks,
+            "violations": claim_violations,
+            "limitations_or_warnings": claim_warnings,
+            "provenance": {
+                "verified_by": "S_VAL",
+                "task_id": task_id,
+                "tenant_id": tenant_id,
+            },
+        })
+
+    total_claims = len(verified_claim_entries)
+    compliance_score = max(0.0, 1.0 - (len(all_violations) * 0.4))
+    if rejected_count > 0:
+        compliance_score = 0.0
+    elif conflicting_count > 0:
+        compliance_score = min(compliance_score, 0.3)
+    elif insufficient_count > 0:
+        compliance_score = min(compliance_score, 0.7)
+    if total_claims == 0:
+        compliance_score = 1.0 if not all_violations else 0.0
+
+    is_compliant = len(all_violations) == 0 and rejected_count == 0 and conflicting_count == 0
+
+    dossier_summary_status = "APPROVED" if (is_compliant and insufficient_count == 0 and requires_review_count == 0) else "FLAGGED"
+    if rejected_count > 0:
+        dossier_summary_status = "REJECTED"
+
+    primary_claim_text = claims_list[0].get("text", claims_list[0].get("claim", "")) if claims_list else payload.get("claim", "")
+
+    # Construct product specification dictionary
+    product_spec_dict = {
+        "product_id": product_id,
+        "product_name": product_name,
+        "tenant_id": tenant_id,
+        "formulation_id": formulation_data.get("formulation_id", f"form-{product_id}"),
+        "version": str(formulation_data.get("version", "1.0")),
+        "normalized_attributes": formulation_data.get("attributes", {
+            "category": formulation_data.get("category", "supplement"),
+            "dosage_form": formulation_data.get("dosage_form", "capsule"),
+        }),
+        "ingredients": ingredients,
+        "supporting_evidence_references": [ev.get("doc_id", "ev") for ev in evidence_pool if isinstance(ev, dict) and ev.get("doc_id")],
+        "validation_status": spec_validation_status,
+        "compliance_findings": spec_findings + all_violations,
+        "missing_attributes": missing_attributes,
+        "provenance": {
+            "verified_by": "S_VAL",
+            "task_id": task_id,
+            "tenant_id": tenant_id,
+        },
+    }
+
+    # Construct claims dossier dictionary
+    claims_dossier_dict = {
+        "dossier_id": f"dossier-{task_id}",
+        "tenant_id": tenant_id,
+        "product_id": product_id,
+        "claims": verified_claim_entries,
+        "summary_status": dossier_summary_status,
+        "total_claims": total_claims,
+        "supported_claims": supported_count,
+        "rejected_claims": rejected_count,
+        "insufficient_claims": insufficient_count,
+        "conflicting_claims": conflicting_count,
+        "requires_review_claims": requires_review_count,
+        "overall_confidence": round(compliance_score, 2),
+        "provenance": {
+            "verified_by": "S_VAL",
+            "task_id": task_id,
+            "tenant_id": tenant_id,
+        },
+    }
+
+    verified_dossier = (
+        f"Product: {product_name} ({product_id}) | Claims: {total_claims} (Supported: {supported_count}, "
+        f"Rejected: {rejected_count}, Insufficient: {insufficient_count}, Conflicting: {conflicting_count}) | "
+        f"Compliance Score: {compliance_score:.2f} | Status: {dossier_summary_status}"
+    )
 
     return {
         "status": "success" if is_compliant else "compliance_warning",
         "task_id": task_id,
-        "claim": claim_text,
+        "claim": str(primary_claim_text),
         "is_compliant": str(is_compliant),
         "compliance_score": f"{compliance_score:.2f}",
-        "violations": json.dumps(violations),
-        "verified_dossier": f"Claim: {claim_text} | Compliance Score: {compliance_score:.2f} | Status: {'APPROVED' if is_compliant else 'FLAGGED'}",
+        "violations": json.dumps(all_violations),
+        "verified_dossier": verified_dossier,
+        "product_specification": json.dumps(product_spec_dict),
+        "claims_dossier": json.dumps(claims_dossier_dict),
     }
 
 

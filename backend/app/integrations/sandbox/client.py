@@ -339,8 +339,10 @@ class SandboxClient:
             artifacts.append(f"diff:{mandate.task_id}")
         if "variants" in sanitized_output:
             artifacts.append(f"variants:{mandate.task_id}")
-        if "verified_dossier" in sanitized_output:
+        if "verified_dossier" in sanitized_output or "claims_dossier" in sanitized_output:
             artifacts.append(f"dossier:{mandate.task_id}")
+        if "product_specification" in sanitized_output:
+            artifacts.append(f"spec:{mandate.task_id}")
 
         cgroup_metrics = self._collect_resource_metrics(mandate)
 

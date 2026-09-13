@@ -8,6 +8,7 @@ the seven bounded worker agents. Workers never see more than what a
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -80,3 +81,64 @@ class EvidenceEnvelope(BaseModel):
     provenance: dict[str, str] = Field(default_factory=dict)
     proposed_state_changes: dict[str, str] = Field(default_factory=dict)
     unresolved_risks_or_assumptions: list[str] = Field(default_factory=list)
+
+
+class ClaimValidationStatus(StrEnum):
+    """Explicit verification classifications for product claims."""
+
+    SUPPORTED = "SUPPORTED"
+    REJECTED = "REJECTED"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    CONFLICTING_EVIDENCE = "CONFLICTING_EVIDENCE"
+    REQUIRES_REVIEW = "REQUIRES_REVIEW"
+
+
+class ClaimVerificationEntry(BaseModel):
+    """Structured validation finding for an individual claim."""
+
+    claim_id: str
+    claim_text: str
+    category: str = "performance"
+    validation_status: ClaimValidationStatus
+    confidence: float = 0.0
+    evidence_references: list[str] = Field(default_factory=list)
+    contradicting_evidence_references: list[str] = Field(default_factory=list)
+    rule_compliance_checks: list[str] = Field(default_factory=list)
+    violations: list[str] = Field(default_factory=list)
+    limitations_or_warnings: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ClaimsDossier(BaseModel):
+    """Evidence-backed claims dossier produced by W_PROD + S_VAL."""
+
+    dossier_id: str
+    tenant_id: str
+    product_id: str
+    claims: list[ClaimVerificationEntry] = Field(default_factory=list)
+    summary_status: str = "PENDING"
+    total_claims: int = 0
+    supported_claims: int = 0
+    rejected_claims: int = 0
+    insufficient_claims: int = 0
+    conflicting_claims: int = 0
+    requires_review_claims: int = 0
+    overall_confidence: float = 0.0
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProductSpecification(BaseModel):
+    """Verified product and formulation specification produced by W_PROD + S_VAL."""
+
+    product_id: str
+    product_name: str
+    tenant_id: str
+    formulation_id: str | None = None
+    version: str = "1.0"
+    normalized_attributes: dict[str, Any] = Field(default_factory=dict)
+    ingredients: list[dict[str, Any]] = Field(default_factory=list)
+    supporting_evidence_references: list[str] = Field(default_factory=list)
+    validation_status: str = "VALIDATED"
+    compliance_findings: list[str] = Field(default_factory=list)
+    missing_attributes: list[str] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
