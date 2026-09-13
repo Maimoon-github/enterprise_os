@@ -117,7 +117,7 @@ class HitlCoordinator:
         preview_id: str,
         *,
         approved: bool | None = None,
-        decision: HumanDecisionType | str | None = None,
+        decision: HumanDecisionType | str | bool | None = None,
         approver: str,
         approver_role: ReviewerRole | str = "admin",
         tenant_id: str | None = None,
@@ -141,8 +141,10 @@ class HitlCoordinator:
         if decision is not None:
             if isinstance(decision, HumanDecisionType):
                 decision_type = decision
+            elif isinstance(decision, bool):
+                decision_type = HumanDecisionType.APPROVE if decision else HumanDecisionType.REJECT
             else:
-                decision_str = str(decision).upper()
+                decision_str = decision.upper()
                 try:
                     decision_type = HumanDecisionType(decision_str)
                 except ValueError:

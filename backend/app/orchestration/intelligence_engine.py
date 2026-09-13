@@ -28,7 +28,7 @@ from app.orchestration.hitl_preview_generator import HitlPreviewGenerator
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.rag_query_dispatch import IntelligenceEngineToken
 from app.orchestration.task_state_machine import TaskStateMachine
-from app.schemas.action_preview import ActionPreview, ActionPreviewDossier, ActionPreviewKind
+from app.schemas.action_preview import ActionPreview, ActionPreviewDossier, ActionPreviewKind, HumanDecisionType
 from app.schemas.agent_contracts import (
     ConfidenceInterval,
     ConsolidatedEvidencePackage,
@@ -447,7 +447,7 @@ class IntelligenceEngine:
         self,
         preview_id: str,
         *,
-        decision: str | bool = "APPROVE",
+        decision: HumanDecisionType | str | bool = "APPROVE",
         approver: str,
         approver_role: str = "admin",
         tenant_id: str | None = None,
