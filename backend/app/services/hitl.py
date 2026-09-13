@@ -222,6 +222,7 @@ class HitlCoordinator:
             approver_role=role_key,
             preview_content_hash=effective_hash,
             signature=signature,
+            public_key_pem=public_key_pem,
             decided_at=decision_time,
             approved_scope={"kind": preview.kind.value, "spend_amount": preview.spend_amount},
             revision_notes=revision_notes,

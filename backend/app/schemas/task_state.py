@@ -64,3 +64,28 @@ class CanonicalTaskState(BaseModel):
 
 
 TaskState = CanonicalTaskState
+
+
+class MilestoneStatus(StrEnum):
+    """Authoritative milestone evaluation status."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+
+
+class MilestoneCheckpoint(BaseModel):
+    """Immutable checkpoint evaluating an architectural milestone over linked tasks."""
+
+    milestone_id: str
+    title: str = ""
+    status: MilestoneStatus
+    tenant_id: str
+    linked_task_ids: list[str] = Field(default_factory=list)
+    evidence_package_id: str | None = None
+    dossier_id: str | None = None
+    clearance_ids: list[str] = Field(default_factory=list)
+    evaluated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    blockers: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

@@ -157,7 +157,9 @@ class SignedApprovalClearance(BaseModel):
     approver_role: str
     preview_content_hash: str
     signature: str | None = None
+    public_key_pem: str | None = None
     decided_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
     approved_scope: dict[str, Any] = Field(default_factory=dict)
     revision_notes: str | None = None
     is_valid: bool = True
