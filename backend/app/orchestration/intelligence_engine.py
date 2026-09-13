@@ -39,7 +39,7 @@ from app.schemas.agent_contracts import (
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
-from app.services.hitl import HitlCoordinator
+from app.services.hitl import ApprovalDecision, HitlCoordinator
 from app.services.provenance import ProvenanceRecorder
 
 
@@ -442,6 +442,71 @@ class IntelligenceEngine:
         )
 
         return dossier
+
+    async def record_hitl_decision(
+        self,
+        preview_id: str,
+        *,
+        decision: str | bool = "APPROVE",
+        approver: str,
+        approver_role: str = "admin",
+        tenant_id: str | None = None,
+        signature: str | None = None,
+        public_key_pem: str | None = None,
+        preview_content_hash: str | None = None,
+        revision_notes: str | None = None,
+        task: CanonicalTaskState | None = None,
+    ) -> ApprovalDecision:
+        """Record an authenticated human decision, update CTS state, and capture audit provenance."""
+
+        decision_record = self._hitl_coordinator.decide(
+            preview_id,
+            decision=decision,
+            approver=approver,
+            approver_role=approver_role,
+            tenant_id=tenant_id,
+            signature=signature,
+            public_key_pem=public_key_pem,
+            preview_content_hash=preview_content_hash,
+            revision_notes=revision_notes,
+        )
+
+        # Update CTS task state machine if task provided
+        if task is not None:
+            checkpoint_id = str(uuid.uuid4())
+            dec_str = str(decision_record.decision)
+            updated_task = task
+            if dec_str == "APPROVE" or decision_record.approved:
+                updated_task = self._task_state_machine.transition(
+                    task, TaskStatus.APPROVED, checkpoint_id=checkpoint_id, note=f"Approved by {approver} ({approver_role})"
+                )
+            elif dec_str == "REJECT":
+                updated_task = self._task_state_machine.transition(
+                    task, TaskStatus.REJECTED, checkpoint_id=checkpoint_id, note=f"Rejected by {approver} ({approver_role})"
+                )
+            elif dec_str == "REQUEST_REVISION":
+                updated_task = self._task_state_machine.transition(
+                    task, TaskStatus.HELD, checkpoint_id=checkpoint_id, note=f"Revision requested by {approver}: {revision_notes or 'changes requested'}"
+                )
+            decision_record.updated_task = updated_task
+
+        # Provenance audit recording
+        prov_tenant = tenant_id or decision_record.tenant_id or "default"
+        await self._provenance_recorder.record(
+            tenant_id=prov_tenant,
+            entity_id=preview_id,
+            activity=f"hitl_{str(decision_record.decision).lower()}",
+            agent=f"reviewer:{approver}",
+            metadata={
+                "decision": str(decision_record.decision),
+                "approver_role": approver_role,
+                "preview_id": preview_id,
+                "clearance_id": decision_record.clearance.clearance_id if decision_record.clearance else None,
+            },
+        )
+
+        return decision_record
+
 
     async def build_preview(
         self,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -27,6 +29,24 @@ class ReviewStatus(StrEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     REVISION_REQUESTED = "REVISION_REQUESTED"
+
+
+class HumanDecisionType(StrEnum):
+    """Explicit human reviewer decisions supported by the HITL Gate."""
+
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    REQUEST_REVISION = "REQUEST_REVISION"
+
+
+class ReviewerRole(StrEnum):
+    """Authorized reviewer domains for role-based sign-off authorization."""
+
+    LEGAL = "legal"
+    FINANCE = "finance"
+    BRAND_LEAD = "brand_lead"
+    ENGINEERING = "engineering"
+    ADMIN = "admin"
 
 
 class SpendPreviewDetails(BaseModel):
@@ -123,3 +143,35 @@ class ActionPreviewDossier(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     review_status: ReviewStatus = ReviewStatus.PENDING
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SignedApprovalClearance(BaseModel):
+    """Cryptographically verifiable sign-off clearance issued by an authorized human reviewer."""
+
+    clearance_id: str
+    preview_id: str
+    task_id: str
+    tenant_id: str
+    decision: HumanDecisionType
+    approver: str
+    approver_role: str
+    preview_content_hash: str
+    signature: str | None = None
+    decided_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    approved_scope: dict[str, Any] = Field(default_factory=dict)
+    revision_notes: str | None = None
+    is_valid: bool = True
+
+
+def compute_preview_hash(preview: ActionPreview) -> str:
+    """Compute deterministic SHA-256 hash of reviewable preview content for tamper detection."""
+    payload = {
+        "preview_id": preview.preview_id,
+        "task_id": preview.task_id,
+        "tenant_id": preview.tenant_id,
+        "kind": preview.kind.value if hasattr(preview.kind, "value") else str(preview.kind),
+        "summary": preview.summary,
+        "diff": preview.diff,
+        "spend_amount": preview.spend_amount,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
