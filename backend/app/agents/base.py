@@ -83,6 +83,8 @@ class BoundedWorkerAgent(ABC):
                 artifacts.append(f"diff:{grant.task_id}")
             if "copy_body" in result.sanitized_output or "headline" in result.sanitized_output:
                 artifacts.append(f"copy:{grant.task_id}")
+            if "creative_package" in result.sanitized_output:
+                artifacts.append(f"creative:{grant.task_id}")
             if "verified_dossier" in result.sanitized_output:
                 artifacts.append(f"dossier:{grant.task_id}")
             if "learning_delta" in result.sanitized_output:

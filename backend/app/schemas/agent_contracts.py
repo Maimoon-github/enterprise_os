@@ -285,3 +285,89 @@ class OmnichannelStrategyPlan(BaseModel):
     unsupported_estimates_or_caveats: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
     confidence: ConfidenceInterval | None = None
+
+
+class AdCopyVariant(BaseModel):
+    """Channel-specific ad copy draft produced by W_CREAT + S_COPY."""
+
+    variant_id: str
+    channel: str
+    format: str = "feed_ad"
+    headline: str
+    hook_angle: str = "pain_point"
+    hook_score: float = 0.85
+    body_copy: str
+    cta: str = "Learn More"
+    cta_variants: list[str] = Field(default_factory=list)
+    audience_segment: str = "all"
+    funnel_stage: str = "TOFU"
+    source_claim_ids: list[str] = Field(default_factory=list)
+    character_count: int = 0
+    compliance_checked: bool = True
+    disclaimers: list[str] = Field(default_factory=list)
+
+
+class VisualBrief(BaseModel):
+    """Structured visual direction brief for creative asset production."""
+
+    brief_id: str
+    asset_title: str
+    channel: str
+    format: str = "1:1_feed"
+    aspect_ratio: str = "1:1"
+    art_direction: str = ""
+    imagery_description: str = ""
+    text_overlay: str = ""
+    color_palette_guidance: list[str] = Field(default_factory=list)
+    required_elements: list[str] = Field(default_factory=list)
+    prohibited_elements: list[str] = Field(default_factory=list)
+
+
+class SocialPostVariant(BaseModel):
+    """Platform-adapted organic or sponsored social post draft."""
+
+    post_id: str
+    platform: str
+    post_type: str = "post"
+    hook: str
+    caption: str
+    hashtags: list[str] = Field(default_factory=list)
+    call_to_action: str = ""
+    source_claim_ids: list[str] = Field(default_factory=list)
+    character_limit: int = 2200
+    is_within_limits: bool = True
+
+
+class ContentScheduleItem(BaseModel):
+    """Channel and content release calendar slot aligned with marketing strategy."""
+
+    schedule_id: str
+    day_or_week: str
+    channel: str
+    funnel_stage: str = "TOFU"
+    format: str = "feed_ad"
+    variant_ref: str
+    primary_objective: str
+    target_audience: str = ""
+    cadence_notes: str = ""
+
+
+class CreativePackage(BaseModel):
+    """Consolidated creative deliverable produced by W_CREAT + S_COPY."""
+
+    package_id: str
+    tenant_id: str
+    brand_id: str
+    objective: str
+    target_audience: str = ""
+    funnel_stage: str = "full_funnel"
+    ad_copy_variants: list[AdCopyVariant] = Field(default_factory=list)
+    social_posts: list[SocialPostVariant] = Field(default_factory=list)
+    visual_briefs: list[VisualBrief] = Field(default_factory=list)
+    schedules: list[ContentScheduleItem] = Field(default_factory=list)
+    approved_claim_refs: list[str] = Field(default_factory=list)
+    flagged_unsupported_claims: list[str] = Field(default_factory=list)
+    compliance_warnings: list[str] = Field(default_factory=list)
+    persona_voice: str = "authoritative"
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    confidence: ConfidenceInterval | None = None
