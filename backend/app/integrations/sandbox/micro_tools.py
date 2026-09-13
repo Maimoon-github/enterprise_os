@@ -144,7 +144,7 @@ def execute_s_alloc(payload: dict[str, str]) -> dict[str, str]:
         "budget_total": str(budget_total),
         "allocations": json.dumps(allocations),
         "expected_blended_roas": f"{expected_blended_roas:.2f}",
-        "primary_channel": max(allocations, key=allocations.get) if allocations else "none",
+        "primary_channel": max(allocations, key=lambda ch: allocations[ch]) if allocations else "none",
     }
 
 

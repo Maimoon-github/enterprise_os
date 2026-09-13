@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from app.agents.base import BoundedWorkerAgent
 from app.agents.product_evidence import ProductEvidenceAgent
 from app.core.exceptions import SandboxInvocationError
 from app.integrations.sandbox.capabilities import validate_capability_access
@@ -93,7 +94,7 @@ async def test_governed_ie_grant_to_w_prod_pipeline(sample_directive: Directive)
     sandbox_client = SandboxClient()
     w_prod = ProductEvidenceAgent(sandbox_client)
 
-    workers = {
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.PRODUCT_EVIDENCE: w_prod,
     }
 
@@ -178,7 +179,7 @@ async def test_evidence_synthesizer_merges_w_prod_envelope(sample_directive: Dir
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
 
-    context = {
+    context: dict[str, object] = {
         "claims": [
             {
                 "id": "c-1",

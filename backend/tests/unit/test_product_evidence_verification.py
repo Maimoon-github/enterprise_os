@@ -319,7 +319,7 @@ def test_w_prod_tenant_scope_mismatch_fails_closed() -> None:
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
     # Context contains off-tenant evidence
-    context = {
+    context: dict[str, object] = {
         "evidence": [
             {"doc_id": "ev-foreign", "tenant_id": "tenant_beta", "text": "Foreign proprietary trial"}
         ]
@@ -371,7 +371,7 @@ async def test_w_prod_full_verification_and_envelope_generation() -> None:
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
 
-    context = {
+    context: dict[str, object] = {
         "product_id": "prod-luxe-01",
         "product_name": "Luxe Peptide Restorative Serum",
         "formulation": {
