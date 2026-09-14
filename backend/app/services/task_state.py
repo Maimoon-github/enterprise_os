@@ -384,3 +384,353 @@ class TaskStateService:
 
         return checkpoint
 
+    async def evaluate_m6_checkpoint(
+        self,
+        tenant_id: str,
+        *,
+        t25_task: CanonicalTaskState | str | None = None,
+        t26_task: CanonicalTaskState | str | None = None,
+        t27_task: CanonicalTaskState | str | None = None,
+        t28_task: CanonicalTaskState | str | None = None,
+        t29_task: CanonicalTaskState | str | None = None,
+        cms_deployment: Any | None = None,
+        paid_deployment: Any | None = None,
+        social_deployment: Any | None = None,
+        telemetry_readiness: Any | None = None,
+    ) -> MilestoneCheckpoint:
+        """Evaluate Milestone 6 acceptance checkpoint over T25 + T26 + T27 + T28 + T29.
+
+        Marked COMPLETE only when:
+        1. T25 (Outbound Boundary) is authoritatively authorized and active.
+        2. T26 (Website/CMS), T27 (Paid Ads), T28 (Social) have completed approved deployments within scope.
+        3. T29 (Telemetry Engine) has validated, operational listeners for all active T26-T28 surfaces.
+        4. Cross-system tenant and platform scopes match with zero unresolved holds, locks, or failures.
+        5. T30 is confirmed eligible through canonical T29 dependency without altering the DAG.
+        """
+        async def _resolve_task(task_or_id: CanonicalTaskState | str | None) -> CanonicalTaskState | None:
+            if isinstance(task_or_id, str):
+                try:
+                    return await self.get_state(task_or_id)
+                except Exception:
+                    return None
+            return task_or_id
+
+        def _get_task_tenant(t: CanonicalTaskState | None) -> str | None:
+            if not t:
+                return None
+            return getattr(t, "tenant_id", None) or t.cts_state.get("tenant_id")
+
+        task_t25 = await _resolve_task(t25_task)
+        task_t26 = await _resolve_task(t26_task)
+        task_t27 = await _resolve_task(t27_task)
+        task_t28 = await _resolve_task(t28_task)
+        task_t29 = await _resolve_task(t29_task)
+
+        blockers: list[str] = []
+        is_failed = False
+        is_blocked = False
+        is_partial = False
+
+        linked_task_ids = [
+            task_t25.task_id if task_t25 else "T25",
+            task_t26.task_id if task_t26 else "T26",
+            task_t27.task_id if task_t27 else "T27",
+            task_t28.task_id if task_t28 else "T28",
+            task_t29.task_id if task_t29 else "T29",
+        ]
+
+        # 1. Verify T25: Outbound Boundary Authorization
+        if task_t25 is None:
+            is_partial = True
+            blockers.append("T25 task state missing or uninitialized")
+        else:
+            if task_t25.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
+                is_failed = True
+                blockers.append(f"T25 is in failed state '{task_t25.status.value}'")
+            elif task_t25.status is TaskStatus.HELD or task_t25.hold_reason or task_t25.prerequisite_locks:
+                is_blocked = True
+                blockers.append(f"T25 is HELD or has active locks: {task_t25.hold_reason or task_t25.prerequisite_locks}")
+            elif task_t25.status not in (TaskStatus.COMPLETED, TaskStatus.APPROVED, TaskStatus.DISPATCHED):
+                is_partial = True
+                blockers.append(f"T25 is not completed/approved (current status: '{task_t25.status.value}')")
+            if not task_t25.governance_approved:
+                is_blocked = True
+                blockers.append("T25 governance approval is unresolved")
+            t25_tenant = _get_task_tenant(task_t25)
+            if t25_tenant and t25_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T25 tenant mismatch ({t25_tenant} != {tenant_id})")
+
+        # 2. Verify T26: Website & CMS Deployment
+        if task_t26 is None:
+            is_partial = True
+            blockers.append("T26 task state missing or uninitialized")
+        else:
+            if task_t26.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
+                is_failed = True
+                blockers.append(f"T26 is in failed state '{task_t26.status.value}'")
+            elif task_t26.status is TaskStatus.HELD or task_t26.hold_reason or task_t26.prerequisite_locks:
+                is_blocked = True
+                blockers.append(f"T26 is HELD or has active locks: {task_t26.hold_reason or task_t26.prerequisite_locks}")
+            elif task_t26.status not in (TaskStatus.COMPLETED, TaskStatus.DISPATCHED):
+                is_partial = True
+                blockers.append(f"T26 is not completed (current status: '{task_t26.status.value}')")
+            if not task_t26.governance_approved:
+                is_blocked = True
+                blockers.append("T26 governance approval is unresolved")
+            t26_tenant = _get_task_tenant(task_t26)
+            if t26_tenant and t26_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T26 tenant mismatch ({t26_tenant} != {tenant_id})")
+
+        cms_dep = cms_deployment or (task_t26.cts_state.get("deployment") if task_t26 else None)
+        if cms_dep is None and task_t26 and task_t26.status == TaskStatus.COMPLETED and not task_t26.cts_state:
+            is_blocked = True
+            blockers.append("T26 CMS deployment record is missing")
+        elif cms_dep:
+            dep_status = cms_dep.get("status") if isinstance(cms_dep, dict) else getattr(cms_dep, "status", None)
+            dep_code = str(cms_dep.get("status_code", "200") if isinstance(cms_dep, dict) else getattr(cms_dep, "status_code", "200"))
+            if dep_status in ("failed", "rejected") or dep_code.startswith("5"):
+                is_failed = True
+                blockers.append(f"T26 CMS deployment failed: status='{dep_status}', code='{dep_code}'")
+            elif dep_status not in ("published", "active", "deployed", "completed") and dep_code not in ("200", "201", "204"):
+                is_blocked = True
+                blockers.append(f"T26 CMS deployment not published: status='{dep_status}'")
+            dep_tenant = cms_dep.get("tenant_id") if isinstance(cms_dep, dict) else getattr(cms_dep, "tenant_id", None)
+            if dep_tenant and dep_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T26 CMS deployment tenant mismatch ({dep_tenant} != {tenant_id})")
+
+        # 3. Verify T27: Paid Media Campaigns
+        if task_t27 is None:
+            is_partial = True
+            blockers.append("T27 task state missing or uninitialized")
+        else:
+            if task_t27.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
+                is_failed = True
+                blockers.append(f"T27 is in failed state '{task_t27.status.value}'")
+            elif task_t27.status is TaskStatus.HELD or task_t27.hold_reason or task_t27.prerequisite_locks:
+                is_blocked = True
+                blockers.append(f"T27 is HELD or has active locks: {task_t27.hold_reason or task_t27.prerequisite_locks}")
+            elif task_t27.status not in (TaskStatus.COMPLETED, TaskStatus.DISPATCHED):
+                is_partial = True
+                blockers.append(f"T27 is not completed (current status: '{task_t27.status.value}')")
+            if not task_t27.governance_approved:
+                is_blocked = True
+                blockers.append("T27 governance approval is unresolved")
+            t27_tenant = _get_task_tenant(task_t27)
+            if t27_tenant and t27_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T27 tenant mismatch ({t27_tenant} != {tenant_id})")
+
+        paid_dep = paid_deployment or (
+            task_t27.cts_state.get("paid_campaign") or task_t27.cts_state.get("deployment")
+            if task_t27
+            else None
+        )
+        if paid_dep is None and task_t27 and task_t27.status == TaskStatus.COMPLETED and not task_t27.cts_state:
+            is_blocked = True
+            blockers.append("T27 paid campaign deployment record is missing")
+        elif paid_dep:
+            dep_status = paid_dep.get("status") if isinstance(paid_dep, dict) else getattr(paid_dep, "status", None)
+            dep_channel = str(paid_dep.get("channel") if isinstance(paid_dep, dict) else getattr(paid_dep, "channel", "")).lower()
+            if dep_status in ("failed", "rejected"):
+                is_failed = True
+                blockers.append(f"T27 paid campaign failed: status='{dep_status}'")
+            if dep_channel and dep_channel not in ("meta", "google", "tiktok", "linkedin"):
+                is_blocked = True
+                blockers.append(f"T27 platform '{dep_channel}' is not a permitted canonical ad platform")
+            if dep_channel == "linkedin":
+                details = paid_dep.get("details", {}) if isinstance(paid_dep, dict) else getattr(paid_dep, "details", {})
+                is_auth = details.get("authorized", False) or (task_t27 and task_t27.cts_state.get("linkedin_authorized", False))
+                if not is_auth:
+                    is_blocked = True
+                    blockers.append("T27 platform 'linkedin' was deployed without explicit authorization")
+            details = paid_dep.get("details", {}) if isinstance(paid_dep, dict) else getattr(paid_dep, "details", {})
+            applied_budget = paid_dep.get("applied_budget") if isinstance(paid_dep, dict) else getattr(paid_dep, "applied_budget", None)
+            approved_budget = (
+                paid_dep.get("approved_budget")
+                if isinstance(paid_dep, dict)
+                else getattr(paid_dep, "approved_budget", None)
+            )
+            if approved_budget is None and isinstance(details, dict):
+                approved_budget = details.get("approved_budget")
+            if applied_budget is not None and approved_budget is not None and float(applied_budget) > float(approved_budget):
+                is_blocked = True
+                blockers.append(f"T27 spend escalation: applied {applied_budget} > approved {approved_budget}")
+
+            applied_bid = paid_dep.get("applied_bid") if isinstance(paid_dep, dict) else getattr(paid_dep, "applied_bid", None)
+            approved_bid = (
+                paid_dep.get("approved_bid")
+                if isinstance(paid_dep, dict)
+                else getattr(paid_dep, "approved_bid", None)
+            )
+            if approved_bid is None and isinstance(details, dict):
+                approved_bid = details.get("approved_bid")
+            if applied_bid is not None and approved_bid is not None and float(applied_bid) > float(approved_bid):
+                is_blocked = True
+                blockers.append(f"T27 bid escalation: applied {applied_bid} > approved {approved_bid}")
+            dep_tenant = paid_dep.get("tenant_id") if isinstance(paid_dep, dict) else getattr(paid_dep, "tenant_id", None)
+            if dep_tenant and dep_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T27 paid campaign tenant mismatch ({dep_tenant} != {tenant_id})")
+
+        # 4. Verify T28: Social Posts & Assets
+        if task_t28 is None:
+            is_partial = True
+            blockers.append("T28 task state missing or uninitialized")
+        else:
+            if task_t28.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
+                is_failed = True
+                blockers.append(f"T28 is in failed state '{task_t28.status.value}'")
+            elif task_t28.status is TaskStatus.HELD or task_t28.hold_reason or task_t28.prerequisite_locks:
+                is_blocked = True
+                blockers.append(f"T28 is HELD or has active locks: {task_t28.hold_reason or task_t28.prerequisite_locks}")
+            elif task_t28.status not in (TaskStatus.COMPLETED, TaskStatus.DISPATCHED):
+                is_partial = True
+                blockers.append(f"T28 is not completed (current status: '{task_t28.status.value}')")
+            if not task_t28.governance_approved:
+                is_blocked = True
+                blockers.append("T28 governance approval is unresolved")
+            t28_tenant = _get_task_tenant(task_t28)
+            if t28_tenant and t28_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T28 tenant mismatch ({t28_tenant} != {tenant_id})")
+
+        social_dep = social_deployment or (
+            task_t28.cts_state.get("social_post") or task_t28.cts_state.get("deployment")
+            if task_t28
+            else None
+        )
+        if social_dep is None and task_t28 and task_t28.status == TaskStatus.COMPLETED and not task_t28.cts_state:
+            is_blocked = True
+            blockers.append("T28 social post deployment record is missing")
+        elif social_dep:
+            dep_status = social_dep.get("status") if isinstance(social_dep, dict) else getattr(social_dep, "status", None)
+            dep_channel = str(social_dep.get("channel") if isinstance(social_dep, dict) else getattr(social_dep, "channel", "")).lower()
+            if dep_status in ("failed", "rejected"):
+                is_failed = True
+                blockers.append(f"T28 social post failed: status='{dep_status}'")
+            if dep_channel and dep_channel not in ("instagram", "x", "youtube", "tiktok"):
+                is_blocked = True
+                blockers.append(f"T28 channel '{dep_channel}' is not a permitted canonical social channel")
+            social_details = social_dep.get("details", {}) if isinstance(social_dep, dict) else getattr(social_dep, "details", {})
+            if dep_channel == "tiktok":
+                is_auth = social_details.get("authorized", False) or (task_t28 and task_t28.cts_state.get("tiktok_authorized", False))
+                if not is_auth:
+                    is_blocked = True
+                    blockers.append("T28 channel 'tiktok' was published without explicit authorization")
+            if (
+                (isinstance(social_dep, dict) and social_dep.get("tampered"))
+                or getattr(social_dep, "tampered", False)
+                or (isinstance(social_details, dict) and social_details.get("tampered"))
+            ):
+                is_blocked = True
+                blockers.append("T28 social post copy or media asset was tampered")
+            dep_tenant = social_dep.get("tenant_id") if isinstance(social_dep, dict) else getattr(social_dep, "tenant_id", None)
+            if dep_tenant and dep_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T28 social post tenant mismatch ({dep_tenant} != {tenant_id})")
+
+        # 5. Verify T29: Omnichannel Telemetry Engine Readiness
+        if task_t29 is None:
+            is_partial = True
+            blockers.append("T29 task state missing or uninitialized")
+        else:
+            if task_t29.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
+                is_failed = True
+                blockers.append(f"T29 is in failed state '{task_t29.status.value}'")
+            elif task_t29.status is TaskStatus.HELD or task_t29.hold_reason or task_t29.prerequisite_locks:
+                is_blocked = True
+                blockers.append(f"T29 is HELD or has active locks: {task_t29.hold_reason or task_t29.prerequisite_locks}")
+            elif task_t29.status not in (TaskStatus.COMPLETED, TaskStatus.APPROVED, TaskStatus.DISPATCHED):
+                is_partial = True
+                blockers.append(f"T29 is not completed (current status: '{task_t29.status.value}')")
+            if not task_t29.governance_approved:
+                is_blocked = True
+                blockers.append("T29 governance approval is unresolved")
+            t29_tenant = _get_task_tenant(task_t29)
+            if t29_tenant and t29_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T29 tenant mismatch ({t29_tenant} != {tenant_id})")
+
+        t_ready = telemetry_readiness or (task_t29.cts_state.get("telemetry_engine") if task_t29 else None)
+        if t_ready is None and task_t29 and task_t29.status == TaskStatus.COMPLETED and not task_t29.cts_state:
+            is_blocked = True
+            blockers.append("T29 telemetry readiness record is missing")
+        elif t_ready:
+            is_ready_flag = t_ready.get("is_ready") if isinstance(t_ready, dict) else getattr(t_ready, "is_ready", False)
+            if not is_ready_flag:
+                is_blocked = True
+                blockers.append("T29 telemetry engine is not ready (listener or probe failures)")
+            b_reasons = t_ready.get("blocked_reasons", []) if isinstance(t_ready, dict) else getattr(t_ready, "blocked_reasons", [])
+            if b_reasons:
+                is_blocked = True
+                blockers.extend([f"T29 probe failure: {r}" for r in b_reasons])
+            ready_tenant = t_ready.get("tenant_id") if isinstance(t_ready, dict) else getattr(t_ready, "tenant_id", None)
+            if ready_tenant and ready_tenant not in ("default", "global", tenant_id):
+                is_blocked = True
+                blockers.append(f"T29 telemetry tenant mismatch ({ready_tenant} != {tenant_id})")
+
+        # 6. Derive Final Status
+        if is_failed:
+            final_status = MilestoneStatus.FAILED
+        elif is_blocked:
+            final_status = MilestoneStatus.BLOCKED
+        elif is_partial:
+            final_status = MilestoneStatus.PARTIAL
+        else:
+            final_status = MilestoneStatus.COMPLETE
+
+        t30_eligible = (final_status == MilestoneStatus.COMPLETE)
+
+        # 7. Construct MilestoneCheckpoint
+        active_surfaces_count = 0
+        if t_ready:
+            surfaces = t_ready.get("active_surfaces", []) if isinstance(t_ready, dict) else getattr(t_ready, "active_surfaces", [])
+            active_surfaces_count = len(surfaces)
+
+        checkpoint = MilestoneCheckpoint(
+            milestone_id="M6",
+            title="Outbound Actuation, Telemetry & Omnichannel Go-Live",
+            status=final_status,
+            tenant_id=tenant_id,
+            linked_task_ids=linked_task_ids,
+            evaluated_at=datetime.now(UTC),
+            blockers=blockers,
+            metadata={
+                "t25_status": task_t25.status.value if task_t25 else None,
+                "t26_status": task_t26.status.value if task_t26 else None,
+                "t27_status": task_t27.status.value if task_t27 else None,
+                "t28_status": task_t28.status.value if task_t28 else None,
+                "t29_status": task_t29.status.value if task_t29 else None,
+                "t30_eligible": t30_eligible,
+                "active_surfaces_count": active_surfaces_count,
+            },
+        )
+
+        # 8. Persist Checkpoint in CTS State and Provenance
+        if task_t29 is not None:
+            updated_cts_state = dict(task_t29.cts_state)
+            updated_cts_state["milestone_m6"] = checkpoint.model_dump(mode="json")
+            task_t29 = task_t29.model_copy(update={"cts_state": updated_cts_state})
+            await self._repository.save_state(tenant_id, task_t29)
+
+        if self._provenance_recorder:
+            await self._provenance_recorder.record(
+                tenant_id=tenant_id,
+                entity_id="M6",
+                activity="milestone_checkpoint_m6",
+                agent="cts_milestone_evaluator",
+                metadata={
+                    "milestone_id": "M6",
+                    "status": final_status.value,
+                    "t30_eligible": t30_eligible,
+                    "blockers": blockers,
+                    "linked_task_ids": linked_task_ids,
+                },
+            )
+
+        return checkpoint
+
+
