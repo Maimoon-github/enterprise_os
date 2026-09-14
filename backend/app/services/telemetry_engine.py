@@ -25,8 +25,13 @@ from app.core.exceptions import (
 )
 from app.core.logging import get_logger
 from app.mcp.outbound_gateway import scrub_sensitive_payload
+from app.persistence.repositories.telemetry import TelemetryRepository
+from app.schemas.governance import RiskLevel, TenantScope
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
+from app.security.authorization_boundary import CallerIdentity
 from app.schemas.telemetry import (
+    BatchItemResult,
+    BatchTelemetryIngestResponse,
     OmnichannelTelemetryReadiness,
     TelemetryEvent,
     TelemetryEventType,
@@ -37,8 +42,41 @@ from app.schemas.telemetry import (
 )
 from app.services.provenance import ProvenanceRecorder
 from app.services.task_state import TaskStateService
+from app.services.telemetry import TelemetryNormalizer
 
 logger = get_logger(__name__)
+
+
+def scrub_sensitive_telemetry(payload: dict[str, Any]) -> dict[str, Any]:
+    """Recursively scrub credentials, tokens, passwords, credit card numbers, CVVs, and financial PII."""
+    if not isinstance(payload, dict):
+        return payload
+    sensitive_markers = (
+        "token", "secret", "password", "api_key", "access_token", "private_key",
+        "credential", "card_number", "credit_card", "card_num", "pan", "cvv", "cvc",
+        "bearer", "authorization", "ssn",
+    )
+    scrubbed: dict[str, Any] = {}
+    for k, v in payload.items():
+        k_lower = k.lower()
+        if any(marker in k_lower for marker in sensitive_markers):
+            scrubbed[k] = "[REDACTED]"
+        elif isinstance(v, dict):
+            scrubbed[k] = scrub_sensitive_telemetry(v)
+        elif isinstance(v, list):
+            scrubbed[k] = [
+                scrub_sensitive_telemetry(item) if isinstance(item, dict) else item
+                for item in v
+            ]
+        elif isinstance(v, str):
+            cleaned = v.replace("-", "").replace(" ", "")
+            if len(cleaned) in range(13, 20) and cleaned.isdigit():
+                scrubbed[k] = "[REDACTED_PAYMENT_CARD]"
+            else:
+                scrubbed[k] = v
+        else:
+            scrubbed[k] = v
+    return scrubbed
 
 
 class OmnichannelTelemetryEngine:
@@ -53,6 +91,9 @@ class OmnichannelTelemetryEngine:
         max_future_skew_seconds: int = 60,
         task_state_service: TaskStateService | None = None,
         provenance_recorder: ProvenanceRecorder | None = None,
+        telemetry_repository: TelemetryRepository | None = None,
+        telemetry_normalizer: TelemetryNormalizer | None = None,
+        data_gateway: Any | None = None,
     ) -> None:
         self._webhook_signing_secret = webhook_signing_secret
         self._max_payload_bytes = max_payload_bytes
@@ -60,6 +101,9 @@ class OmnichannelTelemetryEngine:
         self._max_future_skew_seconds = max_future_skew_seconds
         self._task_state_service = task_state_service
         self._provenance_recorder = provenance_recorder
+        self._telemetry_repository = telemetry_repository
+        self._telemetry_normalizer = telemetry_normalizer
+        self._data_gateway = data_gateway
 
         # Active surfaces mapped by (tenant_id, channel)
         self._active_surfaces: dict[tuple[str, str], list[TelemetrySurface]] = {}
@@ -283,13 +327,7 @@ class OmnichannelTelemetryEngine:
                 f"Payload size {len(payload_bytes)} bytes exceeds maximum permitted {self._max_payload_bytes} bytes."
             )
 
-        # 2. Authentication & Signature Validation
-        sig = signature or envelope.signature
-        if self._webhook_signing_secret or secret:
-            if not self.verify_source_signature(payload_bytes, sig, secret=secret):
-                raise SignatureVerificationError("Invalid or missing webhook signature.")
-
-        # 3. Tenant & Channel Allowlist Enforcement
+        # 2. Tenant & Channel Allowlist Enforcement
         surface_key = (envelope.tenant_id, envelope.channel)
         active_list = self._active_surfaces.get(surface_key)
         if not active_list:
@@ -302,6 +340,18 @@ class OmnichannelTelemetryEngine:
             raise AuthorizationError(
                 f"Tenant '{envelope.tenant_id}' has no registered active telemetry surfaces."
             )
+
+        readiness = self.get_readiness(envelope.tenant_id)
+        if readiness and not readiness.is_ready:
+            raise PolicyViolationError(
+                f"T29 telemetry listener readiness is not satisfied for tenant '{envelope.tenant_id}'. Live ingestion requires authoritative T29 readiness."
+            )
+
+        # 3. Authentication & Signature Validation
+        sig = signature or envelope.signature
+        if self._webhook_signing_secret or secret:
+            if not self.verify_source_signature(payload_bytes, sig, secret=secret):
+                raise SignatureVerificationError("Invalid or missing webhook signature.")
 
         # 4. Freshness Window Enforcement
         now = datetime.now(UTC)
@@ -333,6 +383,7 @@ class OmnichannelTelemetryEngine:
         self._seen_keys.add(dedup_key)
 
         # 6. Schema Normalization
+        scrubbed_payload = scrub_sensitive_telemetry(envelope.payload)
         event = TelemetryEvent(
             event_id=str(uuid.uuid4()),
             tenant_id=envelope.tenant_id,
@@ -341,8 +392,203 @@ class OmnichannelTelemetryEngine:
             occurred_at=occurred_at,
             metrics=envelope.metrics,
             received_at=now,
+            source_id=envelope.source_id or envelope.account_id,
+            correlation_id=envelope.correlation_id or envelope.payload.get("correlation_id"),
+            idempotency_key=dedup_key,
+            payload=scrubbed_payload,
+            dimensions={"account_id": envelope.account_id or "", "channel": envelope.channel},
         )
         return event
+
+    async def ingest_live_telemetry(
+        self,
+        envelope: WebhookIngestEnvelope,
+        *,
+        raw_body: bytes | None = None,
+        signature: str | None = None,
+        secret: str | None = None,
+    ) -> TelemetryEvent:
+        """Validate, normalize, deduplicate, and persist live telemetry into CDB.
+
+        Enforces:
+        - T29 authoritative listener readiness
+        - Ingress authentication & HMAC-SHA256 signature validation
+        - Active surface authorization allowlist
+        - Payload size ceiling and timestamp freshness
+        - In-memory replay cache + CDB idempotency deduplication
+        - Recursive sensitive data scrubbing (financial/PII)
+        - Schema normalization into TelemetryEvent
+        - Durable CDB persistence via TelemetryRepository / DataGateway
+        - T30 CTS state update & audit provenance recording
+        """
+        # 1. Tenant & Channel Allowlist Enforcement
+        surface_key = (envelope.tenant_id, envelope.channel)
+        active_list = self._active_surfaces.get(surface_key)
+        if not active_list:
+            known_channels = [ch for (tid, ch) in self._active_surfaces if tid == envelope.tenant_id]
+            if known_channels:
+                raise PolicyViolationError(
+                    f"Channel '{envelope.channel}' is not an authorized active telemetry surface for tenant '{envelope.tenant_id}' (active: {sorted(known_channels)})."
+                )
+            raise AuthorizationError(
+                f"Tenant '{envelope.tenant_id}' has no registered active telemetry surfaces."
+            )
+
+        # 2. Authoritative T29 readiness
+        readiness = self.get_readiness(envelope.tenant_id)
+        if not readiness or not readiness.is_ready:
+            raise PolicyViolationError(
+                f"T29 telemetry listener readiness is not satisfied for tenant '{envelope.tenant_id}'. Live ingestion requires authoritative T29 readiness."
+            )
+
+        occurred_at = envelope.occurred_at
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=UTC)
+
+        # 3. Compute deterministic deduplication key
+        dedup_key = envelope.idempotency_key or hashlib.sha256(
+            f"{envelope.tenant_id}:{envelope.channel}:{envelope.event_type}:{occurred_at.isoformat()}:{json.dumps(envelope.metrics, sort_keys=True)}".encode()
+        ).hexdigest()
+
+        # 4. Check for existing persisted record in CDB (Idempotent Webhook Retry)
+        if self._telemetry_repository is not None:
+            existing = await self._telemetry_repository.get_by_idempotency_key(envelope.tenant_id, dedup_key)
+            if existing is None:
+                existing = await self._telemetry_repository.get(f"evt_{dedup_key[:24]}")
+            if existing is not None:
+                logger.info("Idempotent replay detected for event '%s'; returning persisted record", existing.event_id)
+                return existing
+
+        # 5. Ingress Validation (signature, size, allowlist, freshness, replay)
+        self.validate_ingress(envelope, raw_body=raw_body, signature=signature, secret=secret)
+
+        # 6. Sanitize sensitive financial and PII data
+        scrubbed_payload = scrub_sensitive_telemetry(envelope.payload)
+
+        # 7. Normalize into canonical TelemetryEvent
+        now = datetime.now(UTC)
+        event_id = f"evt_{dedup_key[:24]}"
+        event = TelemetryEvent(
+            event_id=event_id,
+            tenant_id=envelope.tenant_id,
+            event_type=envelope.event_type,
+            channel=envelope.channel,
+            occurred_at=occurred_at,
+            metrics=envelope.metrics,
+            received_at=now,
+            source_id=envelope.source_id or envelope.account_id,
+            correlation_id=envelope.correlation_id or envelope.payload.get("correlation_id"),
+            idempotency_key=dedup_key,
+            payload=scrubbed_payload,
+            dimensions={"account_id": envelope.account_id or "", "channel": envelope.channel},
+        )
+
+        # 8. Route persistence through DataGateway (governed) or direct TelemetryRepository
+        if self._data_gateway is not None:
+            caller = CallerIdentity(
+                subject="telemetry_engine",
+                tenant_scope=TenantScope(tenant_id=envelope.tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+            )
+            await self._data_gateway.record_telemetry(caller, tenant_id=envelope.tenant_id, event=event)
+        elif self._telemetry_normalizer is not None:
+            await self._telemetry_normalizer.ingest(
+                tenant_id=event.tenant_id,
+                event_type=event.event_type,
+                channel=event.channel,
+                occurred_at=event.occurred_at,
+                metrics=event.metrics,
+                event_id=event.event_id,
+                source_id=event.source_id,
+                correlation_id=event.correlation_id,
+                idempotency_key=event.idempotency_key,
+                payload=event.payload,
+                dimensions=event.dimensions,
+            )
+        elif self._telemetry_repository is not None:
+            await self._telemetry_repository.record(event)
+        else:
+            raise ConfigurationError("No telemetry repository or data gateway configured for live ingestion.")
+
+        # 9. Update CTS State and Provenance
+        if self._task_state_service is not None:
+            try:
+                t30_task = await self._task_state_service.get_state("task-t30")
+                if t30_task:
+                    cts = dict(t30_task.cts_state)
+                    t_info = dict(cts.get("telemetry_ingestion", {}))
+                    t_info["last_ingested_at"] = now.isoformat()
+                    t_info["total_ingested"] = t_info.get("total_ingested", 0) + 1
+                    cts["telemetry_ingestion"] = t_info
+                    t30_task.cts_state = cts
+                    await self._task_state_service.save_state(envelope.tenant_id, t30_task)
+            except Exception as e:
+                logger.warning("Could not update CTS state for task-t30: %s", e)
+
+        if self._provenance_recorder is not None:
+            try:
+                await self._provenance_recorder.record(
+                    tenant_id=envelope.tenant_id,
+                    entity_id=event.event_id,
+                    activity="telemetry_event_ingested",
+                    agent="telemetry_engine",
+                    metadata={
+                        "event_id": event.event_id,
+                        "event_type": event.event_type.value,
+                        "channel": event.channel,
+                        "idempotency_key": dedup_key,
+                        "metrics": event.metrics,
+                    },
+                )
+            except Exception:
+                pass
+
+        return event
+
+    async def ingest_batch(
+        self,
+        tenant_id: str,
+        envelopes: list[WebhookIngestEnvelope],
+    ) -> BatchTelemetryIngestResponse:
+        """Ingest a batch of telemetry envelopes supporting item-level partial failure handling."""
+        results: list[BatchItemResult] = []
+        succeeded = 0
+        failed = 0
+
+        for idx, envelope in enumerate(envelopes):
+            try:
+                if envelope.tenant_id != tenant_id:
+                    raise AuthorizationError(
+                        f"Envelope tenant '{envelope.tenant_id}' does not match batch tenant '{tenant_id}'."
+                    )
+                persisted = await self.ingest_live_telemetry(envelope)
+                results.append(
+                    BatchItemResult(
+                        index=idx,
+                        success=True,
+                        event_id=persisted.event_id,
+                        idempotency_key=persisted.idempotency_key,
+                    )
+                )
+                succeeded += 1
+            except Exception as exc:
+                results.append(
+                    BatchItemResult(
+                        index=idx,
+                        success=False,
+                        idempotency_key=envelope.idempotency_key,
+                        error=str(exc),
+                    )
+                )
+                failed += 1
+
+        return BatchTelemetryIngestResponse(
+            tenant_id=tenant_id,
+            total_received=len(envelopes),
+            total_succeeded=succeeded,
+            total_failed=failed,
+            results=results,
+        )
 
     async def probe_listener(self, surface: TelemetrySurface) -> TelemetryHandshakeProbe:
         """Perform a non-destructive handshake validation probe on a registered listener.
@@ -459,6 +705,19 @@ class OmnichannelTelemetryEngine:
 
         return readiness
 
+    def register_surface(self, surface: TelemetrySurface) -> None:
+        """Register an active telemetry surface for a tenant and channel."""
+        self._active_surfaces.setdefault((surface.tenant_id, surface.channel), []).append(surface)
+
+    def register_readiness(self, readiness: OmnichannelTelemetryReadiness) -> None:
+        """Explicitly register readiness record for a tenant."""
+        self._readiness_records[readiness.tenant_id] = readiness
+
+    def set_readiness(self, tenant_id: str, readiness: OmnichannelTelemetryReadiness) -> None:
+        """Explicitly set readiness record for a tenant."""
+        self._readiness_records[tenant_id] = readiness
+
     def get_readiness(self, tenant_id: str) -> OmnichannelTelemetryReadiness | None:
         """Return the latest readiness record for a tenant."""
         return self._readiness_records.get(tenant_id)
+

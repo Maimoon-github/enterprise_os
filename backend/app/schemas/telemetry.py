@@ -14,6 +14,8 @@ class TelemetryEventType(StrEnum):
 
     TRAFFIC = "traffic"
     CONVERSION = "conversion"
+    CHECKOUT = "checkout"
+    TRANSACTION = "transaction"
     AD_SPEND = "ad_spend"
     SOCIAL_ENGAGEMENT = "social_engagement"
     ROAS = "roas"
@@ -76,6 +78,8 @@ class WebhookIngestEnvelope(BaseModel):
     event_type: TelemetryEventType
     occurred_at: datetime
     account_id: str | None = None
+    source_id: str | None = None
+    correlation_id: str | None = None
     metrics: dict[str, float] = Field(default_factory=dict)
     payload: dict[str, Any] = Field(default_factory=dict)
     signature: str | None = None
@@ -92,3 +96,35 @@ class TelemetryEvent(BaseModel):
     occurred_at: datetime
     metrics: dict[str, float] = Field(default_factory=dict)
     received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source_id: str | None = None
+    correlation_id: str | None = None
+    idempotency_key: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    dimensions: dict[str, str] = Field(default_factory=dict)
+
+
+class BatchItemResult(BaseModel):
+    """Result of an individual item within a batch ingestion request."""
+
+    index: int
+    success: bool
+    event_id: str | None = None
+    idempotency_key: str | None = None
+    error: str | None = None
+
+
+class BatchTelemetryIngestRequest(BaseModel):
+    """Batch ingestion request containing multiple telemetry event envelopes."""
+
+    tenant_id: str
+    events: list[WebhookIngestEnvelope] = Field(default_factory=list)
+
+
+class BatchTelemetryIngestResponse(BaseModel):
+    """Response ledger for a batch ingestion request supporting partial failures."""
+
+    tenant_id: str
+    total_received: int
+    total_succeeded: int
+    total_failed: int
+    results: list[BatchItemResult] = Field(default_factory=list)

@@ -124,20 +124,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     from app.services.task_state import TaskStateService
 
-    telemetry_normalizer = TelemetryNormalizer(telemetry_repository)
-    telemetry_engine = OmnichannelTelemetryEngine(
-        webhook_signing_secret=settings.telemetry.webhook_signing_secret,
-        max_payload_bytes=settings.telemetry.max_payload_bytes,
-        freshness_window_seconds=settings.telemetry.freshness_window_seconds,
-        max_future_skew_seconds=settings.telemetry.max_future_skew_seconds,
-        task_state_service=task_state_service,
-        provenance_recorder=provenance_recorder,
-    )
-    memory_promotion_service = MemoryPromotionService(memory_repository)
     provenance_recorder = ProvenanceRecorder(provenance_repository)
     task_state_service = TaskStateService(
         task_state_repository, TaskStateMachine(), provenance_recorder
     )
+    memory_promotion_service = MemoryPromotionService(memory_repository)
 
     hybrid_retriever = HybridRetriever(vector_repository)
     rag_controller = RagController(hybrid_retriever, FreshnessPolicy(), SchemaValidator())
@@ -178,8 +169,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         memory_repository=memory_repository,
         artifact_repository=artifact_repository,
         cms_client=cms_client,
+        telemetry_repository=telemetry_repository,
+        provenance_recorder=provenance_recorder,
     )
     mcp_host = McpHost(data_gateway, outbound_gateway)
+
+    telemetry_normalizer = TelemetryNormalizer(telemetry_repository, data_gateway=data_gateway)
+    telemetry_engine = OmnichannelTelemetryEngine(
+        webhook_signing_secret=settings.telemetry.webhook_signing_secret,
+        max_payload_bytes=settings.telemetry.max_payload_bytes,
+        freshness_window_seconds=settings.telemetry.freshness_window_seconds,
+        max_future_skew_seconds=settings.telemetry.max_future_skew_seconds,
+        task_state_service=task_state_service,
+        provenance_recorder=provenance_recorder,
+        telemetry_repository=telemetry_repository,
+        telemetry_normalizer=telemetry_normalizer,
+        data_gateway=data_gateway,
+    )
 
     brand_persona_resolver = BrandPersonaResolver(memory_repository=memory_repository)
 

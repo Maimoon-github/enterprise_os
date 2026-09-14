@@ -33,6 +33,17 @@ class TelemetryRepository(BaseJsonRepository[TelemetryEvent]):
     async def record(self, event: TelemetryEvent) -> None:
         await self.save(event.event_id, event.tenant_id, event)
 
+    async def get_by_idempotency_key(self, tenant_id: str, idempotency_key: str) -> TelemetryEvent | None:
+        """Find an existing telemetry event by its idempotency key within a tenant scope."""
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                select(self._table.c.document).where(self._table.c.tenant_id == tenant_id)
+            )
+            for (doc,) in rows.all():
+                if isinstance(doc, dict) and doc.get("idempotency_key") == idempotency_key:
+                    return TelemetryEvent.model_validate(doc)
+            return None
+
     async def list_by_type(self, tenant_id: str, event_type: str) -> list[TelemetryEvent]:
         """Return telemetry events for ``tenant_id`` filtered by event type."""
 
@@ -42,3 +53,7 @@ class TelemetryRepository(BaseJsonRepository[TelemetryEvent]):
             )
             events = [TelemetryEvent.model_validate(doc) for (doc,) in rows.all()]
         return [event for event in events if event.event_type.value == event_type]
+
+    async def list_all(self, tenant_id: str) -> list[TelemetryEvent]:
+        """Return all telemetry events for ``tenant_id``."""
+        return await self.list_by_tenant(tenant_id)

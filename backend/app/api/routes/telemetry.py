@@ -13,6 +13,8 @@ from app.core.exceptions import (
     SignatureVerificationError,
 )
 from app.schemas.telemetry import (
+    BatchTelemetryIngestRequest,
+    BatchTelemetryIngestResponse,
     OmnichannelTelemetryReadiness,
     TelemetryEvent,
     TelemetryEventType,
@@ -87,15 +89,43 @@ async def _handle_ingress(
     request: Request,
     signature_header: str | None = None,
 ) -> TelemetryEvent:
-    """Shared ingress handler with security, freshness, and replay validation."""
+    """Shared ingress handler with security, freshness, replay validation, and durable CDB persistence."""
     engine = getattr(request.app.state, "telemetry_engine", None)
     raw_body = await request.body()
     sig = signature_header or payload.signature or request.headers.get("x-hub-signature-256") or request.headers.get("x-signature")
 
     if engine:
-        return engine.validate_ingress(payload, raw_body=raw_body, signature=sig)
+        if (
+            engine._telemetry_repository is None
+            and engine._data_gateway is None
+            and engine._telemetry_normalizer is None
+        ):
+            normalizer = getattr(request.app.state, "telemetry_normalizer", None)
+            repo = getattr(request.app.state, "telemetry_repository", None)
+            gateway = getattr(request.app.state, "data_gateway", None)
+            if normalizer or repo or gateway:
+                engine._telemetry_normalizer = normalizer
+                engine._telemetry_repository = repo
+                engine._data_gateway = gateway
+                return await engine.ingest_live_telemetry(payload, raw_body=raw_body, signature=sig)
+            return engine.validate_ingress(payload, raw_body=raw_body, signature=sig)
+        return await engine.ingest_live_telemetry(payload, raw_body=raw_body, signature=sig)
 
-    # Fallback normalization if engine not present
+    # Fallback normalization and persistence if engine not present
+    normalizer = getattr(request.app.state, "telemetry_normalizer", None)
+    if normalizer:
+        return await normalizer.ingest(
+            tenant_id=payload.tenant_id,
+            event_type=payload.event_type,
+            channel=payload.channel,
+            occurred_at=payload.occurred_at,
+            metrics=payload.metrics,
+            source_id=payload.source_id or payload.account_id,
+            correlation_id=payload.correlation_id,
+            idempotency_key=payload.idempotency_key,
+            payload=payload.payload,
+        )
+
     return TelemetryEvent(
         event_id="simulated_ingress_event",
         tenant_id=payload.tenant_id,
@@ -158,3 +188,18 @@ async def receive_social_webhook(
     """Authenticated webhook listener for organic social channels."""
     payload.channel = channel
     return await _handle_ingress(payload, request, signature_header=x_hub_signature_256)
+
+
+@router.post("/batch", response_model=BatchTelemetryIngestResponse, status_code=200)
+async def receive_batch(
+    payload: BatchTelemetryIngestRequest,
+    request: Request,
+) -> BatchTelemetryIngestResponse:
+    """Batch ingestion endpoint supporting item-level partial failure handling."""
+    engine = getattr(request.app.state, "telemetry_engine", None)
+    if not engine:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Omnichannel Telemetry Engine is not initialized.",
+        )
+    return await engine.ingest_batch(payload.tenant_id, payload.events)
