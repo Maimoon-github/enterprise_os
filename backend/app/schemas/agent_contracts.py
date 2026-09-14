@@ -518,3 +518,99 @@ class ConsolidatedEvidencePackage(BaseModel):
     synthesized_evidence_summary: list[str] = Field(default_factory=list)
     provenance_summary: dict[str, Any] = Field(default_factory=dict)
     consolidated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AttributionModelType(StrEnum):
+    """Supported deterministic multi-touch attribution models."""
+
+    LINEAR = "linear"
+    FIRST_TOUCH = "first_touch"
+    LAST_TOUCH = "last_touch"
+    TIME_DECAY = "time_decay"
+    POSITION_BASED = "position_based"
+
+
+class Touchpoint(BaseModel):
+    """A marketing interaction touchpoint along a conversion journey."""
+
+    channel: str
+    campaign_id: str | None = None
+    creative_id: str | None = None
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    cost: float = 0.0
+    interaction_type: str = "click"
+
+
+class ConversionPath(BaseModel):
+    """A customer conversion path consisting of sequential touchpoints."""
+
+    conversion_id: str
+    tenant_id: str
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    revenue: float = 0.0
+    touchpoints: list[Touchpoint] = Field(default_factory=list)
+
+
+class AttributionWeight(BaseModel):
+    """Attributed contribution metrics for a channel, campaign, or creative."""
+
+    channel: str
+    campaign_id: str | None = None
+    creative_id: str | None = None
+    weight: float = 0.0
+    attributed_revenue: float = 0.0
+    attributed_conversions: float = 0.0
+
+
+class CreativeDecayMetric(BaseModel):
+    """Exponential decay, fatigue status, and lifecycle action recommendation for a creative."""
+
+    creative_id: str
+    channel: str
+    days_active: float = 0.0
+    decay_multiplier: float = 1.0
+    fatigue_detected: bool = False
+    recommended_action: str = "scale_spend"
+    projected_roas: float = 0.0
+
+
+class RoasMetric(BaseModel):
+    """Calculated ROAS for a channel or campaign with denominator safety."""
+
+    channel: str
+    campaign_id: str | None = None
+    spend: float = 0.0
+    revenue: float = 0.0
+    roas: float = 0.0
+    status: str = "valid"  # "valid", "zero_spend_with_revenue", "zero_spend_zero_revenue"
+
+
+class DataQualityIndicator(BaseModel):
+    """Indicators evaluating telemetry completeness, coverage, and sufficiency."""
+
+    total_events: int = 0
+    conversion_count: int = 0
+    total_spend: float = 0.0
+    total_revenue: float = 0.0
+    attribution_coverage: float = 1.0
+    missing_spend_count: int = 0
+    is_sufficient: bool = True
+    warnings: list[str] = Field(default_factory=list)
+
+
+class AttributionDeliverable(BaseModel):
+    """Consolidated deliverable produced by W_LEARN + S_ATTR for T31."""
+
+    deliverable_id: str
+    tenant_id: str
+    task_id: str
+    model_type: AttributionModelType = AttributionModelType.LINEAR
+    input_window_start: datetime | None = None
+    input_window_end: datetime | None = None
+    channel_weights: list[AttributionWeight] = Field(default_factory=list)
+    decay_metrics: list[CreativeDecayMetric] = Field(default_factory=list)
+    roas_metrics: list[RoasMetric] = Field(default_factory=list)
+    data_quality: DataQualityIndicator = Field(default_factory=DataQualityIndicator)
+    proposed_learning_deltas: list[str] = Field(default_factory=list)
+    confidence: ConfidenceInterval | None = None
+    calculated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

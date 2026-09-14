@@ -43,13 +43,20 @@ class _InMemoryMemoryRepository(MemoryRepository):
     def __init__(self) -> None:
         self._store: dict[str, Any] = {}
 
-    async def promote(self, record) -> None:  # type: ignore[override]
+    async def promote(self, record: Any, min_confidence: float = 0.6) -> None:  # type: ignore[override]
         self._store[record.memory_id] = record
 
-    async def list_by_tenant(self, tenant_id: str, category: str | None = None) -> list:
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        category: str | None = None,
+        namespace: str | None = None,
+    ) -> list[Any]:
         records = [r for r in self._store.values() if getattr(r, "tenant_id", None) == tenant_id]
         if category:
             records = [r for r in records if getattr(r, "category", None) == category]
+        if namespace:
+            records = [r for r in records if getattr(r, "namespace", None) == namespace]
         return records
 
     def all(self) -> list:

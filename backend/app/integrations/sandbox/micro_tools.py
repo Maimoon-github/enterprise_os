@@ -1704,47 +1704,300 @@ def execute_s_parse(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def execute_s_attr(payload: dict[str, str]) -> dict[str, str]:
+def execute_s_attr(payload: dict[str, Any]) -> dict[str, str]:
     """S_ATTR: Attribution Modeler [Micro-Tool: Decay Scorer].
 
-    Computes multi-touch attribution, creative decay rates, and ROAS optimization adjustments.
+    Computes deterministic multi-touch attribution, creative decay rates,
+    and ROAS optimization adjustments.
     """
-    task_id = payload.get("task_id", "unknown")
+    task_id = str(payload.get("task_id", "unknown"))
+    tenant_id = str(payload.get("tenant_id", "default"))
+    model_type = str(payload.get("model_type", "linear")).lower()
+
+    # Valid supported attribution models
+    supported_models = {"linear", "first_touch", "last_touch", "time_decay", "position_based"}
+    if model_type not in supported_models:
+        return {
+            "status": "configuration_gap",
+            "task_id": task_id,
+            "error": f"Unsupported or unconfigured attribution model '{model_type}'. Supported: {sorted(supported_models)}",
+            "confidence": "0.0",
+        }
+
+    # 1. Parse Conversion Paths
+    raw_paths = payload.get("paths") or payload.get("conversion_paths")
+    paths: list[dict[str, Any]] = []
+    if isinstance(raw_paths, str):
+        try:
+            paths = json.loads(raw_paths)
+        except Exception:
+            paths = []
+    elif isinstance(raw_paths, list):
+        paths = raw_paths
+
+    # 2. Parse Spend Data
+    raw_spend = payload.get("spend_data") or payload.get("spend")
+    spend_map: dict[str, float] = {}  # channel -> spend
+    if isinstance(raw_spend, str):
+        try:
+            parsed_spend = json.loads(raw_spend)
+            if isinstance(parsed_spend, dict):
+                spend_map = {k: float(v) for k, v in parsed_spend.items()}
+            elif isinstance(parsed_spend, list):
+                for item in parsed_spend:
+                    if isinstance(item, dict) and "channel" in item:
+                        spend_map[item["channel"]] = spend_map.get(item["channel"], 0.0) + float(item.get("spend", 0.0))
+        except Exception:
+            pass
+    elif isinstance(raw_spend, dict):
+        spend_map = {k: float(v) for k, v in raw_spend.items()}
+    elif isinstance(raw_spend, list):
+        for item in raw_spend:
+            if isinstance(item, dict) and "channel" in item:
+                spend_map[item["channel"]] = spend_map.get(item["channel"], 0.0) + float(item.get("spend", 0.0))
+
+    # 3. Parse Creatives Data
+    raw_creatives = payload.get("creatives")
+    creatives_list: list[dict[str, Any]] = []
+    if isinstance(raw_creatives, str):
+        try:
+            creatives_list = json.loads(raw_creatives)
+        except Exception:
+            pass
+    elif isinstance(raw_creatives, list):
+        creatives_list = raw_creatives
+
+    # Fallback to single creative / roas parameters for backward compatibility
     try:
         reported_roas = float(payload.get("roas", payload.get("metrics_roas", "3.4")))
     except (ValueError, TypeError):
         reported_roas = 3.4
 
     try:
-        days_active = float(payload.get("days_active", "14.0"))
-        if days_active < 0:
-            days_active = 0.0
+        single_days_active = float(payload.get("days_active", "14.0"))
+        if single_days_active < 0:
+            single_days_active = 0.0
     except (ValueError, TypeError):
-        days_active = 14.0
+        single_days_active = 14.0
 
-    # Half-life exponential decay model: decay = e^(-lambda * t)
-    decay_rate = 0.05
-    decay_multiplier = math.exp(-decay_rate * days_active)
-    projected_roas = reported_roas * decay_multiplier
+    # If no creatives list provided, populate from single creative fields
+    if not creatives_list:
+        creatives_list = [{
+            "creative_id": payload.get("creative_id", "creative-default"),
+            "channel": payload.get("channel", "meta"),
+            "days_active": single_days_active,
+            "reported_roas": reported_roas,
+        }]
 
-    fatigue_detected = decay_multiplier < 0.65
-    recommended_action = "refresh_creative_hooks" if fatigue_detected else "scale_spend"
+    # 4. Check Data Sufficiency
+    has_roas_context = "roas" in payload or "metrics_roas" in payload or "days_active" in payload
+    if not paths and not has_roas_context and not spend_map:
+        return {
+            "status": "insufficient_data",
+            "task_id": task_id,
+            "error": "Insufficient conversion path telemetry for attribution modeling: 0 conversion events provided.",
+            "confidence": "0.0",
+        }
 
+    # 5. Compute Multi-Touch Attribution across Paths
+    channel_attributed_rev: dict[str, float] = {}
+    channel_attributed_conv: dict[str, float] = {}
+    campaign_attributed_rev: dict[str, float] = {}
+    creative_attributed_rev: dict[str, float] = {}
+    total_conversions = len(paths)
+    total_revenue = 0.0
+    covered_conversions = 0
+    warnings: list[str] = []
+
+    for path in paths:
+        rev = float(path.get("revenue", 0.0))
+        total_revenue += rev
+        touchpoints = path.get("touchpoints", [])
+        n_touches = len(touchpoints)
+        if n_touches == 0:
+            warnings.append(f"Conversion {path.get('conversion_id', 'unknown')} has no touchpoints.")
+            continue
+
+        covered_conversions += 1
+        weights: list[float] = []
+
+        if model_type == "linear":
+            w = 1.0 / n_touches
+            weights = [w] * n_touches
+        elif model_type == "first_touch":
+            weights = [1.0] + [0.0] * (n_touches - 1)
+        elif model_type == "last_touch":
+            weights = [0.0] * (n_touches - 1) + [1.0]
+        elif model_type == "time_decay":
+            # 7-day half-life decay from conversion time
+            raw_weights: list[float] = []
+            conv_time_str = path.get("occurred_at")
+            for t_idx, tp in enumerate(touchpoints):
+                dt_days = 0.0
+                try:
+                    from datetime import datetime
+                    if conv_time_str and tp.get("occurred_at"):
+                        t_conv = datetime.fromisoformat(str(conv_time_str).replace("Z", "+00:00"))
+                        t_touch = datetime.fromisoformat(str(tp.get("occurred_at")).replace("Z", "+00:00"))
+                        dt_days = max(0.0, (t_conv - t_touch).total_seconds() / 86400.0)
+                    else:
+                        dt_days = float(n_touches - 1 - t_idx)
+                except Exception:
+                    dt_days = float(n_touches - 1 - t_idx)
+                raw_weights.append(math.pow(2.0, -dt_days / 7.0))
+            sum_rw = sum(raw_weights)
+            weights = [rw / sum_rw for rw in raw_weights] if sum_rw > 0 else [1.0 / n_touches] * n_touches
+        elif model_type == "position_based":
+            # U-shaped: 40% first, 40% last, 20% middle
+            if n_touches == 1:
+                weights = [1.0]
+            elif n_touches == 2:
+                weights = [0.5, 0.5]
+            else:
+                middle_w = 0.2 / (n_touches - 2)
+                weights = [0.4] + [middle_w] * (n_touches - 2) + [0.4]
+
+        for tp, w in zip(touchpoints, weights):
+            ch = str(tp.get("channel", "unknown")).lower()
+            camp = tp.get("campaign_id")
+            creat = tp.get("creative_id")
+            channel_attributed_rev[ch] = channel_attributed_rev.get(ch, 0.0) + (rev * w)
+            channel_attributed_conv[ch] = channel_attributed_conv.get(ch, 0.0) + (1.0 * w)
+            if camp:
+                campaign_attributed_rev[str(camp)] = campaign_attributed_rev.get(str(camp), 0.0) + (rev * w)
+            if creat:
+                creative_attributed_rev[str(creat)] = creative_attributed_rev.get(str(creat), 0.0) + (rev * w)
+
+    # 6. Compute Creative Decay & Fatigue
+    decay_metrics: list[dict[str, Any]] = []
+    primary_decay_multiplier = 1.0
+    primary_projected_roas = reported_roas
+    primary_fatigue = False
+    primary_action = "scale_spend"
+
+    for c_idx, c_item in enumerate(creatives_list):
+        c_id = str(c_item.get("creative_id", f"creative-{c_idx+1}"))
+        c_ch = str(c_item.get("channel", "meta")).lower()
+        try:
+            d_active = float(c_item.get("days_active", single_days_active))
+            if d_active < 0:
+                d_active = 0.0
+        except (ValueError, TypeError):
+            d_active = single_days_active
+
+        try:
+            c_roas = float(c_item.get("reported_roas", c_item.get("roas", reported_roas)))
+        except (ValueError, TypeError):
+            c_roas = reported_roas
+
+        # Exponential decay: decay = e^(-0.05 * t)
+        decay_mult = math.exp(-0.05 * d_active)
+        proj_roas = c_roas * decay_mult
+        fatigued = decay_mult < 0.65
+        action = "refresh_creative_hooks" if fatigued else "scale_spend"
+
+        if c_idx == 0:
+            primary_decay_multiplier = decay_mult
+            primary_projected_roas = proj_roas
+            primary_fatigue = fatigued
+            primary_action = action
+
+        decay_metrics.append({
+            "creative_id": c_id,
+            "channel": c_ch,
+            "days_active": round(d_active, 1),
+            "decay_multiplier": round(decay_mult, 4),
+            "fatigue_detected": fatigued,
+            "recommended_action": action,
+            "projected_roas": round(proj_roas, 2),
+        })
+
+    # 7. Compute ROAS per Channel
+    roas_metrics: list[dict[str, Any]] = []
+    all_channels = sorted(set(list(spend_map.keys()) + list(channel_attributed_rev.keys())))
+    for ch in all_channels:
+        sp = spend_map.get(ch, 0.0)
+        rv = channel_attributed_rev.get(ch, 0.0)
+        if sp > 0.0:
+            calc_roas = rv / sp
+            r_status = "valid"
+        elif rv > 0.0:
+            calc_roas = 0.0
+            r_status = "zero_spend_with_revenue"
+            warnings.append(f"Channel '{ch}' generated ${rv:.2f} revenue with $0 recorded spend.")
+        else:
+            calc_roas = 0.0
+            r_status = "zero_spend_zero_revenue"
+
+        roas_metrics.append({
+            "channel": ch,
+            "spend": round(sp, 2),
+            "revenue": round(rv, 2),
+            "roas": round(calc_roas, 2),
+            "status": r_status,
+        })
+
+    # 8. Channel Attribution Weights
+    channel_weights: list[dict[str, Any]] = []
+    sum_conv = sum(channel_attributed_conv.values())
+    for ch in sorted(channel_attributed_rev.keys()):
+        attr_c = channel_attributed_conv.get(ch, 0.0)
+        attr_r = channel_attributed_rev.get(ch, 0.0)
+        w_val = (attr_c / sum_conv) if sum_conv > 0 else 0.0
+        channel_weights.append({
+            "channel": ch,
+            "weight": round(w_val, 4),
+            "attributed_revenue": round(attr_r, 2),
+            "attributed_conversions": round(attr_c, 2),
+        })
+
+    # 9. Data Quality Indicators
+    total_spend = sum(spend_map.values())
+    coverage = (covered_conversions / total_conversions) if total_conversions > 0 else 1.0
+    quality = {
+        "total_events": total_conversions + len(spend_map),
+        "conversion_count": total_conversions,
+        "total_spend": round(total_spend, 2),
+        "total_revenue": round(total_revenue, 2),
+        "attribution_coverage": round(coverage, 4),
+        "missing_spend_count": sum(1 for rm in roas_metrics if rm["status"] == "zero_spend_with_revenue"),
+        "is_sufficient": total_conversions > 0 or has_roas_context,
+        "warnings": warnings,
+    }
+
+    # 10. Synthesize Learning Delta Statement
     delta_statement = (
-        f"Creative fatigue at {decay_multiplier:.2f} after {days_active:.0f} days. "
-        f"Current ROAS {reported_roas:.2f}, projected {projected_roas:.2f}. "
-        f"Recommendation: {recommended_action}."
+        f"Creative fatigue at {primary_decay_multiplier:.2f} after {single_days_active:.0f} days. "
+        f"Current ROAS {reported_roas:.2f}, projected {primary_projected_roas:.2f}. "
+        f"Recommendation: {primary_action}."
     )
+    if channel_weights:
+        top_channel = max(channel_weights, key=lambda x: x["weight"])
+        delta_statement += f" Top attributed channel: {top_channel['channel']} ({top_channel['weight']*100:.1f}% contribution)."
+
+    # Calculate confidence based on data volume and coverage
+    if total_conversions >= 5 and coverage >= 0.8:
+        conf_str = "0.90"
+    elif total_conversions > 0 or has_roas_context:
+        conf_str = "0.85"
+    else:
+        conf_str = "0.40"
 
     return {
         "status": "success",
         "task_id": task_id,
-        "decay_multiplier": f"{decay_multiplier:.2f}",
-        "projected_roas": f"{projected_roas:.2f}",
-        "fatigue_detected": str(fatigue_detected),
-        "recommended_action": recommended_action,
+        "tenant_id": tenant_id,
+        "model_type": model_type,
+        "decay_multiplier": f"{primary_decay_multiplier:.2f}",
+        "projected_roas": f"{primary_projected_roas:.2f}",
+        "fatigue_detected": str(primary_fatigue),
+        "recommended_action": primary_action,
         "learning_delta": delta_statement,
-        "confidence": "0.85",
+        "confidence": conf_str,
+        "channel_weights": json.dumps(channel_weights),
+        "decay_metrics": json.dumps(decay_metrics),
+        "roas_metrics": json.dumps(roas_metrics),
+        "data_quality": json.dumps(quality),
     }
 
 

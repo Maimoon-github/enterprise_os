@@ -202,6 +202,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         workers=workers,
     )
 
+    from app.services.attribution_coordinator import AttributionCoordinator
+    attribution_coordinator = AttributionCoordinator(
+        telemetry_repository=telemetry_repository,
+        agent=workers[WorkerRole.LEARNING_PERFORMANCE],  # type: ignore[arg-type]
+        task_state_service=task_state_service,
+        provenance_recorder=provenance_recorder,
+        data_gateway=data_gateway,
+    )
+
     app.state.database = database
     app.state.operational_repository = operational_repository
     app.state.task_state_repository = task_state_repository
@@ -214,6 +223,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.hitl_coordinator = hitl_coordinator
     app.state.mcp_host = mcp_host
     app.state.intelligence_engine = intelligence_engine
+    app.state.attribution_coordinator = attribution_coordinator
 
     try:
         yield
