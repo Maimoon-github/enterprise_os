@@ -89,3 +89,33 @@ class MilestoneCheckpoint(BaseModel):
     evaluated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     blockers: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StakeholderSignOff(BaseModel):
+    """Explicit sign-off by Brand Stakeholder / Portfolio Owner required for T34 and M7 project closeout."""
+
+    stakeholder_id: str
+    stakeholder_role: str = "Brand Stakeholder / Portfolio Owner"
+    decision: str = "APPROVED"  # "APPROVED" | "REJECTED"
+    signature: str | None = None
+    signed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    notes: str = ""
+
+
+class ProjectCloseoutDossier(BaseModel):
+    """Authoritative dossier summarizing final system verification and project closeout (T34)."""
+
+    closeout_id: str
+    tenant_id: str
+    brand_id: str = "default"
+    milestone_m7_status: MilestoneStatus
+    project_status: str  # "CLOSED" | "NOT_CLOSED" | "BLOCKED" | "FAILED"
+    t32_learning_status: str
+    t33_audit_status: str
+    model_a_verified: bool = True
+    sandbox_coverage_verified: bool = True
+    governance_verified: bool = True
+    ephemeral_boundaries_verified: bool = True
+    stakeholder_approved: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    closed_at: datetime | None = None
