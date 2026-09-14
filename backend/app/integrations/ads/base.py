@@ -8,6 +8,7 @@ only needs to implement its platform-specific HTTP call.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import httpx
 
@@ -24,7 +25,7 @@ class AdsAdapter(ABC):
         self._client = client or httpx.AsyncClient()
 
     @abstractmethod
-    async def apply_action(self, payload: dict[str, str]) -> dict[str, str]:
+    async def apply_action(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Apply an approved spend/targeting/bid action and return the platform response."""
 
     async def aclose(self) -> None:

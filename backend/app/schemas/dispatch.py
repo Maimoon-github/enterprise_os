@@ -86,4 +86,26 @@ class CmsDeploymentResult(BaseModel):
     deployed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class PaidCampaignDeploymentResult(BaseModel):
+    """Structured, provider-neutral record of an approved paid-media publication."""
+
+    deployment_id: str
+    dispatch_id: str
+    task_id: str
+    tenant_id: str
+    channel: str  # "meta", "google", "tiktok", "linkedin"
+    action_type: str = "publish"
+    campaign_id: str | None = None
+    status_code: str = "200"
+    status: str = "published"  # "published", "updated", "created", "active", "paused", "failed"
+    applied_budget: float | None = None
+    applied_bid: float | None = None
+    creative_refs: list[str] = Field(default_factory=list)
+    provider_response: dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    deployed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+AdCampaignDispatchResult = PaidCampaignDeploymentResult
 DeploymentResult = CmsDeploymentResult

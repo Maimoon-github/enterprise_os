@@ -26,7 +26,13 @@ from app.core.exceptions import (
 from app.integrations.ads.base import AdsAdapter
 from app.integrations.cms.client import CmsClient
 from app.integrations.social.base import SocialAdapter
-from app.schemas.dispatch import AudienceToken, CmsDeploymentResult, DispatchDirective, DispatchReadiness
+from app.schemas.dispatch import (
+    AudienceToken,
+    CmsDeploymentResult,
+    DispatchDirective,
+    DispatchReadiness,
+    PaidCampaignDeploymentResult,
+)
 from app.schemas.task_state import TaskStatus
 from app.security.cryptographic_validator import CryptographicValidator
 from app.services.hitl import HitlCoordinator
@@ -164,11 +170,18 @@ class OutboundGateway:
                 )
 
             # 3. Scope & Budget Escalation Enforcement
-            approved_spend = clearance.approved_scope.get("spend_amount")
+            approved_spend = (
+                clearance.approved_scope.get("spend_amount")
+                or clearance.approved_scope.get("budget")
+                or clearance.approved_scope.get("max_budget")
+                or clearance.approved_scope.get("daily_budget")
+            )
             if approved_spend is not None:
                 req_spend = (
                     dispatch.payload.get("spend_amount")
                     or dispatch.payload.get("budget")
+                    or dispatch.payload.get("daily_budget")
+                    or dispatch.payload.get("lifetime_budget")
                     or dispatch.payload.get("amount")
                 )
                 if req_spend is not None:
@@ -180,6 +193,83 @@ class OutboundGateway:
                             )
                     except (ValueError, TypeError):
                         pass
+
+            # Bid Target Escalation Enforcement
+            approved_bid = (
+                clearance.approved_scope.get("max_bid")
+                or clearance.approved_scope.get("bid_target")
+                or clearance.approved_scope.get("target_cpa")
+                or clearance.approved_scope.get("bid_amount")
+            )
+            if approved_bid is not None:
+                req_bid = (
+                    dispatch.payload.get("bid_amount")
+                    or dispatch.payload.get("bid_target")
+                    or dispatch.payload.get("target_cpa")
+                    or dispatch.payload.get("max_bid")
+                    or dispatch.payload.get("bid")
+                )
+                if req_bid is not None:
+                    try:
+                        req_bid_val = float(req_bid)
+                        if req_bid_val > float(approved_bid):
+                            raise PolicyViolationError(
+                                f"Requested bid {req_bid_val} exceeds HITL-approved bid target {approved_bid}."
+                            )
+                    except (ValueError, TypeError):
+                        pass
+
+            # Creative & Claim Reference Binding
+            approved_creatives = set(
+                clearance.approved_scope.get("creative_refs")
+                or clearance.approved_scope.get("approved_creatives")
+                or []
+            )
+            if approved_creatives:
+                payload_creatives = set()
+                if "creative_id" in dispatch.payload:
+                    payload_creatives.add(str(dispatch.payload["creative_id"]))
+                if "creative_refs" in dispatch.payload:
+                    refs = dispatch.payload["creative_refs"]
+                    if isinstance(refs, list):
+                        payload_creatives.update(str(r) for r in refs)
+                    elif isinstance(refs, (str, int)):
+                        payload_creatives.add(str(refs))
+                if payload_creatives and not payload_creatives.issubset(approved_creatives):
+                    raise PolicyViolationError(
+                        f"Payload contains unapproved creative references: {sorted(payload_creatives - approved_creatives)} (approved: {sorted(approved_creatives)})."
+                    )
+
+            approved_claims = set(
+                clearance.approved_scope.get("claim_ids")
+                or clearance.approved_scope.get("approved_claims")
+                or []
+            )
+            if approved_claims:
+                payload_claims = set()
+                if "claim_id" in dispatch.payload:
+                    payload_claims.add(str(dispatch.payload["claim_id"]))
+                if "claim_ids" in dispatch.payload:
+                    cids = dispatch.payload["claim_ids"]
+                    if isinstance(cids, list):
+                        payload_claims.update(str(c) for c in cids)
+                    elif isinstance(cids, (str, int)):
+                        payload_claims.add(str(cids))
+                if payload_claims and not payload_claims.issubset(approved_claims):
+                    raise PolicyViolationError(
+                        f"Payload contains unapproved claim references: {sorted(payload_claims - approved_claims)} (approved: {sorted(approved_claims)})."
+                    )
+
+            # Account / Customer ID Scope Enforcement
+            for acc_field in ("account_id", "ad_account_id", "customer_id", "advertiser_id"):
+                if acc_field in clearance.approved_scope:
+                    expected_acc = str(clearance.approved_scope[acc_field])
+                    if acc_field in dispatch.payload:
+                        actual_acc = str(dispatch.payload[acc_field])
+                        if actual_acc != expected_acc:
+                            raise PolicyViolationError(
+                                f"Account mismatch on '{acc_field}': payload specifies '{actual_acc}', but HITL approved '{expected_acc}'."
+                            )
 
         # 4. Target & Channel Scope Validation
         if dispatch.channel in ("cms", "website", "web_store"):
@@ -247,6 +337,28 @@ class OutboundGateway:
                         raise PolicyViolationError(
                             "Artifact hash in payload does not match approved preview content hash."
                         )
+        elif dispatch.channel in ("meta", "google", "tiktok", "linkedin") or dispatch.channel in self._ads_adapters or dispatch.channel in ("snapchat", "pinterest", "reddit", "bing"):
+            # Canonical T27 paid-media scope is strictly Meta, Google, TikTok
+            canonical_platforms = {"meta", "google", "tiktok"}
+            if dispatch.channel == "linkedin":
+                is_authorized = False
+                if clearance is not None and clearance.approved_scope:
+                    authorized_platforms = [str(p).lower() for p in clearance.approved_scope.get("authorized_platforms", [])]
+                    permitted_channels = [str(c).lower() for c in clearance.approved_scope.get("permitted_channels", [])]
+                    if "linkedin" in authorized_platforms or "linkedin" in permitted_channels:
+                        is_authorized = True
+                if dispatch.audience_token is not None and isinstance(dispatch.audience_token, AudienceToken):
+                    if "linkedin" in dispatch.audience_token.permitted_actions:
+                        is_authorized = True
+                if not is_authorized:
+                    raise PolicyViolationError(
+                        "Platform 'linkedin' is not permitted for canonical T27 actuation without explicit HITL authorization in approved scope."
+                    )
+            elif dispatch.channel not in canonical_platforms:
+                # If channel is an unapproved ad platform, fail closed
+                raise PolicyViolationError(
+                    f"Unsupported or unapproved paid-media platform '{dispatch.channel}'. Permitted canonical platforms are {sorted(canonical_platforms)}."
+                )
 
         # 5. Audience Token & Scope Validation
         if dispatch.audience_token is not None:
@@ -347,7 +459,52 @@ class OutboundGateway:
 
         try:
             if dispatch.channel in self._ads_adapters:
-                res = await self._ads_adapters[dispatch.channel].apply_action(dispatch.payload)
+                raw_res = await self._ads_adapters[dispatch.channel].apply_action(dispatch.payload)
+
+                campaign_id = str(raw_res.get("campaign_id") or dispatch.payload.get("campaign_id") or uuid.uuid4())
+                budget_val = (
+                    raw_res.get("applied_budget")
+                    or dispatch.payload.get("budget")
+                    or dispatch.payload.get("daily_budget")
+                    or dispatch.payload.get("spend_amount")
+                )
+                try:
+                    budget_float = float(budget_val) if budget_val is not None else None
+                except (ValueError, TypeError):
+                    budget_float = None
+
+                bid_val = (
+                    raw_res.get("applied_bid")
+                    or dispatch.payload.get("bid_amount")
+                    or dispatch.payload.get("bid_target")
+                    or dispatch.payload.get("target_cpa")
+                )
+                try:
+                    bid_float = float(bid_val) if bid_val is not None else None
+                except (ValueError, TypeError):
+                    bid_float = None
+
+                creative_refs = raw_res.get("creative_refs") or dispatch.payload.get("creative_refs") or []
+                if isinstance(creative_refs, str):
+                    creative_refs = [creative_refs]
+
+                paid_res = PaidCampaignDeploymentResult(
+                    deployment_id=str(uuid.uuid4()),
+                    dispatch_id=dispatch.dispatch_id,
+                    task_id=dispatch.task_id,
+                    tenant_id=dispatch.tenant_id,
+                    channel=dispatch.channel,
+                    action_type=dispatch.action_type,
+                    campaign_id=campaign_id,
+                    status_code=str(raw_res.get("status_code", "200")),
+                    status=str(raw_res.get("status", "published")),
+                    applied_budget=budget_float,
+                    applied_bid=bid_float,
+                    creative_refs=[str(r) for r in creative_refs],
+                    provider_response=raw_res.get("provider_response", raw_res),
+                    details={"raw_response": raw_res},
+                )
+                res = raw_res
             elif dispatch.channel in self._social_adapters:
                 res = await self._social_adapters[dispatch.channel].publish(dispatch.payload)
             elif dispatch.channel in ("cms", "website", "web_store"):
@@ -421,6 +578,8 @@ class OutboundGateway:
             # Update CTS state to COMPLETED
             if self._task_state_service and dispatch.task_id and task_state:
                 try:
+                    if dispatch.channel in self._ads_adapters:
+                        task_state.cts_state["paid_campaign"] = res
                     task_state.cts_state["deployment"] = res
                     await self._task_state_service.save_state(dispatch.tenant_id, task_state)
                     if task_state.status == TaskStatus.DISPATCHED:
