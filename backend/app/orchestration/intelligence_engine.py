@@ -465,6 +465,7 @@ class IntelligenceEngine:
         preview_content_hash: str | None = None,
         revision_notes: str | None = None,
         task: CanonicalTaskState | None = None,
+        decided_at: datetime | None = None,
     ) -> ApprovalDecision:
         """Record an authenticated human decision, update CTS state, and capture audit provenance."""
 
@@ -478,6 +479,7 @@ class IntelligenceEngine:
             public_key_pem=public_key_pem,
             preview_content_hash=preview_content_hash,
             revision_notes=revision_notes,
+            decided_at=decided_at,
         )
 
         # Update CTS task state machine if task provided

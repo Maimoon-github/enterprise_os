@@ -19,6 +19,7 @@ class ApprovalDecisionRequest(BaseModel):
     signature: str | None = None
     preview_content_hash: str | None = None
     revision_notes: str | None = None
+    decided_at: datetime | None = None
 
 
 class ApprovalDecisionResponse(BaseModel):
@@ -52,6 +53,7 @@ async def decide_approval(
         preview_content_hash=decision.preview_content_hash,
         revision_notes=decision.revision_notes,
         validator=validator,
+        decided_at=decision.decided_at,
     )
     decision_val = recorded.decision.value if hasattr(recorded.decision, "value") else str(recorded.decision)
     clearance_id = recorded.clearance.clearance_id if recorded.clearance else None

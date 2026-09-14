@@ -187,6 +187,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 test_llm_live_e2e.py
 │   │   │   ├── 🐍 test_model_a_data_access.py
 │   │   │   ├── 🐍 test_outbound_after_approval.py
+│   │   │   ├── 🐍 test_phase5_governance_certification.py
 │   │   │   ├── 🐍 test_product_evidence_integration.py
 │   │   │   ├── 🐍 test_provenance_persistence.py
 │   │   │   ├── 🐍 test_security_boundaries_negative.py
