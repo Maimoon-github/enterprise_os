@@ -184,6 +184,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 test_creative_integration.py
 │   │   │   ├── 🐍 test_customer_voice_integration.py
 │   │   │   ├── 🐍 test_development_integration.py
+│   │   │   ├── 🐍 test_llm_live_e2e.py
 │   │   │   ├── 🐍 test_model_a_data_access.py
 │   │   │   ├── 🐍 test_outbound_after_approval.py
 │   │   │   ├── 🐍 test_product_evidence_integration.py
@@ -207,6 +208,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 test_hitl_gate.py
 │   │   │   ├── 🐍 test_hitl_signoff_verification.py
 │   │   │   ├── 🐍 test_live_telemetry_ingestion_t30.py
+│   │   │   ├── 🐍 test_llm_wiring_verification.py
 │   │   │   ├── 🐍 test_memory_promotion_t32.py
 │   │   │   ├── 🐍 test_milestone_m5_verification.py
 │   │   │   ├── 🐍 test_milestone_m6_verification.py
@@ -225,7 +227,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 test_task_state_service_and_recovery.py
 │   │   │   └── 🐍 test_website_cms_deployment_t26.py
 │   │   ├── 🐍 __init__.py
-│   │   └── 🐍 conftest.py
+│   │   ├── 🐍 conftest.py
+│   │   └── 🐍 staging_rehearsal.py
 │   ├── ⚙️ .gitignore
 │   ├── 📄 Makefile
 │   ├── 📝 README.md
