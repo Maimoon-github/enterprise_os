@@ -421,3 +421,29 @@ class ProvenanceRecorder:
             "w3c_prov": final_record.w3c_prov,
             "is_chain_verified": self._repository.verify(chain),
         }
+
+    async def validate_lineage(
+        self,
+        tenant_id: str,
+        *,
+        task_states: dict[str, Any],
+        caller: Any,
+        governing_task_id: str = "task-t33",
+        task_state_service: Any = None,
+        crypto_validator: Any = None,
+    ) -> Any:
+        """Validate end-to-end audit lineage, hash chain integrity, and CTS state (T33)."""
+        from app.services.audit_validator import AuditLineageValidator
+
+        validator = AuditLineageValidator(
+            provenance_repository=self._repository,
+            provenance_recorder=self,
+            task_state_service=task_state_service,
+            crypto_validator=crypto_validator,
+        )
+        return await validator.validate_lineage_and_integrity(
+            tenant_id,
+            task_states=task_states,
+            caller=caller,
+            governing_task_id=governing_task_id,
+        )

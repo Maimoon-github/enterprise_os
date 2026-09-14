@@ -109,3 +109,47 @@ class ProvenanceRecord(BaseModel):
     record_hash: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     w3c_prov: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditLineageStage(StrEnum):
+    """Pipeline stages verified during end-to-end audit lineage validation."""
+
+    GOVERNANCE = "governance"
+    ORCHESTRATION = "orchestration"
+    RAG = "rag"
+    WORKER_SANDBOX = "worker_sandbox"
+    HITL_APPROVAL = "hitl_approval"
+    MCP_ACTUATION = "mcp_actuation"
+    TELEMETRY_T30 = "telemetry_t30"
+    LEARNING_T31 = "learning_t31"
+
+
+class AuditValidationFinding(BaseModel):
+    """Specific finding or gap identified during audit lineage validation."""
+
+    stage: str
+    entity_id: str | None = None
+    activity: str | None = None
+    agent: str | None = None
+    status: str = "VALID"  # "VALID" | "GAP" | "TAMPERED" | "MISMATCH" | "INVALID_SIGNATURE"
+    details: str = ""
+
+
+class AuditValidationReport(BaseModel):
+    """Consolidated outcome of end-to-end audit lineage and ledger integrity verification."""
+
+    validation_id: str
+    tenant_id: str
+    is_valid: bool
+    t30_status: str
+    t31_status: str
+    chain_length: int
+    hash_chain_verified: bool
+    signatures_verified: bool
+    cts_reconciled: bool
+    prov_graph_valid: bool
+    stages_verified: list[str] = Field(default_factory=list)
+    detected_gaps: list[str] = Field(default_factory=list)
+    findings: list[AuditValidationFinding] = Field(default_factory=list)
+    t34_audit_eligible: bool = False
+    validated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
