@@ -100,12 +100,11 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
 
         # Normalize Evidence Pool (with tenant isolation and freshness checks)
         evidence_pool: list[dict[str, Any]] = []
-        raw_evidence = (
-            list(grant.validated_evidence)
-            + (context.get("evidence", []) if isinstance(context.get("evidence"), list) else [])
-            + (context.get("laboratory_reports", []) if isinstance(context.get("laboratory_reports"), list) else [])
-            + (context.get("certificates", []) if isinstance(context.get("certificates"), list) else [])
-        )
+        raw_evidence: list[Any] = list(grant.validated_evidence)
+        for key in ("evidence", "laboratory_reports", "certificates"):
+            val = context.get(key)
+            if isinstance(val, list):
+                raw_evidence.extend(val)
 
         freshness_meta = grant.freshness_metadata or {}
 
@@ -144,8 +143,9 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
         rules: list[str] = list(grant.policy_constraints)
         if grant.brand_rules:
             rules.extend(f"{k}:{v}" for k, v in grant.brand_rules.items())
-        if isinstance(context.get("compliance_rules"), list):
-            rules.extend(str(r) for r in context["compliance_rules"])  # type: ignore[union-attr]
+        raw_rules = context.get("compliance_rules")
+        if isinstance(raw_rules, list):
+            rules.extend(str(r) for r in raw_rules)
 
         return product_id, product_name, formulation, claims, evidence_pool, disclaimer, rules
 

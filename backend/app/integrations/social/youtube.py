@@ -16,8 +16,10 @@ class YouTubeAdapter(SocialAdapter):
 
     async def publish(self, payload: dict[str, Any]) -> dict[str, Any]:
         video_id = str(payload.get("video_id", "yt_video_12345"))
-        snippet = payload.get("snippet") if isinstance(payload.get("snippet"), dict) else {}
-        status_dict = payload.get("status") if isinstance(payload.get("status"), dict) else {}
+        raw_snippet = payload.get("snippet")
+        snippet: dict[str, Any] = raw_snippet if isinstance(raw_snippet, dict) else {}
+        raw_status = payload.get("status")
+        status_dict: dict[str, Any] = raw_status if isinstance(raw_status, dict) else {}
         is_scheduled = bool(payload.get("scheduled_at") or status_dict.get("publishAt"))
         status = "scheduled" if is_scheduled else "published"
         media_assets = payload.get("media_asset_ids") or ([payload["video_id"]] if "video_id" in payload else [])

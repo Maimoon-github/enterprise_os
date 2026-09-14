@@ -371,8 +371,13 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         channels = ["meta", "google", "tiktok"]
 
     # Deduplicate while preserving order
+    deduped_channels: list[str] = []
     seen: set[str] = set()
-    channels = [c for c in channels if not (c in seen or seen.add(c))]
+    for c in channels:
+        if c not in seen:
+            seen.add(c)
+            deduped_channels.append(c)
+    channels = deduped_channels
 
     # 3. Target ROAS priors per channel
     default_priors = {

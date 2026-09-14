@@ -244,8 +244,13 @@ class CreativeContentAgent(BoundedWorkerAgent):
             channels = ["meta", "google", "tiktok", "linkedin", "email"]
 
         # Deduplicate preserving order
+        deduped_ch: list[str] = []
         seen_ch: set[str] = set()
-        channels = [c for c in channels if not (c in seen_ch or seen_ch.add(c))]
+        for c in channels:
+            if c not in seen_ch:
+                seen_ch.add(c)
+                deduped_ch.append(c)
+        channels = deduped_ch
 
         # -------------------------------------------------------------
         # 4. Policy Precedence & Brand Persona Rules

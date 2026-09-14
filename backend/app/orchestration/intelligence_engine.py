@@ -254,21 +254,21 @@ class IntelligenceEngine:
             objective=directive.objective,
             task_scope=f"{task.worker_role.value} task for {directive.directive_id}",
             task_slice=f"slice-{task.task_id[:8]}",
-            cts_state=context.get("cts_state", {}),  # type: ignore[arg-type]
-            brand_rules=context.get("brand_rules", {}),  # type: ignore[arg-type]
-            validated_evidence=context.get("documents", []),  # type: ignore[arg-type]
-            provenance_references=context.get("provenance_references", []),  # type: ignore[arg-type]
-            freshness_metadata=context.get("freshness_metadata", {}),  # type: ignore[arg-type]
-            policy_constraints=context.get("policy_constraints", []),  # type: ignore[arg-type]
-            context_ids=[str(doc.get("doc_id")) for doc in context.get("documents", []) if isinstance(doc, dict) and doc.get("doc_id")],  # type: ignore[arg-type]
+            cts_state=context.get("cts_state", {}),
+            brand_rules=context.get("brand_rules", {}),
+            validated_evidence=context.get("documents", []),
+            provenance_references=context.get("provenance_references", []),
+            freshness_metadata=context.get("freshness_metadata", {}),
+            policy_constraints=context.get("policy_constraints", []),
+            context_ids=[str(doc.get("doc_id")) for doc in context.get("documents", []) if isinstance(doc, dict) and doc.get("doc_id")],
             tool_permissions=allowed_tools,
             sandbox_capabilities=sandbox_capabilities,
             token_budget=token_budget,
-            budget_breakdown=context.get("budget_breakdown", {}),  # type: ignore[arg-type]
+            budget_breakdown=context.get("budget_breakdown", {}),
             risk_tier=directive.risk_ceiling,
             stop_conditions=["max_tokens_exceeded", "timeout_120s", "confidence_zero"],
             expected_outputs=["findings", "confidence", "provenance"],
-            expected_output_schema=context.get("expected_output_schema", {}),  # type: ignore[arg-type]
+            expected_output_schema=context.get("expected_output_schema", {}),
             expires_at=datetime.now(UTC) + timedelta(minutes=30),
         )
 

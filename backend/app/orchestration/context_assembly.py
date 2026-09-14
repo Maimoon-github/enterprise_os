@@ -237,7 +237,7 @@ class ContextAssembler:
             "budget_breakdown": budget_breakdown,
             "expected_output_schema": expected_output_schema,
         }
-        if hasattr(cts_state, "cts_state") and isinstance(cts_state.cts_state, dict):
+        if cts_state is not None and hasattr(cts_state, "cts_state") and isinstance(cts_state.cts_state, dict):
             for k, v in cts_state.cts_state.items():
                 if k not in assembled:
                     assembled[k] = v

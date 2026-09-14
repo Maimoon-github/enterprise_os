@@ -342,8 +342,9 @@ class StrategyAgent(BoundedWorkerAgent):
         constraints: list[str] = list(grant.policy_constraints)
         if grant.brand_rules:
             constraints.extend(f"{k}:{v}" for k, v in grant.brand_rules.items())
-        if isinstance(context.get("constraints"), list):
-            constraints.extend(str(c) for c in context["constraints"])  # type: ignore[union-attr]
+        raw_constraints = context.get("constraints")
+        if isinstance(raw_constraints, list):
+            constraints.extend(str(c) for c in raw_constraints)
 
         return (
             budget_ceiling,
