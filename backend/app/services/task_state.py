@@ -813,98 +813,136 @@ class TaskStateService:
             task_t34.task_id if task_t34 else "task-t34",
         ]
 
+        task_names = {
+            "T30": "T30 telemetry ingestion",
+            "T31": "T31 attribution",
+            "T32": "T32 memory promotion",
+            "T33": "T33 audit lineage",
+            "T34": "T34 project closeout",
+        }
+
+        def _evaluate_task_state(t: CanonicalTaskState | None, label: str) -> tuple[bool, bool, bool, list[str]]:
+            b: list[str] = []
+            if t is None:
+                full_name = task_names.get(label, label)
+                return False, False, True, [f"{full_name} task state missing or uninitialized"]
+            failed = False
+            blocked = False
+            partial = False
+
+            if t.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
+                failed = True
+                b.append(f"{label} is in failed state '{t.status.value}'")
+            elif (
+                t.status is TaskStatus.HELD
+                or bool(t.hold_reason)
+                or bool(t.prerequisite_locks)
+                or bool(t.cts_state.get("is_reopened"))
+                or bool(t.cts_state.get("rolled_back"))
+                or bool(t.cts_state.get("revoked"))
+                or bool(t.cts_state.get("invalidated"))
+            ):
+                blocked = True
+                reason = t.hold_reason or (
+                    "prerequisite locks active" if t.prerequisite_locks
+                    else ("reopened" if t.cts_state.get("is_reopened")
+                    else ("rolled back" if t.cts_state.get("rolled_back")
+                    else ("revoked" if t.cts_state.get("revoked")
+                    else ("invalidated" if t.cts_state.get("invalidated")
+                    else "HELD"))))
+                )
+                b.append(f"{label} is HELD or has active locks/reopen/rollback: {reason}")
+            elif t.status not in (TaskStatus.COMPLETED, TaskStatus.IN_PROGRESS if label == "T34" else TaskStatus.COMPLETED):
+                partial = True
+                b.append(f"{label} is not completed (status='{t.status.value}')")
+
+            if not t.governance_approved:
+                blocked = True
+                b.append(f"{label} governance approval is unresolved")
+
+            t_tenant = _get_task_tenant(t)
+            if t_tenant and t_tenant not in ("default", "global", tenant_id):
+                blocked = True
+                b.append(f"{label} tenant mismatch ({t_tenant} != {tenant_id})")
+
+            return failed, blocked, partial, b
+
         # 2. Dependency: T30 Live Operational Telemetry Ingestion
-        if task_t30 is None:
-            is_partial = True
-            blockers.append("T30 telemetry ingestion task state missing or uninitialized")
-        else:
-            if task_t30.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
-                is_failed = True
-                blockers.append(f"T30 is in failed state '{task_t30.status.value}'")
-            elif task_t30.status is not TaskStatus.COMPLETED:
-                is_partial = True
-                blockers.append(f"T30 is not completed (status='{task_t30.status.value}')")
-            if not task_t30.governance_approved:
+        f, b, p, msgs = _evaluate_task_state(task_t30, "T30")
+        is_failed = is_failed or f
+        is_blocked = is_blocked or b
+        is_partial = is_partial or p
+        blockers.extend(msgs)
+        if task_t30 is not None:
+            if task_t30.cts_state.get("telemetry_stored") is False or task_t30.cts_state.get("evidence_missing"):
                 is_blocked = True
-                blockers.append("T30 governance approval is unresolved")
-            t30_tenant = _get_task_tenant(task_t30)
-            if t30_tenant and t30_tenant not in ("default", "global", tenant_id):
-                is_blocked = True
-                blockers.append(f"T30 tenant mismatch ({t30_tenant} != {tenant_id})")
+                blockers.append("T30 live telemetry is not durably persisted or evidence missing")
 
         # 3. Dependency: T31 Multi-Touch Attribution & Decay
-        if task_t31 is None:
-            is_partial = True
-            blockers.append("T31 attribution task state missing or uninitialized")
-        else:
-            if task_t31.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
-                is_failed = True
-                blockers.append(f"T31 is in failed state '{task_t31.status.value}'")
-            elif task_t31.status is not TaskStatus.COMPLETED:
-                is_partial = True
-                blockers.append(f"T31 is not completed (status='{task_t31.status.value}')")
-            if not task_t31.governance_approved:
+        f, b, p, msgs = _evaluate_task_state(task_t31, "T31")
+        is_failed = is_failed or f
+        is_blocked = is_blocked or b
+        is_partial = is_partial or p
+        blockers.extend(msgs)
+        if task_t31 is not None:
+            if task_t31.cts_state.get("learning_evidence_valid") is False or task_t31.cts_state.get("attribution_calculated") is False:
                 is_blocked = True
-                blockers.append("T31 governance approval is unresolved")
-            t31_tenant = _get_task_tenant(task_t31)
-            if t31_tenant and t31_tenant not in ("default", "global", tenant_id):
-                is_blocked = True
-                blockers.append(f"T31 tenant mismatch ({t31_tenant} != {tenant_id})")
+                blockers.append("T31 learning evidence or attribution calculation is invalid")
 
         # 4. Authoritative Dependency: T32 Institutional Memory Promotion
-        if task_t32 is None:
-            is_partial = True
-            blockers.append("T32 memory promotion task state missing or uninitialized")
-        else:
-            if task_t32.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
-                is_failed = True
-                blockers.append(f"T32 is in failed state '{task_t32.status.value}'")
-            elif task_t32.status is not TaskStatus.COMPLETED:
-                is_partial = True
-                blockers.append(f"T32 is not completed (status='{task_t32.status.value}')")
-            if not task_t32.governance_approved:
-                is_blocked = True
-                blockers.append("T32 governance approval is unresolved")
-            if not task_t32.cts_state.get("t34_ready") and not task_t32.cts_state.get("promoted_memory_id"):
+        f, b, p, msgs = _evaluate_task_state(task_t32, "T32")
+        is_failed = is_failed or f
+        is_blocked = is_blocked or b
+        is_partial = is_partial or p
+        blockers.extend(msgs)
+        if task_t32 is not None:
+            if not task_t32.cts_state.get("t34_ready") and not task_t32.cts_state.get("promoted_memory_id") and not task_t32.cts_state.get("memory_promoted"):
                 is_blocked = True
                 blockers.append("T32 memory promotion has not confirmed t34_ready or promoted memory ID")
-            t32_tenant = _get_task_tenant(task_t32)
-            if t32_tenant and t32_tenant not in ("default", "global", tenant_id):
+            if task_t32.cts_state.get("promotion_revoked") or task_t32.cts_state.get("memory_promoted") is False:
                 is_blocked = True
-                blockers.append(f"T32 tenant mismatch ({t32_tenant} != {tenant_id})")
+                blockers.append("T32 memory promotion has been revoked or invalidated")
 
         # 5. Authoritative Dependency: T33 Audit Lineage & Integrity
-        if task_t33 is None:
-            is_partial = True
-            blockers.append("T33 audit lineage task state missing or uninitialized")
-        else:
-            if task_t33.status in (TaskStatus.FAILED, TaskStatus.REJECTED):
-                is_failed = True
-                blockers.append(f"T33 is in failed state '{task_t33.status.value}'")
-            elif task_t33.status is not TaskStatus.COMPLETED:
-                is_partial = True
-                blockers.append(f"T33 is not completed (status='{task_t33.status.value}')")
-            if not task_t33.governance_approved:
-                is_blocked = True
-                blockers.append("T33 governance approval is unresolved")
+        f, b, p, msgs = _evaluate_task_state(task_t33, "T33")
+        is_failed = is_failed or f
+        is_blocked = is_blocked or b
+        is_partial = is_partial or p
+        blockers.extend(msgs)
+        if task_t33 is not None:
             if not task_t33.cts_state.get("t34_ready") or task_t33.cts_state.get("is_valid") is not True:
                 is_blocked = True
                 blockers.append("T33 audit lineage verification has not passed or confirmed t34_ready")
-            t33_tenant = _get_task_tenant(task_t33)
-            if t33_tenant and t33_tenant not in ("default", "global", tenant_id):
+            if task_t33.cts_state.get("audit_invalidated") or task_t33.cts_state.get("chain_broken"):
                 is_blocked = True
-                blockers.append(f"T33 tenant mismatch ({t33_tenant} != {tenant_id})")
+                blockers.append("T33 audit integrity has been invalidated")
 
-        # 6. Validate 7-Worker Sandbox Allowlist Coverage
+        # 6. Dependency: T34 Final Closeout & Architecture Verification
+        f, b, p, msgs = _evaluate_task_state(task_t34, "T34")
+        is_failed = is_failed or f
+        is_blocked = is_blocked or b
+        is_partial = is_partial or p
+        blockers.extend(msgs)
+        stakeholder_approved = False
+        if task_t34 is not None and task_t34.cts_state.get("project_closeout"):
+            closeout_record = task_t34.cts_state["project_closeout"]
+            p_status = closeout_record.get("project_status") if isinstance(closeout_record, dict) else getattr(closeout_record, "project_status", None)
+            stk_appr = closeout_record.get("stakeholder_approved") if isinstance(closeout_record, dict) else getattr(closeout_record, "stakeholder_approved", False)
+            if p_status != "CLOSED":
+                is_blocked = True
+                blockers.append(f"T34 project closeout dossier indicates project is not CLOSED (status='{p_status}')")
+            if not stk_appr:
+                is_blocked = True
+                blockers.append("T34 stakeholder sign-off is not approved")
+            else:
+                stakeholder_approved = True
+
+        # 7. Validate 7-Worker Sandbox Allowlist Coverage
         # W_DEV->S_CODE, W_STRAT->S_ALLOC, W_CREAT->S_COPY, W_PROD->S_VAL, W_COMP->S_SCRAPE, W_VOICE->S_PARSE, W_LEARN->S_ATTR
         sandbox_coverage_verified = True
 
-        # 7. Validate Stakeholder Sign-Off (Brand Stakeholder / Portfolio Owner)
-        stakeholder_approved = False
-        if stakeholder_approval is None:
-            is_blocked = True
-            blockers.append("Explicit Brand Stakeholder / Portfolio Owner sign-off is required for final project closeout")
-        else:
+        # 8. Validate Stakeholder Sign-Off (Brand Stakeholder / Portfolio Owner)
+        if stakeholder_approval is not None:
             if isinstance(stakeholder_approval, dict):
                 decision = str(stakeholder_approval.get("decision", "")).upper()
                 role = str(stakeholder_approval.get("stakeholder_role", ""))
@@ -922,6 +960,9 @@ class TaskStateService:
                 blockers.append(f"Brand Stakeholder rejected project closeout (decision='{decision}')")
             else:
                 stakeholder_approved = True
+        elif not stakeholder_approved:
+            is_blocked = True
+            blockers.append("Explicit Brand Stakeholder / Portfolio Owner sign-off is required for final project closeout")
 
         # 8. Derive Final Status
         if is_failed:
