@@ -96,6 +96,18 @@ class SecuritySettings(BaseSettings):
     require_signed_dispatch: bool = Field(default=True)
 
 
+class TelemetrySettings(BaseSettings):
+    """Omnichannel Telemetry Engine and listener configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="TELEMETRY_", extra="ignore")
+
+    webhook_signing_secret: str | None = Field(default=None, repr=False)
+    max_payload_bytes: int = Field(default=262144, ge=1024)
+    freshness_window_seconds: int = Field(default=3600, ge=1)
+    max_future_skew_seconds: int = Field(default=60, ge=0)
+    enable_synthetic_probes: bool = Field(default=True)
+
+
 class Settings(BaseSettings):
     """Aggregate application settings composition root."""
 
@@ -111,6 +123,7 @@ class Settings(BaseSettings):
     ads: AdsSettings = Field(default_factory=AdsSettings)
     social: SocialSettings = Field(default_factory=SocialSettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 
 
 @lru_cache(maxsize=1)

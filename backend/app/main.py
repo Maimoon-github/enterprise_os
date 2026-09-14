@@ -78,6 +78,7 @@ from app.services.rag.freshness import FreshnessPolicy
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.schema_validator import SchemaValidator
 from app.services.telemetry import TelemetryNormalizer
+from app.services.telemetry_engine import OmnichannelTelemetryEngine
 
 _AGENT_CLASSES_BY_ROLE: dict[WorkerRole, type[BoundedWorkerAgent]] = {
     WorkerRole.DEVELOPMENT: DevelopmentAgent,
@@ -124,6 +125,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.services.task_state import TaskStateService
 
     telemetry_normalizer = TelemetryNormalizer(telemetry_repository)
+    telemetry_engine = OmnichannelTelemetryEngine(
+        webhook_signing_secret=settings.telemetry.webhook_signing_secret,
+        max_payload_bytes=settings.telemetry.max_payload_bytes,
+        freshness_window_seconds=settings.telemetry.freshness_window_seconds,
+        max_future_skew_seconds=settings.telemetry.max_future_skew_seconds,
+        task_state_service=task_state_service,
+        provenance_recorder=provenance_recorder,
+    )
     memory_promotion_service = MemoryPromotionService(memory_repository)
     provenance_recorder = ProvenanceRecorder(provenance_repository)
     task_state_service = TaskStateService(
@@ -193,6 +202,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.task_state_service = task_state_service
     app.state.artifact_repository = artifact_repository
     app.state.telemetry_normalizer = telemetry_normalizer
+    app.state.telemetry_engine = telemetry_engine
     app.state.memory_promotion_service = memory_promotion_service
     app.state.provenance_recorder = provenance_recorder
     app.state.hitl_coordinator = hitl_coordinator
