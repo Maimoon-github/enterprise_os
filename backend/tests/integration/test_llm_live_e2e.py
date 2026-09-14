@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 import pytest
 
+from app.agents.base import BoundedWorkerAgent
 from app.agents.development import DevelopmentAgent
 from app.core.exceptions import ConfigurationError, PolicyViolationError
 from app.core.settings import DatabaseSettings, LlmSettings, SecuritySettings
@@ -252,7 +253,7 @@ async def test_live_governed_e2e_pipeline_with_llm_reasoning() -> None:
     llm = LlmClient(settings, client=httpx.AsyncClient(transport=httpx.MockTransport(router_handler)))
 
     dev_agent = DevelopmentAgent(SafeSandboxClient(), llm_client=llm)
-    workers = {WorkerRole.DEVELOPMENT: dev_agent}
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {WorkerRole.DEVELOPMENT: dev_agent}
 
     hitl_coordinator = HitlCoordinator()
     ie = IntelligenceEngine(
@@ -291,8 +292,6 @@ async def test_live_governed_e2e_pipeline_with_llm_reasoning() -> None:
         directive_id=directive.directive_id,
         worker_role=WorkerRole.DEVELOPMENT,
         status=TaskStatus.PENDING,
-        tool_permissions=[SandboxCapability.CODE.value],
-        sandbox_capabilities=[SandboxCapability.CODE.value],
     )
 
     # 4. Delegate to Worker (with Worker LLM reasoning + Sandbox execution)

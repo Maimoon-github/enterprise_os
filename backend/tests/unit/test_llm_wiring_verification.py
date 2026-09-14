@@ -283,11 +283,10 @@ async def test_intelligence_engine_plan_directive_decomposition() -> None:
     directive = Directive(
         directive_id="dir-e2e-01",
         tenant_id="tenant-alpha",
-        brand_id="brand-01",
         objective="Launch Q3 promotional campaign",
-        risk_tier=RiskLevel.LOW,
+        risk_ceiling=RiskLevel.LOW,
         budget_cap=5000.0,
-        scope=TenantScope(tenant_id="tenant-alpha"),
+        scope=TenantScope(tenant_id="tenant-alpha", brand_ids=["brand-01"]),
     )
 
     result = await ie.plan_directive(
@@ -408,13 +407,13 @@ async def test_all_seven_workers_bounded_llm_inference(
                 sanitized_output = {"result_key": "sanitized_value", "operation": "default"}
                 execution_id = "exec-test-123"
                 status = TaskStatus.COMPLETED
-                generated_artifacts = []
+                generated_artifacts: list[str] = []
                 provenance = {"sandbox": "dummy"}
             return DummyResult()
 
     agent = agent_class(DummySandboxClient(), llm_client=llm)
     grant = _make_sample_grant(role, capability)
-    context = {"staged_cms_models": [{"model_id": "m1"}], "tenant_id": "tenant-alpha"}
+    context: dict[str, Any] = {"staged_cms_models": [{"model_id": "m1"}], "tenant_id": "tenant-alpha"}
 
     envelope = await agent.run(grant, context)
 

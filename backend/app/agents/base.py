@@ -54,7 +54,7 @@ class BoundedWorkerAgent(ABC):
         return self._llm_client
 
     @abstractmethod
-    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
+    def build_payload(self, grant: TaskGrant, context: dict[str, Any]) -> dict[str, str]:
         """Return the sandbox invocation payload for this worker's capability."""
 
     def interpret_result(
@@ -72,7 +72,7 @@ class BoundedWorkerAgent(ABC):
         return evidence, confidence
 
     async def _reason_domain(
-        self, grant: TaskGrant, context: dict[str, object]
+        self, grant: TaskGrant, context: dict[str, Any]
     ) -> tuple[WorkerReasoningOutput, dict[str, Any]]:
         """Perform bounded LLM domain reasoning over the supplied task grant and context."""
         assert self._llm_client is not None
@@ -140,7 +140,7 @@ class BoundedWorkerAgent(ABC):
 
         return reasoning, metadata
 
-    async def run(self, grant: TaskGrant, context: dict[str, object]) -> EvidenceEnvelope:
+    async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
         """Execute this worker's bounded task grant and return its evidence."""
 
         reasoning_output: WorkerReasoningOutput | None = None
@@ -227,7 +227,7 @@ class BoundedWorkerAgent(ABC):
                 "governed_tools_authorized": ",".join(reasoning_output.selected_tools) if reasoning_output else "",
             })
         if result.provenance:
-            provenance.update({k: str(v) for k, v in result.provenance.items()})
+            provenance.update(result.provenance)
 
         return EvidenceEnvelope(
             task_id=grant.task_id,
