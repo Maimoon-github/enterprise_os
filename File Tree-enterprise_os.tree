@@ -1,0 +1,1572 @@
+File Tree: enterprise_os
+Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
+
+────────────────────────────────────────────────────────────────────────────────
+
+├── 📁 Agentic System Research/
+│   ├── 📁 final/
+│   │   ├── 📝 Backend Hierarchy.md
+│   │   ├── 📝 Final-Level Full Architecture.md
+│   │   ├── 📄 Governed-MultiBrand-System-PM.xlsx
+│   │   ├── 📄 Governed_Multi-Brand_Agentic_System_Project_Plan.xlsx
+│   │   ├── 📄 Governed_MultiBrand_Agentic_ProjectPlan.xlsx
+│   │   ├── 📄 Governed_Multi_Brand_Agentic_System_Gantt_2026-09-11_to_2026-10-14.xlsx
+│   │   ├── 📄 Governed_Multi_Brand_Agentic_System_Project_Tracker.xlsx
+│   │   ├── 📄 Governed_Project_Tracker.xlsx
+│   │   ├── 📝 Project Plan Essentials-Governed Multi-Brand Agentic System.md
+│   │   └── 🌐 flowchart.drawio.html
+│   ├── 📁 raw_code/
+│   │   ├── 🐍 agent_local_state.py
+│   │   ├── 🐍 agentic_rag.py
+│   │   ├── 🐍 artifacts_evidence.py
+│   │   ├── 🐍 audit_provenance.py
+│   │   ├── 🐍 canonical_task_state.py
+│   │   ├── 🐍 centralized_data_model.py
+│   │   ├── 🐍 context_state_artifacts.py
+│   │   ├── 🐍 invocation_context.py
+│   │   ├── 🐍 long_term_memory.py
+│   │   ├── 🐍 mcp_subsystem.py
+│   │   ├── 🐍 mcp_subsystem_.py
+│   │   ├── 🐍 session_memory.py
+│   │   └── 🐍 skills.py
+│   ├── 📁 research/
+│   │   ├── 📁 findings/
+│   │   │   ├── 📝 Agentic RAG and Data Layers_ Surface Architecture, Boundaries, Ownership, Access, and Control_Data Flow.md
+│   │   │   ├── 📝 Architecture Patterns and Trade-offs.md
+│   │   │   ├── 📝 Context Memory State and Artifacts.md
+│   │   │   ├── 📝 Governance and Human-in-the-Loop (HITL) for a Governable Orchestrator.md
+│   │   │   ├── 📝 Governed Multi-Level Agentic AI Architecture.md
+│   │   │   ├── 📝 Governed_Multi_Brand_Agentic_Architecture_Surface_Spec.md
+│   │   │   ├── 📝 Hierarchical Agent Coordination.md
+│   │   │   └── 📝 MCP Tools, Skills, and Services_ Surface Architecture for a Governable Agent Hierarchy.md
+│   │   ├── 📄 Intelligence_Engine_Flow.drawio
+│   │   ├── 📄 Intelligence_Engine_Flow.vsdx
+│   │   ├── 📄 Marketing Intelligence & Operating System.drawio
+│   │   ├── 🖼️ Marketing Intelligence & Operating System.jpg
+│   │   ├── 📄 Marketing Intelligence & Operating System.vsdx
+│   │   ├── 📄 eDerma_MIOS_flowchart.drawio
+│   │   ├── 📄 eDerma_MIOS_flowchart.vsdx
+│   │   └── 📄 ederma-governed-agentic-flowchart.mmd
+│   ├── 📝 Architecture_Map_Hierarchy.md
+│   ├── 📝 Core Architectural Invariant.md
+│   ├── 📝 Final Architecture Flowchart.md
+│   └── 📄 flowchat.txt
+├── 📁 backend/
+│   ├── 📁 app/
+│   │   ├── 📁 agents/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 base.py
+│   │   │   ├── 🐍 competitor_intel.py
+│   │   │   ├── 🐍 creative_content.py
+│   │   │   ├── 🐍 customer_voice.py
+│   │   │   ├── 🐍 development.py
+│   │   │   ├── 🐍 learning_performance.py
+│   │   │   ├── 🐍 product_evidence.py
+│   │   │   └── 🐍 strategy.py
+│   │   ├── 📁 api/
+│   │   │   ├── 📁 routes/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 approvals.py
+│   │   │   │   ├── 🐍 directives.py
+│   │   │   │   ├── 🐍 tasks.py
+│   │   │   │   └── 🐍 telemetry.py
+│   │   │   ├── 🐍 __init__.py
+│   │   │   └── 🐍 router.py
+│   │   ├── 📁 core/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 exceptions.py
+│   │   │   ├── 🐍 logging.py
+│   │   │   └── 🐍 settings.py
+│   │   ├── 📁 integrations/
+│   │   │   ├── 📁 ads/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 base.py
+│   │   │   │   ├── 🐍 google.py
+│   │   │   │   ├── 🐍 linkedin.py
+│   │   │   │   ├── 🐍 meta.py
+│   │   │   │   └── 🐍 tiktok.py
+│   │   │   ├── 📁 cms/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   └── 🐍 client.py
+│   │   │   ├── 📁 llm/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   └── 🐍 client.py
+│   │   │   ├── 📁 sandbox/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 capabilities.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 micro_tools.py
+│   │   │   ├── 📁 social/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 base.py
+│   │   │   │   ├── 🐍 instagram.py
+│   │   │   │   ├── 🐍 tiktok.py
+│   │   │   │   ├── 🐍 x.py
+│   │   │   │   └── 🐍 youtube.py
+│   │   │   └── 🐍 __init__.py
+│   │   ├── 📁 mcp/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 data_gateway.py
+│   │   │   ├── 🐍 host.py
+│   │   │   └── 🐍 outbound_gateway.py
+│   │   ├── 📁 orchestration/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 brand_persona.py
+│   │   │   ├── 🐍 context_assembly.py
+│   │   │   ├── 🐍 dag_scheduler.py
+│   │   │   ├── 🐍 evidence_synthesis.py
+│   │   │   ├── 🐍 hitl_preview_generator.py
+│   │   │   ├── 🐍 intelligence_engine.py
+│   │   │   ├── 🐍 policy_evaluator.py
+│   │   │   ├── 🐍 rag_query_dispatch.py
+│   │   │   └── 🐍 task_state_machine.py
+│   │   ├── 📁 persistence/
+│   │   │   ├── 📁 repositories/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 artifact.py
+│   │   │   │   ├── 🐍 base.py
+│   │   │   │   ├── 🐍 memory.py
+│   │   │   │   ├── 🐍 operational.py
+│   │   │   │   ├── 🐍 provenance.py
+│   │   │   │   ├── 🐍 task_state.py
+│   │   │   │   ├── 🐍 telemetry.py
+│   │   │   │   └── 🐍 vector.py
+│   │   │   ├── 🐍 __init__.py
+│   │   │   └── 🐍 database.py
+│   │   ├── 📁 schemas/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 action_preview.py
+│   │   │   ├── 🐍 agent_contracts.py
+│   │   │   ├── 🐍 artifact.py
+│   │   │   ├── 🐍 cms.py
+│   │   │   ├── 🐍 dispatch.py
+│   │   │   ├── 🐍 governance.py
+│   │   │   ├── 🐍 provenance.py
+│   │   │   ├── 🐍 sandbox.py
+│   │   │   ├── 🐍 task_state.py
+│   │   │   └── 🐍 telemetry.py
+│   │   ├── 📁 security/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 authorization_boundary.py
+│   │   │   ├── 🐍 cryptographic_validator.py
+│   │   │   └── 🐍 scope_evaluator.py
+│   │   ├── 📁 services/
+│   │   │   ├── 📁 rag/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 controller.py
+│   │   │   │   ├── 🐍 freshness.py
+│   │   │   │   ├── 🐍 hybrid_retriever.py
+│   │   │   │   └── 🐍 schema_validator.py
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 attribution_coordinator.py
+│   │   │   ├── 🐍 audit_validator.py
+│   │   │   ├── 🐍 hitl.py
+│   │   │   ├── 🐍 memory_promotion.py
+│   │   │   ├── 🐍 policy_engine.py
+│   │   │   ├── 🐍 provenance.py
+│   │   │   ├── 🐍 task_state.py
+│   │   │   ├── 🐍 telemetry.py
+│   │   │   └── 🐍 telemetry_engine.py
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 main.py
+│   ├── 📁 scripts/
+│   │   ├── 📄 bootstrap.sh
+│   │   ├── 📄 lint.sh
+│   │   ├── 📄 run_dev_server.sh
+│   │   ├── 📄 run_tests.sh
+│   │   └── 📄 test.sh
+│   ├── 📁 tests/
+│   │   ├── 📁 acceptance/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   └── 🐍 test_governed_end_to_end_flow.py
+│   │   ├── 📁 integration/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 test_creative_integration.py
+│   │   │   ├── 🐍 test_customer_voice_integration.py
+│   │   │   ├── 🐍 test_development_integration.py
+│   │   │   ├── 🐍 test_model_a_data_access.py
+│   │   │   ├── 🐍 test_outbound_after_approval.py
+│   │   │   ├── 🐍 test_product_evidence_integration.py
+│   │   │   ├── 🐍 test_provenance_persistence.py
+│   │   │   ├── 🐍 test_security_boundaries_negative.py
+│   │   │   ├── 🐍 test_strategy_integration.py
+│   │   │   ├── 🐍 test_telemetry_learning_loop.py
+│   │   │   └── 🐍 test_worker_sandbox_boundary.py
+│   │   ├── 📁 unit/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 test_action_preview_verification.py
+│   │   │   ├── 🐍 test_attribution_decay_roas_t31.py
+│   │   │   ├── 🐍 test_audit_lineage_validator_t33.py
+│   │   │   ├── 🐍 test_context_assembly_and_brand_persona.py
+│   │   │   ├── 🐍 test_creative_content_verification.py
+│   │   │   ├── 🐍 test_customer_voice_verification.py
+│   │   │   ├── 🐍 test_development_verification.py
+│   │   │   ├── 🐍 test_evidence_consolidation_verification.py
+│   │   │   ├── 🐍 test_evidence_synthesis.py
+│   │   │   ├── 🐍 test_governed_mcp_data_gateway.py
+│   │   │   ├── 🐍 test_hitl_gate.py
+│   │   │   ├── 🐍 test_hitl_signoff_verification.py
+│   │   │   ├── 🐍 test_live_telemetry_ingestion_t30.py
+│   │   │   ├── 🐍 test_memory_promotion_t32.py
+│   │   │   ├── 🐍 test_milestone_m5_verification.py
+│   │   │   ├── 🐍 test_milestone_m6_verification.py
+│   │   │   ├── 🐍 test_milestone_m7_verification.py
+│   │   │   ├── 🐍 test_omnichannel_telemetry_engine_t29.py
+│   │   │   ├── 🐍 test_outbound_actuation_boundary_t25.py
+│   │   │   ├── 🐍 test_paid_media_deployment_t27.py
+│   │   │   ├── 🐍 test_policy_authorization.py
+│   │   │   ├── 🐍 test_product_evidence_verification.py
+│   │   │   ├── 🐍 test_project_closeout_t34.py
+│   │   │   ├── 🐍 test_rag_governance.py
+│   │   │   ├── 🐍 test_social_media_deployment_t28.py
+│   │   │   ├── 🐍 test_specialist_micro_tools.py
+│   │   │   ├── 🐍 test_strategy_allocation_verification.py
+│   │   │   ├── 🐍 test_task_state_machine.py
+│   │   │   ├── 🐍 test_task_state_service_and_recovery.py
+│   │   │   └── 🐍 test_website_cms_deployment_t26.py
+│   │   ├── 🐍 __init__.py
+│   │   └── 🐍 conftest.py
+│   ├── ⚙️ .gitignore
+│   ├── 📄 Makefile
+│   ├── 📝 README.md
+│   └── ⚙️ pyproject.toml
+├── 📁 sandbox/
+│   ├── 📁 .github/
+│   │   └── 📁 workflows/
+│   │       ├── ⚙️ push-to-ghcr.yml
+│   │       ├── ⚙️ sdk-ci.yml
+│   │       └── ⚙️ sdk-publish.yml
+│   ├── 📁 cli/
+│   │   └── ⚙️ .gitkeep
+│   ├── 📁 docker/
+│   │   ├── 📁 hardened/
+│   │   │   ├── 📁 egress-proxy/
+│   │   │   │   ├── 📄 allowed-domains.txt
+│   │   │   │   └── ⚙️ tinyproxy-allowlist.conf
+│   │   │   ├── 📁 scripts/
+│   │   │   │   └── 📄 cleanup.sh
+│   │   │   ├── 📁 seccomp/
+│   │   │   │   └── ⚙️ chromium-seccomp.json
+│   │   │   ├── 📁 skills/
+│   │   │   │   ├── 📁 s-alloc/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   ├── 📁 s-attr/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   ├── 📁 s-code/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   ├── 📁 s-copy/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   ├── 📁 s-parse/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   ├── 📁 s-scrape/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   └── 📁 s-val/
+│   │   │   │       ├── 📁 scripts/
+│   │   │   │       │   └── 🐍 run.py
+│   │   │   │       └── 📝 SKILL.md
+│   │   │   └── ⚙️ docker-compose.hardened.yaml
+│   │   └── ⚙️ .gitkeep
+│   ├── 📁 evaluation/
+│   │   ├── 📁 dataset/
+│   │   │   ├── 📝 README.md
+│   │   │   ├── ⚙️ evaluation_basic.xml
+│   │   │   ├── ⚙️ evaluation_browser.xml
+│   │   │   ├── ⚙️ evaluation_browser_advanced.xml
+│   │   │   ├── ⚙️ evaluation_code_advanced.xml
+│   │   │   ├── ⚙️ evaluation_collaboration.xml
+│   │   │   ├── ⚙️ evaluation_editor.xml
+│   │   │   ├── ⚙️ evaluation_error.xml
+│   │   │   ├── ⚙️ evaluation_nextjs.xml
+│   │   │   ├── ⚙️ evaluation_packages.xml
+│   │   │   ├── ⚙️ evaluation_ping.xml
+│   │   │   ├── ⚙️ evaluation_util.xml
+│   │   │   └── ⚙️ evaluation_workflow.xml
+│   │   ├── 📁 result/
+│   │   │   └── 📁 20251112/
+│   │   │       ├── 📝 Latest.md
+│   │   │       └── 📝 improvement_suggestions.md
+│   │   ├── 📁 tests/
+│   │   │   ├── 🐍 test_max_iterations_fallback.py
+│   │   │   ├── 🐍 test_minimax_integration.py
+│   │   │   └── 🐍 test_openai_agent_loop.py
+│   │   ├── ⚙️ .gitignore
+│   │   ├── 📝 README.md
+│   │   ├── 📝 README_zh.md
+│   │   ├── 🐍 agent_loop.py
+│   │   ├── 🐍 dataset_parser.py
+│   │   ├── 🐍 main.py
+│   │   ├── ⚙️ pyproject.toml
+│   │   └── 📄 uv.lock
+│   ├── 📁 examples/
+│   │   ├── 📁 _template/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 ag2-integration/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   ├── 📄 smoke_test.ipynb
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 basic-file-operations/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🖼️ foo.png
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 browser-use-cua/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 browser-use-integration/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 code-execute/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 langgraph-deepagents-integration/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   ├── 🐍 sandbox_backend.py
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 minimax-integration/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   └── ⚙️ pyproject.toml
+│   │   ├── 📁 openai-integration/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 oss-upload/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 aws-s3.py
+│   │   │   ├── 🖼️ foo.png
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 playwright-integration/
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   └── ⚙️ pyproject.toml
+│   │   ├── 📁 site-to-markdown/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── 📁 volcengine-provider/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 🐍 main.py
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   └── 📄 uv.lock
+│   │   ├── ⚙️ .gitignore
+│   │   └── 📝 README.md
+│   ├── 📁 sdk/
+│   │   ├── 📁 fern/
+│   │   │   ├── ⚙️ fern.config.json
+│   │   │   └── ⚙️ generators.yml
+│   │   ├── 📁 go/
+│   │   │   └── 📝 README.md
+│   │   ├── 📁 js/
+│   │   │   ├── 📁 __test__/
+│   │   │   │   ├── 📁 core/
+│   │   │   │   │   ├── 📄 createRequestUrl.test.ts
+│   │   │   │   │   ├── 📄 fetcher.test.ts
+│   │   │   │   │   ├── 📄 form-data-utils.test.ts
+│   │   │   │   │   └── 📄 makeRequest.test.ts
+│   │   │   │   ├── 📁 providers/
+│   │   │   │   │   └── 📄 volcengine.test.ts
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   └── 📄 fetch.test.ts
+│   │   │   │   ├── 📄 cjs.test.ts
+│   │   │   │   ├── 📄 esm.test.mjs
+│   │   │   │   ├── 📄 fern-customizations.test.ts
+│   │   │   │   └── 📄 integration.test.ts
+│   │   │   ├── 📁 examples/
+│   │   │   │   ├── 📝 README.md
+│   │   │   │   ├── 📄 advanced-usage.ts
+│   │   │   │   ├── 📄 basic-usage.ts
+│   │   │   │   ├── 📄 error-handling.ts
+│   │   │   │   ├── ⚙️ package.json
+│   │   │   │   ├── 📄 simple-examples.ts
+│   │   │   │   ├── ⚙️ tsconfig.json
+│   │   │   │   └── 📄 volcengine-provider.ts
+│   │   │   ├── 📁 src/
+│   │   │   │   ├── 📁 api/
+│   │   │   │   │   ├── 📁 resources/
+│   │   │   │   │   │   ├── 📁 auth/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 authenticate.ts
+│   │   │   │   │   │   │   │   ├── 📄 createTicket.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 bash/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BashExecRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BashKillRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BashOutputRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BashSessionCreateRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BashWriteRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 closeSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 createSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 exec.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 kill.ts
+│   │   │   │   │   │   │   │   ├── 📄 output.ts
+│   │   │   │   │   │   │   │   ├── 📄 sessions.ts
+│   │   │   │   │   │   │   │   └── 📄 write.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browser/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserConfigRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserScreenshotRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 executeAction.ts
+│   │   │   │   │   │   │   │   ├── 📄 getInfo.ts
+│   │   │   │   │   │   │   │   ├── 📄 getProxyPac.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 restart.ts
+│   │   │   │   │   │   │   │   ├── 📄 screenshot.ts
+│   │   │   │   │   │   │   │   └── 📄 setConfig.ts
+│   │   │   │   │   │   │   ├── 📁 types/
+│   │   │   │   │   │   │   │   ├── 📄 Action.ts
+│   │   │   │   │   │   │   │   ├── 📄 Format.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browserCaptcha/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 CaptchaWaitRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 detect.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   └── 📄 wait.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browserCookies/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserCookiesGetCookiesRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 CookieSetRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 clearCookies.ts
+│   │   │   │   │   │   │   │   ├── 📄 getCookies.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   └── 📄 setCookies.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browserNetwork/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserNetworkGetRequestsRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ExportHarRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 HeadersRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NetworkRouteRemoveRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NetworkRouteRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ScopedHeadersRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 addRoute.ts
+│   │   │   │   │   │   │   │   ├── 📄 exportHar.ts
+│   │   │   │   │   │   │   │   ├── 📄 getRequests.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 removeRoute.ts
+│   │   │   │   │   │   │   │   ├── 📄 setHeaders.ts
+│   │   │   │   │   │   │   │   └── 📄 setScopedHeaders.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browserPage/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserPageGetConsoleRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserPageGetHtmlRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 BrowserPageScreenshotRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ClickRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 EvaluateRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ExportConsoleLogsRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FillRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FindTextRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FormFillRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 HotKeyRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 HoverRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 KeyRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NavigateRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 RecordRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ScrollRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ScrollToElementRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ScrollToRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 SelectOptionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 TypeTextRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 UploadFileRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 WaitRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 back.ts
+│   │   │   │   │   │   │   │   ├── 📄 check.ts
+│   │   │   │   │   │   │   │   ├── 📄 click.ts
+│   │   │   │   │   │   │   │   ├── 📄 evaluate.ts
+│   │   │   │   │   │   │   │   ├── 📄 exportConsole.ts
+│   │   │   │   │   │   │   │   ├── 📄 fill.ts
+│   │   │   │   │   │   │   │   ├── 📄 fillForm.ts
+│   │   │   │   │   │   │   │   ├── 📄 findText.ts
+│   │   │   │   │   │   │   │   ├── 📄 forward.ts
+│   │   │   │   │   │   │   │   ├── 📄 getConsole.ts
+│   │   │   │   │   │   │   │   ├── 📄 getElements.ts
+│   │   │   │   │   │   │   │   ├── 📄 getHtml.ts
+│   │   │   │   │   │   │   │   ├── 📄 getMarkdown.ts
+│   │   │   │   │   │   │   │   ├── 📄 getText.ts
+│   │   │   │   │   │   │   │   ├── 📄 hotKey.ts
+│   │   │   │   │   │   │   │   ├── 📄 hover.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 navigate.ts
+│   │   │   │   │   │   │   │   ├── 📄 pressKey.ts
+│   │   │   │   │   │   │   │   ├── 📄 record.ts
+│   │   │   │   │   │   │   │   ├── 📄 reload.ts
+│   │   │   │   │   │   │   │   ├── 📄 screenshot.ts
+│   │   │   │   │   │   │   │   ├── 📄 scroll.ts
+│   │   │   │   │   │   │   │   ├── 📄 scrollTo.ts
+│   │   │   │   │   │   │   │   ├── 📄 scrollToElement.ts
+│   │   │   │   │   │   │   │   ├── 📄 selectOption.ts
+│   │   │   │   │   │   │   │   ├── 📄 typeText.ts
+│   │   │   │   │   │   │   │   ├── 📄 uncheck.ts
+│   │   │   │   │   │   │   │   ├── 📄 uploadFile.ts
+│   │   │   │   │   │   │   │   └── 📄 wait.ts
+│   │   │   │   │   │   │   ├── 📁 types/
+│   │   │   │   │   │   │   │   ├── 📄 NavigateRequestWaitUntil.ts
+│   │   │   │   │   │   │   │   ├── 📄 RecordRequestAction.ts
+│   │   │   │   │   │   │   │   ├── 📄 Type.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browserState/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 StateLoadRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 StateSaveRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 load.ts
+│   │   │   │   │   │   │   │   └── 📄 save.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 browserTabs/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 CreatePageRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 activate.ts
+│   │   │   │   │   │   │   │   ├── 📄 close.ts
+│   │   │   │   │   │   │   │   ├── 📄 create.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   └── 📄 list.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 code/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 CodeExecuteRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 executeCode.ts
+│   │   │   │   │   │   │   │   ├── 📄 getInfo.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 display/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 DisplayRecordRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   └── 📄 record.ts
+│   │   │   │   │   │   │   ├── 📁 types/
+│   │   │   │   │   │   │   │   ├── 📄 DisplayRecordRequestAction.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 file/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BodyUploadFile.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 CreateWatchRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileDownloadFileRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileFindRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileGlobRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileGrepRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileListRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileReadRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileReplaceRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileSearchRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileWatchWaitRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 FileWriteRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 PollRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 StrReplaceEditorRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 downloadFile.ts
+│   │   │   │   │   │   │   │   ├── 📄 findFiles.ts
+│   │   │   │   │   │   │   │   ├── 📄 globFiles.ts
+│   │   │   │   │   │   │   │   ├── 📄 grepFiles.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 listPath.ts
+│   │   │   │   │   │   │   │   ├── 📄 readFile.ts
+│   │   │   │   │   │   │   │   ├── 📄 replaceInFile.ts
+│   │   │   │   │   │   │   │   ├── 📄 searchInFile.ts
+│   │   │   │   │   │   │   │   ├── 📄 strReplaceEditor.ts
+│   │   │   │   │   │   │   │   ├── 📄 uploadFile.ts
+│   │   │   │   │   │   │   │   ├── 📄 watchCreate.ts
+│   │   │   │   │   │   │   │   ├── 📄 watchEvents.ts
+│   │   │   │   │   │   │   │   ├── 📄 watchList.ts
+│   │   │   │   │   │   │   │   ├── 📄 watchPoll.ts
+│   │   │   │   │   │   │   │   ├── 📄 watchStop.ts
+│   │   │   │   │   │   │   │   ├── 📄 watchWait.ts
+│   │   │   │   │   │   │   │   └── 📄 writeFile.ts
+│   │   │   │   │   │   │   ├── 📁 types/
+│   │   │   │   │   │   │   │   ├── 📄 AppSchemasFileWatchWaitRequestEventTypesItem.ts
+│   │   │   │   │   │   │   │   ├── 📄 Command.ts
+│   │   │   │   │   │   │   │   ├── 📄 StrReplaceEditorRequestReplaceMode.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 jupyter/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 JupyterCreateSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 JupyterExecuteRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 createSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 deleteSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 deleteSessions.ts
+│   │   │   │   │   │   │   │   ├── 📄 executeCode.ts
+│   │   │   │   │   │   │   │   ├── 📄 getInfo.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   └── 📄 listSessions.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 mcp/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 ListMcpServersV1McpServersGetRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 executeMcpTool.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 listMcpServers.ts
+│   │   │   │   │   │   │   │   └── 📄 listMcpTools.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 nodejs/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 NodeJsCreateSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NodeJsExecuteRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NodeJsUpdateSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NodejsDeleteSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NodejsGetSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 NodejsListSessionsRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 createSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 deleteSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 executeCode.ts
+│   │   │   │   │   │   │   │   ├── 📄 getInfo.ts
+│   │   │   │   │   │   │   │   ├── 📄 getSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 listSessions.ts
+│   │   │   │   │   │   │   │   └── 📄 updateSession.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 proxy/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 ProxyDiagnoseRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ProxyMappingAddRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ProxyUpstreamUpdateRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 addExclude.ts
+│   │   │   │   │   │   │   │   ├── 📄 addMapping.ts
+│   │   │   │   │   │   │   │   ├── 📄 diagnose.ts
+│   │   │   │   │   │   │   │   ├── 📄 getUpstream.ts
+│   │   │   │   │   │   │   │   ├── 📄 health.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 listExcludes.ts
+│   │   │   │   │   │   │   │   ├── 📄 listMappings.ts
+│   │   │   │   │   │   │   │   ├── 📄 removeExclude.ts
+│   │   │   │   │   │   │   │   ├── 📄 removeMapping.ts
+│   │   │   │   │   │   │   │   ├── 📄 removeUpstream.ts
+│   │   │   │   │   │   │   │   └── 📄 setUpstream.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 sandbox/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 ObserveExportRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ObserveStartRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ObserveStopRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 RegisterHookRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 SandboxListHooksRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 SandboxObserveLiveRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 getContext.ts
+│   │   │   │   │   │   │   │   ├── 📄 getNodejsPackages.ts
+│   │   │   │   │   │   │   │   ├── 📄 getPythonPackages.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 listHooks.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeExport.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeLive.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeReportDelete.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeReportDownload.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeReports.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeStart.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeStatus.ts
+│   │   │   │   │   │   │   │   ├── 📄 observeStop.ts
+│   │   │   │   │   │   │   │   ├── 📄 registerHook.ts
+│   │   │   │   │   │   │   │   └── 📄 removeHook.ts
+│   │   │   │   │   │   │   ├── 📁 types/
+│   │   │   │   │   │   │   │   ├── 📄 ObserveStartMode.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 shell/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellCreateSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellExecRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellKillProcessRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellUpdateSessionRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellViewRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellWaitRequest.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 ShellWriteToProcessRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 cleanupAllSessions.ts
+│   │   │   │   │   │   │   │   ├── 📄 cleanupSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 createSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 execCommand.ts
+│   │   │   │   │   │   │   │   ├── 📄 getSessionStats.ts
+│   │   │   │   │   │   │   │   ├── 📄 getTerminalUrl.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 killProcess.ts
+│   │   │   │   │   │   │   │   ├── 📄 listSessions.ts
+│   │   │   │   │   │   │   │   ├── 📄 updateSession.ts
+│   │   │   │   │   │   │   │   ├── 📄 view.ts
+│   │   │   │   │   │   │   │   ├── 📄 waitForProcess.ts
+│   │   │   │   │   │   │   │   └── 📄 writeToProcess.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 skills/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 BodyRegisterSkills.ts
+│   │   │   │   │   │   │   │   │   ├── 📄 SkillsListMetadataRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 clearSkills.ts
+│   │   │   │   │   │   │   │   ├── 📄 deleteSkill.ts
+│   │   │   │   │   │   │   │   ├── 📄 getContent.ts
+│   │   │   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 listMetadata.ts
+│   │   │   │   │   │   │   │   └── 📄 registerSkills.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   ├── 📁 util/
+│   │   │   │   │   │   │   ├── 📁 client/
+│   │   │   │   │   │   │   │   ├── 📁 requests/
+│   │   │   │   │   │   │   │   │   ├── 📄 UtilConvertToMarkdownRequest.ts
+│   │   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   │   ├── 📄 Client.ts
+│   │   │   │   │   │   │   │   ├── 📄 convertToMarkdown.ts
+│   │   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   ├── 📁 types/
+│   │   │   │   │   │   ├── 📄 ActionData.ts
+│   │   │   │   │   │   ├── 📄 ActionResponse.ts
+│   │   │   │   │   │   ├── 📄 ActiveSessionsResult.ts
+│   │   │   │   │   │   ├── 📄 ActiveShellSessionsResult.ts
+│   │   │   │   │   │   ├── 📄 Annotations.ts
+│   │   │   │   │   │   ├── 📄 AnnotationsAudienceItem.ts
+│   │   │   │   │   │   ├── 📄 AudioContent.ts
+│   │   │   │   │   │   ├── 📄 AvailableTool.ts
+│   │   │   │   │   │   ├── 📄 BashCommandInfo.ts
+│   │   │   │   │   │   ├── 📄 BashCommandStatus.ts
+│   │   │   │   │   │   ├── 📄 BashExecResult.ts
+│   │   │   │   │   │   ├── 📄 BashOutputResult.ts
+│   │   │   │   │   │   ├── 📄 BashSessionInfo.ts
+│   │   │   │   │   │   ├── 📄 BlobResourceContents.ts
+│   │   │   │   │   │   ├── 📄 BrowserInfoResult.ts
+│   │   │   │   │   │   ├── 📄 BrowserViewport.ts
+│   │   │   │   │   │   ├── 📄 Button.ts
+│   │   │   │   │   │   ├── 📄 CallToolResult.ts
+│   │   │   │   │   │   ├── 📄 CaptchaWaitResult.ts
+│   │   │   │   │   │   ├── 📄 CheckRequest.ts
+│   │   │   │   │   │   ├── 📄 ClickAction.ts
+│   │   │   │   │   │   ├── 📄 CodeExecuteResponse.ts
+│   │   │   │   │   │   ├── 📄 CodeInfoResponse.ts
+│   │   │   │   │   │   ├── 📄 CodeLanguageInfo.ts
+│   │   │   │   │   │   ├── 📄 CommandStatus.ts
+│   │   │   │   │   │   ├── 📄 ConsoleRecord.ts
+│   │   │   │   │   │   ├── 📄 DependencyCommandResult.ts
+│   │   │   │   │   │   ├── 📄 DisplayRecordResult.ts
+│   │   │   │   │   │   ├── 📄 DoubleClickAction.ts
+│   │   │   │   │   │   ├── 📄 DragRelAction.ts
+│   │   │   │   │   │   ├── 📄 DragToAction.ts
+│   │   │   │   │   │   ├── 📄 EmbeddedResource.ts
+│   │   │   │   │   │   ├── 📄 FileContentEncoding.ts
+│   │   │   │   │   │   ├── 📄 FileDownloadChangePolicy.ts
+│   │   │   │   │   │   ├── 📄 FileFindResult.ts
+│   │   │   │   │   │   ├── 📄 FileGlobResult.ts
+│   │   │   │   │   │   ├── 📄 FileGrepResult.ts
+│   │   │   │   │   │   ├── 📄 FileInfo.ts
+│   │   │   │   │   │   ├── 📄 FileListResult.ts
+│   │   │   │   │   │   ├── 📄 FileOperationError.ts
+│   │   │   │   │   │   ├── 📄 FileReadResult.ts
+│   │   │   │   │   │   ├── 📄 FileReplaceResult.ts
+│   │   │   │   │   │   ├── 📄 FileSearchResult.ts
+│   │   │   │   │   │   ├── 📄 FileUploadResult.ts
+│   │   │   │   │   │   ├── 📄 FileWriteResult.ts
+│   │   │   │   │   │   ├── 📄 GlobFileInfo.ts
+│   │   │   │   │   │   ├── 📄 GrepMatch.ts
+│   │   │   │   │   │   ├── 📄 HotkeyAction.ts
+│   │   │   │   │   │   ├── 📄 HttpValidationError.ts
+│   │   │   │   │   │   ├── 📄 Icon.ts
+│   │   │   │   │   │   ├── 📄 ImageContent.ts
+│   │   │   │   │   │   ├── 📄 JupyterCreateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 JupyterExecuteResponse.ts
+│   │   │   │   │   │   ├── 📄 JupyterInfoResponse.ts
+│   │   │   │   │   │   ├── 📄 JupyterOutput.ts
+│   │   │   │   │   │   ├── 📄 KeyDownAction.ts
+│   │   │   │   │   │   ├── 📄 KeyUpAction.ts
+│   │   │   │   │   │   ├── 📄 Language.ts
+│   │   │   │   │   │   ├── 📄 ListToolsResult.ts
+│   │   │   │   │   │   ├── 📄 MouseDownAction.ts
+│   │   │   │   │   │   ├── 📄 MouseUpAction.ts
+│   │   │   │   │   │   ├── 📄 MoveRelAction.ts
+│   │   │   │   │   │   ├── 📄 MoveToAction.ts
+│   │   │   │   │   │   ├── 📄 NodeJsCreateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 NodeJsDeleteSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 NodeJsExecuteResponse.ts
+│   │   │   │   │   │   ├── 📄 NodeJsOutput.ts
+│   │   │   │   │   │   ├── 📄 NodeJsPackageInfo.ts
+│   │   │   │   │   │   ├── 📄 NodeJsRuntimeInfo.ts
+│   │   │   │   │   │   ├── 📄 NodeJsSessionInfo.ts
+│   │   │   │   │   │   ├── 📄 NodeJsSessionListResponse.ts
+│   │   │   │   │   │   ├── 📄 NodeJsSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 NodeJsUpdateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ObservationCgroupSnapshot.ts
+│   │   │   │   │   │   ├── 📄 ObservationDiskSnapshot.ts
+│   │   │   │   │   │   ├── 📄 ObservationEvent.ts
+│   │   │   │   │   │   ├── 📄 ObservationExportResult.ts
+│   │   │   │   │   │   ├── 📄 ObservationLiveSnapshot.ts
+│   │   │   │   │   │   ├── 📄 ObservationMode.ts
+│   │   │   │   │   │   ├── 📄 ObservationProcessSnapshot.ts
+│   │   │   │   │   │   ├── 📄 ObservationReportInfo.ts
+│   │   │   │   │   │   ├── 📄 ObservationStartResult.ts
+│   │   │   │   │   │   ├── 📄 ObservationStatus.ts
+│   │   │   │   │   │   ├── 📄 ObservationStopResult.ts
+│   │   │   │   │   │   ├── 📄 PressAction.ts
+│   │   │   │   │   │   ├── 📄 ProxyBypassRequest.ts
+│   │   │   │   │   │   ├── 📄 ProxyDiagnoseResult.ts
+│   │   │   │   │   │   ├── 📄 ProxyHealthCheck.ts
+│   │   │   │   │   │   ├── 📄 ProxyMappingRoute.ts
+│   │   │   │   │   │   ├── 📄 ProxyUpstreamInfo.ts
+│   │   │   │   │   │   ├── 📄 Resolution.ts
+│   │   │   │   │   │   ├── 📄 Resource.ts
+│   │   │   │   │   │   ├── 📄 ResourceLink.ts
+│   │   │   │   │   │   ├── 📄 Response.ts
+│   │   │   │   │   │   ├── 📄 ResponseActiveSessionsResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseActiveShellSessionsResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseBashExecResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseBashOutputResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseBashSessionInfo.ts
+│   │   │   │   │   │   ├── 📄 ResponseBrowserInfoResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseCallToolResultModel.ts
+│   │   │   │   │   │   ├── 📄 ResponseCallToolResultModelDataContentItem.ts
+│   │   │   │   │   │   ├── 📄 ResponseCaptchaWaitResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseCodeExecuteResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseCodeInfoResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseDict.ts
+│   │   │   │   │   │   ├── 📄 ResponseDisplayRecordResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseJupyterCreateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseJupyterExecuteResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseJupyterInfoResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseList.ts
+│   │   │   │   │   │   ├── 📄 ResponseListBashSessionInfo.ts
+│   │   │   │   │   │   ├── 📄 ResponseListObservationReportInfo.ts
+│   │   │   │   │   │   ├── 📄 ResponseListProxyMappingRoute.ts
+│   │   │   │   │   │   ├── 📄 ResponseListSandboxHook.ts
+│   │   │   │   │   │   ├── 📄 ResponseListStr.ts
+│   │   │   │   │   │   ├── 📄 ResponseListToolsResultModel.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsCreateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsDeleteSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsExecuteResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsRuntimeInfo.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsSessionListResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseNodeJsUpdateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseObservationExportResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseObservationLiveSnapshot.ts
+│   │   │   │   │   │   ├── 📄 ResponseObservationReportInfo.ts
+│   │   │   │   │   │   ├── 📄 ResponseObservationStartResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseObservationStatus.ts
+│   │   │   │   │   │   ├── 📄 ResponseObservationStopResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseProxyDiagnoseResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseProxyHealthCheck.ts
+│   │   │   │   │   │   ├── 📄 ResponseProxyMappingRoute.ts
+│   │   │   │   │   │   ├── 📄 ResponseProxyUpstreamInfo.ts
+│   │   │   │   │   │   ├── 📄 ResponseSandboxHook.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellCommandResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellCreateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellKillResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellSessionStats.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellViewResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellWaitResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseShellWriteResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseSkillContentResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseSkillMetadata.ts
+│   │   │   │   │   │   ├── 📄 ResponseSkillMetadataCollection.ts
+│   │   │   │   │   │   ├── 📄 ResponseSkillRegistrationResult.ts
+│   │   │   │   │   │   ├── 📄 ResponseStr.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileFindResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileFindResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileGlobResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileGlobResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileGrepResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileGrepResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileListResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileListResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileReadResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileReadResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileReplaceResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileReplaceResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileSearchResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileSearchResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileUploadResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileUploadResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileWriteResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionFileWriteResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionProxyUpstreamInfoNoneType.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionStrReplaceEditorResultFileOperationError.ts
+│   │   │   │   │   │   ├── 📄 ResponseUnionStrReplaceEditorResultFileOperationErrorData.ts
+│   │   │   │   │   │   ├── 📄 RestartMode.ts
+│   │   │   │   │   │   ├── 📄 RestartRequest.ts
+│   │   │   │   │   │   ├── 📄 RightClickAction.ts
+│   │   │   │   │   │   ├── 📄 RouteResponseModel.ts
+│   │   │   │   │   │   ├── 📄 RuntimeEnv.ts
+│   │   │   │   │   │   ├── 📄 SandboxDetail.ts
+│   │   │   │   │   │   ├── 📄 SandboxHook.ts
+│   │   │   │   │   │   ├── 📄 SandboxResponse.ts
+│   │   │   │   │   │   ├── 📄 ScrollAction.ts
+│   │   │   │   │   │   ├── 📄 SessionInfo.ts
+│   │   │   │   │   │   ├── 📄 SessionStatus.ts
+│   │   │   │   │   │   ├── 📄 ShellCommandResult.ts
+│   │   │   │   │   │   ├── 📄 ShellCreateSessionResponse.ts
+│   │   │   │   │   │   ├── 📄 ShellKillResult.ts
+│   │   │   │   │   │   ├── 📄 ShellSessionInfo.ts
+│   │   │   │   │   │   ├── 📄 ShellSessionStats.ts
+│   │   │   │   │   │   ├── 📄 ShellViewResult.ts
+│   │   │   │   │   │   ├── 📄 ShellWaitResult.ts
+│   │   │   │   │   │   ├── 📄 ShellWriteResult.ts
+│   │   │   │   │   │   ├── 📄 SkillContentResult.ts
+│   │   │   │   │   │   ├── 📄 SkillMetadata.ts
+│   │   │   │   │   │   ├── 📄 SkillMetadataCollection.ts
+│   │   │   │   │   │   ├── 📄 SkillRegistrationResult.ts
+│   │   │   │   │   │   ├── 📄 Status.ts
+│   │   │   │   │   │   ├── 📄 StrReplaceEditorResult.ts
+│   │   │   │   │   │   ├── 📄 SystemEnv.ts
+│   │   │   │   │   │   ├── 📄 TextContent.ts
+│   │   │   │   │   │   ├── 📄 TextResourceContents.ts
+│   │   │   │   │   │   ├── 📄 Tool.ts
+│   │   │   │   │   │   ├── 📄 ToolAnnotations.ts
+│   │   │   │   │   │   ├── 📄 ToolCategory.ts
+│   │   │   │   │   │   ├── 📄 ToolExecution.ts
+│   │   │   │   │   │   ├── 📄 ToolExecutionTaskSupport.ts
+│   │   │   │   │   │   ├── 📄 ToolSpec.ts
+│   │   │   │   │   │   ├── 📄 TypingAction.ts
+│   │   │   │   │   │   ├── 📄 ValidationError.ts
+│   │   │   │   │   │   ├── 📄 ValidationErrorLocItem.ts
+│   │   │   │   │   │   ├── 📄 WaitAction.ts
+│   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   └── 📄 index.ts
+│   │   │   │   ├── 📁 core/
+│   │   │   │   │   ├── 📁 fetcher/
+│   │   │   │   │   │   ├── 📄 APIResponse.ts
+│   │   │   │   │   │   ├── 📄 BinaryResponse.ts
+│   │   │   │   │   │   ├── 📄 EndpointMetadata.ts
+│   │   │   │   │   │   ├── 📄 EndpointSupplier.ts
+│   │   │   │   │   │   ├── 📄 Fetcher.ts
+│   │   │   │   │   │   ├── 📄 Headers.ts
+│   │   │   │   │   │   ├── 📄 HttpResponsePromise.ts
+│   │   │   │   │   │   ├── 📄 RawResponse.ts
+│   │   │   │   │   │   ├── 📄 ResponseWithBody.ts
+│   │   │   │   │   │   ├── 📄 Supplier.ts
+│   │   │   │   │   │   ├── 📄 createRequestUrl.ts
+│   │   │   │   │   │   ├── 📄 getErrorResponseBody.ts
+│   │   │   │   │   │   ├── 📄 getFetchFn.ts
+│   │   │   │   │   │   ├── 📄 getHeader.ts
+│   │   │   │   │   │   ├── 📄 getRequestBody.ts
+│   │   │   │   │   │   ├── 📄 getResponseBody.ts
+│   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   ├── 📄 makeRequest.ts
+│   │   │   │   │   │   ├── 📄 requestWithRetries.ts
+│   │   │   │   │   │   └── 📄 signals.ts
+│   │   │   │   │   ├── 📁 file/
+│   │   │   │   │   │   ├── 📄 exports.ts
+│   │   │   │   │   │   ├── 📄 file.ts
+│   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   └── 📄 types.ts
+│   │   │   │   │   ├── 📁 form-data-utils/
+│   │   │   │   │   │   ├── 📄 FormDataWrapper.ts
+│   │   │   │   │   │   ├── 📄 encodeAsFormParameter.ts
+│   │   │   │   │   │   └── 📄 index.ts
+│   │   │   │   │   ├── 📁 logging/
+│   │   │   │   │   │   ├── 📄 exports.ts
+│   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   └── 📄 logger.ts
+│   │   │   │   │   ├── 📁 runtime/
+│   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   └── 📄 runtime.ts
+│   │   │   │   │   ├── 📁 url/
+│   │   │   │   │   │   ├── 📄 encodePathParam.ts
+│   │   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   │   ├── 📄 join.ts
+│   │   │   │   │   │   └── 📄 qs.ts
+│   │   │   │   │   ├── 📄 exports.ts
+│   │   │   │   │   ├── 📄 headers.ts
+│   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   └── 📄 json.ts
+│   │   │   │   ├── 📁 providers/
+│   │   │   │   │   ├── 📝 README.md
+│   │   │   │   │   ├── 📄 base.ts
+│   │   │   │   │   ├── 📄 index.ts
+│   │   │   │   │   ├── 📄 sign.ts
+│   │   │   │   │   ├── 📄 volcengine.e2e.test.ts
+│   │   │   │   │   └── 📄 volcengine.ts
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   └── 📄 fetch.ts
+│   │   │   │   ├── ⚙️ .fernignore
+│   │   │   │   ├── 📄 BaseClient.ts
+│   │   │   │   ├── 📄 Client.ts
+│   │   │   │   ├── 📄 exports.ts
+│   │   │   │   ├── 📄 globals.d.ts
+│   │   │   │   └── 📄 index.ts
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📝 README.md
+│   │   │   ├── ⚙️ package-lock.json
+│   │   │   ├── ⚙️ package.json
+│   │   │   ├── 📄 rslib.config.ts
+│   │   │   ├── ⚙️ tsconfig.json
+│   │   │   └── 📄 vitest.config.ts
+│   │   ├── 📁 python/
+│   │   │   ├── ⚙️ .gitignore
+│   │   │   ├── 📄 MANIFEST.in
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 📄 publish.sh
+│   │   │   ├── ⚙️ pyproject.toml
+│   │   │   ├── 📄 setup.cfg
+│   │   │   ├── 🐍 setup.py
+│   │   │   └── 📄 uv.lock
+│   │   └── ⚙️ .gitignore
+│   ├── 📁 website/
+│   │   ├── 📁 diagrams/
+│   │   │   ├── 📝 README.md
+│   │   │   ├── ⚙️ aio-agent-calls-sandbox.architecture.json
+│   │   │   ├── ⚙️ aio-agent-in-sandbox.architecture.json
+│   │   │   ├── ⚙️ aio-sandbox-overview.architecture.json
+│   │   │   ├── 🌐 aiod-agent-task.html
+│   │   │   ├── 🌐 aiod-boot-to-ready.html
+│   │   │   ├── ⚙️ aiod-browser-cdp.architecture.json
+│   │   │   ├── ⚙️ aiod-browser-use-flow.sequence.json
+│   │   │   ├── 🐍 aiod-capabilities.gen.py
+│   │   │   ├── ⚙️ aiod-code-backends.sequence.json
+│   │   │   ├── ⚙️ aiod-code-execution-flow.sequence.json
+│   │   │   ├── ⚙️ aiod-computer-action.sequence.json
+│   │   │   ├── 🌐 aiod-computer-use.html
+│   │   │   ├── ⚙️ aiod-existing-environment.architecture.json
+│   │   │   ├── ⚙️ aiod-human-in-loop.architecture.json
+│   │   │   ├── 🌐 aiod-jupyter-footprint.html
+│   │   │   ├── ⚙️ aiod-jupyter-kernel.architecture.json
+│   │   │   ├── ⚙️ aiod-mcp-flow.architecture.json
+│   │   │   ├── ⚙️ aiod-overview.architecture.json
+│   │   │   ├── ⚙️ aiod-permission-model.architecture.json
+│   │   │   ├── ⚙️ aiod-terminal-flow.sequence.json
+│   │   │   ├── ⚙️ aiod-terminal-reconnect.sequence.json
+│   │   │   └── ⚙️ aiod-watch-flow.sequence.json
+│   │   ├── 📁 docs/
+│   │   │   ├── 📁 en/
+│   │   │   │   ├── 📁 api/
+│   │   │   │   │   ├── 🎨 index.scss
+│   │   │   │   │   └── 📄 index.tsx
+│   │   │   │   ├── 📁 blog/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📄 announcing-0.mdx
+│   │   │   │   │   └── 📄 index.mdx
+│   │   │   │   ├── 📁 daemon/
+│   │   │   │   │   ├── 📁 basic/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 authentication.md
+│   │   │   │   │   │   ├── 📄 bash.mdx
+│   │   │   │   │   │   ├── 📄 browser.mdx
+│   │   │   │   │   │   ├── 📝 cdp.md
+│   │   │   │   │   │   ├── 📄 code.mdx
+│   │   │   │   │   │   ├── 📄 display.mdx
+│   │   │   │   │   │   ├── 📝 error-handling.md
+│   │   │   │   │   │   ├── 📄 file.mdx
+│   │   │   │   │   │   ├── 📝 jupyter.md
+│   │   │   │   │   │   ├── 📄 nodejs.mdx
+│   │   │   │   │   │   ├── 📝 observability.md
+│   │   │   │   │   │   ├── 📄 sandbox.mdx
+│   │   │   │   │   │   ├── 📄 shell.mdx
+│   │   │   │   │   │   └── 📝 windows.md
+│   │   │   │   │   ├── 📁 examples/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📄 agent-call-sandbox.mdx
+│   │   │   │   │   │   ├── 📄 browser-cdp.mdx
+│   │   │   │   │   │   ├── 📄 browser-use.mdx
+│   │   │   │   │   │   ├── 📄 code-execution.mdx
+│   │   │   │   │   │   ├── 📄 computer-use.mdx
+│   │   │   │   │   │   ├── 📄 file-ops.mdx
+│   │   │   │   │   │   ├── 📄 index.mdx
+│   │   │   │   │   │   ├── 📄 mcp.mdx
+│   │   │   │   │   │   └── 📄 terminal.mdx
+│   │   │   │   │   ├── 📁 ops/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 deployment.md
+│   │   │   │   │   │   └── 📝 kubernetes.md
+│   │   │   │   │   ├── 📁 start/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📄 dashboard.mdx
+│   │   │   │   │   │   ├── 📄 introduction.mdx
+│   │   │   │   │   │   ├── 📝 migration.md
+│   │   │   │   │   │   ├── 📄 quick-start.mdx
+│   │   │   │   │   │   ├── 📄 releases.mdx
+│   │   │   │   │   │   └── 📄 v1-api.tsx
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 🎨 api.scss
+│   │   │   │   │   ├── 📄 api.tsx
+│   │   │   │   │   └── 📝 architecture.md
+│   │   │   │   ├── 📁 examples/
+│   │   │   │   │   ├── 📝 agent.md
+│   │   │   │   │   ├── 📝 browser.md
+│   │   │   │   │   ├── 📝 index.md
+│   │   │   │   │   └── 📝 terminal.md
+│   │   │   │   ├── 📁 guide/
+│   │   │   │   │   ├── 📁 advanced/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 browser-config.md
+│   │   │   │   │   │   ├── 📝 browser-cookies.md
+│   │   │   │   │   │   ├── 📝 browser-downloads.md
+│   │   │   │   │   │   ├── 📝 code-server-config.md
+│   │   │   │   │   │   ├── 📝 codex.md
+│   │   │   │   │   │   ├── 📝 env-config.md
+│   │   │   │   │   │   ├── 📝 git-config.md
+│   │   │   │   │   │   ├── 📝 lifecycle.md
+│   │   │   │   │   │   ├── 📝 opencode.md
+│   │   │   │   │   │   ├── 📝 proxy-network.md
+│   │   │   │   │   │   ├── 📝 security.md
+│   │   │   │   │   │   ├── 📝 web-terminal.md
+│   │   │   │   │   │   └── 📝 workspace.md
+│   │   │   │   │   ├── 📁 basic/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 aio-cli.md
+│   │   │   │   │   │   ├── 📝 authentication.md
+│   │   │   │   │   │   ├── 📝 bash.md
+│   │   │   │   │   │   ├── 📄 browser.mdx
+│   │   │   │   │   │   ├── 📄 code-execution.mdx
+│   │   │   │   │   │   ├── 📝 code-server.md
+│   │   │   │   │   │   ├── 📝 code.md
+│   │   │   │   │   │   ├── 📝 display.md
+│   │   │   │   │   │   ├── 📝 error-handling.md
+│   │   │   │   │   │   ├── 📄 file.mdx
+│   │   │   │   │   │   ├── 📝 jupyter.md
+│   │   │   │   │   │   ├── 📝 mcp.md
+│   │   │   │   │   │   ├── 📝 nodejs.md
+│   │   │   │   │   │   ├── 📝 proxy.md
+│   │   │   │   │   │   ├── 📄 sandbox.mdx
+│   │   │   │   │   │   ├── 📝 shell.md
+│   │   │   │   │   │   ├── 📝 skills.md
+│   │   │   │   │   │   └── 📝 util.md
+│   │   │   │   │   ├── 📁 start/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 agent-sandbox.md
+│   │   │   │   │   │   ├── 📄 cloud-deployment.mdx
+│   │   │   │   │   │   ├── 📝 faq.md
+│   │   │   │   │   │   ├── 📝 introduction.md
+│   │   │   │   │   │   └── 📄 quick-start.mdx
+│   │   │   │   │   └── ⚙️ _meta.json
+│   │   │   │   ├── 📝 404.md
+│   │   │   │   ├── ⚙️ _nav.json
+│   │   │   │   └── 📝 index.md
+│   │   │   ├── 📁 public/
+│   │   │   │   ├── 📁 architecture/
+│   │   │   │   │   ├── 🖼️ aio-agent-calls-sandbox.svg
+│   │   │   │   │   ├── 🖼️ aio-agent-in-sandbox.svg
+│   │   │   │   │   ├── 🖼️ aio-sandbox-overview.svg
+│   │   │   │   │   ├── 🖼️ aiod-agent-task.svg
+│   │   │   │   │   ├── 🖼️ aiod-boot-to-ready.svg
+│   │   │   │   │   ├── 🖼️ aiod-browser-cdp.svg
+│   │   │   │   │   ├── 🖼️ aiod-browser-use-flow.svg
+│   │   │   │   │   ├── 🖼️ aiod-capabilities.svg
+│   │   │   │   │   ├── 🖼️ aiod-code-backends.svg
+│   │   │   │   │   ├── 🖼️ aiod-code-execution-flow.svg
+│   │   │   │   │   ├── 🖼️ aiod-computer-action.svg
+│   │   │   │   │   ├── 🖼️ aiod-computer-use.svg
+│   │   │   │   │   ├── 🖼️ aiod-existing-environment.svg
+│   │   │   │   │   ├── 🖼️ aiod-human-in-loop.svg
+│   │   │   │   │   ├── 🖼️ aiod-jupyter-footprint.svg
+│   │   │   │   │   ├── 🖼️ aiod-jupyter-kernel.svg
+│   │   │   │   │   ├── 🖼️ aiod-mcp-flow.svg
+│   │   │   │   │   ├── 🖼️ aiod-overview.svg
+│   │   │   │   │   ├── 🖼️ aiod-permission-model.svg
+│   │   │   │   │   ├── 🖼️ aiod-terminal-flow.svg
+│   │   │   │   │   ├── 🖼️ aiod-terminal-reconnect.svg
+│   │   │   │   │   └── 🖼️ aiod-watch-flow.svg
+│   │   │   │   ├── 📁 daemon/
+│   │   │   │   │   ├── 📁 v1/
+│   │   │   │   │   │   └── ⚙️ openapi.json
+│   │   │   │   │   └── 📁 v2/
+│   │   │   │   │       └── ⚙️ openapi.json
+│   │   │   │   ├── 📁 dashboard/
+│   │   │   │   │   ├── 📁 assets/
+│   │   │   │   │   │   ├── 📄 AgentScalarChatInterface.vue-Bm0D6cbH.js
+│   │   │   │   │   │   ├── 📄 MonacoEditor-Bk-dsVbk.js
+│   │   │   │   │   │   ├── 📄 ScalarDocs-DCmmQezz.js
+│   │   │   │   │   │   ├── 🎨 ScalarDocs-DJKejiwx.css
+│   │   │   │   │   │   ├── 📄 basic-shape-diamond.svg-3tzFV8wO.js
+│   │   │   │   │   │   ├── 📄 basic-shape-hexagon.svg-DPLmaQyR.js
+│   │   │   │   │   │   ├── 📄 basic-shape-primary-circle-ellipse-round.svg-yk5yXAu3.js
+│   │   │   │   │   │   ├── 📄 basic-shape-primary-square-rectangle.svg-Df81WcVm.js
+│   │   │   │   │   │   ├── 📄 basic-shape-shield.svg-BR3Lhjrn.js
+│   │   │   │   │   │   ├── 📄 computer-device-desktop-monitor.svg-jL0LUhcy.js
+│   │   │   │   │   │   ├── 📄 computer-device-desktop.svg-jWF40REF.js
+│   │   │   │   │   │   ├── 📄 computer-device-laptop.svg-BsH0mHjG.js
+│   │   │   │   │   │   ├── 📄 computer-device-mobile-phone-android-samsung-back.svg-h38KRbwf.js
+│   │   │   │   │   │   ├── 📄 computer-device-mobile-phone-android-samsung.svg-9mrhFlcM.js
+│   │   │   │   │   │   ├── 📄 computer-device-mobile-phone-iphone-x-back.svg-B2grarPh.js
+│   │   │   │   │   │   ├── 📄 computer-device-mobile-phone-iphone-x.svg-iNijBDhj.js
+│   │   │   │   │   │   ├── 📄 computer-device-mobile-tablet-touch.svg-Dw7k7n7F.js
+│   │   │   │   │   │   ├── 📄 computer-device-mobile-tablet.svg-C5TxOvrO.js
+│   │   │   │   │   │   ├── 📄 computer-device-network-ethernet-cat6.svg-DAlnH8hR.js
+│   │   │   │   │   │   ├── 📄 computer-device-network-lan-www.svg-D-C_8gWk.js
+│   │   │   │   │   │   ├── 📄 computer-device-network-wifi-connection.svg-g9FaLrS4.js
+│   │   │   │   │   │   ├── 📄 computer-device-network-wifi-router.svg-4kO_HpF2.js
+│   │   │   │   │   │   ├── 📄 ecology-science-erlenmeyer-flask.svg-D6apBQBi.js
+│   │   │   │   │   │   ├── 📄 image-flash-lightning.svg-DiBecV-N.js
+│   │   │   │   │   │   ├── 📄 image-picture-flower.svg-DBabRE-B.js
+│   │   │   │   │   │   ├── 📄 index-BN-P4wVP.js
+│   │   │   │   │   │   ├── 📄 index-BafZIX1r.js
+│   │   │   │   │   │   ├── 🎨 index-BmC-YQfe.css
+│   │   │   │   │   │   ├── 📄 index-gGUCDZRp.js
+│   │   │   │   │   │   ├── 📄 interface-alert-exclamation-diamond.svg-Dnq9-N3P.js
+│   │   │   │   │   │   ├── 📄 interface-alert-exclamation-triangle-warning.svg-D61Lw0fT.js
+│   │   │   │   │   │   ├── 📄 interface-alert-information-circle.svg-BjBt2UhI.js
+│   │   │   │   │   │   ├── 📄 interface-award-crown.svg-CPhPDiLm.js
+│   │   │   │   │   │   ├── 📄 interface-bookmark-tag.svg-CGFig3_H.js
+│   │   │   │   │   │   ├── 📄 interface-bookmark.svg-iGjyQW6G.js
+│   │   │   │   │   │   ├── 📄 interface-calendar-date-one.svg-BEhSt1kC.js
+│   │   │   │   │   │   ├── 📄 interface-content-book-open-pages.svg-BkoBJz7T.js
+│   │   │   │   │   │   ├── 📄 interface-content-book-page.svg-DDZ7Fnj-.js
+│   │   │   │   │   │   ├── 📄 interface-content-file.svg-C6qz22uo.js
+│   │   │   │   │   │   ├── 📄 interface-copy-clipboard.svg-DBUoSqLY.js
+│   │   │   │   │   │   ├── 📄 interface-edit-attachment.svg-C-5fRa7A.js
+│   │   │   │   │   │   ├── 📄 interface-edit-binocular.svg-DtK0y0kX.js
+│   │   │   │   │   │   ├── 📄 interface-edit-magic-wand.svg-CY3ibLr1.js
+│   │   │   │   │   │   ├── 📄 interface-edit-tool-paint-roller.svg-en2P6-ei.js
+│   │   │   │   │   │   ├── 📄 interface-edit-tool-pencil.svg-D08F0mfJ.js
+│   │   │   │   │   │   ├── 📄 interface-favorite-award.svg-D_9AYetj.js
+│   │   │   │   │   │   ├── 📄 interface-favorite-flag.svg-XJ8sfY-J.js
+│   │   │   │   │   │   ├── 📄 interface-favorite-heart.svg-BO5GAOD9.js
+│   │   │   │   │   │   ├── 📄 interface-favorite-star.svg-BxbCJ4wq.js
+│   │   │   │   │   │   ├── 📄 interface-favorite-stars-sparkles.svg-n4EBa-Tl.js
+│   │   │   │   │   │   ├── 📄 interface-hierarchy-flowchart.svg-BzDduESE.js
+│   │   │   │   │   │   ├── 📄 interface-home-house.svg-s2W5srN4.js
+│   │   │   │   │   │   ├── 📄 interface-hyperlink.svg-Dep7yI6r.js
+│   │   │   │   │   │   ├── 📄 interface-lighting-brightness.svg-CBroNXA2.js
+│   │   │   │   │   │   ├── 📄 interface-lock-closed.svg-DHK6CXS2.js
+│   │   │   │   │   │   ├── 📄 interface-lock-open-unlock.svg-Dju9VnXz.js
+│   │   │   │   │   │   ├── 📄 interface-login-key.svg-CF_kduMi.js
+│   │   │   │   │   │   ├── 📄 interface-search.svg-Il7Encm1.js
+│   │   │   │   │   │   ├── 📄 interface-setting-cog.svg-BfYEr6Eg.js
+│   │   │   │   │   │   ├── 📄 interface-share-megaphone-bullhorn.svg-DDDdq0S7.js
+│   │   │   │   │   │   ├── 📄 interface-share-rocket.svg-DUDB2C8b.js
+│   │   │   │   │   │   ├── 📄 interface-share-satellite.svg-Dc6Q_iPM.js
+│   │   │   │   │   │   ├── 📄 interface-share-space-ship.svg-3phA90JN.js
+│   │   │   │   │   │   ├── 📄 interface-share.svg-DrAQ_Vrl.js
+│   │   │   │   │   │   ├── 📄 interface-signal-square.svg-D8Q28uI2.js
+│   │   │   │   │   │   ├── 📄 interface-time-clock-circle.svg-D89q6Hoa.js
+│   │   │   │   │   │   ├── 📄 interface-time-hour-glass.svg-IJMyElzI.js
+│   │   │   │   │   │   ├── 📄 interface-users-multiple.svg-CHDgB4fI.js
+│   │   │   │   │   │   ├── 📄 interface-weather-moon.svg-C9No57fd.js
+│   │   │   │   │   │   ├── 📄 mail-chat-bubble-square.svg-CBZyfV6Y.js
+│   │   │   │   │   │   ├── 📄 mail-send-email-paper-airplane.svg-BEFBIC36.js
+│   │   │   │   │   │   ├── 📄 mail-send-envelope.svg-CbGRgrjc.js
+│   │   │   │   │   │   ├── 📄 money-cashier-receipt.svg-TO5nz_I6.js
+│   │   │   │   │   │   ├── 📄 money-currency-dollar-pay.svg-DO6K6Sl8.js
+│   │   │   │   │   │   ├── 📄 money-graph-arrow-increase.svg-BsAYYuSU.js
+│   │   │   │   │   │   ├── 📄 money-graph-bar-chart-increase.svg-BSBL2HiL.js
+│   │   │   │   │   │   ├── 📄 nature-ecology-leaf.svg-CXO7dUjE.js
+│   │   │   │   │   │   ├── 📄 phone-telephone.svg-BIC-AkjO.js
+│   │   │   │   │   │   ├── 📄 programming-bug.svg-xYJW5dzI.js
+│   │   │   │   │   │   ├── 📄 programming-cloud.svg-BYQYsq9z.js
+│   │   │   │   │   │   ├── 📄 programming-computer-database-server.svg-Cd9_Sy2Q.js
+│   │   │   │   │   │   ├── 📄 programming-computer-database.svg-7XO1pH_q.js
+│   │   │   │   │   │   ├── 📄 programming-module-four-layout.svg-DfUYP_Nw.js
+│   │   │   │   │   │   ├── 📄 programming-module-three.svg-CDukhipz.js
+│   │   │   │   │   │   ├── 📄 programming-module.svg-D_WMMxBR.js
+│   │   │   │   │   │   ├── 📄 programming-script-code.svg-CMcdX5Ei.js
+│   │   │   │   │   │   ├── 📄 shopping-cart.svg-XMOFNE6k.js
+│   │   │   │   │   │   ├── 📄 shopping-gift-present.svg-CmO0g7Td.js
+│   │   │   │   │   │   ├── 📄 shopping-shipping-box-parcel-package.svg-BqPK1YlR.js
+│   │   │   │   │   │   ├── 📄 tag-new-circle.svg-DMUNUp7v.js
+│   │   │   │   │   │   └── 📄 travel-map-earth-globe.svg-C-qrHLvL.js
+│   │   │   │   │   └── 🌐 index.html
+│   │   │   │   ├── 📁 icons/
+│   │   │   │   │   └── 🖼️ mcp.png
+│   │   │   │   ├── 📁 images/
+│   │   │   │   │   ├── 📁 blog/
+│   │   │   │   │   │   └── 📁 announcing-0/
+│   │   │   │   │   │       ├── 🖼️ 0.png
+│   │   │   │   │   │       ├── 🖼️ 1.png
+│   │   │   │   │   │       ├── 🖼️ 10.png
+│   │   │   │   │   │       ├── 🖼️ 11.png
+│   │   │   │   │   │       ├── 🖼️ 12.png
+│   │   │   │   │   │       ├── 🖼️ 13.png
+│   │   │   │   │   │       ├── 🖼️ 14.png
+│   │   │   │   │   │       ├── 🖼️ 15.png
+│   │   │   │   │   │       ├── 🖼️ 16.png
+│   │   │   │   │   │       ├── 🖼️ 17.png
+│   │   │   │   │   │       ├── 🖼️ 18.png
+│   │   │   │   │   │       ├── 🎬 19.mp4
+│   │   │   │   │   │       ├── 🖼️ 2.png
+│   │   │   │   │   │       ├── 🖼️ 20.jpeg
+│   │   │   │   │   │       ├── 🖼️ 21.jpeg
+│   │   │   │   │   │       ├── 🖼️ 22.jpeg
+│   │   │   │   │   │       ├── 🖼️ 23.png
+│   │   │   │   │   │       ├── 🖼️ 24.png
+│   │   │   │   │   │       ├── 🖼️ 25.png
+│   │   │   │   │   │       ├── 🖼️ 26.png
+│   │   │   │   │   │       ├── 🖼️ 27.png
+│   │   │   │   │   │       ├── 🖼️ 28.png
+│   │   │   │   │   │       ├── 🖼️ 29.jpeg
+│   │   │   │   │   │       ├── 🖼️ 3.png
+│   │   │   │   │   │       ├── 🖼️ 30.png
+│   │   │   │   │   │       ├── 🖼️ 31.jpeg
+│   │   │   │   │   │       ├── 🖼️ 32.jpeg
+│   │   │   │   │   │       ├── 🖼️ 33.png
+│   │   │   │   │   │       ├── 🖼️ 4.png
+│   │   │   │   │   │       ├── 🖼️ 5.png
+│   │   │   │   │   │       ├── 🖼️ 6.png
+│   │   │   │   │   │       ├── 🖼️ 7.png
+│   │   │   │   │   │       ├── 🖼️ 8.png
+│   │   │   │   │   │       └── 🖼️ 9.png
+│   │   │   │   │   ├── 🖼️ aio-index.png
+│   │   │   │   │   ├── 🖼️ aio-sandbox.png
+│   │   │   │   │   ├── 🖼️ background.png
+│   │   │   │   │   ├── 🖼️ browser-mcp.png
+│   │   │   │   │   ├── 🖼️ browser-screenshot.png
+│   │   │   │   │   ├── 🖼️ browser.png
+│   │   │   │   │   ├── 🖼️ code-jupyterlab.png
+│   │   │   │   │   ├── 🖼️ code-server.png
+│   │   │   │   │   ├── 🖼️ example.png
+│   │   │   │   │   ├── 🖼️ mcp.png
+│   │   │   │   │   ├── 🖼️ port-preview.png
+│   │   │   │   │   ├── 🖼️ sandbox-dashboard.png
+│   │   │   │   │   ├── 🖼️ sandbox.png
+│   │   │   │   │   ├── 🖼️ sandbox_llms.png
+│   │   │   │   │   ├── 🖼️ subdomain-proxy.png
+│   │   │   │   │   ├── 🖼️ terminal.png
+│   │   │   │   │   └── 🖼️ vnc.png
+│   │   │   │   ├── 📁 img/
+│   │   │   │   │   ├── 🖼️ arch-flow-en.png
+│   │   │   │   │   └── 🖼️ arch-flow-zh.png
+│   │   │   │   ├── 📁 screenshots/
+│   │   │   │   │   ├── 🖼️ aiod-jaeger-trace.png
+│   │   │   │   │   └── 🖼️ dashboard.png
+│   │   │   │   ├── 📁 v1/
+│   │   │   │   │   └── ⚙️ openapi.json
+│   │   │   │   ├── 🖼️ aio-dark-logo.png
+│   │   │   │   ├── 🖼️ aio-icon.png
+│   │   │   │   ├── 🖼️ aio-light-logo.png
+│   │   │   │   └── 🖼️ aio.png
+│   │   │   ├── 📁 zh/
+│   │   │   │   ├── 📁 api/
+│   │   │   │   │   └── 📄 index.tsx
+│   │   │   │   ├── 📁 blog/
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 📄 announcing-0.mdx
+│   │   │   │   │   └── 📄 index.mdx
+│   │   │   │   ├── 📁 daemon/
+│   │   │   │   │   ├── 📁 basic/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 authentication.md
+│   │   │   │   │   │   ├── 📄 bash.mdx
+│   │   │   │   │   │   ├── 📄 browser.mdx
+│   │   │   │   │   │   ├── 📝 cdp.md
+│   │   │   │   │   │   ├── 📄 code.mdx
+│   │   │   │   │   │   ├── 📄 display.mdx
+│   │   │   │   │   │   ├── 📝 error-handling.md
+│   │   │   │   │   │   ├── 📄 file.mdx
+│   │   │   │   │   │   ├── 📝 jupyter.md
+│   │   │   │   │   │   ├── 📄 nodejs.mdx
+│   │   │   │   │   │   ├── 📝 observability.md
+│   │   │   │   │   │   ├── 📄 sandbox.mdx
+│   │   │   │   │   │   ├── 📄 shell.mdx
+│   │   │   │   │   │   └── 📝 windows.md
+│   │   │   │   │   ├── 📁 examples/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📄 agent-call-sandbox.mdx
+│   │   │   │   │   │   ├── 📄 browser-cdp.mdx
+│   │   │   │   │   │   ├── 📄 browser-use.mdx
+│   │   │   │   │   │   ├── 📄 code-execution.mdx
+│   │   │   │   │   │   ├── 📄 computer-use.mdx
+│   │   │   │   │   │   ├── 📄 file-ops.mdx
+│   │   │   │   │   │   ├── 📄 index.mdx
+│   │   │   │   │   │   ├── 📄 mcp.mdx
+│   │   │   │   │   │   └── 📄 terminal.mdx
+│   │   │   │   │   ├── 📁 ops/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 deployment.md
+│   │   │   │   │   │   └── 📝 kubernetes.md
+│   │   │   │   │   ├── 📁 start/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📄 dashboard.mdx
+│   │   │   │   │   │   ├── 📄 introduction.mdx
+│   │   │   │   │   │   ├── 📝 migration.md
+│   │   │   │   │   │   ├── 📄 quick-start.mdx
+│   │   │   │   │   │   ├── 📄 releases.mdx
+│   │   │   │   │   │   └── 📄 v1-api.tsx
+│   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   ├── 🎨 api.scss
+│   │   │   │   │   ├── 📄 api.tsx
+│   │   │   │   │   └── 📝 architecture.md
+│   │   │   │   ├── 📁 examples/
+│   │   │   │   │   ├── 📝 agent.md
+│   │   │   │   │   ├── 📝 browser.md
+│   │   │   │   │   ├── 📝 index.md
+│   │   │   │   │   └── 📝 terminal.md
+│   │   │   │   ├── 📁 guide/
+│   │   │   │   │   ├── 📁 advanced/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 browser-config.md
+│   │   │   │   │   │   ├── 📝 browser-cookies.md
+│   │   │   │   │   │   ├── 📝 browser-downloads.md
+│   │   │   │   │   │   ├── 📝 code-server-config.md
+│   │   │   │   │   │   ├── 📝 codex.md
+│   │   │   │   │   │   ├── 📝 env-config.md
+│   │   │   │   │   │   ├── 📝 git-config.md
+│   │   │   │   │   │   ├── 📝 lifecycle.md
+│   │   │   │   │   │   ├── 📝 opencode.md
+│   │   │   │   │   │   ├── 📝 proxy-network.md
+│   │   │   │   │   │   ├── 📝 security.md
+│   │   │   │   │   │   ├── 📝 web-terminal.md
+│   │   │   │   │   │   └── 📝 workspace.md
+│   │   │   │   │   ├── 📁 basic/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 aio-cli.md
+│   │   │   │   │   │   ├── 📝 authentication.md
+│   │   │   │   │   │   ├── 📝 bash.md
+│   │   │   │   │   │   ├── 📄 browser.mdx
+│   │   │   │   │   │   ├── 📝 code-server.md
+│   │   │   │   │   │   ├── 📝 code.md
+│   │   │   │   │   │   ├── 📝 display.md
+│   │   │   │   │   │   ├── 📝 error-handling.md
+│   │   │   │   │   │   ├── 📄 file.mdx
+│   │   │   │   │   │   ├── 📝 jupyter.md
+│   │   │   │   │   │   ├── 📝 mcp.md
+│   │   │   │   │   │   ├── 📝 nodejs.md
+│   │   │   │   │   │   ├── 📝 proxy.md
+│   │   │   │   │   │   ├── 📄 sandbox.mdx
+│   │   │   │   │   │   ├── 📝 shell.md
+│   │   │   │   │   │   ├── 📝 skills.md
+│   │   │   │   │   │   └── 📝 util.md
+│   │   │   │   │   ├── 📁 start/
+│   │   │   │   │   │   ├── ⚙️ _meta.json
+│   │   │   │   │   │   ├── 📝 agent-sandbox.md
+│   │   │   │   │   │   ├── 📄 cloud-deployment.mdx
+│   │   │   │   │   │   ├── 📝 faq.md
+│   │   │   │   │   │   ├── 📝 introduction.md
+│   │   │   │   │   │   └── 📄 quick-start.mdx
+│   │   │   │   │   └── ⚙️ _meta.json
+│   │   │   │   ├── 📝 404.md
+│   │   │   │   ├── ⚙️ _nav.json
+│   │   │   │   └── 📝 index.md
+│   │   │   └── 📝 README.md
+│   │   ├── 📁 public/
+│   │   │   └── 🌐 index.html
+│   │   ├── 📁 theme/
+│   │   │   ├── 📁 components/
+│   │   │   │   ├── 📁 icons/
+│   │   │   │   │   ├── 🖼️ arrow.svg
+│   │   │   │   │   ├── 🖼️ browser.svg
+│   │   │   │   │   ├── 🖼️ feat-agent.svg
+│   │   │   │   │   ├── 🖼️ feat-devfriendly.svg
+│   │   │   │   │   ├── 🖼️ feat-outofbox.svg
+│   │   │   │   │   ├── 🖼️ feat-production.svg
+│   │   │   │   │   ├── 🖼️ feat-secure.svg
+│   │   │   │   │   ├── 🖼️ feat-unified.svg
+│   │   │   │   │   ├── 🖼️ files.svg
+│   │   │   │   │   ├── 🖼️ github.svg
+│   │   │   │   │   ├── 📄 index.tsx
+│   │   │   │   │   ├── 🖼️ jupyter.svg
+│   │   │   │   │   ├── 🖼️ mcp.svg
+│   │   │   │   │   ├── 📄 svg.d.ts
+│   │   │   │   │   ├── 🖼️ terminal.svg
+│   │   │   │   │   └── 🖼️ vscode.svg
+│   │   │   │   ├── 🎨 ApiPreference.css
+│   │   │   │   ├── 📄 ApiPreference.tsx
+│   │   │   │   ├── 🎨 HomeLayout.scss
+│   │   │   │   └── 📄 HomeLayout.tsx
+│   │   │   ├── 🎨 DaemonReleases.css
+│   │   │   ├── 📄 DaemonReleases.tsx
+│   │   │   └── 📄 index.tsx
+│   │   ├── ⚙️ .gitignore
+│   │   ├── ⚙️ i18n.json
+│   │   ├── ⚙️ package.json
+│   │   ├── 📄 rspress.config.ts
+│   │   └── ⚙️ tsconfig.json
+│   ├── ⚙️ .gitignore
+│   ├── ⚙️ .prettierignore
+│   ├── ⚙️ .prettierrc
+│   ├── 📝 CONTRIBUTING.md
+│   ├── 📄 LICENSE
+│   ├── 📝 README.md
+│   ├── ⚙️ biome.json
+│   ├── ⚙️ docker-compose.yaml
+│   ├── ⚙️ package.json
+│   ├── ⚙️ pnpm-lock.yaml
+│   └── ⚙️ pnpm-workspace.yaml
+├── ⚙️ .gitignore
+├── 📄 File Tree-backend.tree
+├── 📄 File Tree-sandbox.tree
+└── 📄 scaffold.sh
+
+────────────────────────────────────────────────────────────────────────────────
