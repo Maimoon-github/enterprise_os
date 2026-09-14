@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import httpx
 
@@ -19,8 +20,11 @@ class SocialAdapter(ABC):
         self._client = client or httpx.AsyncClient()
 
     @abstractmethod
-    async def publish(self, payload: dict[str, str]) -> dict[str, str]:
+    async def publish(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Publish an approved piece of content and return the platform response."""
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+SocialMediaAdapter = SocialAdapter

@@ -32,6 +32,7 @@ from app.schemas.dispatch import (
     DispatchDirective,
     DispatchReadiness,
     PaidCampaignDeploymentResult,
+    SocialPostDeploymentResult,
 )
 from app.schemas.task_state import TaskStatus
 from app.security.cryptographic_validator import CryptographicValidator
@@ -256,19 +257,90 @@ class OutboundGateway:
                     elif isinstance(cids, (str, int)):
                         payload_claims.add(str(cids))
                 if payload_claims and not payload_claims.issubset(approved_claims):
+                    unapproved_claim = sorted(payload_claims - approved_claims)[0]
                     raise PolicyViolationError(
-                        f"Payload contains unapproved claim references: {sorted(payload_claims - approved_claims)} (approved: {sorted(approved_claims)})."
+                        f"Payload contains unapproved claim references: Claim '{unapproved_claim}' not in approved clearance (approved: {sorted(approved_claims)})."
                     )
 
-            # Account / Customer ID Scope Enforcement
-            for acc_field in ("account_id", "ad_account_id", "customer_id", "advertiser_id"):
+            # Media Asset References & Hash Binding
+            approved_media_assets = set(
+                clearance.approved_scope.get("media_asset_ids")
+                or clearance.approved_scope.get("asset_ids")
+                or clearance.approved_scope.get("media_refs")
+                or []
+            )
+            if approved_media_assets:
+                payload_media = set()
+                if "media_id" in dispatch.payload:
+                    payload_media.add(str(dispatch.payload["media_id"]))
+                if "video_id" in dispatch.payload:
+                    payload_media.add(str(dispatch.payload["video_id"]))
+                if "asset_id" in dispatch.payload:
+                    payload_media.add(str(dispatch.payload["asset_id"]))
+                if "media_asset_ids" in dispatch.payload:
+                    m_ids = dispatch.payload["media_asset_ids"]
+                    if isinstance(m_ids, list):
+                        payload_media.update(str(m) for m in m_ids)
+                    elif isinstance(m_ids, (str, int)):
+                        payload_media.add(str(m_ids))
+                if payload_media and not payload_media.issubset(approved_media_assets):
+                    unapproved_asset = sorted(payload_media - approved_media_assets)[0]
+                    raise PolicyViolationError(
+                        f"Payload contains unapproved media assets: Media asset '{unapproved_asset}' not in approved clearance (approved: {sorted(approved_media_assets)})."
+                    )
+
+            # Copy / Text Integrity Enforcement
+            expected_copy = (
+                clearance.approved_scope.get("approved_copy")
+                or clearance.approved_scope.get("text")
+                or clearance.approved_scope.get("copy")
+            )
+            if expected_copy is not None:
+                actual_copy = (
+                    dispatch.payload.get("text")
+                    or dispatch.payload.get("copy")
+                    or dispatch.payload.get("caption")
+                    or dispatch.payload.get("description")
+                    or dispatch.payload.get("body")
+                )
+                if actual_copy is not None and actual_copy != expected_copy:
+                    raise PolicyViolationError(
+                        "Payload copy does not match HITL-approved copy."
+                    )
+            expected_copy_hash = clearance.approved_scope.get("copy_hash") or clearance.approved_scope.get("text_hash")
+            if expected_copy_hash is not None:
+                actual_copy_str = str(
+                    dispatch.payload.get("text")
+                    or dispatch.payload.get("copy")
+                    or dispatch.payload.get("caption")
+                    or dispatch.payload.get("description")
+                    or dispatch.payload.get("body")
+                    or ""
+                )
+                actual_copy_hash = hashlib.sha256(actual_copy_str.encode("utf-8")).hexdigest()
+                if actual_copy_hash != expected_copy_hash:
+                    raise PolicyViolationError(
+                        f"Copy hash mismatch: payload copy hash '{actual_copy_hash}' does not match approved '{expected_copy_hash}'."
+                    )
+
+            # Schedule Scope Binding
+            expected_schedule = clearance.approved_scope.get("scheduled_at") or clearance.approved_scope.get("scheduled_time")
+            if expected_schedule is not None:
+                actual_schedule = dispatch.payload.get("scheduled_at") or dispatch.payload.get("scheduled_time")
+                if actual_schedule is not None and str(actual_schedule) != str(expected_schedule):
+                    raise PolicyViolationError(
+                        f"Schedule mismatch: payload specifies '{actual_schedule}', but HITL approved '{expected_schedule}'."
+                    )
+
+            # Account / Customer / Channel ID Scope Enforcement
+            for acc_field in ("account_id", "ad_account_id", "customer_id", "advertiser_id", "ig_user_id", "author_id", "channel_id"):
                 if acc_field in clearance.approved_scope:
                     expected_acc = str(clearance.approved_scope[acc_field])
                     if acc_field in dispatch.payload:
                         actual_acc = str(dispatch.payload[acc_field])
                         if actual_acc != expected_acc:
                             raise PolicyViolationError(
-                                f"Account mismatch on '{acc_field}': payload specifies '{actual_acc}', but HITL approved '{expected_acc}'."
+                                f"Account mismatch on '{acc_field}' (Social account ID mismatch): payload specifies '{actual_acc}', but HITL approved '{expected_acc}'."
                             )
 
         # 4. Target & Channel Scope Validation
@@ -302,13 +374,20 @@ class OutboundGateway:
                     if "entry_id" in dispatch.payload:
                         payload_entries.add(dispatch.payload["entry_id"])
                     for item in dispatch.payload.get("items", []):
-                        if isinstance(item, dict):
-                            eid = item.get("entry_id") or item.get("id")
-                            if eid:
-                                payload_entries.add(eid)
+                        if isinstance(item, dict) and "entry_id" in item:
+                            payload_entries.add(item["entry_id"])
                     if not payload_entries.issubset(permitted_entries):
                         raise PolicyViolationError(
-                            f"Payload contains unapproved entries: {payload_entries - permitted_entries}"
+                            f"Payload contains unapproved entry IDs: {payload_entries - permitted_entries}"
+                        )
+
+                # Check max item count
+                if "max_items" in approved_scope:
+                    max_items = int(approved_scope["max_items"])
+                    item_count = len(dispatch.payload.get("items", [])) or (1 if "entry_id" in dispatch.payload else 0)
+                    if item_count > max_items:
+                        raise PolicyViolationError(
+                            f"Payload item count {item_count} exceeds approved limit of {max_items}."
                         )
 
                 # Check permitted files for code diffs
@@ -326,8 +405,12 @@ class OutboundGateway:
                             f"Payload contains unapproved code diff files: {payload_files - permitted_files}"
                         )
 
-                # Check artifact hash binding
-                if "artifact_hash" in dispatch.payload and "artifact_hash" in approved_scope:
+                # Check strict artifact hash matching
+                if "artifact_hash" in approved_scope:
+                    if "artifact_hash" not in dispatch.payload:
+                        raise PolicyViolationError(
+                            "Payload missing required artifact hash approved in HITL scope."
+                        )
                     if dispatch.payload["artifact_hash"] != approved_scope["artifact_hash"]:
                         raise PolicyViolationError(
                             f"Artifact hash mismatch: payload has '{dispatch.payload['artifact_hash']}', expected '{approved_scope['artifact_hash']}'."
@@ -337,7 +420,45 @@ class OutboundGateway:
                         raise PolicyViolationError(
                             "Artifact hash in payload does not match approved preview content hash."
                         )
-        elif dispatch.channel in ("meta", "google", "tiktok", "linkedin") or dispatch.channel in self._ads_adapters or dispatch.channel in ("snapchat", "pinterest", "reddit", "bing"):
+        elif (
+            dispatch.channel in self._social_adapters
+            or dispatch.channel in ("instagram", "x", "youtube", "tiktok_social", "threads", "facebook_social")
+            or (dispatch.channel == "tiktok" and "tiktok" not in self._ads_adapters)
+        ):
+            # Canonical T28 social scope is strictly Instagram, X, YouTube
+            canonical_social_channels = {"instagram", "x", "youtube"}
+            if dispatch.channel in ("tiktok", "tiktok_social"):
+                is_authorized = False
+                if clearance is not None and clearance.approved_scope:
+                    authorized_channels = [str(c).lower() for c in clearance.approved_scope.get("authorized_channels", [])]
+                    authorized_platforms = [str(p).lower() for p in clearance.approved_scope.get("authorized_platforms", [])]
+                    permitted_channels = [str(c).lower() for c in clearance.approved_scope.get("permitted_channels", [])]
+                    if any(t in authorized_channels or t in authorized_platforms or t in permitted_channels for t in ("tiktok", "tiktok_social")):
+                        is_authorized = True
+                if dispatch.audience_token is not None and isinstance(dispatch.audience_token, AudienceToken):
+                    if any(t in dispatch.audience_token.permitted_actions for t in ("tiktok", "tiktok_social")):
+                        is_authorized = True
+                if not is_authorized:
+                    raise PolicyViolationError(
+                        "Channel 'tiktok' is outside canonical T28 scope and not permitted without explicit HITL authorization in approved scope."
+                    )
+            elif dispatch.channel not in canonical_social_channels and dispatch.channel not in ("twitter",):
+                raise PolicyViolationError(
+                    f"Unsupported social channel '{dispatch.channel}'. Permitted canonical channels are {sorted(canonical_social_channels)}."
+                )
+
+            # Native scheduling capability enforcement:
+            # If scheduling is requested on a platform without native automated scheduling (e.g. X standard tweet endpoint), fail explicitly.
+            is_scheduling_requested = bool(dispatch.payload.get("scheduled_at") or dispatch.payload.get("scheduled_time"))
+            if is_scheduling_requested and dispatch.channel in ("x", "twitter"):
+                raise PolicyViolationError(
+                    f"Channel '{dispatch.channel}' does not support native scheduled posts or automated scheduling on the standard publishing endpoint; cannot silently publish immediately."
+                )
+        elif (
+            dispatch.channel in ("meta", "google", "tiktok", "linkedin")
+            or dispatch.channel in self._ads_adapters
+            or dispatch.channel in ("snapchat", "pinterest", "reddit", "bing")
+        ):
             # Canonical T27 paid-media scope is strictly Meta, Google, TikTok
             canonical_platforms = {"meta", "google", "tiktok"}
             if dispatch.channel == "linkedin":
@@ -457,6 +578,7 @@ class OutboundGateway:
             except Exception:
                 pass
 
+        social_res: SocialPostDeploymentResult | None = None
         try:
             if dispatch.channel in self._ads_adapters:
                 raw_res = await self._ads_adapters[dispatch.channel].apply_action(dispatch.payload)
@@ -506,7 +628,43 @@ class OutboundGateway:
                 )
                 res = raw_res
             elif dispatch.channel in self._social_adapters:
-                res = await self._social_adapters[dispatch.channel].publish(dispatch.payload)
+                raw_res = await self._social_adapters[dispatch.channel].publish(dispatch.payload)
+
+                post_id = str(
+                    raw_res.get("post_id")
+                    or raw_res.get("video_id")
+                    or raw_res.get("publish_id")
+                    or dispatch.payload.get("post_id")
+                    or uuid.uuid4()
+                )
+                status = str(
+                    raw_res.get("status")
+                    or ("scheduled" if dispatch.payload.get("scheduled_at") else "published")
+                )
+                media_assets = (
+                    raw_res.get("media_asset_ids")
+                    or dispatch.payload.get("media_asset_ids")
+                    or []
+                )
+                if isinstance(media_assets, str):
+                    media_assets = [media_assets]
+
+                social_res = SocialPostDeploymentResult(
+                    deployment_id=str(uuid.uuid4()),
+                    dispatch_id=dispatch.dispatch_id,
+                    task_id=dispatch.task_id,
+                    tenant_id=dispatch.tenant_id,
+                    channel=dispatch.channel,
+                    action_type=dispatch.action_type,
+                    post_id=post_id,
+                    status_code=str(raw_res.get("status_code", "200")),
+                    status=status,
+                    content_hash=dispatch.preview_content_hash,
+                    media_asset_ids=[str(m) for m in media_assets],
+                    provider_response=raw_res.get("provider_response", raw_res),
+                    details={"raw_response": raw_res},
+                )
+                res = raw_res
             elif dispatch.channel in ("cms", "website", "web_store"):
                 if self._cms_client is None:
                     raise ConfigurationError("No CMS client is registered on OutboundGateway.")
@@ -580,6 +738,10 @@ class OutboundGateway:
                 try:
                     if dispatch.channel in self._ads_adapters:
                         task_state.cts_state["paid_campaign"] = res
+                    elif dispatch.channel in self._social_adapters:
+                        task_state.cts_state["social_post"] = (
+                            social_res.model_dump() if social_res else res
+                        )
                     task_state.cts_state["deployment"] = res
                     await self._task_state_service.save_state(dispatch.tenant_id, task_state)
                     if task_state.status == TaskStatus.DISPATCHED:
@@ -620,11 +782,16 @@ class OutboundGateway:
                     pass
 
             if self._provenance_recorder:
+                err_metadata = scrub_sensitive_payload({
+                    "error": str(exc),
+                    "channel": dispatch.channel,
+                    "payload": dispatch.payload,
+                })
                 await self._provenance_recorder.record(
                     tenant_id=dispatch.tenant_id,
                     entity_id=dispatch.dispatch_id,
                     activity=f"outbound_{dispatch.channel}_deployment_failed",
                     agent="mcp_act_boundary",
-                    metadata={"error": str(exc), "channel": dispatch.channel},
+                    metadata=err_metadata,
                 )
             raise

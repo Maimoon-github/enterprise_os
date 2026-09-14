@@ -109,3 +109,27 @@ class PaidCampaignDeploymentResult(BaseModel):
 
 AdCampaignDispatchResult = PaidCampaignDeploymentResult
 DeploymentResult = CmsDeploymentResult
+
+
+class SocialPostDeploymentResult(BaseModel):
+    """Structured, provider-neutral record of an approved social media publication."""
+
+    deployment_id: str
+    dispatch_id: str
+    task_id: str
+    tenant_id: str
+    channel: str  # "instagram", "x", "youtube", "tiktok"
+    action_type: str = "publish"
+    post_id: str | None = None
+    status_code: str = "200"
+    status: str = "published"  # "published", "scheduled", "failed"
+    content_hash: str | None = None
+    media_asset_ids: list[str] = Field(default_factory=list)
+    scheduled_at: datetime | None = None
+    provider_response: dict[str, Any] = Field(default_factory=dict)
+    details: dict[str, Any] = Field(default_factory=dict)
+    error_message: str | None = None
+    published_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+SocialPostDispatchResult = SocialPostDeploymentResult
