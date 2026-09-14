@@ -10,7 +10,7 @@ purely through configuration, with zero vendor-specific code in callers.
 from __future__ import annotations
 
 import json
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -27,35 +27,104 @@ class LlmResponseError(RuntimeError):
 
 
 class LlmClient:
-    """Provider-neutral chat-completion boundary for the configured model."""
+    """Provider-neutral chat-completion boundary with local-model priority."""
 
     def __init__(self, settings: LlmSettings, *, client: httpx.AsyncClient | None = None) -> None:
         self._settings = settings
         self._client = client or httpx.AsyncClient(timeout=settings.request_timeout_seconds)
+        self._last_metadata: dict[str, Any] = {}
+
+    @property
+    def settings(self) -> LlmSettings:
+        return self._settings
+
+    @property
+    def last_metadata(self) -> dict[str, Any]:
+        return dict(self._last_metadata)
 
     def _require_configured(self) -> None:
         if self._settings.provider == "unset" or not self._settings.base_url:
             raise ConfigurationError(
                 "LLM_PROVIDER and LLM_BASE_URL must be configured before invoking the model."
             )
+        # Local models (ollama, vllm, lmstudio, localhost) do not strictly require API keys;
+        # Cloud providers must supply credentials to fail closed on missing configuration.
+        if not self._settings.is_local and not self._settings.api_key:
+            raise ConfigurationError(
+                "LLM_API_KEY must be configured before invoking cloud model providers."
+            )
 
-    async def complete(self, prompt: str, *, system: str | None = None) -> str:
-        """Return the model's completion for ``prompt``."""
+    def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
+        if self._settings.is_local:
+            return 0.0
+        input_cost = (prompt_tokens / 1_000_000.0) * self._settings.cost_per_million_input_tokens
+        output_cost = (completion_tokens / 1_000_000.0) * self._settings.cost_per_million_output_tokens
+        return round(input_cost + output_cost, 6)
+
+    async def complete_with_metadata(
+        self, prompt: str, *, system: str | None = None
+    ) -> tuple[str, dict[str, Any]]:
+        """Return (completion_text, metadata) with observable model identity and token usage."""
 
         self._require_configured()
-        messages = []
+        messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self._client.post(
-            f"{self._settings.base_url}/chat/completions",
-            json={"model": self._settings.model_name, "messages": messages},
-            headers={"Authorization": f"Bearer {self._settings.api_key}"},
-        )
-        response.raise_for_status()
+        headers: dict[str, str] = {}
+        api_key = self._settings.api_key or ("local" if self._settings.is_local else "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            response = await self._client.post(
+                f"{self._settings.base_url}/chat/completions",
+                json={"model": self._settings.model_name, "messages": messages},
+                headers=headers,
+            )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise LlmResponseError(
+                f"LLM provider request timed out after {self._settings.request_timeout_seconds}s"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise LlmResponseError(
+                f"LLM provider returned HTTP {exc.response.status_code}: {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise LlmResponseError(f"LLM provider network request failed: {exc}") from exc
+
         body = response.json()
-        return body["choices"][0]["message"]["content"]
+        choices = body.get("choices")
+        if not choices or not isinstance(choices, list) or "message" not in choices[0]:
+            raise LlmResponseError("Malformed completion response from LLM provider")
+
+        content = choices[0]["message"].get("content", "")
+        actual_model = body.get("model", self._settings.model_name)
+        usage = body.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+        cost = self._calculate_cost(prompt_tokens, completion_tokens)
+
+        metadata = {
+            "provider": self._settings.provider,
+            "configured_model": self._settings.model_name,
+            "actual_model": actual_model,
+            "is_local": self._settings.is_local,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "estimated_cost_usd": cost,
+        }
+        self._last_metadata = metadata
+        return content, metadata
+
+    async def complete(self, prompt: str, *, system: str | None = None) -> str:
+        """Return the model's completion for ``prompt``."""
+        content, _ = await self.complete_with_metadata(prompt, system=system)
+        return content
 
     async def generate_structured(
         self,
@@ -92,6 +161,21 @@ class LlmClient:
             raise LlmResponseError(
                 f"LLM response did not satisfy {response_model.__name__}"
             ) from exc
+
+    async def generate_structured_with_metadata(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[ResponseModelT],
+    ) -> tuple[ResponseModelT, dict[str, Any]]:
+        """Generate structured output and return (response_model, metadata)."""
+        result = await self.generate_structured(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_model=response_model,
+        )
+        return result, self.last_metadata
 
     @staticmethod
     def _parse_json_object(content: str) -> dict[str, object]:

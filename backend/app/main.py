@@ -38,6 +38,7 @@ from app.integrations.ads.linkedin import LinkedInAdsAdapter
 from app.integrations.ads.meta import MetaAdsAdapter
 from app.integrations.ads.tiktok import TikTokAdsAdapter
 from app.integrations.cms.client import CmsClient
+from app.integrations.llm.client import LlmClient
 from app.integrations.sandbox.capabilities import get_capability_for_role
 from app.integrations.sandbox.client import SandboxClient
 from app.integrations.social.base import SocialAdapter
@@ -93,13 +94,16 @@ _AGENT_CLASSES_BY_ROLE: dict[WorkerRole, type[BoundedWorkerAgent]] = {
 logger = get_logger(__name__)
 
 
-def _build_workers(sandbox_client: SandboxClient) -> dict[WorkerRole, BoundedWorkerAgent]:
-    """Instantiate all seven bounded worker agents against one sandbox client."""
+def _build_workers(
+    sandbox_client: SandboxClient,
+    llm_client: LlmClient | None = None,
+) -> dict[WorkerRole, BoundedWorkerAgent]:
+    """Instantiate all seven bounded worker agents with sandbox adapter and optional LLM client."""
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {}
     for role, agent_class in _AGENT_CLASSES_BY_ROLE.items():
         assert get_capability_for_role(role) == agent_class.capability
-        workers[role] = agent_class(sandbox_client)
+        workers[role] = agent_class(sandbox_client, llm_client=llm_client)
     return workers
 
 
@@ -134,8 +138,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_controller = RagController(hybrid_retriever, FreshnessPolicy(), SchemaValidator())
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
+    llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
     sandbox_client = SandboxClient(settings.sandbox)
-    workers = _build_workers(sandbox_client)
+    workers = _build_workers(sandbox_client, llm_client=llm_client)
 
     hitl_coordinator = HitlCoordinator()
     crypto_validator = CryptographicValidator(settings.security.signing_public_key_pem)
@@ -200,6 +205,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         mcp_host=mcp_host,
         provenance_recorder=provenance_recorder,
         workers=workers,
+        llm_client=llm_client,
     )
 
     from app.services.attribution_coordinator import AttributionCoordinator
@@ -224,10 +230,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.mcp_host = mcp_host
     app.state.intelligence_engine = intelligence_engine
     app.state.attribution_coordinator = attribution_coordinator
+    app.state.llm_client = llm_client
 
     try:
         yield
     finally:
+        if llm_client is not None:
+            await llm_client.aclose()
         for ads_adapter in ads_adapters.values():
             await ads_adapter.aclose()
         for social_adapter in social_adapters.values():

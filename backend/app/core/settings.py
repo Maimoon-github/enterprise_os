@@ -30,18 +30,33 @@ class DatabaseSettings(BaseSettings):
 
 
 class LlmSettings(BaseSettings):
-    """Provider-neutral AI model boundary configuration."""
+    """Provider-neutral AI model boundary configuration with local-model priority."""
 
     model_config = SettingsConfigDict(env_prefix="LLM_", extra="ignore")
 
     provider: str = Field(
         default="unset",
-        description="Configured model provider identifier (e.g. 'openai', 'anthropic').",
+        description="Configured model provider identifier ('local', 'ollama', 'vllm', 'openai', etc.).",
     )
     api_key: str | None = Field(default=None, repr=False)
-    base_url: str | None = Field(default=None)
+    base_url: str | None = Field(
+        default=None,
+        description="Base URL for OpenAI-compatible completions (e.g. http://localhost:11434/v1).",
+    )
     model_name: str = Field(default="unset")
     request_timeout_seconds: int = Field(default=60, ge=1)
+    cost_per_million_input_tokens: float = Field(default=0.0, ge=0.0)
+    cost_per_million_output_tokens: float = Field(default=0.0, ge=0.0)
+    max_budget_per_task: float = Field(default=100.0, ge=0.0)
+
+    @property
+    def is_local(self) -> bool:
+        """Check whether the configured provider represents a local/self-hosted model."""
+        if self.provider.lower() in {"local", "ollama", "vllm", "lmstudio", "localai"}:
+            return True
+        if self.base_url and ("localhost" in self.base_url or "127.0.0.1" in self.base_url):
+            return True
+        return False
 
 
 class SandboxSettings(BaseSettings):

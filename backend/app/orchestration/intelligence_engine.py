@@ -318,11 +318,20 @@ class IntelligenceEngine:
                 in_prog_state, TaskStatus.HELD, checkpoint_id=str(uuid.uuid4()), note="Execution produced zero confidence"
             )
 
+        prov_meta: dict[str, Any] = {
+            "execution_id": envelope.provenance.get("execution_id"),
+            "llm_reasoning_used": envelope.provenance.get("llm_reasoning_used", False),
+            "model": envelope.provenance.get("llm_model", "deterministic"),
+            "is_local_model": envelope.provenance.get("is_local_model", False),
+            "total_tokens": envelope.provenance.get("total_tokens", 0),
+            "estimated_cost_usd": envelope.provenance.get("estimated_cost_usd", 0.0),
+        }
         await self._provenance_recorder.record(
             tenant_id=directive.tenant_id,
             entity_id=task.task_id,
             activity="worker_execution",
             agent=task.worker_role.value,
+            metadata=prov_meta,
         )
 
         return envelope
@@ -741,6 +750,53 @@ Boundaries:
                 prior_results=[dict(item) for item in prior_results],
                 mode="decision",
             )
+        )
+
+    async def plan_directive(
+        self,
+        directive: Directive,
+        *,
+        available_workers: Sequence[WorkerRole] | None = None,
+        context_override: Mapping[str, Any] | None = None,
+    ) -> IntelligenceResult:
+        """Decompose an enterprise directive into an ordered, dependency-aware plan.
+
+        Under Model A and monotonic authority:
+        - The model output is strictly advisory; it recommends workers, dependencies, and outputs.
+        - The model output cannot authorize actions, mint tokens, or bypass CTS/PAB.
+        - Execution requires explicit CTS task creation and bounded assemble_task_grant screening.
+        """
+        workers = list(available_workers) if available_workers is not None else list(self._workers.keys())
+        brand_id = (
+            directive.scope.brand_ids[0]
+            if hasattr(directive, "scope") and directive.scope and directive.scope.brand_ids
+            else "default"
+        )
+        channels = (
+            directive.scope.allowed_channels
+            if hasattr(directive, "scope") and directive.scope
+            else []
+        )
+        risk = (
+            directive.risk_ceiling.value
+            if hasattr(directive, "risk_ceiling")
+            else "low"
+        )
+        context: dict[str, Any] = {
+            "tenant_id": directive.tenant_id,
+            "brand_id": brand_id,
+            "directive_id": directive.directive_id,
+            "target_channels": channels,
+            "risk_tier": risk,
+        }
+        if context_override:
+            context.update(dict(context_override))
+
+        return await self.plan(
+            objective=directive.objective,
+            execution_context=context,
+            available_workers=workers,
+            request_id=f"plan:{directive.directive_id}",
         )
 
     @staticmethod
