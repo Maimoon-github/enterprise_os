@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -614,3 +615,38 @@ class AttributionDeliverable(BaseModel):
     proposed_learning_deltas: list[str] = Field(default_factory=list)
     confidence: ConfidenceInterval | None = None
     calculated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class LearningPromotionProposal(BaseModel):
+    """Proposal prepared by W_LEARN to promote a validated learning delta into Institutional Memory."""
+
+    proposal_id: str = Field(default_factory=lambda: f"prop-{uuid.uuid4().hex[:8]}")
+    tenant_id: str
+    brand_id: str | None = None
+    namespace: str = "attribution_heuristics"
+    category: str = "attribution"
+    statement: str
+    justification: str = ""
+    source_task_id: str = "task-t31"
+    evidence_references: list[str] = Field(default_factory=list)
+    method_version: str = "1.0"
+    confidence: float = Field(ge=0.0, le=1.0)
+    data_quality_metadata: dict[str, Any] = Field(default_factory=dict)
+    proposing_agent: str = "W_LEARN"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class PromotionResult(BaseModel):
+    """Result of IE authorization and governed persistence into Institutional Memory."""
+
+    result_id: str = Field(default_factory=lambda: f"res-{uuid.uuid4().hex[:8]}")
+    proposal_id: str
+    memory_id: str
+    namespace: str
+    version: int = 1
+    status: str = "promoted"  # "promoted" | "idempotent_noop" | "rejected" | "held"
+    provenance_ref: str | None = None
+    source_task_id: str = "task-t31"
+    cts_state_delta: dict[str, Any] = Field(default_factory=dict)
+    promoted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    message: str = ""

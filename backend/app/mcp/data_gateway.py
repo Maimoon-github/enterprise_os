@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.exceptions import PolicyViolationError
 from app.integrations.cms.client import CmsClient
 from app.persistence.repositories.artifact import ArtifactReference, ArtifactRepository
 from app.persistence.repositories.memory import MemoryRecord, MemoryRepository
@@ -140,6 +141,16 @@ class DataGateway:
         self, caller: CallerIdentity, *, tenant_id: str, record: MemoryRecord
     ) -> None:
         """Authorize and promote a validated learning delta into institutional memory."""
+        subj_lower = caller.subject.lower()
+        if (
+            caller.subject.startswith("W_")
+            or caller.subject.startswith("S_")
+            or "worker" in subj_lower
+            or "specialist" in subj_lower
+        ):
+            raise PolicyViolationError(
+                "Direct worker memory mutation forbidden; mutations must route through Intelligence Engine"
+            )
         self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM)
         if self._memory_repository is not None:
             await self._memory_repository.promote(record)

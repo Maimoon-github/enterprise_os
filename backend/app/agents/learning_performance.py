@@ -17,6 +17,7 @@ from app.schemas.agent_contracts import (
     CreativeDecayMetric,
     DataQualityIndicator,
     EvidenceEnvelope,
+    LearningPromotionProposal,
     RoasMetric,
     TaskGrant,
 )
@@ -344,4 +345,47 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
             data_quality=data_quality,
             proposed_learning_deltas=proposed_deltas,
             confidence=envelope.confidence,
+        )
+
+    def build_promotion_proposal(
+        self,
+        envelope: EvidenceEnvelope,
+        deliverable: AttributionDeliverable,
+        *,
+        brand_id: str | None = None,
+        namespace: str = "attribution_heuristics",
+        category: str = "attribution",
+        delta_index: int = 0,
+        justification: str | None = None,
+    ) -> LearningPromotionProposal:
+        """Formulate a structured promotion proposal from validated T31 evidence."""
+        statement = (
+            deliverable.proposed_learning_deltas[delta_index]
+            if deliverable.proposed_learning_deltas and delta_index < len(deliverable.proposed_learning_deltas)
+            else envelope.proposed_state_changes.get("learning_delta", "Learned optimization delta")
+        )
+        conf = (
+            deliverable.confidence.point_estimate
+            if deliverable.confidence
+            else envelope.confidence.point_estimate
+        )
+        m_type = deliverable.model_type.value if hasattr(deliverable.model_type, "value") else str(deliverable.model_type)
+        just = (
+            justification
+            or f"Derived from {m_type} attribution modeling with {len(deliverable.channel_weights)} channel weights and {len(deliverable.decay_metrics)} decay evaluations."
+        )
+        return LearningPromotionProposal(
+            proposal_id=f"prop-{uuid.uuid4().hex[:8]}",
+            tenant_id=deliverable.tenant_id,
+            brand_id=brand_id,
+            namespace=namespace,
+            category=category,
+            statement=statement,
+            justification=just,
+            source_task_id=deliverable.task_id,
+            evidence_references=[f"ev-{e[:40]}" for e in envelope.evidence[:5]],
+            method_version="1.0",
+            confidence=conf,
+            data_quality_metadata=deliverable.data_quality.model_dump(mode="json"),
+            proposing_agent="W_LEARN",
         )
