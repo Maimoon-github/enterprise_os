@@ -2,22 +2,37 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
-from typing import Any
+from typing import Any, Literal
 
 from app.agents.base import BoundedWorkerAgent
+from app.core.exceptions import PolicyViolationError
+from app.core.logging import get_logger
+from app.integrations.sandbox.client import SandboxClient
 from app.schemas.agent_contracts import (
     ConfidenceInterval,
     DevelopmentDeliverable,
     EvidenceEnvelope,
     TaskGrant,
 )
+from app.schemas.development.development_result import (
+    DevelopmentEngineIdentity,
+    DevelopmentEngineRequest,
+    DevelopmentEngineResult,
+    DevelopmentEngineStatus,
+    DevelopmentTaskGrant,
+)
+from app.schemas.governance import WorkerRole
 from app.schemas.sandbox import SandboxCapability
+
+logger = get_logger(__name__)
 
 
 class DevelopmentAgent(BoundedWorkerAgent):
     """W_DEV Development Engine.
 
+    Subordinate worker/sub-orchestrator responsible for development-domain tasks.
     Consumes staged CMS models (T06) and bounded task grants (T15) to produce
     responsive UI templates, CMS schema/model changes, component definitions, and
     deterministic unified code diffs using sandboxed S_CODE.
@@ -27,6 +42,109 @@ class DevelopmentAgent(BoundedWorkerAgent):
     """
 
     capability = SandboxCapability.CODE
+
+    def __init__(
+        self,
+        sandbox_client: SandboxClient,
+        llm_client: Any = None,
+    ) -> None:
+        super().__init__(sandbox_client, llm_client=llm_client)
+        self._identity = DevelopmentEngineIdentity()
+        self._status = DevelopmentEngineStatus()
+
+    @property
+    def identity(self) -> DevelopmentEngineIdentity:
+        """Engine identity and architectural boundary specification."""
+        return self._identity
+
+    @property
+    def status(self) -> DevelopmentEngineStatus:
+        """Current operational status of W_DEV."""
+        return self._status
+
+    def get_identity(self) -> DevelopmentEngineIdentity:
+        """Return engine identity and version."""
+        return self._identity
+
+    def get_status(self) -> DevelopmentEngineStatus:
+        """Return current operational status."""
+        return self._status
+
+    def validate_task_grant(
+        self, grant: TaskGrant | DevelopmentTaskGrant
+    ) -> DevelopmentTaskGrant:
+        """Validate that the incoming task grant is authorized, unexpired, and bounded to W_DEV scope.
+
+        Fails closed on:
+        - None or invalid object
+        - WorkerRole mismatch (only WorkerRole.DEVELOPMENT allowed)
+        - Expired grant
+        - Missing or invalid tenant scope
+        - Path traversal or sensitive file patterns
+        - Unauthorized sandbox capabilities or tools
+        """
+        if grant is None:
+            raise PolicyViolationError("Task grant cannot be None for W_DEV invocation.")
+
+        if not isinstance(grant, TaskGrant):
+            raise PolicyViolationError(
+                f"Invalid grant type '{type(grant).__name__}'; expected TaskGrant or DevelopmentTaskGrant."
+            )
+
+        if grant.worker_role != WorkerRole.DEVELOPMENT:
+            raise PolicyViolationError(
+                f"Unauthorized worker role '{grant.worker_role}'; W_DEV only accepts '{WorkerRole.DEVELOPMENT}'."
+            )
+
+        now = datetime.now(UTC)
+        grant_exp = (
+            grant.expires_at
+            if grant.expires_at.tzinfo is not None
+            else grant.expires_at.replace(tzinfo=UTC)
+        )
+        if grant_exp <= now:
+            raise PolicyViolationError(
+                f"Task grant has expired at {grant_exp.isoformat()} (current time {now.isoformat()})."
+            )
+
+        if not grant.tenant_scope or not grant.tenant_scope.tenant_id:
+            raise PolicyViolationError(
+                "Task grant must specify a valid tenant_scope with non-empty tenant_id."
+            )
+
+        if isinstance(grant, DevelopmentTaskGrant):
+            return grant
+
+        try:
+            return DevelopmentTaskGrant(
+                task_id=grant.task_id,
+                worker_role=grant.worker_role,
+                tenant_scope=grant.tenant_scope,
+                brand_id=grant.brand_id,
+                objective=grant.objective,
+                task_scope=grant.task_scope,
+                task_slice=grant.task_slice,
+                cts_state=grant.cts_state,
+                brand_rules=grant.brand_rules,
+                validated_evidence=grant.validated_evidence,
+                provenance_references=grant.provenance_references,
+                freshness_metadata=grant.freshness_metadata,
+                policy_constraints=grant.policy_constraints,
+                context_ids=grant.context_ids,
+                expires_at=grant.expires_at,
+                tool_permissions=grant.tool_permissions,
+                sandbox_capabilities=grant.sandbox_capabilities,
+                token_budget=grant.token_budget,
+                budget_breakdown=grant.budget_breakdown,
+                risk_tier=grant.risk_tier,
+                stop_conditions=grant.stop_conditions,
+                expected_outputs=grant.expected_outputs,
+                expected_output_schema=grant.expected_output_schema,
+            )
+        except Exception as exc:
+            raise PolicyViolationError(
+                f"Task grant failed DevelopmentTaskGrant policy validation: {exc}"
+            ) from exc
 
     def _verify_and_normalize_dependencies(
         self, grant: TaskGrant, context: dict[str, object]
@@ -346,3 +464,61 @@ class DevelopmentAgent(BoundedWorkerAgent):
             except Exception:
                 return None
         return None
+
+    async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
+        """Execute bounded development task grant with strict contract validation."""
+        self.validate_task_grant(grant)
+        return await super().run(grant, context)
+
+    async def invoke_development(
+        self, request: DevelopmentEngineRequest
+    ) -> DevelopmentEngineResult:
+        """Bounded Intelligence Engine -> W_DEV -> Intelligence Engine invocation contract.
+
+        Validates request, transitions operational status to BUSY, executes bounded sandbox run,
+        extracts deliverable, and returns structured DevelopmentEngineResult.
+        Fails closed on invalid grants or security exceptions.
+        """
+        logger.info(
+            "W_DEV received development request",
+            extra={"request_id": request.request_id, "task_id": request.grant.task_id},
+        )
+
+        validated_grant = self.validate_task_grant(request.grant)
+
+        self._status.status = "BUSY"
+        self._status.active_task_id = validated_grant.task_id
+        self._status.last_active_at = datetime.now(UTC)
+
+        try:
+            envelope = await self.run(validated_grant, request.context)
+            deliverable = self.extract_development_deliverable(envelope)
+
+            status: Literal["SUCCESS", "FAILED"] = (
+                "SUCCESS" if envelope.confidence.point_estimate > 0.0 else "FAILED"
+            )
+            findings = envelope.findings
+
+            result = DevelopmentEngineResult(
+                task_id=validated_grant.task_id,
+                engine_id=self._identity.engine_id,
+                status=status,
+                deliverable=deliverable,
+                evidence_envelope=envelope,
+                validation_findings=findings,
+                provenance={
+                    "engine_id": self._identity.engine_id,
+                    "engine_version": self._identity.version,
+                    "request_id": request.request_id,
+                    "completed_at": datetime.now(UTC).isoformat(),
+                    **envelope.provenance,
+                },
+            )
+            self._status.status = "IDLE"
+            self._status.active_task_id = None
+            return result
+        except Exception as exc:
+            self._status.status = "ERROR"
+            self._status.active_task_id = None
+            logger.error("W_DEV execution failed", exc_info=exc)
+            raise

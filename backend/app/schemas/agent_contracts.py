@@ -650,3 +650,31 @@ class PromotionResult(BaseModel):
     cts_state_delta: dict[str, Any] = Field(default_factory=dict)
     promoted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     message: str = ""
+
+
+# ---------------------------------------------------------------------------
+# W_DEV Core Contracts (DE-01)
+# ---------------------------------------------------------------------------
+from app.schemas.development.development_result import (
+    DevelopmentEngineIdentity,
+    DevelopmentEngineRequest,
+    DevelopmentEngineResult,
+    DevelopmentEngineStatus,
+    DevelopmentTaskGrant,
+)
+
+__all__ = [
+    "TaskGrant",
+    "ContextRequest",
+    "ConfidenceInterval",
+    "EvidenceEnvelope",
+    "DevelopmentDeliverable",
+    "CmsSchemaDiff",
+    "CodeDiffEntry",
+    "UITemplateDefinition",
+    "DevelopmentEngineIdentity",
+    "DevelopmentEngineStatus",
+    "DevelopmentTaskGrant",
+    "DevelopmentEngineRequest",
+    "DevelopmentEngineResult",
+]

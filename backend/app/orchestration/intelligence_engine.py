@@ -36,6 +36,11 @@ from app.schemas.agent_contracts import (
     EvidenceEnvelope,
     TaskGrant,
 )
+from app.schemas.development import (
+    DevelopmentEngineRequest,
+    DevelopmentEngineResult,
+    DevelopmentTaskGrant,
+)
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
@@ -144,6 +149,14 @@ class IntelligenceEngine:
         self._provenance_recorder = provenance_recorder
         self._workers = workers
         self._llm_client = llm_client
+
+    def register_worker(self, role: WorkerRole, worker: BoundedWorkerAgent) -> None:
+        """Register or replace a bounded domain worker in the Intelligence Engine."""
+        self._workers[role] = worker
+
+    def get_worker(self, role: WorkerRole) -> BoundedWorkerAgent | None:
+        """Retrieve a registered bounded domain worker by role."""
+        return self._workers.get(role)
 
     def _mint_token(self) -> IntelligenceEngineToken:
         return IntelligenceEngineToken(issued_to="intelligence_engine")
@@ -335,6 +348,125 @@ class IntelligenceEngine:
         )
 
         return envelope
+
+    async def invoke_development_worker(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        *,
+        query: str,
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        completed_upstream_task_ids: set[str] | None = None,
+        target_files: list[str] | None = None,
+        component_name: str = "Component",
+        component_type: str = "component",
+    ) -> DevelopmentEngineResult:
+        """Bounded Intelligence Engine -> W_DEV -> Intelligence Engine invocation contract.
+
+        Assembles a policy-screened DevelopmentTaskGrant and context, verifies
+        CTS lifecycle and tenant boundaries, invokes W_DEV via typed contract,
+        and transitions task state accordingly.
+        """
+        if task.worker_role != WorkerRole.DEVELOPMENT:
+            raise PolicyViolationError(
+                f"Cannot invoke W_DEV for task with worker role '{task.worker_role}'."
+            )
+
+        grant, context = await self.assemble_task_grant(
+            directive,
+            task,
+            query=query,
+            brand_id=brand_id,
+            token_budget=token_budget,
+            completed_upstream_task_ids=completed_upstream_task_ids,
+        )
+
+        dev_grant = DevelopmentTaskGrant(
+            task_id=grant.task_id,
+            worker_role=grant.worker_role,
+            tenant_scope=grant.tenant_scope,
+            brand_id=grant.brand_id,
+            objective=grant.objective,
+            task_scope=grant.task_scope,
+            task_slice=grant.task_slice,
+            cts_state=grant.cts_state,
+            brand_rules=grant.brand_rules,
+            validated_evidence=grant.validated_evidence,
+            provenance_references=grant.provenance_references,
+            freshness_metadata=grant.freshness_metadata,
+            policy_constraints=grant.policy_constraints,
+            context_ids=grant.context_ids,
+            expires_at=grant.expires_at,
+            tool_permissions=grant.tool_permissions,
+            sandbox_capabilities=grant.sandbox_capabilities,
+            token_budget=grant.token_budget,
+            budget_breakdown=grant.budget_breakdown,
+            risk_tier=grant.risk_tier,
+            stop_conditions=grant.stop_conditions,
+            expected_outputs=grant.expected_outputs,
+            expected_output_schema=grant.expected_output_schema,
+            target_files=target_files or [],
+            component_name=component_name,
+            component_type=component_type,
+        )
+
+        dev_request = DevelopmentEngineRequest(
+            grant=dev_grant,
+            context=context,
+        )
+
+        granted_state = self._task_state_machine.transition(
+            task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
+        )
+        in_prog_state = self._task_state_machine.transition(
+            granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+        )
+
+        worker = self._workers.get(WorkerRole.DEVELOPMENT)
+        if worker is None:
+            raise PolicyViolationError("W_DEV is not registered with the Intelligence Engine.")
+
+        if hasattr(worker, "invoke_development"):
+            result = await worker.invoke_development(dev_request)
+        else:
+            envelope = await worker.run(dev_grant, context)
+            result = DevelopmentEngineResult(
+                task_id=task.task_id,
+                engine_id="W_DEV",
+                status="SUCCESS" if envelope.confidence.point_estimate > 0.0 else "FAILED",
+                evidence_envelope=envelope,
+                validation_findings=envelope.findings,
+            )
+
+        if result.status == "SUCCESS":
+            final_state = self._task_state_machine.transition(
+                in_prog_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
+            )
+            task.status = final_state.status
+        else:
+            final_state = self._task_state_machine.transition(
+                in_prog_state,
+                TaskStatus.HELD,
+                checkpoint_id=str(uuid.uuid4()),
+                note="W_DEV execution failed",
+            )
+            task.status = final_state.status
+
+        prov_meta: dict[str, Any] = {
+            "execution_id": result.evidence_envelope.provenance.get("execution_id"),
+            "engine_id": result.engine_id,
+            "deliverable_id": result.deliverable.deliverable_id if result.deliverable else None,
+        }
+        await self._provenance_recorder.record(
+            tenant_id=directive.tenant_id,
+            entity_id=result.task_id,
+            activity="development_engine_execution",
+            agent="W_DEV",
+            metadata=prov_meta,
+        )
+
+        return result
 
     async def execute_dag(
         self,

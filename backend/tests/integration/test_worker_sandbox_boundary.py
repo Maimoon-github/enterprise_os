@@ -15,13 +15,13 @@ from app.schemas.governance import TenantScope
 from tests.conftest import FakeSandboxClient
 
 _AGENT_MODULES = [
-    "app.agents.development",
-    "app.agents.strategy",
-    "app.agents.creative_content",
-    "app.agents.product_evidence",
-    "app.agents.competitor_intel",
-    "app.agents.customer_voice",
-    "app.agents.learning_performance",
+    "app.agents.development_engine.development",
+    "app.agents.strategy_engine.strategy",
+    "app.agents.creative_content_engine.creative_content",
+    "app.agents.product_evidence_engine.product_evidence",
+    "app.agents.competitor_intel_engine.competitor_intel",
+    "app.agents.customer_voice_engine.customer_voice",
+    "app.agents.learning_performance_engine.learning_performance",
 ]
 
 _DISALLOWED_IMPORT_PREFIXES = (
@@ -312,6 +312,7 @@ async def test_sandbox_client_deterministic_session_teardown_on_error() -> None:
         result = await client.execute(mandate)
         assert result.success is False
         assert result.status == SandboxExecutionStatus.FAILED
+        assert result.error is not None
         assert "Container OOM" in result.error
         # Session state wiped
         assert len(client._active_sessions) == 0
