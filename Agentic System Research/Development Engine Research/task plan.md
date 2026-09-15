@@ -1,0 +1,21 @@
+Based on the attached research findings, this is the essential **12-task sequential implementation plan** for the Development Engine.
+
+| Task ID   | Phase              | Task Name                | Description                                                                                                                  | Predecessor | Milestone                       | Resource / Owner               |
+| --------- | ------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------- | ------------------------------ |
+| **DE-01** | Foundation         | Development Engine Core  | Create `W_DEV` as a bounded worker/sub-orchestrator under the Intelligence Engine.                                           | —           | Engine Core Ready               | Backend / AI Engineer          |
+| **DE-02** | Orchestration      | Sequential State Machine | Implement deterministic workflow, `max_concurrency=1`, execution lease, checkpoints, retry and transition guards.            | DE-01       | Workflow Controller Ready       | Backend Engineer               |
+| **DE-03** | Security           | Sandbox Control Plane    | Implement per-attempt isolated sandbox, capability grants, filesystem/process isolation, deny-by-default egress and cleanup. | DE-02       | Sandbox Boundary Ready          | Security / Platform Engineer   |
+| **DE-04** | Governance         | HITL Approval Gateway    | Implement mandatory approve/reject gate after every sub-agent with candidate-hash-bound approval tokens.                     | DE-03       | HITL Gate Ready                 | Backend / Security Engineer    |
+| **DE-05** | Audit              | Provenance & Audit Layer | Capture W3C PROV entities, activities, agents, artifact hashes, execution logs and immutable event-chain records.            | DE-04       | Provenance Ready                | Backend / Security Engineer    |
+| **DE-06** | Agent              | DEV-PLAN                 | Implement planning and impact-analysis agent to produce the approved ordered Development Execution Plan.                     | DE-05       | Planning Agent Ready            | AI / Backend Engineer          |
+| **DE-07** | Agent              | DEV-CMS                  | Implement CMS schema, contract, migration and validation agent with sandboxed tools.                                         | DE-06       | CMS Agent Ready                 | Backend / CMS Engineer         |
+| **DE-08** | Agent              | DEV-UI                   | Implement UI layout/component agent with rendering, accessibility and template validation tools.                             | DE-07       | UI Agent Ready                  | Frontend / AI Engineer         |
+| **DE-09** | Agent              | DEV-CODE                 | Implement code-authoring agent using patch/file tools, formatter and AST microtools.                                         | DE-08       | Coding Agent Ready              | AI / Software Engineer         |
+| **DE-10** | Verification       | DEV-VERIFY               | Implement independent build, lint, type-check and automated-test verification agent.                                         | DE-09       | Verification Gate Ready         | QA / Software Engineer         |
+| **DE-11** | Security & Release | DEV-SEC → DEV-REL        | Add independent security review, then release packaging, SBOM, manifests, hashes and rollback artifacts.                     | DE-10       | Release Candidate Ready         | Security + DevOps Engineer     |
+| **DE-12** | Integration        | End-to-End Validation    | Validate IE → W_DEV → sandbox → sub-agent → HITL → provenance → retry/recovery → final IE handoff.                           | DE-11       | **Development Engine Complete** | Technical Lead / QA / Security |
+
+**Runtime sequence after implementation:**
+`DEV-PLAN → HITL → DEV-CMS → HITL → DEV-UI → HITL → DEV-CODE → HITL → DEV-VERIFY → HITL → DEV-SEC → HITL → DEV-REL → HITL → Intelligence Engine`
+
+`DEV-CMS`, `DEV-UI`, and `DEV-CODE` can be conditionally skipped only when the **approved DEV-PLAN** marks them `SKIPPED_NOT_APPLICABLE`.
