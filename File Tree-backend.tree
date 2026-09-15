@@ -156,7 +156,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   └── 🐍 test_governed_end_to_end_flow.py
 │   ├── 📁 development_engine/
 │   │   ├── 🐍 __init__.py
-│   │   └── 🐍 test_development_engine_core.py
+│   │   ├── 🐍 test_development_engine_core.py
+│   │   └── 🐍 test_state_machine.py
 │   ├── 📁 integration/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_creative_integration.py

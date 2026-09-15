@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.exceptions import InvalidTransitionError, PolicyViolationError
+from app.core.logging import get_logger
 from app.orchestration.task_state_machine import TaskStateMachine
+
+logger = get_logger(__name__)
 from app.persistence.repositories.task_state import TaskStateRepository
 from app.schemas.action_preview import (
     ActionPreviewDossier,
@@ -18,6 +21,9 @@ from app.schemas.action_preview import (
 from app.schemas.agent_contracts import ConsolidatedEvidencePackage
 from app.schemas.task_state import (
     CanonicalTaskState,
+    DevelopmentExecutionLease,
+    DevelopmentWorkflowCheckpoint,
+    DevelopmentWorkflowState,
     MilestoneCheckpoint,
     MilestoneStatus,
     ProjectCloseoutDossier,
@@ -46,6 +52,8 @@ class TaskStateService:
         self._provenance_recorder = provenance_recorder
         self._max_retries = max_retries
         self._retry_counts: dict[str, int] = {}
+        self._dev_leases: dict[str, DevelopmentExecutionLease] = {}
+        self._dev_checkpoints: dict[str, list[DevelopmentWorkflowCheckpoint]] = {}
 
     async def get_state(self, task_id: str) -> CanonicalTaskState:
         """Fetch the authoritative task state from repository."""
@@ -1044,6 +1052,197 @@ class TaskStateService:
             )
 
         return checkpoint, dossier
+
+    async def acquire_development_lease(
+        self,
+        *,
+        task_id: str,
+        workflow_id: str,
+        step_id: str,
+        attempt_id: str,
+        owner_id: str,
+        ttl_seconds: int = 60,
+    ) -> DevelopmentExecutionLease:
+        """Atomically acquire an exclusive execution lease for a development task/step.
+
+        Enforces max_concurrency=1. Fails closed if lease is currently held by another owner and unexpired.
+        """
+        existing = self._dev_leases.get(task_id)
+        now = datetime.now(UTC)
+
+        if existing and not existing.is_expired(now):
+            if existing.owner_id != owner_id:
+                raise PolicyViolationError(
+                    f"Lease contention: Active lease for task '{task_id}' is held by '{existing.owner_id}' "
+                    f"until {existing.expires_at.isoformat()}. Access denied for '{owner_id}'."
+                )
+            # Same owner extending / updating
+            updated = existing.model_copy(
+                update={
+                    "step_id": step_id,
+                    "attempt_id": attempt_id,
+                    "expires_at": now + timedelta(seconds=ttl_seconds),
+                    "version": existing.version + 1,
+                }
+            )
+            self._dev_leases[task_id] = updated
+            return updated
+
+        # New lease or taking over expired lease
+        lease = DevelopmentExecutionLease(
+            lease_id=str(uuid.uuid4()),
+            workflow_id=workflow_id,
+            task_id=task_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            owner_id=owner_id,
+            acquired_at=now,
+            expires_at=now + timedelta(seconds=ttl_seconds),
+            version=1 if not existing else existing.version + 1,
+        )
+        self._dev_leases[task_id] = lease
+        return lease
+
+    async def renew_development_lease(
+        self,
+        *,
+        task_id: str,
+        lease_id: str,
+        owner_id: str,
+        ttl_seconds: int = 60,
+    ) -> DevelopmentExecutionLease:
+        """Renew an existing held lease."""
+        lease = self._dev_leases.get(task_id)
+        if not lease or lease.lease_id != lease_id:
+            raise PolicyViolationError(
+                f"Cannot renew lease: No matching lease found for task '{task_id}'."
+            )
+        if lease.owner_id != owner_id:
+            raise PolicyViolationError(
+                f"Cannot renew lease: Owner mismatch. Held by '{lease.owner_id}', requested by '{owner_id}'."
+            )
+        if lease.is_expired():
+            raise PolicyViolationError(
+                f"Cannot renew lease: Lease '{lease_id}' has already expired."
+            )
+
+        now = datetime.now(UTC)
+        renewed = lease.model_copy(
+            update={
+                "expires_at": now + timedelta(seconds=ttl_seconds),
+                "version": lease.version + 1,
+            }
+        )
+        self._dev_leases[task_id] = renewed
+        return renewed
+
+    async def release_development_lease(
+        self,
+        *,
+        task_id: str,
+        lease_id: str,
+        owner_id: str,
+    ) -> None:
+        """Release an execution lease upon step completion or termination."""
+        lease = self._dev_leases.get(task_id)
+        if lease and lease.lease_id == lease_id:
+            if lease.owner_id != owner_id:
+                raise PolicyViolationError(
+                    f"Cannot release lease: Owner mismatch. Held by '{lease.owner_id}', requested by '{owner_id}'."
+                )
+            del self._dev_leases[task_id]
+
+    async def save_development_checkpoint(
+        self,
+        tenant_id: str,
+        checkpoint: DevelopmentWorkflowCheckpoint,
+    ) -> DevelopmentWorkflowCheckpoint:
+        """Persist a durable development workflow checkpoint with idempotency guarantee."""
+        history = self._dev_checkpoints.setdefault(checkpoint.task_id, [])
+
+        # Idempotency check: if already committed with identical idempotency key, return existing
+        for cp in history:
+            if cp.idempotency_key == checkpoint.idempotency_key:
+                logger.info(
+                    "Idempotent replay detected for checkpoint",
+                    extra={
+                        "task_id": checkpoint.task_id,
+                        "idempotency_key": checkpoint.idempotency_key,
+                    },
+                )
+                return cp
+
+        history.append(checkpoint)
+
+        # Update CTS task state if available
+        try:
+            task = await self.get_state(checkpoint.task_id)
+            cts_state = dict(task.cts_state)
+            cts_state["dev_workflow_state"] = checkpoint.state.value
+            cts_state["latest_dev_checkpoint_id"] = checkpoint.checkpoint_id
+            cts_state["latest_dev_checkpoint"] = checkpoint.model_dump(mode="json")
+            task.cts_state.update(cts_state)
+            await self.save_state(tenant_id, task)
+        except Exception:
+            pass
+
+        if self._provenance_recorder:
+            await self._provenance_recorder.record(
+                tenant_id=tenant_id,
+                entity_id=checkpoint.task_id,
+                activity=f"dev_workflow_{checkpoint.state.value.lower()}",
+                agent="W_DEV",
+                metadata={
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "step_id": checkpoint.step_id,
+                    "attempt_id": checkpoint.attempt_id,
+                    "state": checkpoint.state.value,
+                    "idempotency_key": checkpoint.idempotency_key,
+                },
+            )
+
+        return checkpoint
+
+    async def get_latest_development_checkpoint(
+        self, task_id: str
+    ) -> DevelopmentWorkflowCheckpoint | None:
+        """Retrieve latest durable checkpoint for development workflow."""
+        history = self._dev_checkpoints.get(task_id, [])
+        if history:
+            return history[-1]
+        try:
+            task = await self.get_state(task_id)
+            latest_dict = task.cts_state.get("latest_dev_checkpoint")
+            if latest_dict:
+                return DevelopmentWorkflowCheckpoint.model_validate(latest_dict)
+        except Exception:
+            pass
+        return None
+
+    async def resume_development_workflow(
+        self,
+        tenant_id: str,
+        task_id: str,
+    ) -> tuple[DevelopmentWorkflowCheckpoint, dict[str, Any]]:
+        """Resume a development workflow from the latest valid durable checkpoint.
+
+        Restart-safe recovery: Loads the latest committed state without duplicating previous effects.
+        """
+        checkpoint = await self.get_latest_development_checkpoint(task_id)
+        if not checkpoint:
+            # Initialize fresh RECEIVED checkpoint
+            initial = DevelopmentWorkflowCheckpoint(
+                task_id=task_id,
+                workflow_id=f"wf-{task_id}",
+                step_id="init",
+                attempt_id="att-1",
+                state=DevelopmentWorkflowState.RECEIVED,
+                idempotency_key=f"init-{task_id}",
+                state_data={},
+            )
+            checkpoint = await self.save_development_checkpoint(tenant_id, initial)
+
+        return checkpoint, checkpoint.state_data
 
 
 

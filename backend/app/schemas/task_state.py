@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.governance import WorkerRole
 
@@ -119,3 +120,97 @@ class ProjectCloseoutDossier(BaseModel):
     stakeholder_approved: bool = False
     blockers: list[str] = Field(default_factory=list)
     closed_at: datetime | None = None
+
+
+# ===========================================================================
+# Development Engine Workflow & Lease Schemas (DE-02)
+# ===========================================================================
+
+class DevelopmentWorkflowState(StrEnum):
+    """Canonical lifecycle states for W_DEV internal sequential state machine."""
+
+    RECEIVED = "RECEIVED"
+    POLICY_BOUND = "POLICY_BOUND"
+    PLANNING = "PLANNING"
+    RESULT_SEALED = "RESULT_SEALED"
+    HITL_PENDING = "HITL_PENDING"
+    APPROVED = "APPROVED"
+    CORRECTION_REQUIRED = "CORRECTION_REQUIRED"
+    RETRY_PREPARED = "RETRY_PREPARED"
+    SANDBOX_PROVISIONING = "SANDBOX_PROVISIONING"
+    SUBAGENT_RUNNING = "SUBAGENT_RUNNING"
+    NEXT_STEP = "NEXT_STEP"
+    RELEASE_READY = "RELEASE_READY"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    ABORTED = "ABORTED"
+
+
+class DevelopmentExecutionLease(BaseModel):
+    """Durable execution lease enforcing single-active-subagent execution (max_concurrency=1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lease_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    workflow_id: str
+    task_id: str
+    step_id: str
+    attempt_id: str
+    owner_id: str
+    acquired_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime
+    version: int = Field(default=1, ge=1)
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """Return True if lease has expired."""
+        current_time = now or datetime.now(UTC)
+        exp_utc = (
+            self.expires_at
+            if self.expires_at.tzinfo is not None
+            else self.expires_at.replace(tzinfo=UTC)
+        )
+        return exp_utc <= current_time
+
+
+class DevelopmentWorkflowCheckpoint(BaseModel):
+    """Durable state checkpoint persisted after each successful state transition."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    checkpoint_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str
+    workflow_id: str
+    step_id: str
+    attempt_id: str
+    state: DevelopmentWorkflowState
+    idempotency_key: str
+    state_data: dict[str, Any] = Field(default_factory=dict)
+    active_subagent: str | None = None
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class RetryClassification(StrEnum):
+    """Explicit classification of failure types for bounded retry eligibility."""
+
+    TRANSIENT = "TRANSIENT"
+    PERMANENT = "PERMANENT"
+    SECURITY_BLOCK = "SECURITY_BLOCK"
+    HITL_REJECTION = "HITL_REJECTION"
+
+
+class WorkflowRetryPolicy(BaseModel):
+    """Deterministic policy controlling bounded retries on transient failures."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    max_retries: int = Field(default=3, ge=0)
+    retry_delay_seconds: float = Field(default=1.0, ge=0.0)
+    backoff_multiplier: float = Field(default=2.0, ge=1.0)
+    retryable_errors: list[str] = Field(
+        default_factory=lambda: [
+            "TransientWorkflowError",
+            "TimeoutError",
+            "LeaseContentionError",
+            "SandboxProvisioningError",
+        ]
+    )

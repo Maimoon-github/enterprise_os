@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.core.exceptions import GovernedBackendError
+from app.schemas.governance import WorkerRole
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 
 
@@ -87,3 +88,24 @@ class DagScheduler:
             ):
                 ready.append(task)
         return ready
+
+    def enforce_development_concurrency(
+        self, ready_tasks: list[CanonicalTaskState]
+    ) -> list[CanonicalTaskState]:
+        """Enforce max_concurrency=1 for development engine tasks.
+
+        If multiple tasks belonging to WorkerRole.DEVELOPMENT are ready,
+        only the first is permitted to execute concurrently; subsequent development
+        tasks are deferred/serialized.
+        """
+        filtered: list[CanonicalTaskState] = []
+        dev_scheduled = False
+
+        for task in ready_tasks:
+            if task.worker_role == WorkerRole.DEVELOPMENT:
+                if dev_scheduled:
+                    continue  # Serialize: only 1 development task active at a time
+                dev_scheduled = True
+            filtered.append(task)
+
+        return filtered
