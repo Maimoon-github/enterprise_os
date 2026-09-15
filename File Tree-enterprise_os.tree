@@ -54,15 +54,22 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 ├── 📁 backend/
 │   ├── 📁 app/
 │   │   ├── 📁 agents/
+│   │   │   ├── 📁 competitor_intel_engine/
+│   │   │   │   └── 🐍 competitor_intel.py
+│   │   │   ├── 📁 creative_content_engine/
+│   │   │   │   └── 🐍 creative_content.py
+│   │   │   ├── 📁 customer_voice_engine/
+│   │   │   │   └── 🐍 customer_voice.py
+│   │   │   ├── 📁 development_engine/
+│   │   │   │   └── 🐍 development.py
+│   │   │   ├── 📁 learning_performance_engine/
+│   │   │   │   └── 🐍 learning_performance.py
+│   │   │   ├── 📁 product_evidence_engine/
+│   │   │   │   └── 🐍 product_evidence.py
+│   │   │   ├── 📁 strategy_engine/
+│   │   │   │   └── 🐍 strategy.py
 │   │   │   ├── 🐍 __init__.py
-│   │   │   ├── 🐍 base.py
-│   │   │   ├── 🐍 competitor_intel.py
-│   │   │   ├── 🐍 creative_content.py
-│   │   │   ├── 🐍 customer_voice.py
-│   │   │   ├── 🐍 development.py
-│   │   │   ├── 🐍 learning_performance.py
-│   │   │   ├── 🐍 product_evidence.py
-│   │   │   └── 🐍 strategy.py
+│   │   │   └── 🐍 base.py
 │   │   ├── 📁 api/
 │   │   │   ├── 📁 routes/
 │   │   │   │   ├── 🐍 __init__.py
@@ -1570,6 +1577,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   └── ⚙️ pnpm-workspace.yaml
 ├── ⚙️ .gitignore
 ├── 📄 File Tree-backend.tree
+├── 📄 File Tree-enterprise_os.tree
 ├── 📄 File Tree-sandbox.tree
 └── 📄 scaffold.sh
 
