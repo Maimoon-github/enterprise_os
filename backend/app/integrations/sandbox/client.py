@@ -20,17 +20,25 @@ from app.core.settings import SandboxSettings
 from app.integrations.sandbox.capabilities import (
     validate_capability_access,
     validate_egress_target,
+    validate_tool_access,
 )
 from app.integrations.sandbox.micro_tools import dispatch_micro_tool
+from app.integrations.sandbox.sandbox_policy import SandboxControlPlane
 from app.schemas.sandbox import (
     NetworkPolicy,
     SandboxCapability,
+    SandboxCapabilityGrant,
     SandboxExecutionStatus,
+    SandboxIdentity,
     SandboxInvocationMandate,
+    SandboxNetworkPolicyConfig,
+    SandboxResourceLimits,
     SandboxResult,
+    SealedSandboxOutput,
 )
 
 if TYPE_CHECKING:
+    from app.schemas.task_state import DevelopmentExecutionLease
     from app.services.provenance import ProvenanceRecorder
 
 
@@ -72,11 +80,20 @@ class SandboxClient:
         self,
         settings: SandboxSettings | None = None,
         provenance_recorder: ProvenanceRecorder | None = None,
+        control_plane: SandboxControlPlane | None = None,
     ) -> None:
         self._settings = settings
         self._provenance_recorder = provenance_recorder
         self._sandbox = None
         self._active_sessions: dict[str, dict[str, Any]] = {}
+        self._control_plane = control_plane or SandboxControlPlane(
+            base_dir=getattr(settings, "workspace_base_dir", None) if settings else None
+        )
+
+    @property
+    def control_plane(self) -> SandboxControlPlane:
+        """Authoritative Sandbox Control Plane."""
+        return self._control_plane
 
     def _get_sandbox(self):
         """Lazily import and construct the agent_sandbox client on first use."""
@@ -97,12 +114,48 @@ class SandboxClient:
             self._sandbox = None
         return self._sandbox
 
+    def provision_sandbox(
+        self,
+        *,
+        identity: SandboxIdentity,
+        lease: DevelopmentExecutionLease,
+        grant: SandboxCapabilityGrant,
+        input_snapshot: dict[str, str] | None = None,
+        resource_limits: SandboxResourceLimits | None = None,
+        network_policy: SandboxNetworkPolicyConfig | None = None,
+    ):
+        """Provision a fresh isolated sandbox instance for a specific sub-agent attempt."""
+        return self._control_plane.provision(
+            identity=identity,
+            lease=lease,
+            grant=grant,
+            input_snapshot=input_snapshot,
+            resource_limits=resource_limits,
+            network_policy=network_policy,
+        )
+
+    def seal_sandbox(
+        self,
+        sandbox_id: str,
+        raw_output: dict[str, Any] | None = None,
+    ) -> SealedSandboxOutput:
+        """Cryptographically seal outputs and artifacts before teardown."""
+        return self._control_plane.seal(sandbox_id, raw_output)
+
+    def destroy_sandbox(self, sandbox_id: str, reason: str = "completed") -> bool:
+        """Deterministically wipe all state, workspace storage, and credentials."""
+        return self._control_plane.destroy(sandbox_id, reason=reason)
+
     async def teardown_session(self, session_id: str) -> bool:
         """Deterministic cleanup and scrubbing of ephemeral execution session state."""
+        scrubbed = False
         if session_id in self._active_sessions:
             del self._active_sessions[session_id]
-            return True
-        return False
+            scrubbed = True
+        if self._control_plane is not None:
+            self._control_plane.destroy(session_id, reason="teardown")
+            scrubbed = True
+        return scrubbed
 
     def _collect_resource_metrics(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
         """Query native observation APIs or record container resource boundaries."""

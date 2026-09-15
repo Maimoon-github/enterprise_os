@@ -80,6 +80,50 @@ services:
     networks:
       - sandbox-internal # Isolated network with NO direct internet routing
 
+  sandbox-worker:
+    container_name: aio-sandbox-worker
+    image: ghcr.io/agent-infra/sandbox:1.11.0
+    restart: "unless-stopped"
+    depends_on:
+      - egress-proxy
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp/worker-seccomp.json
+    cap_drop:
+      - ALL
+    shm_size: "1gb"
+    mem_limit: "2g"
+    cpus: "1"
+    pids_limit: 512
+    volumes:
+      - ./skills:/home/gem/skills:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=512m
+      - /run:rw,noexec,nosuid,size=128m
+      - /workspace:rw,size=1024m
+    ports:
+      - "127.0.0.1:${WORKER_HOST_PORT:-8081}:8080"
+    environment:
+      EGRESS_NETWORK_POLICY: DENY_ALL
+      PROXY_SERVER: http://aio-egress-proxy:8118
+      HTTP_PROXY: http://aio-egress-proxy:8118
+      HTTPS_PROXY: http://aio-egress-proxy:8118
+      ALL_PROXY: http://aio-egress-proxy:8118
+      NO_PROXY: localhost,127.0.0.1,aio-egress-proxy
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+      SANDBOX_API_KEY: ${SANDBOX_API_KEY:-}
+      AIO_SKILLS_PATH: /home/gem/skills
+      WORKSPACE: /workspace
+      TZ: UTC
+      WAIT_PORTS: "8091"
+      PUBLIC_PORT: 8080
+      SANDBOX_SRV_PORT: 8091
+      DISABLE_JUPYTER: "true"
+      DISABLE_CODE_SERVER: "true"
+    networks:
+      - sandbox-internal
+
 networks:
   # Internal bridge network has no gateway to external networks; direct egress blocked
   sandbox-internal:

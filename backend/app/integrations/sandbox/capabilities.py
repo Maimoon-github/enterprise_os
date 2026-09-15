@@ -15,6 +15,7 @@ Validates worker role, operation name, and network policy fail-closed.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.core.exceptions import SandboxInvocationError
 from app.schemas.governance import WorkerRole
@@ -205,3 +206,33 @@ def validate_egress_target(
     allowed, reason = grant.is_destination_allowed(target, port=port)
     if not allowed:
         raise SandboxInvocationError(f"Network egress policy violation: {reason}")
+
+
+def validate_tool_access(
+    requested_tool: str,
+    capability: SandboxCapability | str,
+    capability_grant: Any | None = None,
+) -> None:
+    """Enforce explicit per-attempt micro-tool allowlisting fail-closed.
+
+    1. If capability_grant is provided, requested_tool must be in grant.allowed_tools.
+    2. requested_tool must also be in the capability profile's authorized allowed_tools.
+    """
+    if isinstance(capability, str):
+        capability = SandboxCapability(capability)
+    profile = CAPABILITY_REGISTRY.get(capability)
+    if profile is None:
+        raise SandboxInvocationError(f"Unknown capability: {capability}")
+
+    if requested_tool not in profile.allowed_tools:
+        raise SandboxInvocationError(
+            f"Tool '{requested_tool}' is not permitted for capability '{capability.value}'. "
+            f"Permitted tools: {profile.allowed_tools}"
+        )
+
+    if capability_grant is not None and hasattr(capability_grant, "allowed_tools"):
+        if requested_tool not in capability_grant.allowed_tools:
+            raise SandboxInvocationError(
+                f"Tool '{requested_tool}' is not authorized under the active capability grant. "
+                f"Authorized tools: {capability_grant.allowed_tools}"
+            )

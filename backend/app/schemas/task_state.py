@@ -138,6 +138,7 @@ class DevelopmentWorkflowState(StrEnum):
     CORRECTION_REQUIRED = "CORRECTION_REQUIRED"
     RETRY_PREPARED = "RETRY_PREPARED"
     SANDBOX_PROVISIONING = "SANDBOX_PROVISIONING"
+    VALIDATED = "VALIDATED"
     SUBAGENT_RUNNING = "SUBAGENT_RUNNING"
     NEXT_STEP = "NEXT_STEP"
     RELEASE_READY = "RELEASE_READY"
@@ -212,5 +213,8 @@ class WorkflowRetryPolicy(BaseModel):
             "TimeoutError",
             "LeaseContentionError",
             "SandboxProvisioningError",
+            "SandboxValidationError",
+            "SandboxIsolationError",
+            "SandboxExecutionError",
         ]
     )

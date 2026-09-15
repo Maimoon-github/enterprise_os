@@ -72,6 +72,13 @@ _ALLOWED_TRANSITIONS: dict[DevelopmentWorkflowState, frozenset[DevelopmentWorkfl
         DevelopmentWorkflowState.ABORTED,
     }),
     DevelopmentWorkflowState.SANDBOX_PROVISIONING: frozenset({
+        DevelopmentWorkflowState.VALIDATED,
+        DevelopmentWorkflowState.SUBAGENT_RUNNING,
+        DevelopmentWorkflowState.RETRY_PREPARED,
+        DevelopmentWorkflowState.FAILED,
+        DevelopmentWorkflowState.ABORTED,
+    }),
+    DevelopmentWorkflowState.VALIDATED: frozenset({
         DevelopmentWorkflowState.SUBAGENT_RUNNING,
         DevelopmentWorkflowState.RETRY_PREPARED,
         DevelopmentWorkflowState.FAILED,
@@ -106,6 +113,9 @@ TRANSIENT_EXCEPTIONS = (
     "TransientWorkflowError",
     "LeaseContentionError",
     "SandboxProvisioningError",
+    "SandboxValidationError",
+    "SandboxIsolationError",
+    "SandboxExecutionError",
     "ConnectionError",
 )
 
@@ -191,6 +201,7 @@ class DevelopmentStateMachine:
 
         # 4. Lease verification for sub-agent execution & sealing
         if target_state in (
+            DevelopmentWorkflowState.VALIDATED,
             DevelopmentWorkflowState.SUBAGENT_RUNNING,
             DevelopmentWorkflowState.RESULT_SEALED,
         ):
@@ -208,7 +219,15 @@ class DevelopmentStateMachine:
                     f"Expected '{expected_owner}', held by '{lease.owner_id}'."
                 )
 
-        # 5. Retry budget guard
+        # 5. Isolation validation guard before execution
+        state_data = state_data or {}
+        if target_state == DevelopmentWorkflowState.SUBAGENT_RUNNING:
+            if state_data.get("isolation_validated") is False:
+                raise PolicyViolationError(
+                    "Transition to SUBAGENT_RUNNING rejected: Sandbox isolation validation failed."
+                )
+
+        # 6. Retry budget guard
         if target_state == DevelopmentWorkflowState.RETRY_PREPARED:
             if not self.can_retry(current_retries, error):
                 classification = self.classify_error(error) if error else "MAX_RETRIES_EXCEEDED"
@@ -217,7 +236,7 @@ class DevelopmentStateMachine:
                     f"or error classification is non-transient ({classification})."
                 )
 
-        # 6. Required state data presence
+        # 7. Required state data presence
         state_data = state_data or {}
         if target_state == DevelopmentWorkflowState.HITL_PENDING:
             if not state_data.get("candidate_hash") and not state_data.get("deliverable"):

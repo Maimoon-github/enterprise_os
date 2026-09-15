@@ -60,15 +60,22 @@ class LlmSettings(BaseSettings):
 
 
 class SandboxSettings(BaseSettings):
-    """Thin boundary configuration for the existing agent_sandbox SDK."""
+    """Configuration for Sandbox Control Plane and agent_sandbox boundary."""
 
     model_config = SettingsConfigDict(env_prefix="SANDBOX_", extra="ignore")
 
     endpoint: str | None = Field(default=None)
     api_key: str | None = Field(default=None, repr=False)
-    proxy_endpoint: str | None = Field(default=None)
+    proxy_endpoint: str | None = Field(default="http://aio-egress-proxy:8118")
     default_network_policy: str = Field(default="deny_all")
     default_timeout_seconds: int = Field(default=120, ge=1)
+    workspace_base_dir: str = Field(default="ephemeral_workspaces")
+    seccomp_profile_path: str = Field(default="worker-seccomp.json")
+    isolate_network: bool = Field(default=True)
+    enforce_microvm_isolation: bool = Field(default=True)
+    pids_limit: int = Field(default=1024, ge=32, le=4096)
+    max_memory_mb: int = Field(default=4096, ge=128, le=8192)
+    max_cpu_cores: float = Field(default=2.0, ge=0.1, le=4.0)
 
 
 class CmsSettings(BaseSettings):

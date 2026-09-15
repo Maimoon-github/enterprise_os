@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from app.core.exceptions import AuthorizationError
 from app.schemas.governance import AutonomyTier, RiskLevel, TenantScope
@@ -111,3 +111,45 @@ class AuthorizationBoundary:
             raise AuthorizationError(
                 f"Caller '{caller.subject}' lacks capability '{requested_capability}'."
             )
+
+    def authorize_sandbox_action(
+        self,
+        caller: CallerIdentity,
+        *,
+        lease: Any | None = None,
+        target_resource: str,
+        is_sandbox_origin: bool = False,
+    ) -> None:
+        """Enforce sandbox execution boundaries and Model-A security invariants.
+
+        1. Require valid execution lease for sandbox provisioning/execution.
+        2. Block any caller originating from inside a sandbox or presenting sandbox credentials
+           from directly accessing enterprise database, RAG vector stores, Intelligence Engine
+           internals, production CMS/Ads/Social actuation, or host services.
+        """
+        if is_sandbox_origin or "sandbox" in caller.subject.lower():
+            prohibited_resources = (
+                "database",
+                "persistence",
+                "rag",
+                "vector_store",
+                "intelligence_engine_internal",
+                "cms_production",
+                "ads_production",
+                "social_production",
+                "host_fs",
+                "cloud_metadata",
+            )
+            target_norm = target_resource.strip().lower()
+            for prohibited in prohibited_resources:
+                if prohibited in target_norm:
+                    raise AuthorizationError(
+                        f"Model-A Security Violation: Sandbox-originating caller '{caller.subject}' is "
+                        f"strictly forbidden from accessing protected resource '{target_resource}'."
+                    )
+
+        if lease is not None:
+            if hasattr(lease, "is_expired") and lease.is_expired():
+                raise AuthorizationError(
+                    f"Sandbox authorization failed: Execution lease '{getattr(lease, 'lease_id', 'unknown')}' has expired."
+                )

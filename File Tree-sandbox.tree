@@ -18,7 +18,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 │   │   ├── 📁 scripts/
 │   │   │   └── 📄 cleanup.sh
 │   │   ├── 📁 seccomp/
-│   │   │   └── ⚙️ chromium-seccomp.json
+│   │   │   ├── ⚙️ chromium-seccomp.json
+│   │   │   └── ⚙️ worker-seccomp.json
 │   │   ├── 📁 skills/
 │   │   │   ├── 📁 s-alloc/
 │   │   │   │   ├── 📁 scripts/

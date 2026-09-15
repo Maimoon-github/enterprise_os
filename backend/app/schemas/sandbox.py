@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.governance import WorkerRole
 
@@ -247,3 +247,157 @@ class SandboxResult(BaseModel):
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
+
+
+# ===========================================================================
+# Sandbox Control Plane Contracts (DE-03)
+# ===========================================================================
+
+class SandboxLifecycleState(StrEnum):
+    """Authoritative lifecycle state of an isolated sandbox instance."""
+
+    PROVISIONING = "PROVISIONING"
+    VALIDATED = "VALIDATED"
+    RUNNING = "RUNNING"
+    RESULT_SEALED = "RESULT_SEALED"
+    TERMINATED = "TERMINATED"
+    DESTROYED = "DESTROYED"
+    FAILED = "FAILED"
+
+
+class SandboxIdentity(BaseModel):
+    """Authoritative binding of a sandbox to tenant, region, engine, task, step, attempt."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    tenant_id: str = Field(..., min_length=1)
+    work_region: str = Field(default="primary")
+    engine_id: str = Field(default="W_DEV")
+    task_id: str = Field(..., min_length=1)
+    step_id: str = Field(..., min_length=1)
+    attempt_id: str = Field(..., min_length=1)
+    sandbox_id: str = Field(default_factory=lambda: f"sbx-{uuid.uuid4().hex[:12]}")
+
+    @classmethod
+    def generate(
+        cls,
+        tenant_id: str,
+        task_id: str,
+        step_id: str,
+        attempt_id: str,
+        work_region: str = "primary",
+        engine_id: str = "W_DEV",
+    ) -> SandboxIdentity:
+        sbx_id = f"sbx-{tenant_id}-{engine_id}-{task_id[:8]}-{step_id[:8]}-{attempt_id[:8]}-{uuid.uuid4().hex[:6]}"
+        return cls(
+            tenant_id=tenant_id,
+            work_region=work_region,
+            engine_id=engine_id,
+            task_id=task_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            sandbox_id=sbx_id,
+        )
+
+
+class SandboxFilesystemPolicy(BaseModel):
+    """Filesystem isolation, ephemeral workspace mounts, and path constraints."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    workspace_mount_type: str = "ephemeral_tmpfs"
+    max_workspace_size_mb: int = Field(default=2048, ge=64, le=10240)
+    noexec_tmp: bool = True
+    nosuid_tmp: bool = True
+    read_only_mounts: tuple[str, ...] = ("/home/gem/skills",)
+    allowed_write_paths: tuple[str, ...] = ("/workspace", "/tmp", "/run")
+    forbidden_host_paths: tuple[str, ...] = (
+        "/",
+        "/var/run/docker.sock",
+        "/etc",
+        "/proc/sys",
+        "/sys",
+    )
+
+
+class SandboxNetworkPolicyConfig(BaseModel):
+    """Egress policy configuration and anti-SSRF protections."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    policy_mode: str = "deny_all"  # "deny_all" | "allowlist"
+    proxy_endpoint: str = "http://aio-egress-proxy:8118"
+    allowed_domains: tuple[str, ...] = ()
+    allowed_ports: tuple[int, ...] = (80, 443)
+    blocked_subnets: tuple[str, ...] = (
+        "169.254.169.254/32",  # Cloud instance metadata
+        "127.0.0.0/8",         # Host loopback
+        "10.0.0.0/8",          # Private network
+        "172.16.0.0/12",       # Docker bridge network
+        "192.168.0.0/16",      # Local network
+    )
+    blocked_services: tuple[str, ...] = (
+        "localhost",
+        "metadata.google.internal",
+        "instance-data",
+        "169.254.169.254",
+        "host.docker.internal",
+        "enterprise-db",
+        "enterprise-redis",
+    )
+
+
+class SandboxResourceLimits(BaseModel):
+    """Extended resource and security boundary specifications."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    timeout_seconds: int = Field(default=120, ge=1, le=600)
+    memory_mb: int = Field(default=1024, ge=128, le=8192)
+    cpu_cores: float = Field(default=1.0, ge=0.1, le=4.0)
+    pids_limit: int = Field(default=1024, ge=32, le=4096)
+    no_new_privileges: bool = True
+    cap_drop: tuple[str, ...] = ("ALL",)
+    seccomp_profile: str = "worker-seccomp.json"
+    run_as_user: str = "1000:1000"
+
+
+class SandboxCapabilityGrant(BaseModel):
+    """Explicit per-attempt tool and capability authorization."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    lease_id: str = Field(..., min_length=1)
+    subagent_id: str = Field(..., min_length=1)
+    capability: SandboxCapability = SandboxCapability.CODE
+    allowed_tools: tuple[str, ...] = ("ast_parser", "code_linter", "diff_generator")
+    allowed_operations: tuple[str, ...] = (
+        "parse_ast",
+        "lint",
+        "generate_diff",
+        "execute_code",
+        "validate_syntax",
+        "default",
+    )
+
+
+class SealedSandboxOutput(BaseModel):
+    """Immutable cryptographically sealed outputs extracted from sandbox before teardown."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sandbox_id: str
+    task_id: str
+    step_id: str
+    attempt_id: str
+    state: SandboxLifecycleState = SandboxLifecycleState.RESULT_SEALED
+    artifacts: dict[str, str] = Field(default_factory=dict)
+    artifact_hashes: dict[str, str] = Field(
+        default_factory=dict, description="SHA-256 digests of all outputs"
+    )
+    generated_diff: str = ""
+    diff_hash: str = ""
+    sanitized_output: dict[str, str] = Field(default_factory=dict)
+    structured_output: dict[str, Any] = Field(default_factory=dict)
+    sealed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    signature: str | None = None

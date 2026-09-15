@@ -39,6 +39,26 @@ class SandboxInvocationError(GovernedBackendError):
     """Raised when the sandbox boundary fails to execute a mandate."""
 
 
+class SandboxControlPlaneError(GovernedBackendError):
+    """Base exception for all Sandbox Control Plane errors."""
+
+
+class SandboxIsolationError(SandboxControlPlaneError):
+    """Raised when sandbox isolation or security bounds fail validation."""
+
+
+class SandboxValidationError(SandboxControlPlaneError):
+    """Raised when sandbox pre-execution validation checks fail."""
+
+
+class SandboxExecutionError(SandboxControlPlaneError):
+    """Raised when sandbox command or sub-agent execution fails."""
+
+
+class SandboxCleanupError(SandboxControlPlaneError):
+    """Raised when deterministic sandbox scrubbing or teardown fails."""
+
+
 class RetrievalGovernanceError(GovernedBackendError):
     """Raised when a RAG request violates tenant isolation or freshness rules."""
 
@@ -49,3 +69,4 @@ class RepositoryError(GovernedBackendError):
 
 class RateLimitExceededError(GovernedBackendError):
     """Raised when an outbound actuation attempt exceeds its rate limit."""
+

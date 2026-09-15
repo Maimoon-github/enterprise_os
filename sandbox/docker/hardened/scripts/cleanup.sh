@@ -20,10 +20,19 @@ rm -rf /home/gem/.cache/* 2>/dev/null || true
 rm -rf /home/gem/.config/google-chrome/* 2>/dev/null || true
 rm -rf /home/gem/.config/chromium/* 2>/dev/null || true
 
-# 3. Wipe ephemeral task workspace unless exported
+# 3. Wipe ephemeral task workspace and attempt-specific scratch directories
+if [ -n "${SANDBOX_WORKSPACE:-}" ] && [ -d "${SANDBOX_WORKSPACE}" ]; then
+    echo "[sandbox-lifecycle] Scrubbing specific sandbox workspace: ${SANDBOX_WORKSPACE}..."
+    rm -rf "${SANDBOX_WORKSPACE:?}"/* 2>/dev/null || true
+fi
+
 if [ -d "/workspace/ephemeral" ]; then
     echo "[sandbox-lifecycle] Scrubbing ephemeral task workspace..."
     rm -rf /workspace/ephemeral/* 2>/dev/null || true
 fi
+
+# 4. Scrub any task-scoped short-lived credentials or tokens in environment/files
+unset SANDBOX_API_KEY JWT_PUBLIC_KEY SBX_TOKEN || true
+rm -f /home/gem/.sbx_token* /tmp/.sbx_token* 2>/dev/null || true
 
 echo "[sandbox-lifecycle] Scrubbing complete. Sandbox state wiped."
