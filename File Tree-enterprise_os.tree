@@ -4,6 +4,9 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 ────────────────────────────────────────────────────────────────────────────────
 
 ├── 📁 Agentic System Research/
+│   ├── 📁 Development Engine Research/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 final/
 │   │   ├── 📝 Backend Hierarchy.md
 │   │   ├── 📝 Final-Level Full Architecture.md
@@ -61,6 +64,14 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 📁 customer_voice_engine/
 │   │   │   │   └── 🐍 customer_voice.py
 │   │   │   ├── 📁 development_engine/
+│   │   │   │   ├── 📁 subagents/
+│   │   │   │   │   ├── 🐍 cms_contract.py
+│   │   │   │   │   ├── 🐍 implementation.py
+│   │   │   │   │   ├── 🐍 planning.py
+│   │   │   │   │   ├── 🐍 release_ops.py
+│   │   │   │   │   ├── 🐍 security_review.py
+│   │   │   │   │   ├── 🐍 ui_layout.py
+│   │   │   │   │   └── 🐍 verification.py
 │   │   │   │   └── 🐍 development.py
 │   │   │   ├── 📁 learning_performance_engine/
 │   │   │   │   └── 🐍 learning_performance.py
@@ -102,7 +113,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   ├── 🐍 capabilities.py
 │   │   │   │   ├── 🐍 client.py
-│   │   │   │   └── 🐍 micro_tools.py
+│   │   │   │   ├── 🐍 micro_tools.py
+│   │   │   │   └── 🐍 sandbox_policy.py
 │   │   │   ├── 📁 social/
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   ├── 🐍 base.py
@@ -121,6 +133,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 brand_persona.py
 │   │   │   ├── 🐍 context_assembly.py
 │   │   │   ├── 🐍 dag_scheduler.py
+│   │   │   ├── 🐍 development_state_machine.py
 │   │   │   ├── 🐍 evidence_synthesis.py
 │   │   │   ├── 🐍 hitl_preview_generator.py
 │   │   │   ├── 🐍 intelligence_engine.py
@@ -141,6 +154,11 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 database.py
 │   │   ├── 📁 schemas/
+│   │   │   ├── 📁 development/
+│   │   │   │   ├── 🐍 approval_token.py
+│   │   │   │   ├── 🐍 development_plan.py
+│   │   │   │   ├── 🐍 development_result.py
+│   │   │   │   └── 🐍 provenance.py
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 action_preview.py
 │   │   │   ├── 🐍 agent_contracts.py

@@ -5,15 +5,30 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 
 ├── 📁 app/
 │   ├── 📁 agents/
+│   │   ├── 📁 competitor_intel_engine/
+│   │   │   └── 🐍 competitor_intel.py
+│   │   ├── 📁 creative_content_engine/
+│   │   │   └── 🐍 creative_content.py
+│   │   ├── 📁 customer_voice_engine/
+│   │   │   └── 🐍 customer_voice.py
+│   │   ├── 📁 development_engine/
+│   │   │   ├── 📁 subagents/
+│   │   │   │   ├── 🐍 cms_contract.py
+│   │   │   │   ├── 🐍 implementation.py
+│   │   │   │   ├── 🐍 planning.py
+│   │   │   │   ├── 🐍 release_ops.py
+│   │   │   │   ├── 🐍 security_review.py
+│   │   │   │   ├── 🐍 ui_layout.py
+│   │   │   │   └── 🐍 verification.py
+│   │   │   └── 🐍 development.py
+│   │   ├── 📁 learning_performance_engine/
+│   │   │   └── 🐍 learning_performance.py
+│   │   ├── 📁 product_evidence_engine/
+│   │   │   └── 🐍 product_evidence.py
+│   │   ├── 📁 strategy_engine/
+│   │   │   └── 🐍 strategy.py
 │   │   ├── 🐍 __init__.py
-│   │   ├── 🐍 base.py
-│   │   ├── 🐍 competitor_intel.py
-│   │   ├── 🐍 creative_content.py
-│   │   ├── 🐍 customer_voice.py
-│   │   ├── 🐍 development.py
-│   │   ├── 🐍 learning_performance.py
-│   │   ├── 🐍 product_evidence.py
-│   │   └── 🐍 strategy.py
+│   │   └── 🐍 base.py
 │   ├── 📁 api/
 │   │   ├── 📁 routes/
 │   │   │   ├── 🐍 __init__.py
@@ -46,7 +61,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 capabilities.py
 │   │   │   ├── 🐍 client.py
-│   │   │   └── 🐍 micro_tools.py
+│   │   │   ├── 🐍 micro_tools.py
+│   │   │   └── 🐍 sandbox_policy.py
 │   │   ├── 📁 social/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 base.py
@@ -65,6 +81,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   ├── 🐍 brand_persona.py
 │   │   ├── 🐍 context_assembly.py
 │   │   ├── 🐍 dag_scheduler.py
+│   │   ├── 🐍 development_state_machine.py
 │   │   ├── 🐍 evidence_synthesis.py
 │   │   ├── 🐍 hitl_preview_generator.py
 │   │   ├── 🐍 intelligence_engine.py
@@ -85,6 +102,11 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 database.py
 │   ├── 📁 schemas/
+│   │   ├── 📁 development/
+│   │   │   ├── 🐍 approval_token.py
+│   │   │   ├── 🐍 development_plan.py
+│   │   │   ├── 🐍 development_result.py
+│   │   │   └── 🐍 provenance.py
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 action_preview.py
 │   │   ├── 🐍 agent_contracts.py
@@ -109,12 +131,15 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   │   ├── 🐍 hybrid_retriever.py
 │   │   │   └── 🐍 schema_validator.py
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 attribution_coordinator.py
+│   │   ├── 🐍 audit_validator.py
 │   │   ├── 🐍 hitl.py
 │   │   ├── 🐍 memory_promotion.py
 │   │   ├── 🐍 policy_engine.py
 │   │   ├── 🐍 provenance.py
 │   │   ├── 🐍 task_state.py
-│   │   └── 🐍 telemetry.py
+│   │   ├── 🐍 telemetry.py
+│   │   └── 🐍 telemetry_engine.py
 │   ├── 🐍 __init__.py
 │   └── 🐍 main.py
 ├── 📁 scripts/
@@ -131,29 +156,55 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   └── 🐍 test_governed_end_to_end_flow.py
 │   ├── 📁 integration/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_creative_integration.py
 │   │   ├── 🐍 test_customer_voice_integration.py
+│   │   ├── 🐍 test_development_integration.py
+│   │   ├── 🐍 test_llm_live_e2e.py
 │   │   ├── 🐍 test_model_a_data_access.py
 │   │   ├── 🐍 test_outbound_after_approval.py
+│   │   ├── 🐍 test_phase5_governance_certification.py
 │   │   ├── 🐍 test_product_evidence_integration.py
 │   │   ├── 🐍 test_provenance_persistence.py
 │   │   ├── 🐍 test_security_boundaries_negative.py
+│   │   ├── 🐍 test_strategy_integration.py
 │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   └── 🐍 test_worker_sandbox_boundary.py
 │   ├── 📁 unit/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_action_preview_verification.py
+│   │   ├── 🐍 test_attribution_decay_roas_t31.py
+│   │   ├── 🐍 test_audit_lineage_validator_t33.py
 │   │   ├── 🐍 test_context_assembly_and_brand_persona.py
+│   │   ├── 🐍 test_creative_content_verification.py
 │   │   ├── 🐍 test_customer_voice_verification.py
+│   │   ├── 🐍 test_development_verification.py
+│   │   ├── 🐍 test_evidence_consolidation_verification.py
 │   │   ├── 🐍 test_evidence_synthesis.py
 │   │   ├── 🐍 test_governed_mcp_data_gateway.py
 │   │   ├── 🐍 test_hitl_gate.py
+│   │   ├── 🐍 test_hitl_signoff_verification.py
+│   │   ├── 🐍 test_live_telemetry_ingestion_t30.py
+│   │   ├── 🐍 test_llm_wiring_verification.py
+│   │   ├── 🐍 test_memory_promotion_t32.py
+│   │   ├── 🐍 test_milestone_m5_verification.py
+│   │   ├── 🐍 test_milestone_m6_verification.py
+│   │   ├── 🐍 test_milestone_m7_verification.py
+│   │   ├── 🐍 test_omnichannel_telemetry_engine_t29.py
+│   │   ├── 🐍 test_outbound_actuation_boundary_t25.py
+│   │   ├── 🐍 test_paid_media_deployment_t27.py
 │   │   ├── 🐍 test_policy_authorization.py
 │   │   ├── 🐍 test_product_evidence_verification.py
+│   │   ├── 🐍 test_project_closeout_t34.py
 │   │   ├── 🐍 test_rag_governance.py
+│   │   ├── 🐍 test_social_media_deployment_t28.py
 │   │   ├── 🐍 test_specialist_micro_tools.py
+│   │   ├── 🐍 test_strategy_allocation_verification.py
 │   │   ├── 🐍 test_task_state_machine.py
-│   │   └── 🐍 test_task_state_service_and_recovery.py
+│   │   ├── 🐍 test_task_state_service_and_recovery.py
+│   │   └── 🐍 test_website_cms_deployment_t26.py
 │   ├── 🐍 __init__.py
-│   └── 🐍 conftest.py
+│   ├── 🐍 conftest.py
+│   └── 🐍 staging_rehearsal.py
 ├── ⚙️ .env.example
 ├── ⚙️ .gitignore
 ├── 📄 Makefile
