@@ -1,15 +1,18 @@
 File Tree: backend
-Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
+Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 
 ────────────────────────────────────────────────────────────────────────────────
 
 ├── 📁 app/
 │   ├── 📁 agents/
 │   │   ├── 📁 competitor_intel_engine/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 competitor_intel.py
 │   │   ├── 📁 creative_content_engine/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 creative_content.py
 │   │   ├── 📁 customer_voice_engine/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 customer_voice.py
 │   │   ├── 📁 development_engine/
 │   │   │   ├── 📁 subagents/
@@ -21,15 +24,26 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   │   │   ├── 🐍 security_review.py
 │   │   │   │   ├── 🐍 ui_layout.py
 │   │   │   │   └── 🐍 verification.py
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 development.py
 │   │   ├── 📁 learning_performance_engine/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 learning_performance.py
 │   │   ├── 📁 product_evidence_engine/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 product_evidence.py
 │   │   ├── 📁 strategy_engine/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 strategy.py
 │   │   ├── 🐍 __init__.py
-│   │   └── 🐍 base.py
+│   │   ├── 🐍 base.py
+│   │   ├── 🐍 competitor_intel.py
+│   │   ├── 🐍 creative_content.py
+│   │   ├── 🐍 customer_voice.py
+│   │   ├── 🐍 development.py
+│   │   ├── 🐍 learning_performance.py
+│   │   ├── 🐍 product_evidence.py
+│   │   └── 🐍 strategy.py
 │   ├── 📁 api/
 │   │   ├── 📁 routes/
 │   │   │   ├── 🐍 __init__.py
@@ -104,6 +118,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   └── 🐍 database.py
 │   ├── 📁 schemas/
 │   │   ├── 📁 development/
+│   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 approval_token.py
 │   │   │   ├── 🐍 development_plan.py
 │   │   │   ├── 🐍 development_result.py
@@ -145,8 +160,6 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   ├── 🐍 __init__.py
 │   └── 🐍 main.py
 ├── 📁 scripts/
-│   ├── 📁 lib/
-│   │   └── 📄 common.sh
 │   ├── 📄 bootstrap.sh
 │   ├── 📄 lint.sh
 │   ├── 📄 run_dev_server.sh
@@ -159,6 +172,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   ├── 📁 development_engine/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_cms_agent.py
+│   │   ├── 🐍 test_code_implementation_agent.py
 │   │   ├── 🐍 test_development_engine_core.py
 │   │   ├── 🐍 test_development_provenance.py
 │   │   ├── 🐍 test_hitl_gateway.py
