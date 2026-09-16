@@ -21,6 +21,15 @@ from app.schemas.development.provenance import (
     InTotoStatement,
     SlsaProvenancePredicate,
 )
+from app.schemas.development.ui import (
+    UiAccessibilityReport,
+    UiCandidateDeliverable,
+    UiRenderEvidence,
+    UiValidationEvidence,
+    UiViewportRender,
+    WcagFinding,
+    WcagSeverity,
+)
 
 __all__ = [
     "DevelopmentApprovalToken",
@@ -36,4 +45,11 @@ __all__ = [
     "DevelopmentTaskGrant",
     "DevelopmentEngineRequest",
     "DevelopmentEngineResult",
+    "UiAccessibilityReport",
+    "UiCandidateDeliverable",
+    "UiRenderEvidence",
+    "UiValidationEvidence",
+    "UiViewportRender",
+    "WcagFinding",
+    "WcagSeverity",
 ]

@@ -159,7 +159,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   │   ├── 🐍 approval_token.py
 │   │   │   │   ├── 🐍 development_plan.py
 │   │   │   │   ├── 🐍 development_result.py
-│   │   │   │   └── 🐍 provenance.py
+│   │   │   │   ├── 🐍 provenance.py
+│   │   │   │   └── 🐍 ui.py
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 action_preview.py
 │   │   │   ├── 🐍 agent_contracts.py
@@ -213,7 +214,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 test_hitl_gateway.py
 │   │   │   ├── 🐍 test_planning_agent.py
 │   │   │   ├── 🐍 test_sandbox_control_plane.py
-│   │   │   └── 🐍 test_state_machine.py
+│   │   │   ├── 🐍 test_state_machine.py
+│   │   │   └── 🐍 test_ui_layout_agent.py
 │   │   ├── 📁 integration/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_creative_integration.py
