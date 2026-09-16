@@ -265,6 +265,13 @@ class DevelopmentPlanningAgent:
         if cms_needed:
             active_step_ids.append(step_cms_id)
 
+        grant_target_files = [str(f) for f in getattr(grant, "target_files", [])]
+        ui_targets = [f for f in grant_target_files if f.endswith((".html", ".css", ".tsx", ".jsx", ".vue"))]
+        code_targets = [f for f in grant_target_files if f not in ui_targets and not f.endswith(".json")]
+
+        ui_artifacts = ui_targets if ui_targets else (["templates/component.html"] if ui_needed else [])
+        code_artifacts = code_targets if code_targets else (["components/component.py"] if code_needed else [])
+
         # Step 2: DEV-UI (Conditional)
         step_ui_id = "step-02-ui"
         ui_deps = list(active_step_ids)
@@ -280,7 +287,7 @@ class DevelopmentPlanningAgent:
                 dependencies=ui_deps,
                 required_capabilities=["template_rendering"],
                 required_tools=["template_generator"],
-                affected_artifacts=["templates/component.html"] if ui_needed else [],
+                affected_artifacts=ui_artifacts,
                 risk_class="LOW",
                 acceptance_criteria=[
                     "Mobile, tablet, and desktop responsive breakpoints validated",
@@ -306,7 +313,7 @@ class DevelopmentPlanningAgent:
                 dependencies=code_deps,
                 required_capabilities=["ast_parsing", "diff_generation"],
                 required_tools=["ast_parser", "diff_generator"],
-                affected_artifacts=["components/component.py"] if code_needed else [],
+                affected_artifacts=code_artifacts,
                 risk_class="MEDIUM",
                 acceptance_criteria=[
                     "Syntax and AST clean with zero parse errors",
@@ -402,6 +409,9 @@ class DevelopmentPlanningAgent:
         for s in steps:
             if s.status == "REQUIRED":
                 affected_files.extend(s.affected_artifacts)
+        for f in grant_target_files:
+            if f not in affected_files:
+                affected_files.append(f)
         if not affected_files:
             affected_files = ["dist/deliverable.json"]
 

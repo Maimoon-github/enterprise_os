@@ -285,12 +285,11 @@ class CodeImplementationAgent:
             ctx.get("ui_candidate")
             or ctx.get("cms_candidate")
             or ctx.get("predecessor_candidate")
+            or previous_candidate
         )
 
         if predecessor_candidate is not None:
-            if isinstance(predecessor_candidate, UiCandidateDeliverable):
-                predecessor_hash = predecessor_candidate.candidate_hash
-            elif isinstance(predecessor_candidate, CmsCandidateDeliverable):
+            if isinstance(predecessor_candidate, (UiCandidateDeliverable, CmsCandidateDeliverable, CodeCandidateDeliverable)):
                 predecessor_hash = predecessor_candidate.candidate_hash
             elif isinstance(predecessor_candidate, dict):
                 predecessor_hash = (

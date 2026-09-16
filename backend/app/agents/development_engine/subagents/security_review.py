@@ -19,6 +19,7 @@ Responsible for:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -90,7 +91,7 @@ class SecurityReviewAgent:
             )
             return {"status": "error", "error": result.error or "Sandbox execution failure"}
 
-        output = result.sanitized_output if result else {}
+        output = (result.structured_output or result.sanitized_output) if result else {}
         output = output or {}
 
         # If sandbox microtool ran in-process, output may be wrapped or returned directly
@@ -345,7 +346,19 @@ class SecurityReviewAgent:
 
             # Extract findings
             raw_findings = res.get("findings") or []
+            if isinstance(raw_findings, str):
+                try:
+                    raw_findings = json.loads(raw_findings)
+                except Exception:
+                    raw_findings = []
             for rf in raw_findings:
+                if isinstance(rf, str):
+                    try:
+                        rf = json.loads(rf)
+                    except Exception:
+                        continue
+                if not isinstance(rf, dict):
+                    continue
                 sev_str = str(rf.get("severity", "HIGH")).upper()
                 sev = (
                     SecuritySeverity(sev_str)

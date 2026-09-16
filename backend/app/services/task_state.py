@@ -1162,6 +1162,20 @@ class TaskStateService:
         """Persist a durable development workflow checkpoint with idempotency guarantee."""
         history = self._dev_checkpoints.setdefault(checkpoint.task_id, [])
 
+        # Post-restart recovery: If memory history is empty, hydrate from durable CTS storage
+        if not history:
+            try:
+                task_existing = await self.get_state(checkpoint.task_id)
+                persisted_cps = task_existing.cts_state.get("dev_checkpoints", [])
+                for p_dict in persisted_cps:
+                    history.append(DevelopmentWorkflowCheckpoint.model_validate(p_dict))
+                if not history:
+                    latest = task_existing.cts_state.get("latest_dev_checkpoint")
+                    if latest:
+                        history.append(DevelopmentWorkflowCheckpoint.model_validate(latest))
+            except Exception:
+                pass
+
         # Idempotency check: if already committed with identical idempotency key, return existing
         for cp in history:
             if cp.idempotency_key == checkpoint.idempotency_key:
@@ -1183,6 +1197,10 @@ class TaskStateService:
             cts_state["dev_workflow_state"] = checkpoint.state.value
             cts_state["latest_dev_checkpoint_id"] = checkpoint.checkpoint_id
             cts_state["latest_dev_checkpoint"] = checkpoint.model_dump(mode="json")
+            dev_cps = list(cts_state.get("dev_checkpoints", []))
+            if not any(c.get("checkpoint_id") == checkpoint.checkpoint_id for c in dev_cps):
+                dev_cps.append(checkpoint.model_dump(mode="json"))
+            cts_state["dev_checkpoints"] = dev_cps
             task.cts_state.update(cts_state)
             await self.save_state(tenant_id, task)
         except Exception:
@@ -1230,6 +1248,25 @@ class TaskStateService:
                 )
 
         return checkpoint
+
+    async def get_development_checkpoints(
+        self, task_id: str
+    ) -> list[DevelopmentWorkflowCheckpoint]:
+        """Retrieve all durable checkpoints for development workflow."""
+        history = list(self._dev_checkpoints.get(task_id, []))
+        if history:
+            return history
+        try:
+            task = await self.get_state(task_id)
+            persisted_cps = task.cts_state.get("dev_checkpoints", [])
+            if persisted_cps:
+                return [DevelopmentWorkflowCheckpoint.model_validate(d) for d in persisted_cps]
+            latest_dict = task.cts_state.get("latest_dev_checkpoint")
+            if latest_dict:
+                return [DevelopmentWorkflowCheckpoint.model_validate(latest_dict)]
+        except Exception:
+            pass
+        return []
 
     async def get_latest_development_checkpoint(
         self, task_id: str

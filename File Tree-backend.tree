@@ -175,6 +175,7 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_code_implementation_agent.py
 │   │   ├── 🐍 test_development_engine_core.py
 │   │   ├── 🐍 test_development_provenance.py
+│   │   ├── 🐍 test_end_to_end_validation.py
 │   │   ├── 🐍 test_hitl_gateway.py
 │   │   ├── 🐍 test_planning_agent.py
 │   │   ├── 🐍 test_release_ops_agent.py
@@ -198,6 +199,8 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_strategy_integration.py
 │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   └── 🐍 test_worker_sandbox_boundary.py
+│   ├── 📁 reports/
+│   │   └── ⚙️ de12_validation_report.json
 │   ├── 📁 unit/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_action_preview_verification.py
