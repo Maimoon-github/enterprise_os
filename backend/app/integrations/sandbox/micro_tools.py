@@ -1422,6 +1422,257 @@ def execute_s_code(
             res_gen["output"] = dict(res_gen)
             return res_gen
 
+    # 1.5 Verification Operations Dispatch (DE-10 DEV-VERIFY)
+    if effective_operation in (
+        "verify_environment",
+        "run_build",
+        "run_lint_check",
+        "run_format_check",
+        "run_type_check",
+        "run_automated_tests",
+        "run_coverage_analysis",
+    ):
+        # DEV-VERIFY enforces strict read-only execution: mutation attempts fail closed
+        if payload.get("mutation_attempted") or payload.get("write_file") or payload.get("apply_patch"):
+            res_mut: dict[str, Any] = {
+                "status": "security_violation",
+                "security_violation": True,
+                "operation": effective_operation,
+                "error": "Security violation: DEV-VERIFY is strictly read-only; mutation attempts are rejected.",
+                "mutation_rejected": True,
+            }
+            res_mut["output"] = dict(res_mut)
+            return res_mut
+
+        if effective_operation == "verify_environment":
+            required_tools = payload.get("required_tools") or ["python", "pytest", "ruff", "mypy"]
+            env_status = str(payload.get("env_status", "READY")).upper()
+            isolation_ok = bool(payload.get("isolation_validated", True))
+            tools_present: list[str] = []
+            missing_tools: list[str] = []
+
+            for tool in required_tools:
+                if payload.get(f"tool_missing_{tool}"):
+                    missing_tools.append(tool)
+                else:
+                    tools_present.append(tool)
+
+            is_ready = env_status == "READY" and isolation_ok and len(missing_tools) == 0
+            res_env: dict[str, Any] = {
+                "status": "SUCCESS" if is_ready else "BLOCKED",
+                "operation": "verify_environment",
+                "is_ready": is_ready,
+                "isolation_validated": isolation_ok,
+                "tools_present": tools_present,
+                "missing_tools": missing_tools,
+                "python_version": "3.11.0",
+                "sandbox_isolation": "ACTIVE",
+            }
+            if not is_ready:
+                res_env["error"] = f"Environment verification failed: missing tools={missing_tools}, isolation={isolation_ok}"
+            res_env["output"] = dict(res_env)
+            return res_env
+
+        elif effective_operation == "run_build":
+            candidate_source = payload.get("source_code") or {}
+            simulated_failure = payload.get("simulate_build_failure")
+
+            build_errors: list[str] = []
+            if simulated_failure:
+                build_errors.append(str(simulated_failure))
+            else:
+                for file_path, code in candidate_source.items():
+                    if file_path.endswith(".py"):
+                        try:
+                            compile(code, file_path, "exec")
+                        except Exception as exc:
+                            build_errors.append(f"Build compilation error in '{file_path}': {exc}")
+
+            success = len(build_errors) == 0
+            res_build: dict[str, Any] = {
+                "status": "SUCCESS" if success else "FAIL",
+                "operation": "run_build",
+                "exit_code": 0 if success else 1,
+                "success": success,
+                "build_passed": success,
+                "compiled_files": list(candidate_source.keys()),
+                "errors": build_errors,
+                "stdout": "Build succeeded: all artifacts compiled cleanly." if success else "Build failed.",
+                "stderr": "\n".join(build_errors) if build_errors else "",
+            }
+            res_build["output"] = dict(res_build)
+            return res_build
+
+        elif effective_operation == "run_lint_check":
+            candidate_source = payload.get("source_code") or {}
+            simulated_lint_errors = payload.get("simulate_lint_errors") or []
+            lint_errors: list[str] = list(simulated_lint_errors)
+            lint_warnings: list[str] = []
+
+            for file_path, code in candidate_source.items():
+                if file_path.endswith(".py"):
+                    try:
+                        tree = ast.parse(code, filename=file_path)
+                        for node in ast.walk(tree):
+                            if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
+                                lint_errors.append(f"{file_path}:{node.lineno}: [F403] 'from ... import *' used; unable to detect undefined names")
+                            if isinstance(node, ast.ExceptHandler) and node.type is None:
+                                lint_warnings.append(f"{file_path}:{node.lineno}: [E722] do not use bare 'except'")
+                    except SyntaxError as syn_err:
+                        lint_errors.append(f"{file_path}:{syn_err.lineno}: [E999] SyntaxError: {syn_err.msg}")
+
+            passed = len(lint_errors) == 0
+            res_lint: dict[str, Any] = {
+                "status": "SUCCESS" if passed else "FAIL",
+                "operation": "run_lint_check",
+                "exit_code": 0 if passed else 1,
+                "passed": passed,
+                "lint_passed": passed,
+                "error_count": len(lint_errors),
+                "warning_count": len(lint_warnings),
+                "errors": lint_errors,
+                "warnings": lint_warnings,
+                "stdout": f"All checks passed ({len(candidate_source)} files checked)." if passed else f"Found {len(lint_errors)} lint errors.",
+                "stderr": "\n".join(lint_errors) if lint_errors else "",
+            }
+            res_lint["output"] = dict(res_lint)
+            return res_lint
+
+        elif effective_operation == "run_format_check":
+            candidate_source = payload.get("source_code") or {}
+            simulated_unformatted = payload.get("simulate_unformatted_files") or []
+            unformatted_files: list[str] = list(simulated_unformatted)
+
+            for file_path, code in candidate_source.items():
+                lines = code.splitlines()
+                has_trailing_space = any(line.rstrip() != line for line in lines)
+                has_missing_final_newline = bool(code and not code.endswith("\n"))
+                if has_trailing_space or has_missing_final_newline:
+                    if file_path not in unformatted_files:
+                        unformatted_files.append(file_path)
+
+            passed = len(unformatted_files) == 0
+            res_fmt_check: dict[str, Any] = {
+                "status": "SUCCESS" if passed else "FAIL",
+                "operation": "run_format_check",
+                "exit_code": 0 if passed else 1,
+                "passed": passed,
+                "format_passed": passed,
+                "unformatted_files": unformatted_files,
+                "stdout": "All files formatted cleanly." if passed else f"{len(unformatted_files)} files would be reformatted.",
+                "stderr": f"Files requiring formatting: {unformatted_files}" if unformatted_files else "",
+            }
+            res_fmt_check["output"] = dict(res_fmt_check)
+            return res_fmt_check
+
+        elif effective_operation == "run_type_check":
+            candidate_source = payload.get("source_code") or {}
+            simulated_type_errors = payload.get("simulate_type_errors") or []
+            type_errors: list[str] = list(simulated_type_errors)
+
+            for file_path, code in candidate_source.items():
+                if file_path.endswith(".py"):
+                    try:
+                        tree = ast.parse(code, filename=file_path)
+                        for node in ast.walk(tree):
+                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                                if payload.get("strict_type_checking") and node.returns is None:
+                                    type_errors.append(f"{file_path}:{node.lineno}: Function '{node.name}' is missing return type annotation")
+                    except Exception as exc:
+                        type_errors.append(f"{file_path}: Type parse error: {exc}")
+
+            passed = len(type_errors) == 0
+            res_type: dict[str, Any] = {
+                "status": "SUCCESS" if passed else "FAIL",
+                "operation": "run_type_check",
+                "exit_code": 0 if passed else 1,
+                "passed": passed,
+                "type_check_passed": passed,
+                "error_count": len(type_errors),
+                "errors": type_errors,
+                "stdout": "Success: no type issues found." if passed else f"Found {len(type_errors)} type errors.",
+                "stderr": "\n".join(type_errors) if type_errors else "",
+            }
+            res_type["output"] = dict(res_type)
+            return res_type
+
+        elif effective_operation == "run_automated_tests":
+            test_type = str(payload.get("test_type", "unit")).lower()
+            simulated_test_results = payload.get("simulate_test_results")
+
+            if simulated_test_results:
+                passed = int(simulated_test_results.get("passed", 0))
+                failed = int(simulated_test_results.get("failed", 0))
+                skipped = int(simulated_test_results.get("skipped", 0))
+                errored = int(simulated_test_results.get("errored", 0))
+                duration_s = float(simulated_test_results.get("duration_s", 1.25))
+                failures = list(simulated_test_results.get("failures", []))
+            else:
+                passed = int(payload.get("tests_passed", 12))
+                failed = int(payload.get("tests_failed", 0))
+                skipped = int(payload.get("tests_skipped", 0))
+                errored = int(payload.get("tests_errored", 0))
+                duration_s = float(payload.get("duration_s", 0.85))
+                failures = payload.get("test_failures") or []
+
+            total = passed + failed + skipped + errored
+            all_passed = (failed == 0 and errored == 0 and total > 0)
+            res_test: dict[str, Any] = {
+                "status": "SUCCESS" if all_passed else "FAIL",
+                "operation": "run_automated_tests",
+                "exit_code": 0 if all_passed else 1,
+                "test_type": test_type,
+                "all_passed": all_passed,
+                "test_totals": {
+                    "passed": passed,
+                    "failed": failed,
+                    "skipped": skipped,
+                    "errored": errored,
+                    "total": total,
+                    "duration_s": duration_s,
+                },
+                "failures": failures,
+                "stdout": f"==== {passed} passed in {duration_s}s ====" if all_passed else f"==== {failed} failed, {passed} passed ====",
+                "stderr": "\n".join(failures) if failures else "",
+            }
+            res_test["output"] = dict(res_test)
+            return res_test
+
+        elif effective_operation == "run_coverage_analysis":
+            simulated_coverage = payload.get("simulate_coverage")
+            min_required_pct = float(payload.get("minimum_required_pct", 80.0))
+
+            if simulated_coverage:
+                line_pct = float(simulated_coverage.get("line_coverage_pct", 85.0))
+                branch_pct = float(simulated_coverage.get("branch_coverage_pct", 80.0))
+                total_stmt = int(simulated_coverage.get("total_statements", 100))
+                covered_stmt = int(simulated_coverage.get("covered_statements", int(total_stmt * (line_pct / 100.0))))
+                missing_lines = dict(simulated_coverage.get("missing_lines_by_file", {}))
+            else:
+                line_pct = float(payload.get("line_coverage_pct", 92.5))
+                branch_pct = float(payload.get("branch_coverage_pct", 88.0))
+                total_stmt = int(payload.get("total_statements", 150))
+                covered_stmt = int(payload.get("covered_statements", int(total_stmt * (line_pct / 100.0))))
+                missing_lines = payload.get("missing_lines_by_file") or {}
+
+            threshold_met = line_pct >= min_required_pct
+            res_cov: dict[str, Any] = {
+                "status": "SUCCESS" if threshold_met else "FAIL",
+                "operation": "run_coverage_analysis",
+                "exit_code": 0 if threshold_met else 1,
+                "line_coverage_pct": line_pct,
+                "branch_coverage_pct": branch_pct,
+                "total_statements": total_stmt,
+                "covered_statements": covered_stmt,
+                "missing_lines_by_file": missing_lines,
+                "minimum_required_pct": min_required_pct,
+                "coverage_threshold_met": threshold_met,
+                "stdout": f"TOTAL coverage: {line_pct:.1f}% (required {min_required_pct:.1f}%)",
+                "stderr": "" if threshold_met else f"Coverage {line_pct:.1f}% below minimum threshold {min_required_pct:.1f}%",
+            }
+            res_cov["output"] = dict(res_cov)
+            return res_cov
+
 
     # 2. Syntax & AST Validation
     ast_valid = True

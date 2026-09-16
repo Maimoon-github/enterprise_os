@@ -27,11 +27,12 @@ from app.schemas.governance import WorkerRole
 from app.schemas.development.development_plan import DevelopmentPlan
 from app.schemas.cms import CmsCandidateDeliverable
 from app.schemas.development.ui import UiCandidateDeliverable
-from app.schemas.development.development_result import CodeCandidateDeliverable
+from app.schemas.development.development_result import CodeCandidateDeliverable, VerificationDossier
 from app.agents.development_engine.subagents.planning import DevelopmentPlanningAgent
 from app.agents.development_engine.subagents.cms_contract import CmsContractAgent
 from app.agents.development_engine.subagents.ui_layout import UiLayoutAgent
 from app.agents.development_engine.subagents.implementation import CodeImplementationAgent
+from app.agents.development_engine.subagents.verification import VerificationAgent
 from app.schemas.sandbox import SandboxCapability
 
 logger = get_logger(__name__)
@@ -54,6 +55,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
     _cms_agent: CmsContractAgent
     _ui_agent: UiLayoutAgent
     _code_agent: CodeImplementationAgent
+    _verify_agent: VerificationAgent
 
     def __init__(
         self,
@@ -67,6 +69,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         self._cms_agent = CmsContractAgent(sandbox_client, llm_client=llm_client)
         self._ui_agent = UiLayoutAgent(sandbox_client, llm_client=llm_client)
         self._code_agent = CodeImplementationAgent(sandbox_client, llm_client=llm_client)
+        self._verify_agent = VerificationAgent(sandbox_client, llm_client=llm_client)
 
     @property
     def identity(self) -> DevelopmentEngineIdentity:
@@ -97,6 +100,11 @@ class DevelopmentAgent(BoundedWorkerAgent):
     def code_agent(self) -> CodeImplementationAgent:
         """Sub-agent responsible for application/integration code authoring (DEV-CODE)."""
         return self._code_agent
+
+    @property
+    def verify_agent(self) -> VerificationAgent:
+        """Sub-agent responsible for technical verification (DEV-VERIFY)."""
+        return self._verify_agent
 
 
     def get_identity(self) -> DevelopmentEngineIdentity:
@@ -786,3 +794,61 @@ class DevelopmentAgent(BoundedWorkerAgent):
                 logger.warning("Failed to record provenance for DEV-CODE", exc_info=exc)
 
         return candidate, candidate_hash
+
+    async def execute_verify_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        candidate: CodeCandidateDeliverable | UiCandidateDeliverable | CmsCandidateDeliverable | None,
+        expected_candidate_hash: str | None = None,
+        plan: DevelopmentPlan | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        provenance_recorder: Any = None,
+    ) -> VerificationDossier:
+        """Execute DEV-VERIFY sub-agent to produce a sealed VerificationDossier.
+
+        Enforces plan authority, validates candidate deliverable and exact digest hash,
+        executes repository-native builds, lint checks, formatting checks, type checks,
+        automated tests, and coverage analysis in isolated sandbox,
+        computes dossier hash, records provenance, and returns sealed VerificationDossier.
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        dossier = await self._verify_agent.execute_verification_task(
+            grant=validated_grant,
+            candidate=candidate,
+            expected_candidate_hash=expected_candidate_hash,
+            plan=plan,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            context=ctx,
+        )
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-verify-{dossier.dossier_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"verification_dossier:{dossier.dossier_id}:{dossier.dossier_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-VERIFY",
+                    metadata={
+                        "dossier_id": dossier.dossier_id,
+                        "task_id": validated_grant.task_id,
+                        "dossier_hash": dossier.dossier_hash,
+                        "candidate_hash": dossier.candidate_hash,
+                        "verdict": dossier.verdict.value,
+                        "remediation_step": dossier.remediation_step,
+                        "checks_count": len(dossier.checks),
+                        "tests_passed": dossier.test_totals.passed,
+                        "tests_failed": dossier.test_totals.failed,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-VERIFY", exc_info=exc)
+
+        return dossier

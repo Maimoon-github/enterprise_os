@@ -10,9 +10,9 @@ Enforces:
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Any
-import uuid
 
 from app.core.exceptions import InvalidTransitionError, PolicyViolationError
 from app.core.logging import get_logger
@@ -27,84 +27,112 @@ from app.schemas.task_state import (
 logger = get_logger(__name__)
 
 _ALLOWED_TRANSITIONS: dict[DevelopmentWorkflowState, frozenset[DevelopmentWorkflowState]] = {
-    DevelopmentWorkflowState.RECEIVED: frozenset({
-        DevelopmentWorkflowState.POLICY_BOUND,
-        DevelopmentWorkflowState.ABORTED,
-        DevelopmentWorkflowState.FAILED,
-    }),
-    DevelopmentWorkflowState.POLICY_BOUND: frozenset({
-        DevelopmentWorkflowState.PLANNING,
-        DevelopmentWorkflowState.ABORTED,
-        DevelopmentWorkflowState.FAILED,
-    }),
-    DevelopmentWorkflowState.PLANNING: frozenset({
-        DevelopmentWorkflowState.RESULT_SEALED,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.RESULT_SEALED: frozenset({
-        DevelopmentWorkflowState.HITL_PENDING,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.HITL_PENDING: frozenset({
-        DevelopmentWorkflowState.APPROVED,
-        DevelopmentWorkflowState.CORRECTION_REQUIRED,
-        DevelopmentWorkflowState.ABORTED,
-        DevelopmentWorkflowState.FAILED,
-    }),
-    DevelopmentWorkflowState.APPROVED: frozenset({
-        DevelopmentWorkflowState.SANDBOX_PROVISIONING,
-        DevelopmentWorkflowState.NEXT_STEP,
-        DevelopmentWorkflowState.RELEASE_READY,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.CORRECTION_REQUIRED: frozenset({
-        DevelopmentWorkflowState.RETRY_PREPARED,
-        DevelopmentWorkflowState.ABORTED,
-        DevelopmentWorkflowState.FAILED,
-    }),
-    DevelopmentWorkflowState.RETRY_PREPARED: frozenset({
-        DevelopmentWorkflowState.SANDBOX_PROVISIONING,
-        DevelopmentWorkflowState.PLANNING,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.SANDBOX_PROVISIONING: frozenset({
-        DevelopmentWorkflowState.VALIDATED,
-        DevelopmentWorkflowState.SUBAGENT_RUNNING,
-        DevelopmentWorkflowState.RETRY_PREPARED,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.VALIDATED: frozenset({
-        DevelopmentWorkflowState.SUBAGENT_RUNNING,
-        DevelopmentWorkflowState.RETRY_PREPARED,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.SUBAGENT_RUNNING: frozenset({
-        DevelopmentWorkflowState.RESULT_SEALED,
-        DevelopmentWorkflowState.RETRY_PREPARED,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.NEXT_STEP: frozenset({
-        DevelopmentWorkflowState.SANDBOX_PROVISIONING,
-        DevelopmentWorkflowState.RELEASE_READY,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
-    DevelopmentWorkflowState.RELEASE_READY: frozenset({
-        DevelopmentWorkflowState.COMPLETED,
-        DevelopmentWorkflowState.FAILED,
-        DevelopmentWorkflowState.ABORTED,
-    }),
+    DevelopmentWorkflowState.RECEIVED: frozenset(
+        {
+            DevelopmentWorkflowState.POLICY_BOUND,
+            DevelopmentWorkflowState.ABORTED,
+            DevelopmentWorkflowState.FAILED,
+        }
+    ),
+    DevelopmentWorkflowState.POLICY_BOUND: frozenset(
+        {
+            DevelopmentWorkflowState.PLANNING,
+            DevelopmentWorkflowState.ABORTED,
+            DevelopmentWorkflowState.FAILED,
+        }
+    ),
+    DevelopmentWorkflowState.PLANNING: frozenset(
+        {
+            DevelopmentWorkflowState.RESULT_SEALED,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.RESULT_SEALED: frozenset(
+        {
+            DevelopmentWorkflowState.HITL_PENDING,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.HITL_PENDING: frozenset(
+        {
+            DevelopmentWorkflowState.APPROVED,
+            DevelopmentWorkflowState.CORRECTION_REQUIRED,
+            DevelopmentWorkflowState.ABORTED,
+            DevelopmentWorkflowState.FAILED,
+        }
+    ),
+    DevelopmentWorkflowState.APPROVED: frozenset(
+        {
+            DevelopmentWorkflowState.SANDBOX_PROVISIONING,
+            DevelopmentWorkflowState.NEXT_STEP,
+            DevelopmentWorkflowState.RELEASE_READY,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.CORRECTION_REQUIRED: frozenset(
+        {
+            DevelopmentWorkflowState.RETRY_PREPARED,
+            DevelopmentWorkflowState.ABORTED,
+            DevelopmentWorkflowState.FAILED,
+        }
+    ),
+    DevelopmentWorkflowState.RETRY_PREPARED: frozenset(
+        {
+            DevelopmentWorkflowState.SANDBOX_PROVISIONING,
+            DevelopmentWorkflowState.PLANNING,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.SANDBOX_PROVISIONING: frozenset(
+        {
+            DevelopmentWorkflowState.VALIDATED,
+            DevelopmentWorkflowState.SUBAGENT_RUNNING,
+            DevelopmentWorkflowState.RETRY_PREPARED,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.VALIDATED: frozenset(
+        {
+            DevelopmentWorkflowState.SUBAGENT_RUNNING,
+            DevelopmentWorkflowState.RETRY_PREPARED,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.SUBAGENT_RUNNING: frozenset(
+        {
+            DevelopmentWorkflowState.RESULT_SEALED,
+            DevelopmentWorkflowState.RETRY_PREPARED,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.NEXT_STEP: frozenset(
+        {
+            DevelopmentWorkflowState.SANDBOX_PROVISIONING,
+            DevelopmentWorkflowState.RELEASE_READY,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
+    DevelopmentWorkflowState.RELEASE_READY: frozenset(
+        {
+            DevelopmentWorkflowState.COMPLETED,
+            DevelopmentWorkflowState.FAILED,
+            DevelopmentWorkflowState.ABORTED,
+        }
+    ),
     DevelopmentWorkflowState.COMPLETED: frozenset(),
-    DevelopmentWorkflowState.FAILED: frozenset({
-        DevelopmentWorkflowState.RETRY_PREPARED,
-    }),
+    DevelopmentWorkflowState.FAILED: frozenset(
+        {
+            DevelopmentWorkflowState.RETRY_PREPARED,
+        }
+    ),
     DevelopmentWorkflowState.ABORTED: frozenset(),
 }
 
@@ -259,6 +287,17 @@ class DevelopmentStateMachine:
                     "Machine policy takes precedence over human approval."
                 )
 
+            dossier = state_data.get("verification_dossier") or state_data.get("dossier")
+            if dossier is not None:
+                dossier_verdict = getattr(dossier, "verdict", None) or (
+                    dossier.get("verdict") if isinstance(dossier, dict) else None
+                )
+                if dossier_verdict and str(dossier_verdict) != "PASS":
+                    raise PolicyViolationError(
+                        "Transition to APPROVED blocked: Verification dossier verdict is "
+                        f"'{dossier_verdict}' (must be 'PASS' to advance to DEV-SEC)."
+                    )
+
             token = state_data.get("approval_token")
             decision = state_data.get("approval_decision")
 
@@ -300,8 +339,12 @@ class DevelopmentStateMachine:
                         f"Expected '{expected_attempt}', got '{tok_attempt}'."
                     )
 
-                cand_hash = state_data.get("candidate_hash") or state_data.get("output_snapshot_hash")
-                tok_hash = getattr(token, "output_snapshot_hash", None) or getattr(token, "candidate_hash", None)
+                cand_hash = state_data.get("candidate_hash") or state_data.get(
+                    "output_snapshot_hash"
+                )
+                tok_hash = getattr(token, "output_snapshot_hash", None) or getattr(
+                    token, "candidate_hash", None
+                )
                 if not tok_hash and isinstance(token, dict):
                     tok_hash = token.get("output_snapshot_hash") or token.get("candidate_hash")
                 if cand_hash and tok_hash and cand_hash != tok_hash:
@@ -323,21 +366,35 @@ class DevelopmentStateMachine:
                     is_expired = datetime.now(UTC) > exp
 
                 if is_expired:
-                    raise PolicyViolationError("Transition to APPROVED rejected: Approval token has expired.")
+                    raise PolicyViolationError(
+                        "Transition to APPROVED rejected: Approval token has expired."
+                    )
 
                 # Check token signature if validator or public_key_pem is configured
                 validator = state_data.get("validator")
                 public_key_pem = state_data.get("public_key_pem")
-                if (validator or public_key_pem) and hasattr(token, "verify_signature") and callable(token.verify_signature) and getattr(token, "signature", None):
-                    if not token.verify_signature(validator=validator, public_key_pem=public_key_pem):
-                        raise PolicyViolationError("Transition to APPROVED rejected: Approval token signature verification failed.")
+                if (
+                    (validator or public_key_pem)
+                    and hasattr(token, "verify_signature")
+                    and callable(token.verify_signature)
+                    and getattr(token, "signature", None)
+                ):
+                    if not token.verify_signature(
+                        validator=validator, public_key_pem=public_key_pem
+                    ):
+                        raise PolicyViolationError(
+                            "Transition to APPROVED rejected: Approval token signature verification failed."
+                        )
 
         elif target_state == DevelopmentWorkflowState.CORRECTION_REQUIRED:
             token = state_data.get("approval_token")
             decision = state_data.get("approval_decision")
-            tok_decision = getattr(token, "decision", None) or (
-                token.get("decision") if isinstance(token, dict) else None
-            ) if token else None
+            tok_decision = (
+                getattr(token, "decision", None)
+                or (token.get("decision") if isinstance(token, dict) else None)
+                if token
+                else None
+            )
             actual_decision = decision or tok_decision
             if actual_decision not in ("REJECT", "REQUEST_REVISION"):
                 raise PolicyViolationError(
@@ -467,7 +524,11 @@ class DevelopmentStateMachine:
         try:
             if provenance_recorder and hasattr(provenance_recorder, "record_development_event"):
                 eff_in_hash = s_data.get("input_snapshot_hash") or input_snapshot_hash
-                eff_out_hash = output_snapshot_hash or s_data.get("candidate_hash") or s_data.get("output_snapshot_hash")
+                eff_out_hash = (
+                    output_snapshot_hash
+                    or s_data.get("candidate_hash")
+                    or s_data.get("output_snapshot_hash")
+                )
                 eff_art_hashes = artifact_hashes or s_data.get("artifact_hashes") or {}
                 prov_ev = await provenance_recorder.record_development_event(
                     tenant_id=tenant_id,

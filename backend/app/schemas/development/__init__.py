@@ -9,8 +9,10 @@ from app.schemas.development.development_plan import (
     DevelopmentPlanStep,
 )
 from app.schemas.development.development_result import (
+    CheckOutcome,
     CodeCandidateDeliverable,
     CodeSanityCheckResult,
+    CoverageReport,
     DependencyChange,
     DependencyChangeAction,
     DevelopmentEngineIdentity,
@@ -19,7 +21,11 @@ from app.schemas.development.development_result import (
     DevelopmentEngineStatus,
     DevelopmentTaskGrant,
     InterfaceChange,
+    TestTotals,
     ToolExecutionEvidence,
+    VerificationCheckResult,
+    VerificationDossier,
+    VerificationVerdict,
 )
 from app.schemas.development.provenance import (
     DevelopmentProvenanceRecord,
@@ -64,4 +70,10 @@ __all__ = [
     "DependencyChangeAction",
     "InterfaceChange",
     "ToolExecutionEvidence",
+    "VerificationVerdict",
+    "CheckOutcome",
+    "VerificationCheckResult",
+    "CoverageReport",
+    "TestTotals",
+    "VerificationDossier",
 ]

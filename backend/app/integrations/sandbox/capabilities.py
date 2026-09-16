@@ -69,6 +69,13 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
             "validate_syntax_compiler",
             "manage_packages",
             "generate_code",
+            "verify_environment",
+            "run_build",
+            "run_lint_check",
+            "run_format_check",
+            "run_type_check",
+            "run_automated_tests",
+            "run_coverage_analysis",
             "default",
         ),
         network_policy=NetworkPolicy.DISABLED,
@@ -100,6 +107,13 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
             "compiler_sanity_checker",
             "package_manager_proxy",
             "application_code_generator",
+            "environment_verifier",
+            "build_runner",
+            "lint_checker",
+            "format_checker",
+            "type_checker",
+            "test_runner",
+            "coverage_analyzer",
         ),
     ),
     SandboxCapability.ALLOC: CapabilityProfile(
@@ -124,7 +138,13 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
         capability=SandboxCapability.VAL,
         specialist_name="Claim & Schema Validator",
         allowed_worker=WorkerRole.PRODUCT_EVIDENCE,
-        allowed_operations=("validate_claim", "lint_compliance", "check_schema", "validate_product_dossier", "default"),
+        allowed_operations=(
+            "validate_claim",
+            "lint_compliance",
+            "check_schema",
+            "validate_product_dossier",
+            "default",
+        ),
         network_policy=NetworkPolicy.DISABLED,
         default_timeout_seconds=120,
         allowed_tools=("compliance_linter", "claim_checker"),
@@ -142,7 +162,13 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
         capability=SandboxCapability.PARSE,
         specialist_name="Sentiment & Review Parser",
         allowed_worker=WorkerRole.CUSTOMER_VOICE,
-        allowed_operations=("parse_sentiment", "cluster_objections", "extract_feedback", "analyze_customer_voice", "default"),
+        allowed_operations=(
+            "parse_sentiment",
+            "cluster_objections",
+            "extract_feedback",
+            "analyze_customer_voice",
+            "default",
+        ),
         network_policy=NetworkPolicy.DISABLED,
         default_timeout_seconds=120,
         allowed_tools=("nlp_classifier", "sentiment_analyzer"),
@@ -193,7 +219,9 @@ def validate_capability_access(
         try:
             capability = SandboxCapability(capability)
         except ValueError:
-            raise SandboxInvocationError(f"Unauthorized or invalid sandbox capability: {capability}")
+            raise SandboxInvocationError(
+                f"Unauthorized or invalid sandbox capability: {capability}"
+            )
 
     if capability not in CAPABILITY_REGISTRY:
         raise SandboxInvocationError(f"Unauthorized or invalid sandbox capability: {capability}")
@@ -223,7 +251,10 @@ def validate_capability_access(
     if isinstance(requested_network, str):
         requested_network = NetworkPolicy(requested_network)
 
-    if requested_network != NetworkPolicy.DISABLED and profile.network_policy == NetworkPolicy.DISABLED:
+    if (
+        requested_network != NetworkPolicy.DISABLED
+        and profile.network_policy == NetworkPolicy.DISABLED
+    ):
         raise SandboxInvocationError(
             f"Network access policy violation: capability '{capability.value}' does not permit "
             f"network access (requested: '{requested_network.value}')."

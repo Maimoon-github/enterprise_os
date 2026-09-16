@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from enum import StrEnum
 import hashlib
 import json
-from typing import Any, Literal
 import uuid
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.agent_contracts import (
     CodeDiffEntry,
-    ConfidenceInterval,
     DevelopmentDeliverable,
     EvidenceEnvelope,
     TaskGrant,
 )
-from app.schemas.governance import TenantScope, WorkerRole
+from app.schemas.governance import WorkerRole
 from app.schemas.sandbox import SandboxCapability
-
 
 DISALLOWED_PATH_PATTERNS = (
     "..",
@@ -103,7 +101,9 @@ class DevelopmentTaskGrant(TaskGrant):
         # Handle naive datetime by converting to UTC
         val_utc = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
         if val_utc <= now:
-            raise ValueError(f"Task grant expired at {val_utc.isoformat()} (current time: {now.isoformat()}).")
+            raise ValueError(
+                f"Task grant expired at {val_utc.isoformat()} (current time: {now.isoformat()})."
+            )
         return value
 
     @field_validator("target_files")
@@ -203,7 +203,9 @@ class InterfaceChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     symbol_name: str
-    symbol_type: Literal["class", "function", "method", "variable", "interface", "type_alias"] = "function"
+    symbol_type: Literal["class", "function", "method", "variable", "interface", "type_alias"] = (
+        "function"
+    )
     change_type: Literal["added", "modified", "removed", "deprecated"] = "added"
     file_path: str
     signature: str = ""
@@ -292,7 +294,9 @@ class CodeCandidateDeliverable(BaseModel):
                 "file_path": iface.file_path,
                 "is_breaking": iface.is_breaking,
             }
-            for iface in sorted(self.contract_interface_changes, key=lambda x: f"{x.file_path}:{x.symbol_name}")
+            for iface in sorted(
+                self.contract_interface_changes, key=lambda x: f"{x.file_path}:{x.symbol_name}"
+            )
         ]
         canonical_source = {k: v.strip() for k, v in sorted(self.source_code.items())}
         canonical_payload = {
@@ -328,7 +332,8 @@ class CodeCandidateDeliverable(BaseModel):
             component_name=self.component_name,
             code_diffs=self.code_diffs,
             changed_files=self.changed_files,
-            validation_findings=self.sanity_check_result.checks_run + self.sanity_check_result.warnings,
+            validation_findings=self.sanity_check_result.checks_run
+            + self.sanity_check_result.warnings,
             security_checks_passed=self.sanity_check_result.is_valid,
             provenance={
                 **self.provenance,
@@ -337,3 +342,153 @@ class CodeCandidateDeliverable(BaseModel):
                 "subagent": "DEV-CODE",
             },
         )
+
+
+class VerificationVerdict(StrEnum):
+    """Machine determination verdict for DEV-VERIFY."""
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    ERROR = "ERROR"
+    BLOCKED = "BLOCKED"
+
+
+class CheckOutcome(StrEnum):
+    """Individual verification check outcome."""
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    ERROR = "ERROR"
+    SKIPPED = "SKIPPED"
+
+
+class VerificationCheckResult(BaseModel):
+    """Execution outcome of a single repository-native verification check."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    check_id: str
+    check_type: Literal[
+        "environment",
+        "build",
+        "lint",
+        "format",
+        "type_check",
+        "unit_test",
+        "integration_test",
+        "coverage",
+    ]
+    outcome: CheckOutcome
+    command_or_operation: str
+    exit_code: int = 0
+    duration_ms: float = 0.0
+    output_summary: str = ""
+    stdout: str = ""
+    stderr: str = ""
+    error_count: int = 0
+    warning_count: int = 0
+    failure_reasons: list[str] = Field(default_factory=list)
+    is_mandatory: bool = True
+
+
+class CoverageReport(BaseModel):
+    """Detailed automated test coverage analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    line_coverage_pct: float = 0.0
+    branch_coverage_pct: float = 0.0
+    total_statements: int = 0
+    covered_statements: int = 0
+    missing_lines_by_file: dict[str, list[int]] = Field(default_factory=dict)
+    coverage_threshold_met: bool = True
+    minimum_required_pct: float = 80.0
+
+
+class TestTotals(BaseModel):
+    """Consolidated test runner results."""
+
+    __test__ = False
+
+    model_config = ConfigDict(extra="forbid")
+
+    passed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    errored: int = 0
+    total: int = 0
+    duration_s: float = 0.0
+
+
+class VerificationDossier(BaseModel):
+    """Tamper-evident verification dossier produced by DEV-VERIFY."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dossier_id: str
+    task_id: str
+    workflow_id: str
+    candidate_hash: str
+    target_candidate_id: str
+    component_name: str
+    verdict: VerificationVerdict
+    remediation_step: str | None = None
+    checks: list[VerificationCheckResult] = Field(default_factory=list)
+    test_totals: TestTotals = Field(default_factory=TestTotals)
+    coverage_report: CoverageReport | None = None
+    evidence_envelopes: list[EvidenceEnvelope] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    dossier_hash: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def canonical_bytes(self) -> bytes:
+        """Deterministic byte representation of verification dossier."""
+        canonical_checks = [
+            {
+                "check_id": c.check_id,
+                "check_type": c.check_type,
+                "outcome": c.outcome.value,
+                "command_or_operation": c.command_or_operation,
+                "exit_code": c.exit_code,
+                "error_count": c.error_count,
+                "warning_count": c.warning_count,
+                "failure_reasons": sorted(c.failure_reasons),
+                "is_mandatory": c.is_mandatory,
+            }
+            for c in sorted(self.checks, key=lambda x: x.check_id)
+        ]
+        canonical_payload = {
+            "dossier_id": self.dossier_id,
+            "task_id": self.task_id,
+            "workflow_id": self.workflow_id,
+            "candidate_hash": self.candidate_hash,
+            "target_candidate_id": self.target_candidate_id,
+            "component_name": self.component_name,
+            "verdict": self.verdict.value,
+            "remediation_step": self.remediation_step or "",
+            "checks": canonical_checks,
+            "test_totals": {
+                "passed": self.test_totals.passed,
+                "failed": self.test_totals.failed,
+                "skipped": self.test_totals.skipped,
+                "errored": self.test_totals.errored,
+                "total": self.test_totals.total,
+            },
+            "coverage_threshold_met": self.coverage_report.coverage_threshold_met
+            if self.coverage_report
+            else True,
+            "line_coverage_pct": round(self.coverage_report.line_coverage_pct, 2)
+            if self.coverage_report
+            else 0.0,
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_dossier_hash(self) -> str:
+        """Compute SHA-256 digest of this verification dossier."""
+        digest = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.dossier_hash = digest
+        return digest
+
+    def is_acceptable_for_dev_sec(self) -> bool:
+        """Verify whether this dossier authorizes advancement to DEV-SEC."""
+        return self.verdict == VerificationVerdict.PASS
