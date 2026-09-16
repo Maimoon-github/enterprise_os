@@ -9,11 +9,17 @@ from app.schemas.development.development_plan import (
     DevelopmentPlanStep,
 )
 from app.schemas.development.development_result import (
+    CodeCandidateDeliverable,
+    CodeSanityCheckResult,
+    DependencyChange,
+    DependencyChangeAction,
     DevelopmentEngineIdentity,
     DevelopmentEngineRequest,
     DevelopmentEngineResult,
     DevelopmentEngineStatus,
     DevelopmentTaskGrant,
+    InterfaceChange,
+    ToolExecutionEvidence,
 )
 from app.schemas.development.provenance import (
     DevelopmentProvenanceRecord,
@@ -52,4 +58,10 @@ __all__ = [
     "UiViewportRender",
     "WcagFinding",
     "WcagSeverity",
+    "CodeCandidateDeliverable",
+    "CodeSanityCheckResult",
+    "DependencyChange",
+    "DependencyChangeAction",
+    "InterfaceChange",
+    "ToolExecutionEvidence",
 ]

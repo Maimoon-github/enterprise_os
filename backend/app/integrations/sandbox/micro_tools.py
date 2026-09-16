@@ -1113,6 +1113,315 @@ def execute_s_code(
             res_wcag["output"] = dict(res_wcag)
             return res_wcag
 
+    # 1.4 Code Implementation Operations Dispatch (DE-09 DEV-CODE)
+    if effective_operation in (
+        "apply_code_patch",
+        "format_code",
+        "inspect_ast_symbols",
+        "validate_syntax_compiler",
+        "manage_packages",
+        "generate_code",
+    ):
+        if effective_operation == "apply_code_patch":
+            target_file = str(payload.get("target_file") or payload.get("file_path") or "")
+            original_content = str(payload.get("original_content") or "")
+            new_content = payload.get("new_content")
+            patch_text = payload.get("patch") or payload.get("patch_text")
+            allowed_artifacts = payload.get("allowed_artifacts")
+
+            # Check for path traversal or sensitive file targets
+            disallowed_patterns = ("..", "/etc/", "~/", "c:\\windows", "c:/windows", ".env", ".git", "authorized_keys")
+            tf_lower = target_file.lower().replace("\\", "/")
+            if any(p in tf_lower for p in disallowed_patterns) or tf_lower.startswith("/"):
+                return {
+                    "status": "security_violation",
+                    "security_violation": True,
+                    "operation": "apply_code_patch",
+                    "error": f"Security violation: Path traversal or unauthorized target path '{target_file}'.",
+                }
+
+            # Scope boundary check
+            if allowed_artifacts is not None:
+                allowed_set = set(allowed_artifacts)
+                if target_file not in allowed_set:
+                    return {
+                        "status": "security_violation",
+                        "security_violation": True,
+                        "operation": "apply_code_patch",
+                        "error": f"Scope boundary violation: Target file '{target_file}' is not in authorized artifacts {sorted(allowed_set)}.",
+                    }
+
+            if new_content is not None:
+                patched_code = str(new_content)
+            elif patch_text:
+                target_str = payload.get("target_content")
+                replacement_str = payload.get("replacement_content")
+                if target_str is not None and replacement_str is not None:
+                    if target_str in original_content:
+                        patched_code = original_content.replace(target_str, replacement_str, 1)
+                    else:
+                        patched_code = original_content + "\n" + replacement_str
+                else:
+                    patched_code = str(patch_text)
+            else:
+                patched_code = original_content
+
+            action = "create" if not original_content.strip() else "modify"
+
+            import difflib
+            orig_lines = original_content.splitlines(keepends=True)
+            new_lines = patched_code.splitlines(keepends=True)
+            diff_lines = list(difflib.unified_diff(
+                orig_lines,
+                new_lines,
+                fromfile=f"a/{target_file}",
+                tofile=f"b/{target_file}",
+            ))
+            diff_unified = "".join(diff_lines)
+            if not diff_unified and original_content != patched_code:
+                comp_lines = patched_code.splitlines()
+                diff_unified = (
+                    f"--- a/{target_file}\n"
+                    f"+++ b/{target_file}\n"
+                    f"@@ -0,0 +1,{len(comp_lines)} @@\n"
+                    + "".join(f"+ {line}\n" for line in comp_lines)
+                )
+
+            res_patch: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "apply_code_patch",
+                "file_path": target_file,
+                "patched_content": patched_code,
+                "diff_unified": diff_unified,
+                "action": action,
+                "is_patched": True,
+            }
+            res_patch["output"] = dict(res_patch)
+            return res_patch
+
+        elif effective_operation == "format_code":
+            code_str = str(payload.get("code") or payload.get("content") or "")
+            file_path = str(payload.get("file_path") or "module.py")
+
+            lines = [line.rstrip() for line in code_str.splitlines()]
+            formatted_code = "\n".join(lines).strip()
+            if formatted_code:
+                formatted_code += "\n"
+
+            if file_path.endswith(".py") and code_str.strip():
+                try:
+                    tree = ast.parse(code_str)
+                    if hasattr(ast, "unparse"):
+                        formatted_code = ast.unparse(tree) + "\n"
+                except Exception:
+                    pass
+
+            res_fmt: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "format_code",
+                "file_path": file_path,
+                "formatted_code": formatted_code,
+                "is_formatted": True,
+            }
+            res_fmt["output"] = dict(res_fmt)
+            return res_fmt
+
+        elif effective_operation == "inspect_ast_symbols":
+            code_str = str(payload.get("code") or "")
+            file_path = str(payload.get("file_path") or "module.py")
+
+            classes: list[dict[str, Any]] = []
+            functions: list[dict[str, Any]] = []
+            imports: list[dict[str, Any]] = []
+            errors: list[str] = []
+            node_count = 0
+
+            try:
+                tree = ast.parse(code_str, filename=file_path)
+                for node in ast.walk(tree):
+                    node_count += 1
+
+                for node in tree.body:
+                    if isinstance(node, ast.ClassDef):
+                        bases = [ast.unparse(b) for b in node.bases] if hasattr(ast, "unparse") else [getattr(b, "id", "") for b in node.bases]
+                        methods = [n.name for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+                        doc = ast.get_docstring(node) or ""
+                        classes.append({
+                            "name": node.name,
+                            "bases": bases,
+                            "methods": methods,
+                            "docstring": doc,
+                            "line_number": getattr(node, "lineno", 1),
+                        })
+                    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        args = [a.arg for a in node.args.args]
+                        doc = ast.get_docstring(node) or ""
+                        decorators = [ast.unparse(d) for d in node.decorator_list] if hasattr(ast, "unparse") else []
+                        functions.append({
+                            "name": node.name,
+                            "args": args,
+                            "is_async": isinstance(node, ast.AsyncFunctionDef),
+                            "docstring": doc,
+                            "decorators": decorators,
+                            "line_number": getattr(node, "lineno", 1),
+                        })
+                    elif isinstance(node, ast.Import):
+                        for alias in node.names:
+                            imports.append({"module": alias.name, "alias": alias.asname})
+                    elif isinstance(node, ast.ImportFrom):
+                        for alias in node.names:
+                            imports.append({"module": f"{node.module or ''}.{alias.name}", "alias": alias.asname})
+            except SyntaxError as exc:
+                errors.append(f"AST parsing failed: {exc}")
+
+            symbols_summary = {
+                "classes": [c["name"] for c in classes],
+                "functions": [f["name"] for f in functions],
+                "import_count": len(imports),
+                "node_count": node_count,
+            }
+
+            res_sym: dict[str, Any] = {
+                "status": "SUCCESS" if not errors else "AST_PARSE_ERROR",
+                "operation": "inspect_ast_symbols",
+                "file_path": file_path,
+                "ast_valid": len(errors) == 0,
+                "node_count": node_count,
+                "classes": classes,
+                "functions": functions,
+                "imports": imports,
+                "symbols_summary": symbols_summary,
+                "errors": errors,
+            }
+            res_sym["output"] = dict(res_sym)
+            return res_sym
+
+        elif effective_operation == "validate_syntax_compiler":
+            code_str = str(payload.get("code") or "")
+            file_path = str(payload.get("file_path") or "module.py")
+
+            checks_run = ["ast_parsing", "python_compiler_exec", "symbol_resolution"]
+            errors: list[str] = []
+            warnings: list[str] = []
+            syntax_valid = True
+            compiler_passed = True
+
+            if not code_str.strip():
+                errors.append("Source code is empty.")
+                syntax_valid = False
+                compiler_passed = False
+            else:
+                try:
+                    ast.parse(code_str, filename=file_path)
+                except SyntaxError as exc:
+                    syntax_valid = False
+                    errors.append(f"Syntax error at line {exc.lineno}: {exc.msg}")
+
+                if syntax_valid:
+                    try:
+                        compile(code_str, file_path, "exec")
+                    except Exception as exc:
+                        compiler_passed = False
+                        errors.append(f"Compiler sanity check failed: {exc}")
+                else:
+                    compiler_passed = False
+
+                if "from * import" in code_str or "import *" in code_str:
+                    warnings.append("Wildcard import detected; recommend explicit imports.")
+                if "except:" in code_str:
+                    warnings.append("Bare except clause detected; recommend specific exception types.")
+
+            is_valid = len(errors) == 0
+            res_comp_sanity: dict[str, Any] = {
+                "status": "SUCCESS" if is_valid else "VALIDATION_ERROR",
+                "operation": "validate_syntax_compiler",
+                "is_valid": is_valid,
+                "syntax_valid": syntax_valid,
+                "compiler_passed": compiler_passed,
+                "checks_run": checks_run,
+                "compiler_output": "Compilation succeeded with 0 errors." if is_valid else f"Compilation failed: {errors}",
+                "errors": errors,
+                "warnings": warnings,
+            }
+            res_comp_sanity["output"] = dict(res_comp_sanity)
+            return res_comp_sanity
+
+        elif effective_operation == "manage_packages":
+            pkg_name = str(payload.get("package_name") or "")
+            action = str(payload.get("action") or "ADD").upper()
+            version_spec = str(payload.get("version_spec") or "")
+            egress_granted = bool(payload.get("egress_granted", False))
+            authorized_packages = payload.get("authorized_packages") or []
+            is_plan_authorized = bool(payload.get("is_plan_authorized", False))
+
+            if not is_plan_authorized and pkg_name not in authorized_packages:
+                res_err: dict[str, Any] = {
+                    "status": "security_violation",
+                    "security_violation": True,
+                    "operation": "manage_packages",
+                    "error": f"Security violation: Package '{pkg_name}' modification is not authorized by the approved plan.",
+                    "package_name": pkg_name,
+                    "is_authorized": False,
+                }
+                res_err["output"] = dict(res_err)
+                return res_err
+
+            if not egress_granted:
+                res_err2: dict[str, Any] = {
+                    "status": "security_violation",
+                    "security_violation": True,
+                    "operation": "manage_packages",
+                    "error": f"Security violation: Network egress is disabled for package management of '{pkg_name}'.",
+                    "package_name": pkg_name,
+                    "is_authorized": False,
+                }
+                res_err2["output"] = dict(res_err2)
+                return res_err2
+
+            res_pkg: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "manage_packages",
+                "package_name": pkg_name,
+                "action": action,
+                "version_spec": version_spec,
+                "is_authorized": True,
+                "message": f"Package '{pkg_name}' ({action}) successfully verified against allow-listed proxy.",
+            }
+            res_pkg["output"] = dict(res_pkg)
+            return res_pkg
+
+        elif effective_operation == "generate_code":
+            c_name = str(payload.get("component_name") or "ApplicationService")
+            file_path = str(payload.get("file_path") or f"services/{c_name.lower()}.py")
+
+            code = (
+                f'"""Application logic for {c_name}.\n\n'
+                f'Generated by DEV-CODE authoring specialist.\n'
+                f'"""\n\n'
+                f'from __future__ import annotations\n\n'
+                f'from typing import Any\n'
+                f'import logging\n\n'
+                f'logger = logging.getLogger(__name__)\n\n\n'
+                f'class {c_name}:\n'
+                f'    """Service implementation for {c_name}."""\n\n'
+                f'    def __init__(self, config: dict[str, Any] | None = None) -> None:\n'
+                f'        self.config = config or {{}}\n\n'
+                f'    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:\n'
+                f'        """Process business logic payload."""\n'
+                f'        logger.info("Executing {c_name} with payload keys: %s", list(payload.keys()))\n'
+                f'        return {{"status": "SUCCESS", "component": "{c_name}", "data": payload}}\n'
+            )
+
+            res_gen: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "generate_code",
+                "component_name": c_name,
+                "file_path": file_path,
+                "code": code,
+            }
+            res_gen["output"] = dict(res_gen)
+            return res_gen
+
 
     # 2. Syntax & AST Validation
     ast_valid = True

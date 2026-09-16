@@ -27,9 +27,11 @@ from app.schemas.governance import WorkerRole
 from app.schemas.development.development_plan import DevelopmentPlan
 from app.schemas.cms import CmsCandidateDeliverable
 from app.schemas.development.ui import UiCandidateDeliverable
+from app.schemas.development.development_result import CodeCandidateDeliverable
 from app.agents.development_engine.subagents.planning import DevelopmentPlanningAgent
 from app.agents.development_engine.subagents.cms_contract import CmsContractAgent
 from app.agents.development_engine.subagents.ui_layout import UiLayoutAgent
+from app.agents.development_engine.subagents.implementation import CodeImplementationAgent
 from app.schemas.sandbox import SandboxCapability
 
 logger = get_logger(__name__)
@@ -51,6 +53,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
     _planning_agent: DevelopmentPlanningAgent
     _cms_agent: CmsContractAgent
     _ui_agent: UiLayoutAgent
+    _code_agent: CodeImplementationAgent
 
     def __init__(
         self,
@@ -63,6 +66,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         self._planning_agent = DevelopmentPlanningAgent(sandbox_client, llm_client=llm_client)
         self._cms_agent = CmsContractAgent(sandbox_client, llm_client=llm_client)
         self._ui_agent = UiLayoutAgent(sandbox_client, llm_client=llm_client)
+        self._code_agent = CodeImplementationAgent(sandbox_client, llm_client=llm_client)
 
     @property
     def identity(self) -> DevelopmentEngineIdentity:
@@ -88,6 +92,11 @@ class DevelopmentAgent(BoundedWorkerAgent):
     def ui_agent(self) -> UiLayoutAgent:
         """Sub-agent responsible for UI layouts, components, and accessibility (DEV-UI)."""
         return self._ui_agent
+
+    @property
+    def code_agent(self) -> CodeImplementationAgent:
+        """Sub-agent responsible for application/integration code authoring (DEV-CODE)."""
+        return self._code_agent
 
 
     def get_identity(self) -> DevelopmentEngineIdentity:
@@ -716,5 +725,64 @@ class DevelopmentAgent(BoundedWorkerAgent):
                 )
             except Exception as exc:
                 logger.warning("Failed to record provenance for DEV-UI", exc_info=exc)
+
+        return candidate, candidate_hash
+
+    async def execute_code_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        plan: DevelopmentPlan | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        previous_candidate: CodeCandidateDeliverable | None = None,
+        reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
+        provenance_recorder: Any = None,
+    ) -> tuple[CodeCandidateDeliverable, str]:
+        """Execute DEV-CODE sub-agent to generate a validated CodeCandidateDeliverable.
+
+        Validates incoming grant, enforces approved DevelopmentPlan authority,
+        runs isolated sandbox code authoring, AST inspection, formatting, and compiler sanity checks,
+        computes candidate hash, records provenance if recorder is provided, and returns sealed (candidate, candidate_hash).
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        candidate = await self._code_agent.execute_code_task(
+            grant=validated_grant,
+            plan=plan,
+            context=ctx,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            previous_candidate=previous_candidate,
+            reviewer_feedback=reviewer_feedback,
+            expected_predecessor_hash=expected_predecessor_hash,
+        )
+        candidate_hash = candidate.candidate_hash or candidate.compute_candidate_hash()
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-code-{candidate.candidate_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"code_candidate:{candidate.candidate_id}:{candidate_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-CODE",
+                    metadata={
+                        "candidate_id": candidate.candidate_id,
+                        "task_id": validated_grant.task_id,
+                        "candidate_hash": candidate_hash,
+                        "attempt_id": attempt_id,
+                        "component_name": candidate.component_name,
+                        "changed_files": candidate.changed_files,
+                        "compiler_passed": candidate.sanity_check_result.compiler_passed,
+                        "is_valid": candidate.sanity_check_result.is_valid,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-CODE", exc_info=exc)
 
         return candidate, candidate_hash

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
+import hashlib
+import json
 from typing import Any, Literal
 import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.agent_contracts import (
+    CodeDiffEntry,
     ConfidenceInterval,
     DevelopmentDeliverable,
     EvidenceEnvelope,
@@ -169,3 +173,167 @@ class DevelopmentEngineResult(BaseModel):
     error_message: str | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)
     completed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class DependencyChangeAction(StrEnum):
+    """Actions applicable to software dependencies."""
+
+    ADD = "ADD"
+    REMOVE = "REMOVE"
+    UPDATE = "UPDATE"
+    NONE = "NONE"
+
+
+class DependencyChange(BaseModel):
+    """Structured record of an added, removed, or modified dependency."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    package_name: str
+    action: DependencyChangeAction = DependencyChangeAction.NONE
+    version_spec: str = ""
+    is_authorized: bool = False
+    authorization_reference: str = ""
+    notes: str = ""
+
+
+class InterfaceChange(BaseModel):
+    """Structured record of an application interface, contract, or symbol change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol_name: str
+    symbol_type: Literal["class", "function", "method", "variable", "interface", "type_alias"] = "function"
+    change_type: Literal["added", "modified", "removed", "deprecated"] = "added"
+    file_path: str
+    signature: str = ""
+    docstring: str = ""
+    is_breaking: bool = False
+
+
+class ToolExecutionEvidence(BaseModel):
+    """Execution evidence from an isolated sandbox command or micro-tool."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool_name: str
+    command_or_operation: str
+    exit_code: int = 0
+    duration_ms: float = 0.0
+    output_summary: str = ""
+    status: str = "SUCCESS"
+
+
+class CodeSanityCheckResult(BaseModel):
+    """Evidence of repository-native syntax and compiler sanity checking."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_valid: bool = True
+    syntax_valid: bool = True
+    compiler_passed: bool = True
+    checks_run: list[str] = Field(default_factory=list)
+    compiler_output: str = ""
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CodeCandidateDeliverable(BaseModel):
+    """Complete sealed candidate deliverable produced by DEV-CODE for DE-04 HITL review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    task_id: str
+    workflow_id: str
+    attempt_id: str = "att-1"
+    component_name: str
+    changed_files: list[str] = Field(default_factory=list)
+    code_diffs: list[CodeDiffEntry] = Field(default_factory=list)
+    source_code: dict[str, str] = Field(default_factory=dict)
+    implementation_summary: str = ""
+    dependency_changes: list[DependencyChange] = Field(default_factory=list)
+    contract_interface_changes: list[InterfaceChange] = Field(default_factory=list)
+    commands_tool_evidence: list[ToolExecutionEvidence] = Field(default_factory=list)
+    ast_symbol_summary: dict[str, Any] = Field(default_factory=dict)
+    sanity_check_result: CodeSanityCheckResult
+    predecessor_hash: str | None = None
+    input_plan_hash: str | None = None
+    assumptions: list[str] = Field(default_factory=list)
+    unresolved_issues: list[str] = Field(default_factory=list)
+    candidate_hash: str = ""
+    rejection_feedback: str | None = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+    def canonical_bytes(self) -> bytes:
+        """Return deterministic JSON-serialized byte representation of candidate code deliverable."""
+        canonical_diffs = [
+            {
+                "file_path": d.file_path,
+                "action": d.action,
+                "diff_unified": d.diff_unified.strip(),
+            }
+            for d in sorted(self.code_diffs, key=lambda x: x.file_path)
+        ]
+        canonical_deps = [
+            {
+                "package_name": dep.package_name,
+                "action": dep.action.value,
+                "version_spec": dep.version_spec,
+                "is_authorized": dep.is_authorized,
+            }
+            for dep in sorted(self.dependency_changes, key=lambda x: x.package_name)
+        ]
+        canonical_interfaces = [
+            {
+                "symbol_name": iface.symbol_name,
+                "symbol_type": iface.symbol_type,
+                "change_type": iface.change_type,
+                "file_path": iface.file_path,
+                "is_breaking": iface.is_breaking,
+            }
+            for iface in sorted(self.contract_interface_changes, key=lambda x: f"{x.file_path}:{x.symbol_name}")
+        ]
+        canonical_source = {k: v.strip() for k, v in sorted(self.source_code.items())}
+        canonical_payload = {
+            "task_id": self.task_id,
+            "workflow_id": self.workflow_id,
+            "attempt_id": self.attempt_id,
+            "component_name": self.component_name,
+            "changed_files": sorted(self.changed_files),
+            "code_diffs": canonical_diffs,
+            "source_code": canonical_source,
+            "implementation_summary": self.implementation_summary.strip(),
+            "dependency_changes": canonical_deps,
+            "contract_interface_changes": canonical_interfaces,
+            "predecessor_hash": self.predecessor_hash or "",
+            "input_plan_hash": self.input_plan_hash or "",
+            "sanity_valid": self.sanity_check_result.is_valid,
+            "compiler_passed": self.sanity_check_result.compiler_passed,
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_candidate_hash(self) -> str:
+        """Compute SHA-256 tamper-evident digest of this code candidate deliverable."""
+        computed = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.candidate_hash = computed
+        return computed
+
+    def to_development_deliverable(self, tenant_id: str = "default") -> DevelopmentDeliverable:
+        """Convert sealed CodeCandidateDeliverable into consolidated DevelopmentDeliverable."""
+        return DevelopmentDeliverable(
+            deliverable_id=self.candidate_id,
+            tenant_id=tenant_id,
+            task_id=self.task_id,
+            component_name=self.component_name,
+            code_diffs=self.code_diffs,
+            changed_files=self.changed_files,
+            validation_findings=self.sanity_check_result.checks_run + self.sanity_check_result.warnings,
+            security_checks_passed=self.sanity_check_result.is_valid,
+            provenance={
+                **self.provenance,
+                "candidate_hash": self.candidate_hash,
+                "attempt_id": self.attempt_id,
+                "subagent": "DEV-CODE",
+            },
+        )
