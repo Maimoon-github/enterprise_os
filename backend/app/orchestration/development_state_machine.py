@@ -345,6 +345,23 @@ class DevelopmentStateMachine:
                     f"got '{actual_decision}'."
                 )
 
+        # 8. Provenance & Audit fail-closed transition guard (DE-05)
+        if state_data.get("provenance_recording_failed") is True:
+            raise PolicyViolationError(
+                f"Transition to {target_state.value} rejected: Provenance recording failed. "
+                "Execution fails closed when audit lineage cannot be guaranteed."
+            )
+        if target_state in (
+            DevelopmentWorkflowState.NEXT_STEP,
+            DevelopmentWorkflowState.RELEASE_READY,
+            DevelopmentWorkflowState.COMPLETED,
+        ):
+            if state_data.get("provenance_verified") is False:
+                raise PolicyViolationError(
+                    f"Transition to {target_state.value} rejected: Provenance verification failed. "
+                    "Cannot advance workflow without valid tamper-evident audit lineage."
+                )
+
     def transition(
         self,
         *,
@@ -404,3 +421,100 @@ class DevelopmentStateMachine:
             },
         )
         return checkpoint
+
+    async def transition_with_provenance(
+        self,
+        *,
+        current_state: DevelopmentWorkflowState,
+        target_state: DevelopmentWorkflowState,
+        task_id: str,
+        workflow_id: str,
+        step_id: str,
+        attempt_id: str,
+        idempotency_key: str,
+        provenance_recorder: Any,
+        tenant_id: str = "default",
+        input_snapshot_hash: str = "0" * 32,
+        output_snapshot_hash: str | None = None,
+        artifact_hashes: dict[str, str] | None = None,
+        lease: DevelopmentExecutionLease | None = None,
+        expected_owner: str | None = None,
+        active_subagent_count: int = 0,
+        grant_expired: bool = False,
+        state_data: dict[str, Any] | None = None,
+        error: Exception | str | None = None,
+        current_retries: int = 0,
+        active_subagent: str | None = None,
+        raw_prompt: str | None = None,
+    ) -> DevelopmentWorkflowCheckpoint:
+        """Validate guards, record tamper-evident provenance event fail-closed, and commit checkpoint."""
+        s_data = dict(state_data or {})
+
+        self.validate_transition_guards(
+            current_state=current_state,
+            target_state=target_state,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            lease=lease,
+            expected_owner=expected_owner,
+            active_subagent_count=active_subagent_count,
+            grant_expired=grant_expired,
+            state_data=s_data,
+            error=error,
+            current_retries=current_retries,
+        )
+
+        try:
+            if provenance_recorder and hasattr(provenance_recorder, "record_development_event"):
+                eff_in_hash = s_data.get("input_snapshot_hash") or input_snapshot_hash
+                eff_out_hash = output_snapshot_hash or s_data.get("candidate_hash") or s_data.get("output_snapshot_hash")
+                eff_art_hashes = artifact_hashes or s_data.get("artifact_hashes") or {}
+                prov_ev = await provenance_recorder.record_development_event(
+                    tenant_id=tenant_id,
+                    task_id=task_id,
+                    workflow_id=workflow_id,
+                    step_id=step_id,
+                    attempt_id=attempt_id,
+                    activity_type=f"transition_{target_state.value.lower()}",
+                    agent_id=active_subagent or "W_DEV",
+                    worker_role="W_DEV",
+                    input_snapshot_hash=eff_in_hash,
+                    output_snapshot_hash=eff_out_hash,
+                    artifact_hashes=eff_art_hashes,
+                    action_digest=s_data.get("action_digest"),
+                    status="SUCCESS",
+                    raw_prompt=raw_prompt,
+                    metadata={
+                        "from_state": current_state.value,
+                        "to_state": target_state.value,
+                        "idempotency_key": idempotency_key,
+                        **s_data,
+                    },
+                )
+                s_data["provenance_event_id"] = prov_ev.event_id
+                s_data["provenance_event_hash"] = prov_ev.event_hash
+                s_data["provenance_signature"] = prov_ev.control_plane_signature
+                s_data["provenance_verified"] = True
+        except Exception as exc:
+            s_data["provenance_recording_failed"] = True
+            raise PolicyViolationError(
+                f"Fail-closed guard: failed to record provenance event during transition to {target_state.value}: {exc}"
+            ) from exc
+
+        return self.transition(
+            current_state=current_state,
+            target_state=target_state,
+            task_id=task_id,
+            workflow_id=workflow_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            idempotency_key=idempotency_key,
+            lease=lease,
+            expected_owner=expected_owner,
+            active_subagent_count=active_subagent_count,
+            grant_expired=grant_expired,
+            state_data=s_data,
+            error=error,
+            current_retries=current_retries,
+            active_subagent=active_subagent,
+        )

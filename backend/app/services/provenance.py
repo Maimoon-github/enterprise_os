@@ -9,6 +9,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.persistence.repositories.provenance import ProvenanceRepository
+from app.schemas.development.provenance import (
+    DevelopmentProvEvent,
+    InTotoStatement,
+    SlsaBuildDefinition,
+    SlsaBuilder,
+    SlsaProvenancePredicate,
+    SlsaResourceDescriptor,
+    SlsaRunDetails,
+)
 from app.schemas.provenance import (
     ProvenanceRecord,
     ProvRelationType,
@@ -19,6 +28,9 @@ from app.schemas.provenance import (
     W3CProvEntity,
     W3CProvRelation,
 )
+from app.security.cryptographic_validator import sign_payload
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 _SENSITIVE_PATTERNS = [
     (re.compile(r"(?i)(api[_-]?key|secret|token|password|auth)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.]{8,}['\"]?"), r"\1: [REDACTED]"),
@@ -52,8 +64,38 @@ def _sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
 class ProvenanceRecorder:
     """Service boundary over ``ProvenanceRepository`` for W3C PROV audit capture."""
 
-    def __init__(self, repository: ProvenanceRepository) -> None:
+    def __init__(
+        self,
+        repository: ProvenanceRepository,
+        *,
+        control_plane_key: Ed25519PrivateKey | None = None,
+        signing_key_id: str = "control-plane-ed25519-v1",
+    ) -> None:
         self._repository = repository
+        self._signing_key_id = signing_key_id
+        if control_plane_key is not None:
+            self._control_plane_key = control_plane_key
+        else:
+            self._control_plane_key = Ed25519PrivateKey.generate()
+        self._control_plane_public_key_pem = self._control_plane_key.public_key().public_bytes(
+            encoding=Encoding.PEM,
+            format=PublicFormat.SubjectPublicKeyInfo,
+        ).decode("ascii")
+
+    @property
+    def control_plane_public_key_pem(self) -> str:
+        """Return PEM-encoded control plane public key used for audit signatures."""
+        return self._control_plane_public_key_pem
+
+    @property
+    def signing_key_id(self) -> str:
+        """Return key ID of active control plane signing key."""
+        return self._signing_key_id
+
+    @property
+    def repository(self) -> ProvenanceRepository:
+        """Return the underlying provenance repository."""
+        return self._repository
 
     async def record(
         self,
@@ -447,3 +489,532 @@ class ProvenanceRecorder:
             caller=caller,
             governing_task_id=governing_task_id,
         )
+
+    def build_development_w3c_prov(
+        self,
+        *,
+        tenant_id: str,
+        task_id: str,
+        workflow_id: str,
+        step_id: str,
+        attempt_id: str,
+        activity_type: str,
+        agent_id: str = "W_DEV",
+        worker_role: str = "W_DEV",
+        input_snapshot_hash: str,
+        output_snapshot_hash: str | None = None,
+        artifact_hashes: dict[str, str] | None = None,
+        sandbox_id: str | None = None,
+        tool_id: str | None = None,
+        tool_version: str | None = None,
+        policy_version: str = "1.0.0",
+        approval_token_id: str | None = None,
+        reviewer_id: str | None = None,
+        derived_from_attempt_id: str | None = None,
+        derived_from_output_hash: str | None = None,
+        started_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        status: str = "SUCCESS",
+    ) -> W3CProvBundle:
+        """Construct full W3C PROV bundle mapping Entity, Activity, Agent, and relations for W_DEV."""
+        now = datetime.now(UTC)
+        start_ts = started_at or now
+        end_ts = ended_at or now
+
+        activity_urn = f"urn:enterprise_os:activity:development:{task_id}:{step_id}:{attempt_id}:{activity_type}"
+        orchestrator_agent_urn = f"urn:enterprise_os:agent:orchestrator:{tenant_id}"
+        w_dev_agent_urn = "urn:enterprise_os:agent:worker:W_DEV"
+        subagent_urn = f"urn:enterprise_os:agent:subagent:{agent_id}"
+
+        activities = [
+            W3CProvActivity(
+                id=activity_urn,
+                label=f"Development Activity: {activity_type} [{step_id}:{attempt_id}]",
+                started_at=start_ts,
+                ended_at=end_ts,
+                attributes={
+                    "task_id": task_id,
+                    "workflow_id": workflow_id,
+                    "step_id": step_id,
+                    "attempt_id": attempt_id,
+                    "activity_type": activity_type,
+                    "policy_version": policy_version,
+                    "status": status,
+                },
+            )
+        ]
+
+        agents = [
+            W3CProvAgent(
+                id=orchestrator_agent_urn,
+                label=f"Intelligence Engine Orchestrator ({tenant_id})",
+                type="prov:Agent",
+                attributes={"tenant_id": tenant_id, "role": "orchestrator"},
+            ),
+            W3CProvAgent(
+                id=w_dev_agent_urn,
+                label="Development Lead Agent (W_DEV)",
+                type="prov:Agent",
+                attributes={"role": "worker", "worker_role": "W_DEV"},
+            ),
+            W3CProvAgent(
+                id=subagent_urn,
+                label=f"Sub-agent: {agent_id} ({worker_role})",
+                type="prov:Agent",
+                attributes={"agent_id": agent_id, "worker_role": worker_role},
+            ),
+        ]
+
+        sandbox_agent_urn: str | None = None
+        if sandbox_id:
+            sandbox_agent_urn = f"urn:enterprise_os:agent:sandbox_controller:{sandbox_id}"
+            agents.append(
+                W3CProvAgent(
+                    id=sandbox_agent_urn,
+                    label=f"Sandbox Controller ({sandbox_id})",
+                    type="prov:Agent",
+                    attributes={"sandbox_id": sandbox_id},
+                )
+            )
+
+        reviewer_agent_urn: str | None = None
+        if reviewer_id:
+            reviewer_agent_urn = f"urn:enterprise_os:agent:human_reviewer:{reviewer_id}"
+            agents.append(
+                W3CProvAgent(
+                    id=reviewer_agent_urn,
+                    label=f"Human Reviewer ({reviewer_id})",
+                    type="prov:Agent",
+                    attributes={"reviewer_id": reviewer_id},
+                )
+            )
+
+        grant_entity_urn = f"urn:enterprise_os:entity:task_grant:{task_id}:{step_id}"
+        input_entity_urn = f"urn:enterprise_os:entity:input_snapshot:{input_snapshot_hash[:16]}"
+        entities = [
+            W3CProvEntity(
+                id=grant_entity_urn,
+                label=f"Task Authorization Grant ({task_id}:{step_id})",
+                attributes={"task_id": task_id, "step_id": step_id},
+            ),
+            W3CProvEntity(
+                id=input_entity_urn,
+                label=f"Input Snapshot ({input_snapshot_hash[:8]})",
+                value_hash=input_snapshot_hash,
+                attributes={"snapshot_hash": input_snapshot_hash},
+            ),
+        ]
+
+        candidate_entity_urn: str | None = None
+        if output_snapshot_hash:
+            candidate_entity_urn = f"urn:enterprise_os:entity:candidate:{step_id}:{attempt_id}:{output_snapshot_hash[:16]}"
+            entities.append(
+                W3CProvEntity(
+                    id=candidate_entity_urn,
+                    label=f"Candidate Deliverable ({step_id}:{attempt_id})",
+                    value_hash=output_snapshot_hash,
+                    attributes={
+                        "step_id": step_id,
+                        "attempt_id": attempt_id,
+                        "output_snapshot_hash": output_snapshot_hash,
+                    },
+                )
+            )
+
+        artifact_urns: list[str] = []
+        if artifact_hashes:
+            for art_name, art_hash in artifact_hashes.items():
+                art_urn = f"urn:enterprise_os:entity:artifact:{art_hash[:16]}"
+                artifact_urns.append(art_urn)
+                entities.append(
+                    W3CProvEntity(
+                        id=art_urn,
+                        label=f"Artifact: {art_name}",
+                        value_hash=art_hash,
+                        attributes={"name": art_name, "hash": art_hash},
+                    )
+                )
+
+        approval_entity_urn: str | None = None
+        if approval_token_id:
+            approval_entity_urn = f"urn:enterprise_os:entity:approval_token:{approval_token_id}"
+            entities.append(
+                W3CProvEntity(
+                    id=approval_entity_urn,
+                    label=f"Approval Token ({approval_token_id})",
+                    attributes={"token_id": approval_token_id},
+                )
+            )
+
+        relations = [
+            W3CProvRelation(
+                relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                source_id=activity_urn,
+                target_id=subagent_urn,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                source_id=activity_urn,
+                target_id=w_dev_agent_urn,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.ACTED_ON_BEHALF_OF,
+                source_id=subagent_urn,
+                target_id=w_dev_agent_urn,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.ACTED_ON_BEHALF_OF,
+                source_id=w_dev_agent_urn,
+                target_id=orchestrator_agent_urn,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.USED,
+                source_id=activity_urn,
+                target_id=grant_entity_urn,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.USED,
+                source_id=activity_urn,
+                target_id=input_entity_urn,
+            ),
+        ]
+
+        if sandbox_agent_urn:
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                    source_id=activity_urn,
+                    target_id=sandbox_agent_urn,
+                )
+            )
+
+        if reviewer_agent_urn:
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                    source_id=activity_urn,
+                    target_id=reviewer_agent_urn,
+                )
+            )
+
+        if approval_entity_urn:
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.USED,
+                    source_id=activity_urn,
+                    target_id=approval_entity_urn,
+                )
+            )
+
+        if candidate_entity_urn:
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_GENERATED_BY,
+                    source_id=candidate_entity_urn,
+                    target_id=activity_urn,
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_ATTRIBUTED_TO,
+                    source_id=candidate_entity_urn,
+                    target_id=subagent_urn,
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_DERIVED_FROM,
+                    source_id=candidate_entity_urn,
+                    target_id=input_entity_urn,
+                )
+            )
+            if derived_from_output_hash:
+                prior_cand_urn = f"urn:enterprise_os:entity:candidate:{step_id}:{derived_from_attempt_id or 'prior'}:{derived_from_output_hash[:16]}"
+                relations.append(
+                    W3CProvRelation(
+                        relation_type=ProvRelationType.WAS_DERIVED_FROM,
+                        source_id=candidate_entity_urn,
+                        target_id=prior_cand_urn,
+                    )
+                )
+
+        for art_urn in artifact_urns:
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_GENERATED_BY,
+                    source_id=art_urn,
+                    target_id=activity_urn,
+                )
+            )
+
+        return W3CProvBundle(
+            activities=activities,
+            agents=agents,
+            entities=entities,
+            relations=relations,
+        )
+
+    async def record_development_event(
+        self,
+        *,
+        tenant_id: str,
+        task_id: str,
+        workflow_id: str,
+        step_id: str,
+        attempt_id: str,
+        activity_type: str,
+        agent_id: str = "W_DEV",
+        worker_role: str = "W_DEV",
+        work_region: str = "default",
+        sandbox_id: str | None = None,
+        tool_id: str | None = None,
+        tool_version: str | None = None,
+        policy_version: str = "1.0.0",
+        input_snapshot_hash: str,
+        output_snapshot_hash: str | None = None,
+        artifact_hashes: dict[str, str] | None = None,
+        action_digest: str | None = None,
+        status: str = "SUCCESS",
+        trace_id: str | None = None,
+        evidence_ref: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        w3c_prov: dict[str, Any] | W3CProvBundle | None = None,
+        occurred_at: datetime | None = None,
+        raw_prompt: str | None = None,
+        event_id: str | None = None,
+    ) -> DevelopmentProvEvent:
+        """Capture, cryptographically sign, and append an immutable DevelopmentProvEvent."""
+        import uuid
+
+        cleaned_metadata = _sanitize_dict(metadata or {})
+        eff_evidence_ref = evidence_ref
+
+        if raw_prompt is not None:
+            prompt_hash = hashlib.sha256(raw_prompt.encode("utf-8")).hexdigest()
+            eff_evidence_ref = eff_evidence_ref or f"vault://prompts/{task_id}/{step_id}/{attempt_id}/{prompt_hash[:16]}"
+            cleaned_metadata["prompt_hash"] = prompt_hash
+            cleaned_metadata["prompt_vault_ref"] = eff_evidence_ref
+            cleaned_metadata["prompt_classification"] = "CONFIDENTIAL"
+
+        latest = await self._repository._latest(tenant_id)
+        prev_hash = latest.record_hash if latest else None
+
+        if w3c_prov is None:
+            w3c_bundle = self.build_development_w3c_prov(
+                tenant_id=tenant_id,
+                task_id=task_id,
+                workflow_id=workflow_id,
+                step_id=step_id,
+                attempt_id=attempt_id,
+                activity_type=activity_type,
+                agent_id=agent_id,
+                worker_role=worker_role,
+                input_snapshot_hash=input_snapshot_hash,
+                output_snapshot_hash=output_snapshot_hash,
+                artifact_hashes=artifact_hashes,
+                sandbox_id=sandbox_id,
+                tool_id=tool_id,
+                tool_version=tool_version,
+                policy_version=policy_version,
+                approval_token_id=cleaned_metadata.get("token_id"),
+                reviewer_id=cleaned_metadata.get("reviewer_id"),
+                derived_from_attempt_id=cleaned_metadata.get("derived_from_attempt_id"),
+                derived_from_output_hash=cleaned_metadata.get("derived_from_output_hash"),
+                started_at=occurred_at,
+                ended_at=occurred_at,
+                status=status,
+            )
+            w3c_dict = w3c_bundle.model_dump(mode="json")
+        elif isinstance(w3c_prov, W3CProvBundle):
+            w3c_dict = w3c_prov.model_dump(mode="json")
+        else:
+            w3c_dict = w3c_prov
+
+        ev_id = event_id or f"pe-dev-{uuid.uuid4().hex[:12]}"
+        now_dt = occurred_at or datetime.now(UTC)
+
+        provisional = DevelopmentProvEvent(
+            event_id=ev_id,
+            task_id=task_id,
+            workflow_id=workflow_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            tenant_id=tenant_id,
+            work_region=work_region,
+            agent_id=agent_id,
+            worker_role=worker_role,
+            activity_id=activity_type,
+            sandbox_id=sandbox_id,
+            tool_id=tool_id,
+            tool_version=tool_version,
+            policy_version=policy_version,
+            input_snapshot_hash=input_snapshot_hash,
+            output_snapshot_hash=output_snapshot_hash,
+            artifact_hashes=artifact_hashes or {},
+            action_digest=action_digest,
+            occurred_at=now_dt,
+            status=status,
+            trace_id=trace_id or f"tr-{uuid.uuid4().hex[:16]}",
+            previous_event_hash=prev_hash,
+            evidence_ref=eff_evidence_ref,
+            w3c_prov=w3c_dict,
+            metadata=cleaned_metadata,
+        )
+
+        computed_event_hash = provisional.compute_event_hash(prev_hash)
+        sig = sign_payload(provisional.canonical_bytes(), self._control_plane_key)
+
+        event = provisional.model_copy(update={
+            "event_hash": computed_event_hash,
+            "control_plane_signature": sig,
+        })
+
+        repo_metadata = {
+            "development_prov_event": event.model_dump(mode="json"),
+            "signing_key_id": self._signing_key_id,
+            "control_plane_public_key_pem": self._control_plane_public_key_pem,
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "step_id": step_id,
+            "attempt_id": attempt_id,
+            "input_snapshot_hash": input_snapshot_hash,
+            "output_snapshot_hash": output_snapshot_hash,
+            "event_hash": computed_event_hash,
+            "control_plane_signature": sig,
+            **cleaned_metadata,
+        }
+
+        await self._repository.append(
+            tenant_id=tenant_id,
+            entity_id=f"development_task:{task_id}:{step_id}",
+            activity=f"development:{activity_type}",
+            agent=f"worker:{agent_id}",
+            record_id=ev_id,
+            metadata=repo_metadata,
+            w3c_prov=w3c_dict,
+        )
+
+        return event
+
+    def generate_slsa_attestation(
+        self,
+        *,
+        task_id: str,
+        step_id: str,
+        attempt_id: str,
+        builder_id: str = "urn:enterprise_os:builder:W_DEV:v1",
+        artifacts: dict[str, str] | None = None,
+        resolved_dependencies: list[dict[str, Any]] | None = None,
+        build_config: dict[str, Any] | None = None,
+        completed_at: datetime | None = None,
+    ) -> InTotoStatement:
+        """Generate a SLSA v1.0 / in-toto statement attestation for sealed release artifacts."""
+        subjects = [
+            SlsaResourceDescriptor(
+                name=name,
+                digest={"sha256": hsh},
+                annotations={"step_id": step_id, "attempt_id": attempt_id},
+            )
+            for name, hsh in (artifacts or {}).items()
+        ]
+
+        deps: list[SlsaResourceDescriptor] = []
+        if resolved_dependencies:
+            for dep in resolved_dependencies:
+                deps.append(
+                    SlsaResourceDescriptor(
+                        name=dep.get("name", "dep"),
+                        digest=dep.get("digest", {}),
+                        annotations=dep.get("annotations", {}),
+                    )
+                )
+
+        predicate = SlsaProvenancePredicate(
+            buildDefinition=SlsaBuildDefinition(
+                buildType="https://enterprise_os.dev/attestations/development_engine/v1",
+                externalParameters={
+                    "task_id": task_id,
+                    "step_id": step_id,
+                    "attempt_id": attempt_id,
+                    "build_config": build_config or {},
+                },
+                resolvedDependencies=deps,
+            ),
+            runDetails=SlsaRunDetails(
+                builder=SlsaBuilder(id=builder_id),
+                metadata={
+                    "task_id": task_id,
+                    "step_id": step_id,
+                    "attempt_id": attempt_id,
+                    "completed_at": (completed_at or datetime.now(UTC)).isoformat(),
+                    "signing_key_id": self._signing_key_id,
+                },
+            ),
+        )
+
+        return InTotoStatement(
+            subject=subjects,
+            predicate=predicate,
+        )
+
+    async def reconstruct_development_lineage(
+        self,
+        tenant_id: str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        """Reconstruct the end-to-end W3C PROV and cryptographic event lineage for a development task."""
+        chain = await self._repository.chain(tenant_id)
+        matching_records = [
+            rec
+            for rec in chain
+            if rec.metadata.get("task_id") == task_id
+            or rec.metadata.get("development_prov_event", {}).get("task_id") == task_id
+            or f":{task_id}:" in rec.entity_id
+            or rec.entity_id.endswith(f":{task_id}")
+        ]
+
+        if not matching_records:
+            return {
+                "task_id": task_id,
+                "found": False,
+                "events": [],
+                "event_count": 0,
+                "is_hash_chain_verified": False,
+            }
+
+        events: list[DevelopmentProvEvent] = []
+        signatures_valid = True
+        for rec in matching_records:
+            ev_data = rec.metadata.get("development_prov_event")
+            if ev_data and isinstance(ev_data, dict):
+                ev = DevelopmentProvEvent.model_validate(ev_data)
+                events.append(ev)
+                if not ev.verify_signature(public_key_pem=self._control_plane_public_key_pem):
+                    signatures_valid = False
+
+        dev_chain_valid = True
+        for ev in events:
+            expected = ev.compute_event_hash(ev.previous_event_hash)
+            if expected != ev.event_hash:
+                dev_chain_valid = False
+
+        steps = sorted(list({ev.step_id for ev in events}))
+        attempts = sorted(list({ev.attempt_id for ev in events}))
+        all_artifacts: dict[str, str] = {}
+        for ev in events:
+            all_artifacts.update(ev.artifact_hashes)
+
+        return {
+            "task_id": task_id,
+            "found": True,
+            "events": [ev.model_dump(mode="json") for ev in events],
+            "event_count": len(events),
+            "record_count": len(matching_records),
+            "steps": steps,
+            "attempts": attempts,
+            "artifacts": all_artifacts,
+            "signatures_verified": signatures_valid,
+            "development_chain_verified": dev_chain_valid,
+            "repository_chain_verified": self._repository.verify(chain),
+            "w3c_prov_bundles": [rec.w3c_prov for rec in matching_records if rec.w3c_prov],
+        }

@@ -122,6 +122,7 @@ class AuditLineageStage(StrEnum):
     MCP_ACTUATION = "mcp_actuation"
     TELEMETRY_T30 = "telemetry_t30"
     LEARNING_T31 = "learning_t31"
+    DEVELOPMENT_ENGINE = "development_engine"
 
 
 class AuditValidationFinding(BaseModel):

@@ -14,13 +14,21 @@ from app.schemas.development.development_result import (
     DevelopmentEngineStatus,
     DevelopmentTaskGrant,
 )
-from app.schemas.development.provenance import DevelopmentProvenanceRecord
+from app.schemas.development.provenance import (
+    DevelopmentProvenanceRecord,
+    DevelopmentProvEvent,
+    InTotoStatement,
+    SlsaProvenancePredicate,
+)
 
 __all__ = [
     "DevelopmentApprovalToken",
     "DevelopmentPlanStep",
     "DevelopmentExecutionPlan",
     "DevelopmentProvenanceRecord",
+    "DevelopmentProvEvent",
+    "InTotoStatement",
+    "SlsaProvenancePredicate",
     "DevelopmentEngineIdentity",
     "DevelopmentEngineStatus",
     "DevelopmentTaskGrant",

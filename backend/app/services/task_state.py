@@ -1189,19 +1189,45 @@ class TaskStateService:
             pass
 
         if self._provenance_recorder:
-            await self._provenance_recorder.record(
-                tenant_id=tenant_id,
-                entity_id=checkpoint.task_id,
-                activity=f"dev_workflow_{checkpoint.state.value.lower()}",
-                agent="W_DEV",
-                metadata={
-                    "checkpoint_id": checkpoint.checkpoint_id,
-                    "step_id": checkpoint.step_id,
-                    "attempt_id": checkpoint.attempt_id,
-                    "state": checkpoint.state.value,
-                    "idempotency_key": checkpoint.idempotency_key,
-                },
-            )
+            if hasattr(self._provenance_recorder, "record_development_event"):
+                try:
+                    s_data = checkpoint.state_data or {}
+                    await self._provenance_recorder.record_development_event(
+                        tenant_id=tenant_id,
+                        task_id=checkpoint.task_id,
+                        workflow_id=checkpoint.workflow_id,
+                        step_id=checkpoint.step_id,
+                        attempt_id=checkpoint.attempt_id,
+                        activity_type=f"checkpoint_{checkpoint.state.value.lower()}",
+                        agent_id=checkpoint.active_subagent or "W_DEV",
+                        worker_role="W_DEV",
+                        input_snapshot_hash=s_data.get("input_snapshot_hash") or "0" * 32,
+                        output_snapshot_hash=s_data.get("output_snapshot_hash") or s_data.get("candidate_hash"),
+                        artifact_hashes=s_data.get("artifact_hashes") or {},
+                        action_digest=s_data.get("action_digest"),
+                        status="SUCCESS",
+                        metadata={
+                            "checkpoint_id": checkpoint.checkpoint_id,
+                            "state": checkpoint.state.value,
+                            "idempotency_key": checkpoint.idempotency_key,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to record development provenance event for checkpoint: %s", exc)
+            else:
+                await self._provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=checkpoint.task_id,
+                    activity=f"dev_workflow_{checkpoint.state.value.lower()}",
+                    agent="W_DEV",
+                    metadata={
+                        "checkpoint_id": checkpoint.checkpoint_id,
+                        "step_id": checkpoint.step_id,
+                        "attempt_id": checkpoint.attempt_id,
+                        "state": checkpoint.state.value,
+                        "idempotency_key": checkpoint.idempotency_key,
+                    },
+                )
 
         return checkpoint
 
@@ -1271,19 +1297,44 @@ class TaskStateService:
                 pass
 
         if self._provenance_recorder:
-            await self._provenance_recorder.record(
-                tenant_id=tenant_id,
-                entity_id=task_id,
-                activity=f"hitl_{approval_token.decision.lower()}",
-                agent=approval_token.reviewer_id,
-                metadata={
-                    "token_id": approval_token.token_id,
-                    "step_id": approval_token.step_id,
-                    "attempt_id": approval_token.attempt_id,
-                    "decision": approval_token.decision,
-                    "reviewer_role": approval_token.reviewer_role,
-                },
-            )
+            if hasattr(self._provenance_recorder, "record_development_event"):
+                try:
+                    await self._provenance_recorder.record_development_event(
+                        tenant_id=tenant_id,
+                        task_id=task_id,
+                        workflow_id=approval_token.workflow_id,
+                        step_id=approval_token.step_id,
+                        attempt_id=approval_token.attempt_id,
+                        activity_type=f"hitl_{approval_token.decision.lower()}",
+                        agent_id=approval_token.reviewer_id,
+                        worker_role=approval_token.reviewer_role,
+                        input_snapshot_hash=approval_token.input_snapshot_hash,
+                        output_snapshot_hash=approval_token.output_snapshot_hash,
+                        evidence_ref=f"token:{approval_token.token_id}",
+                        metadata={
+                            "token_id": approval_token.token_id,
+                            "decision": approval_token.decision,
+                            "reviewer_role": approval_token.reviewer_role,
+                            "review_dossier_hash": approval_token.review_dossier_hash,
+                            "revision_notes": approval_token.revision_notes,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to record development provenance event for approval: %s", exc)
+            else:
+                await self._provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=task_id,
+                    activity=f"hitl_{approval_token.decision.lower()}",
+                    agent=approval_token.reviewer_id,
+                    metadata={
+                        "token_id": approval_token.token_id,
+                        "step_id": approval_token.step_id,
+                        "attempt_id": approval_token.attempt_id,
+                        "decision": approval_token.decision,
+                        "reviewer_role": approval_token.reviewer_role,
+                    },
+                )
 
     async def get_development_approval_token(
         self,

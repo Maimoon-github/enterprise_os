@@ -415,6 +415,8 @@ class AuditLineageValidator:
                 stages_verified.add(AuditLineageStage.TELEMETRY_T30.value)
             if "attribution" in act or "decay" in act:
                 stages_verified.add(AuditLineageStage.LEARNING_T31.value)
+            if "development" in act or "dev_" in act or "w_dev" in act:
+                stages_verified.add(AuditLineageStage.DEVELOPMENT_ENGINE.value)
 
         # -------------------------------------------------------------------
         # 8. Determine Overall Validation Status
@@ -488,3 +490,269 @@ class AuditLineageValidator:
                     logger.warning("Failed to save CTS state for %s: %s", governing_task_id, exc)
 
         return report
+
+    async def validate_development_lineage(
+        self,
+        tenant_id: str,
+        task_id: str,
+        *,
+        caller: CallerIdentity | None = None,
+        expected_deliverable_hash: str | None = None,
+    ) -> AuditValidationReport:
+        """Validate end-to-end W3C PROV lineage, hash chain, and Ed25519 signatures for W_DEV."""
+        validation_id = f"val-dev-{uuid.uuid4().hex[:8]}"
+        findings: list[AuditValidationFinding] = []
+        detected_gaps: list[str] = []
+        stages_verified: set[str] = set()
+
+        if caller is not None:
+            if caller.tenant_scope.tenant_id != tenant_id and caller.tenant_scope.tenant_id != "*":
+                raise ValueError(
+                    f"Caller tenant scope '{caller.tenant_scope.tenant_id}' does not match validation tenant '{tenant_id}'"
+                )
+
+        chain = await self._provenance_repository.chain(tenant_id)
+        if not chain:
+            detected_gaps.append(f"Provenance chain for tenant '{tenant_id}' is empty")
+
+        hash_chain_verified = True
+        prev_hash: str | None = None
+        seen_record_ids: set[str] = set()
+
+        for idx, rec in enumerate(chain):
+            if rec.record_id in seen_record_ids:
+                hash_chain_verified = False
+                detected_gaps.append(f"Duplicate record ID '{rec.record_id}' detected at chain index {idx}")
+                findings.append(
+                    AuditValidationFinding(
+                        stage="ledger_integrity",
+                        entity_id=rec.entity_id,
+                        activity=rec.activity,
+                        status="TAMPERED",
+                        details=f"Duplicate record ID {rec.record_id}",
+                    )
+                )
+            seen_record_ids.add(rec.record_id)
+
+            if rec.tenant_id != tenant_id:
+                hash_chain_verified = False
+                detected_gaps.append(f"Cross-tenant record leak: '{rec.tenant_id}' != '{tenant_id}'")
+                findings.append(
+                    AuditValidationFinding(
+                        stage="tenant_isolation",
+                        entity_id=rec.entity_id,
+                        status="MISMATCH",
+                        details=f"Record tenant '{rec.tenant_id}' != '{tenant_id}'",
+                    )
+                )
+
+            recomputed_meta_hash = _compute_metadata_hash(rec.metadata, rec.w3c_prov)
+            if rec.metadata_hash != recomputed_meta_hash:
+                hash_chain_verified = False
+                detected_gaps.append(f"Metadata hash mismatch for record '{rec.record_id}'")
+                findings.append(
+                    AuditValidationFinding(
+                        stage="ledger_integrity",
+                        entity_id=rec.entity_id,
+                        activity=rec.activity,
+                        status="TAMPERED",
+                        details="Metadata hash does not match payload",
+                    )
+                )
+
+            if rec.prev_record_hash != prev_hash:
+                hash_chain_verified = False
+                detected_gaps.append(f"Broken previous-hash continuity at record '{rec.record_id}'")
+                findings.append(
+                    AuditValidationFinding(
+                        stage="ledger_integrity",
+                        entity_id=rec.entity_id,
+                        activity=rec.activity,
+                        status="TAMPERED",
+                        details=f"Broken previous-hash: expected {prev_hash}, got {rec.prev_record_hash}",
+                    )
+                )
+
+            expected_record_hash = _compute_hash(
+                prev_hash,
+                rec.entity_id,
+                rec.activity,
+                rec.agent,
+                rec.occurred_at,
+                recomputed_meta_hash,
+            )
+            if rec.record_hash != expected_record_hash:
+                hash_chain_verified = False
+                detected_gaps.append(f"Record hash mismatch for record '{rec.record_id}'")
+                findings.append(
+                    AuditValidationFinding(
+                        stage="ledger_integrity",
+                        entity_id=rec.entity_id,
+                        activity=rec.activity,
+                        status="TAMPERED",
+                        details="Record hash recomputation failed",
+                    )
+                )
+
+            if idx > 0 and rec.occurred_at < chain[idx - 1].occurred_at:
+                hash_chain_verified = False
+                detected_gaps.append(f"Out-of-order timestamp sequence at record '{rec.record_id}'")
+                findings.append(
+                    AuditValidationFinding(
+                        stage="ledger_integrity",
+                        entity_id=rec.entity_id,
+                        status="TAMPERED",
+                        details="Out-of-order timestamp sequence",
+                    )
+                )
+
+            prev_hash = rec.record_hash
+
+        # Filter records relevant to this development task
+        dev_records = [
+            rec
+            for rec in chain
+            if rec.metadata.get("task_id") == task_id
+            or rec.metadata.get("development_prov_event", {}).get("task_id") == task_id
+            or f":{task_id}:" in rec.entity_id
+            or rec.entity_id.endswith(f":{task_id}")
+        ]
+
+        if not dev_records:
+            detected_gaps.append(f"No development provenance records found for task '{task_id}'")
+
+        signatures_verified = True
+        prov_graph_valid = True
+        deliverable_found = False
+
+        from app.schemas.development.provenance import DevelopmentProvEvent
+
+        for rec in dev_records:
+            stages_verified.add(AuditLineageStage.DEVELOPMENT_ENGINE.value)
+            dev_ev_dict = rec.metadata.get("development_prov_event")
+            if dev_ev_dict and isinstance(dev_ev_dict, dict):
+                try:
+                    dev_ev = DevelopmentProvEvent.model_validate(dev_ev_dict)
+                    pub_pem = rec.metadata.get("control_plane_public_key_pem")
+
+                    # Check event hash
+                    expected_ev_hash = dev_ev.compute_event_hash(dev_ev.previous_event_hash)
+                    if dev_ev.event_hash != expected_ev_hash:
+                        hash_chain_verified = False
+                        detected_gaps.append(f"Development event hash mismatch on event '{dev_ev.event_id}'")
+                        findings.append(
+                            AuditValidationFinding(
+                                stage=AuditLineageStage.DEVELOPMENT_ENGINE.value,
+                                entity_id=dev_ev.event_id,
+                                status="TAMPERED",
+                                details="Computed event hash does not match stored event_hash",
+                            )
+                        )
+
+                    # Check signature
+                    if not dev_ev.control_plane_signature:
+                        signatures_verified = False
+                        detected_gaps.append(f"Missing control-plane signature on event '{dev_ev.event_id}'")
+                        findings.append(
+                            AuditValidationFinding(
+                                stage=AuditLineageStage.DEVELOPMENT_ENGINE.value,
+                                entity_id=dev_ev.event_id,
+                                status="INVALID_SIGNATURE",
+                                details="Missing control-plane signature",
+                            )
+                        )
+                    elif not dev_ev.verify_signature(public_key_pem=pub_pem, validator=self._crypto_validator):
+                        signatures_verified = False
+                        detected_gaps.append(f"Cryptographic signature verification failed for event '{dev_ev.event_id}'")
+                        findings.append(
+                            AuditValidationFinding(
+                                stage=AuditLineageStage.DEVELOPMENT_ENGINE.value,
+                                entity_id=dev_ev.event_id,
+                                status="INVALID_SIGNATURE",
+                                details="Ed25519 signature invalid over canonical bytes",
+                            )
+                        )
+
+                    # Check expected deliverable hash
+                    if expected_deliverable_hash and dev_ev.output_snapshot_hash == expected_deliverable_hash:
+                        deliverable_found = True
+
+                except Exception as exc:
+                    signatures_verified = False
+                    detected_gaps.append(f"Failed to validate development event in record '{rec.record_id}': {exc}")
+
+            # Sensitive text & prompt privacy check
+            meta_str = str(rec.metadata).lower()
+            if "raw_prompt" in rec.metadata or ("bearer " in meta_str and "[redacted]" not in meta_str):
+                detected_gaps.append(f"Sensitive unredacted data detected in record '{rec.record_id}'")
+                findings.append(
+                    AuditValidationFinding(
+                        stage=AuditLineageStage.DEVELOPMENT_ENGINE.value,
+                        entity_id=rec.record_id,
+                        status="TAMPERED",
+                        details="Sensitive plaintext prompt or token present in immutable metadata",
+                    )
+                )
+
+            # W3C PROV graph validation
+            if rec.w3c_prov:
+                bundle = rec.w3c_prov
+                entities = {
+                    e.get("id")
+                    for e in bundle.get("entities", [])
+                    if isinstance(e, dict) and isinstance(e.get("id"), str)
+                }
+                relations = bundle.get("relations", [])
+                has_candidate = any(isinstance(e, str) and ":entity:candidate:" in e for e in entities)
+                if has_candidate:
+                    # Verify derivation linkage
+                    has_derivation = any(
+                        r.get("relation_type") == "prov:wasDerivedFrom" for r in relations if isinstance(r, dict)
+                    )
+                    if not has_derivation:
+                        prov_graph_valid = False
+                        detected_gaps.append(f"Candidate output missing wasDerivedFrom relation in record '{rec.record_id}'")
+                        findings.append(
+                            AuditValidationFinding(
+                                stage="w3c_prov",
+                                entity_id=rec.entity_id,
+                                status="GAP",
+                                details="Candidate deliverable missing prov:wasDerivedFrom linkage to input snapshot",
+                            )
+                        )
+
+        if expected_deliverable_hash and not deliverable_found:
+            detected_gaps.append(f"Expected deliverable hash '{expected_deliverable_hash}' not found in task provenance")
+            findings.append(
+                AuditValidationFinding(
+                    stage=AuditLineageStage.DEVELOPMENT_ENGINE.value,
+                    entity_id=task_id,
+                    status="GAP",
+                    details=f"Expected deliverable hash {expected_deliverable_hash} missing",
+                )
+            )
+
+        is_valid = (
+            hash_chain_verified
+            and prov_graph_valid
+            and signatures_verified
+            and len(dev_records) > 0
+            and len(detected_gaps) == 0
+        )
+
+        return AuditValidationReport(
+            validation_id=validation_id,
+            tenant_id=tenant_id,
+            is_valid=is_valid,
+            t30_status="SKIPPED",
+            t31_status="SKIPPED",
+            chain_length=len(chain),
+            hash_chain_verified=hash_chain_verified,
+            signatures_verified=signatures_verified,
+            cts_reconciled=len(dev_records) > 0,
+            prov_graph_valid=prov_graph_valid,
+            stages_verified=sorted(list(stages_verified)),
+            detected_gaps=detected_gaps,
+            findings=findings,
+            t34_audit_eligible=is_valid,
+        )
