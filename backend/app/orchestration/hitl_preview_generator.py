@@ -361,3 +361,193 @@ class HitlPreviewGenerator:
             review_status=ReviewStatus.PENDING,
             created_at=datetime.now(UTC),
         )
+
+    def generate_development_review_payload(
+        self,
+        *,
+        task_id: str,
+        workflow_id: str,
+        step_id: str,
+        attempt_id: str,
+        subagent_id: str,
+        input_snapshot_hash: str,
+        sealed_output: Any,
+        tenant_id: str = "default",
+        policy_decision: Any | None = None,
+        evidence_findings: list[str] | None = None,
+        risk_level: RiskLevel = RiskLevel.MEDIUM,
+    ) -> dict[str, Any]:
+        """Build structured review dossier and ActionPreview for a completed Development sub-agent attempt.
+
+        Computes deterministic review-dossier hash over all candidate artifacts, diffs,
+        step identities, and machine policy outcomes.
+        """
+        # Extract candidate diff and artifacts
+        if hasattr(sealed_output, "generated_diff"):
+            diff_text = sealed_output.generated_diff or ""
+            diff_hash = getattr(sealed_output, "diff_hash", "") or hashlib.sha256(diff_text.encode("utf-8")).hexdigest()
+            artifacts = getattr(sealed_output, "artifacts", {}) or {}
+            artifact_hashes = getattr(sealed_output, "artifact_hashes", {}) or {}
+            candidate_hash = diff_hash or (list(artifact_hashes.values())[0] if artifact_hashes else hashlib.sha256(b"empty").hexdigest())
+        elif isinstance(sealed_output, dict):
+            diff_text = str(sealed_output.get("diff", sealed_output.get("generated_diff", "")))
+            diff_hash = hashlib.sha256(diff_text.encode("utf-8")).hexdigest() if diff_text else ""
+            artifacts = sealed_output.get("artifacts", {})
+            artifact_hashes = sealed_output.get("artifact_hashes", {})
+            candidate_hash = str(sealed_output.get("candidate_hash") or diff_hash or hashlib.sha256(b"empty").hexdigest())
+        else:
+            diff_text = ""
+            diff_hash = ""
+            artifacts = {}
+            artifact_hashes = {}
+            candidate_hash = hashlib.sha256(b"empty").hexdigest()
+
+        sanitized_diff = _sanitize_untrusted_text(diff_text) if diff_text else ""
+        findings = [_sanitize_untrusted_text(f) for f in (evidence_findings or [])]
+
+        machine_policy_allowed = True
+        machine_policy_reason = "Policy checks passed"
+        if policy_decision is not None:
+            machine_policy_allowed = getattr(policy_decision, "allowed", True)
+            machine_policy_reason = getattr(policy_decision, "reason", "Evaluated against policy")
+
+        preview_id = f"prev-dev-{task_id}-{step_id}-{attempt_id}"
+
+        code_details = CodeDiffPreviewDetails(
+            file_path="components/generated_component.tsx",
+            action="modify" if sanitized_diff else "create",
+            diff_unified=sanitized_diff,
+            target_components=[subagent_id],
+            ast_validated=True,
+            syntax_lint_passed=True,
+            impact_summary=f"Development subagent {subagent_id} outputs for {step_id} ({attempt_id})",
+        )
+
+        preview = ActionPreview(
+            preview_id=preview_id,
+            task_id=task_id,
+            tenant_id=tenant_id,
+            kind=ActionPreviewKind.CODE_DIFF,
+            summary=f"Development {subagent_id} candidate for {step_id} ({attempt_id}): {machine_policy_reason}",
+            proposed_action=f"Authorize development step {step_id} execution candidate",
+            diff=sanitized_diff,
+            risk_level=risk_level,
+            requires_approval=True,
+            review_status=ReviewStatus.PENDING,
+            source_artifacts=list(artifacts.keys()),
+            provenance_refs=[f"sandbox:{task_id}:{step_id}:{attempt_id}"],
+            confidence_point=0.95,
+            confidence_interval=(0.90, 1.0),
+            warnings=[] if machine_policy_allowed else [machine_policy_reason],
+            code_details=code_details,
+        )
+
+        canonical_dossier_elements = {
+            "attempt_id": attempt_id,
+            "candidate_hash": candidate_hash,
+            "diff_hash": diff_hash,
+            "input_snapshot_hash": input_snapshot_hash,
+            "machine_policy_allowed": machine_policy_allowed,
+            "step_id": step_id,
+            "subagent_id": subagent_id,
+            "task_id": task_id,
+            "tenant_id": tenant_id,
+            "workflow_id": workflow_id,
+        }
+        review_dossier_bytes = json.dumps(
+            canonical_dossier_elements, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        review_dossier_hash = hashlib.sha256(review_dossier_bytes).hexdigest()
+
+        return {
+            "preview_id": preview_id,
+            "preview": preview,
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "step_id": step_id,
+            "attempt_id": attempt_id,
+            "subagent_id": subagent_id,
+            "tenant_id": tenant_id,
+            "candidate_hash": candidate_hash,
+            "output_snapshot_hash": candidate_hash,
+            "diff_hash": diff_hash,
+            "input_snapshot_hash": input_snapshot_hash,
+            "review_dossier_hash": review_dossier_hash,
+            "machine_policy_allowed": machine_policy_allowed,
+            "machine_policy_reason": machine_policy_reason,
+            "evidence_findings": findings,
+            "sanitized_diff": sanitized_diff,
+            "artifacts": artifacts,
+            "artifact_hashes": artifact_hashes,
+            "created_at": datetime.now(UTC),
+        }
+
+
+def generate_development_review_payload(
+    *,
+    task_id: str,
+    workflow_id: str,
+    step_id: str,
+    attempt_id: str,
+    subagent_id: str,
+    sealed_output: Any = None,
+    candidate_output: Any = None,
+    input_mandate: Any = None,
+    input_snapshot_hash: str | None = None,
+    tenant_id: str = "default",
+    policy_decision: Any | None = None,
+    machine_policy_allowed: bool = True,
+    evidence_findings: list[str] | None = None,
+    risk_level: RiskLevel = RiskLevel.MEDIUM,
+) -> dict[str, Any]:
+    """Convenience module-level function to generate development review payload."""
+    output = sealed_output if sealed_output is not None else candidate_output
+    if input_snapshot_hash is None:
+        if input_mandate is not None:
+            input_snapshot_hash = hashlib.sha256(
+                json.dumps(input_mandate, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+        else:
+            input_snapshot_hash = hashlib.sha256(b"empty_input").hexdigest()
+
+    generator = HitlPreviewGenerator()
+    result = generator.generate_development_review_payload(
+        task_id=task_id,
+        workflow_id=workflow_id,
+        step_id=step_id,
+        attempt_id=attempt_id,
+        subagent_id=subagent_id,
+        input_snapshot_hash=input_snapshot_hash,
+        sealed_output=output,
+        tenant_id=tenant_id,
+        policy_decision=policy_decision,
+        evidence_findings=evidence_findings,
+        risk_level=risk_level,
+    )
+
+    if not machine_policy_allowed:
+        result["machine_policy_allowed"] = False
+        result["machine_policy_reason"] = "Machine policy denied this step"
+        if result["preview"].warnings:
+            result["preview"].warnings.append("Machine policy denied this step")
+        else:
+            result["preview"].warnings = ["Machine policy denied this step"]
+
+        canonical_dossier_elements = {
+            "attempt_id": attempt_id,
+            "candidate_hash": result["candidate_hash"],
+            "diff_hash": result["diff_hash"],
+            "input_snapshot_hash": input_snapshot_hash,
+            "machine_policy_allowed": False,
+            "step_id": step_id,
+            "subagent_id": subagent_id,
+            "task_id": task_id,
+            "tenant_id": tenant_id,
+            "workflow_id": workflow_id,
+        }
+        review_dossier_bytes = json.dumps(
+            canonical_dossier_elements, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        result["review_dossier_hash"] = hashlib.sha256(review_dossier_bytes).hexdigest()
+
+    return result

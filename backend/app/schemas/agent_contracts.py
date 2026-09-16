@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import uuid
 
 from pydantic import BaseModel, Field
@@ -653,15 +653,30 @@ class PromotionResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# W_DEV Core Contracts (DE-01)
+# W_DEV Core Contracts (DE-01) - Lazy re-exports to break circular imports
 # ---------------------------------------------------------------------------
-from app.schemas.development.development_result import (
-    DevelopmentEngineIdentity,
-    DevelopmentEngineRequest,
-    DevelopmentEngineResult,
-    DevelopmentEngineStatus,
-    DevelopmentTaskGrant,
-)
+if TYPE_CHECKING:
+    from app.schemas.development.development_result import (
+        DevelopmentEngineIdentity,
+        DevelopmentEngineRequest,
+        DevelopmentEngineResult,
+        DevelopmentEngineStatus,
+        DevelopmentTaskGrant,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    if name in (
+        "DevelopmentEngineIdentity",
+        "DevelopmentEngineRequest",
+        "DevelopmentEngineResult",
+        "DevelopmentEngineStatus",
+        "DevelopmentTaskGrant",
+    ):
+        from app.schemas.development import development_result
+
+        return getattr(development_result, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "TaskGrant",

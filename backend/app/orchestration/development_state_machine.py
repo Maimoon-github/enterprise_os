@@ -169,6 +169,8 @@ class DevelopmentStateMachine:
         *,
         current_state: DevelopmentWorkflowState,
         target_state: DevelopmentWorkflowState,
+        step_id: str | None = None,
+        attempt_id: str | None = None,
         lease: DevelopmentExecutionLease | None = None,
         expected_owner: str | None = None,
         active_subagent_count: int = 0,
@@ -229,14 +231,20 @@ class DevelopmentStateMachine:
 
         # 6. Retry budget guard
         if target_state == DevelopmentWorkflowState.RETRY_PREPARED:
-            if not self.can_retry(current_retries, error):
-                classification = self.classify_error(error) if error else "MAX_RETRIES_EXCEEDED"
-                raise PolicyViolationError(
-                    f"Cannot prepare retry: Budget exhausted ({current_retries}/{self.retry_policy.max_retries}) "
-                    f"or error classification is non-transient ({classification})."
-                )
+            if current_state == DevelopmentWorkflowState.CORRECTION_REQUIRED:
+                if current_retries >= self.retry_policy.max_retries:
+                    raise PolicyViolationError(
+                        f"Cannot prepare retry: Budget exhausted ({current_retries}/{self.retry_policy.max_retries})."
+                    )
+            else:
+                if not self.can_retry(current_retries, error):
+                    classification = self.classify_error(error) if error else "MAX_RETRIES_EXCEEDED"
+                    raise PolicyViolationError(
+                        f"Cannot prepare retry: Budget exhausted ({current_retries}/{self.retry_policy.max_retries}) "
+                        f"or error classification is non-transient ({classification})."
+                    )
 
-        # 7. Required state data presence
+        # 7. Required state data presence & HITL guards
         state_data = state_data or {}
         if target_state == DevelopmentWorkflowState.HITL_PENDING:
             if not state_data.get("candidate_hash") and not state_data.get("deliverable"):
@@ -244,9 +252,97 @@ class DevelopmentStateMachine:
                     "Transition to HITL_PENDING requires candidate_hash or deliverable in state data."
                 )
         elif target_state == DevelopmentWorkflowState.APPROVED:
-            if not state_data.get("approval_decision"):
+            # Enforce machine DENY + human APPROVE = DENY
+            if state_data.get("machine_policy_allowed") is False:
                 raise PolicyViolationError(
-                    "Transition to APPROVED requires approval_decision in state data."
+                    "Transition to APPROVED blocked: Machine policy denied this step. "
+                    "Machine policy takes precedence over human approval."
+                )
+
+            token = state_data.get("approval_token")
+            decision = state_data.get("approval_decision")
+
+            if not token and not decision:
+                raise PolicyViolationError(
+                    "Transition to APPROVED requires approval_token or approval_decision in state data."
+                )
+            if decision and decision != "APPROVE":
+                raise PolicyViolationError(
+                    f"Transition to APPROVED rejected: approval_decision is '{decision}', expected 'APPROVE'."
+                )
+
+            if token is not None:
+                tok_decision = getattr(token, "decision", None) or (
+                    token.get("decision") if isinstance(token, dict) else None
+                )
+                if tok_decision and tok_decision != "APPROVE":
+                    raise PolicyViolationError(
+                        f"Transition to APPROVED rejected: token decision is '{tok_decision}', expected 'APPROVE'."
+                    )
+
+                tok_step = getattr(token, "step_id", None) or (
+                    token.get("step_id") if isinstance(token, dict) else None
+                )
+                expected_step = step_id or state_data.get("step_id")
+                if expected_step and tok_step and tok_step != expected_step:
+                    raise PolicyViolationError(
+                        f"Transition to APPROVED rejected: token step_id mismatch. "
+                        f"Expected '{expected_step}', got '{tok_step}'."
+                    )
+
+                tok_attempt = getattr(token, "attempt_id", None) or (
+                    token.get("attempt_id") if isinstance(token, dict) else None
+                )
+                expected_attempt = attempt_id or state_data.get("attempt_id")
+                if expected_attempt and tok_attempt and tok_attempt != expected_attempt:
+                    raise PolicyViolationError(
+                        f"Transition to APPROVED rejected: token attempt_id mismatch. "
+                        f"Expected '{expected_attempt}', got '{tok_attempt}'."
+                    )
+
+                cand_hash = state_data.get("candidate_hash") or state_data.get("output_snapshot_hash")
+                tok_hash = getattr(token, "output_snapshot_hash", None) or getattr(token, "candidate_hash", None)
+                if not tok_hash and isinstance(token, dict):
+                    tok_hash = token.get("output_snapshot_hash") or token.get("candidate_hash")
+                if cand_hash and tok_hash and cand_hash != tok_hash:
+                    raise PolicyViolationError(
+                        f"Transition to APPROVED rejected: candidate hash mismatch. "
+                        f"Expected '{cand_hash}', token has '{tok_hash}'."
+                    )
+
+                # Check token expiry
+                is_expired = False
+                if hasattr(token, "is_expired") and callable(token.is_expired):
+                    is_expired = token.is_expired()
+                elif isinstance(token, dict) and "expires_at" in token:
+                    exp = token["expires_at"]
+                    if isinstance(exp, str):
+                        exp = datetime.fromisoformat(exp)
+                    if exp.tzinfo is None:
+                        exp = exp.replace(tzinfo=UTC)
+                    is_expired = datetime.now(UTC) > exp
+
+                if is_expired:
+                    raise PolicyViolationError("Transition to APPROVED rejected: Approval token has expired.")
+
+                # Check token signature if validator or public_key_pem is configured
+                validator = state_data.get("validator")
+                public_key_pem = state_data.get("public_key_pem")
+                if (validator or public_key_pem) and hasattr(token, "verify_signature") and callable(token.verify_signature) and getattr(token, "signature", None):
+                    if not token.verify_signature(validator=validator, public_key_pem=public_key_pem):
+                        raise PolicyViolationError("Transition to APPROVED rejected: Approval token signature verification failed.")
+
+        elif target_state == DevelopmentWorkflowState.CORRECTION_REQUIRED:
+            token = state_data.get("approval_token")
+            decision = state_data.get("approval_decision")
+            tok_decision = getattr(token, "decision", None) or (
+                token.get("decision") if isinstance(token, dict) else None
+            ) if token else None
+            actual_decision = decision or tok_decision
+            if actual_decision not in ("REJECT", "REQUEST_REVISION"):
+                raise PolicyViolationError(
+                    f"Transition to CORRECTION_REQUIRED requires decision in ('REJECT', 'REQUEST_REVISION'), "
+                    f"got '{actual_decision}'."
                 )
 
     def transition(
@@ -272,6 +368,8 @@ class DevelopmentStateMachine:
         self.validate_transition_guards(
             current_state=current_state,
             target_state=target_state,
+            step_id=step_id,
+            attempt_id=attempt_id,
             lease=lease,
             expected_owner=expected_owner,
             active_subagent_count=active_subagent_count,

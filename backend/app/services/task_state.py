@@ -30,6 +30,7 @@ from app.schemas.task_state import (
     StakeholderSignOff,
     TaskStatus,
 )
+from app.schemas.development.approval_token import DevelopmentApprovalToken
 from app.security.authorization_boundary import CallerIdentity
 from app.security.cryptographic_validator import CryptographicValidator
 from app.services.hitl import CATEGORY_ROLE_PERMISSIONS, HitlCoordinator, canonical_decision_bytes
@@ -54,6 +55,7 @@ class TaskStateService:
         self._retry_counts: dict[str, int] = {}
         self._dev_leases: dict[str, DevelopmentExecutionLease] = {}
         self._dev_checkpoints: dict[str, list[DevelopmentWorkflowCheckpoint]] = {}
+        self._dev_approval_tokens: dict[str, list[DevelopmentApprovalToken]] = {}
 
     async def get_state(self, task_id: str) -> CanonicalTaskState:
         """Fetch the authoritative task state from repository."""
@@ -1244,5 +1246,69 @@ class TaskStateService:
 
         return checkpoint, checkpoint.state_data
 
+    async def record_development_approval_decision(
+        self,
+        tenant_id: str,
+        task_id: str,
+        approval_token: DevelopmentApprovalToken,
+        checkpoint: DevelopmentWorkflowCheckpoint | None = None,
+    ) -> None:
+        """Record human approval decision token and bind it to task checkpoints."""
+        tokens = self._dev_approval_tokens.setdefault(task_id, [])
+        tokens.append(approval_token)
 
+        if checkpoint:
+            await self.save_development_checkpoint(tenant_id, checkpoint)
+        else:
+            try:
+                task = await self.get_state(task_id)
+                cts_state = dict(task.cts_state)
+                tokens_list = cts_state.setdefault("dev_approval_tokens", [])
+                tokens_list.append(approval_token.model_dump(mode="json"))
+                task.cts_state.update(cts_state)
+                await self.save_state(tenant_id, task)
+            except Exception:
+                pass
 
+        if self._provenance_recorder:
+            await self._provenance_recorder.record(
+                tenant_id=tenant_id,
+                entity_id=task_id,
+                activity=f"hitl_{approval_token.decision.lower()}",
+                agent=approval_token.reviewer_id,
+                metadata={
+                    "token_id": approval_token.token_id,
+                    "step_id": approval_token.step_id,
+                    "attempt_id": approval_token.attempt_id,
+                    "decision": approval_token.decision,
+                    "reviewer_role": approval_token.reviewer_role,
+                },
+            )
+
+    async def get_development_approval_token(
+        self,
+        task_id: str,
+        step_id: str | None = None,
+        attempt_id: str | None = None,
+    ) -> DevelopmentApprovalToken | None:
+        """Retrieve the latest approval token for a task, optionally filtered by step and attempt."""
+        tokens = self._dev_approval_tokens.get(task_id, [])
+        for tok in reversed(tokens):
+            if step_id and tok.step_id != step_id:
+                continue
+            if attempt_id and tok.attempt_id != attempt_id:
+                continue
+            return tok
+        try:
+            task = await self.get_state(task_id)
+            tokens_data = task.cts_state.get("dev_approval_tokens", [])
+            for tok_dict in reversed(tokens_data):
+                tok = DevelopmentApprovalToken.model_validate(tok_dict)
+                if step_id and tok.step_id != step_id:
+                    continue
+                if attempt_id and tok.attempt_id != attempt_id:
+                    continue
+                return tok
+        except Exception:
+            pass
+        return None

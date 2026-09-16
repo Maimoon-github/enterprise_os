@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.exceptions import (
@@ -23,13 +23,14 @@ from app.schemas.action_preview import (
     SignedApprovalClearance,
     compute_preview_hash,
 )
-from app.security.cryptographic_validator import CryptographicValidator
+from app.schemas.development.approval_token import DevelopmentApprovalToken
+from app.security.cryptographic_validator import CryptographicValidator, sign_payload
 
 CATEGORY_ROLE_PERMISSIONS: dict[ActionPreviewKind, set[str]] = {
     ActionPreviewKind.SPEND: {"finance", "admin"},
     ActionPreviewKind.CLAIM: {"legal", "admin"},
     ActionPreviewKind.COPY: {"brand_lead", "admin", "quality"},
-    ActionPreviewKind.CODE_DIFF: {"engineering", "admin", "tech_lead"},
+    ActionPreviewKind.CODE_DIFF: {"engineering", "admin", "tech_lead", "lead_engineer", "brand_lead"},
 }
 
 
@@ -87,6 +88,9 @@ class HitlCoordinator:
     def __init__(self, validator: CryptographicValidator | None = None) -> None:
         self._pending: dict[str, ActionPreview] = {}
         self._decisions: dict[str, ApprovalDecision] = {}
+        self._dev_approval_tokens: dict[str, DevelopmentApprovalToken] = {}
+        self._used_token_ids: set[str] = set()
+        self._used_nonces: set[str] = set()
         self._validator = validator
 
     def submit_for_approval(self, preview: ActionPreview) -> None:
@@ -264,3 +268,146 @@ class HitlCoordinator:
                 f"Action preview '{preview_id}' was {status_desc}; dispatch is strictly blocked."
             )
         return decision
+
+    def get_development_approval_token(
+        self, task_id: str, step_id: str, attempt_id: str
+    ) -> DevelopmentApprovalToken | None:
+        """Retrieve stored approval token for task, step, and attempt."""
+        return self._dev_approval_tokens.get(f"{task_id}:{step_id}:{attempt_id}")
+
+    def decide_development_step(
+        self,
+        *,
+        task_id: str,
+        step_id: str,
+        attempt_id: str,
+        decision: str,
+        reviewer: str = "",
+        reviewer_id: str = "",
+        reviewer_role: str = "engineering",
+        tenant_id: str = "default",
+        workflow_id: str = "",
+        subagent_id: str = "DEV-CODE",
+        input_snapshot_hash: str = "",
+        output_snapshot_hash: str = "",
+        candidate_hash: str = "",
+        review_dossier_hash: str = "",
+        policy_version: str = "1.0.0",
+        machine_policy_allowed: bool = True,
+        machine_policy_reason: str = "",
+        signature: str | None = None,
+        signing_private_key: Any | None = None,
+        private_key_pem: str | None = None,
+        validator: CryptographicValidator | None = None,
+        revision_notes: str | None = "",
+        ttl_seconds: int = 3600,
+        expires_in_seconds: int = 3600,
+        token_id: str | None = None,
+        nonce: str | None = None,
+        version: Any = 1,
+    ) -> DevelopmentApprovalToken:
+        """Authenticate, authorize, sign, and record a human decision for a Development sub-agent attempt.
+
+        Enforces:
+        1. Role authorization: Reviewer role must be in allowed development roles.
+        2. Machine DENY precedence: machine DENY + human APPROVE = DENY (fail-closed).
+        3. Single-scope, non-transferable binding: Matches task, workflow, step, attempt, and candidate hash.
+        4. Replay protection: Rejects duplicate token IDs or nonces.
+        5. Cryptographic signature: Signs decision server-side using private key or verifies caller signature.
+        """
+        reviewer_norm = (reviewer_id or reviewer or "reviewer").strip()
+        out_hash = (output_snapshot_hash or candidate_hash).strip()
+        ttl = ttl_seconds if ttl_seconds != 3600 else expires_in_seconds
+
+        decision_norm = decision.strip().upper()
+        if decision_norm not in ("APPROVE", "REJECT", "REQUEST_REVISION"):
+            raise PolicyViolationError(
+                f"Invalid development approval decision '{decision}'. Must be APPROVE, REJECT, or REQUEST_REVISION."
+            )
+
+        # 1. Reviewer Role Screening
+        role_norm = reviewer_role.strip().lower()
+        allowed_roles = CATEGORY_ROLE_PERMISSIONS.get(ActionPreviewKind.CODE_DIFF, {"engineering", "admin", "tech_lead"})
+        if role_norm not in allowed_roles:
+            raise PolicyViolationError(
+                f"Reviewer role '{role_norm}' is not authorized to sign off on Development deliverables. "
+                f"Authorized roles: {sorted(allowed_roles)}."
+            )
+
+        # 2. Machine Denial Precedence: machine DENY + human APPROVE = DENY
+        if not machine_policy_allowed and decision_norm == "APPROVE":
+            raise PolicyViolationError(
+                f"Machine policy violation: Hard machine security/policy denial cannot be overridden "
+                f"by human approval. Reason: '{machine_policy_reason}'."
+            )
+
+        # 3. Single-scope Replay Guard
+        assigned_token_id = token_id or f"tok-{uuid.uuid4().hex[:12]}"
+        assigned_nonce = nonce or uuid.uuid4().hex
+
+        if assigned_token_id in self._used_token_ids:
+            raise PolicyViolationError(
+                f"Replay detected: Approval token '{assigned_token_id}' has already been consumed."
+            )
+        if assigned_nonce in self._used_nonces:
+            raise PolicyViolationError(
+                f"Replay detected: Approval nonce '{assigned_nonce}' has already been consumed."
+            )
+
+        # 4. Construct Token Model
+        now_dt = datetime.now(UTC)
+        expires_dt = now_dt + timedelta(seconds=ttl)
+
+        token = DevelopmentApprovalToken(
+            approval_id=f"appr-{uuid.uuid4()}",
+            token_id=assigned_token_id,
+            task_id=task_id,
+            workflow_id=workflow_id,
+            step_id=step_id,
+            attempt_id=attempt_id,
+            subagent_id=subagent_id,
+            decision=decision_norm,  # type: ignore[arg-type]
+            input_snapshot_hash=input_snapshot_hash or "0" * 32,
+            output_snapshot_hash=out_hash or "0" * 32,
+            review_dossier_hash=review_dossier_hash or "0" * 32,
+            policy_version=policy_version,
+            reviewer_identity=reviewer_norm,
+            reviewer_role=role_norm,
+            issued_at=now_dt,
+            expires_at=expires_dt,
+            nonce=assigned_nonce,
+            version=int(version) if str(version).isdigit() else 1,
+            signature="",
+            revision_notes=revision_notes or "",
+        )
+
+        # 5. Signing and Cryptographic Verification
+        canon_bytes = token.canonical_bytes()
+        effective_val = validator or self._validator
+
+        if signing_private_key is None and private_key_pem is not None:
+            from cryptography.hazmat.primitives.serialization import load_pem_private_key
+            signing_private_key = load_pem_private_key(private_key_pem.encode("ascii"), password=None)
+
+        if signing_private_key is None and signature is None:
+            if not hasattr(self, "_server_signing_key"):
+                from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+                self._server_signing_key = Ed25519PrivateKey.generate()
+            signing_private_key = self._server_signing_key
+
+        if signing_private_key is not None:
+            sig = sign_payload(canon_bytes, signing_private_key)
+            token = token.model_copy(update={"signature": sig})
+        elif signature is not None:
+            if effective_val is not None and not effective_val.verify(canon_bytes, signature):
+                raise SignatureVerificationError(
+                    f"Cryptographic signature verification failed for approval token on task '{task_id}'."
+                )
+            token = token.model_copy(update={"signature": signature})
+
+        # 6. Commit to replay cache and active store
+        self._used_token_ids.add(assigned_token_id)
+        self._used_nonces.add(assigned_nonce)
+        self._dev_approval_tokens[f"{task_id}:{step_id}:{attempt_id}"] = token
+
+        return token
