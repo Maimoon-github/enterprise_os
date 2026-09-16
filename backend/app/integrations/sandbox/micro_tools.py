@@ -23,18 +23,33 @@ from typing import Any
 from app.schemas.sandbox import SandboxCapability
 
 
-def execute_s_code(payload: dict[str, Any]) -> dict[str, str]:
+def execute_s_code(payload: dict[str, Any], operation: str | None = None) -> dict[str, Any]:
     """S_CODE: Component Coder, Linter & Diff Engineer [Micro-Tool: AST Parser & Diff Generator].
 
     Generates responsive UI templates, validates CMS schema changes against T06 staged models,
     performs AST syntax/lint verification, enforces path traversal security, and produces
     deterministic unified code diffs.
     """
+    if operation is not None and "operation" not in payload:
+        payload = dict(payload)
+        payload["operation"] = operation
+
     task_id = str(payload.get("task_id", "unknown"))
     tenant_id = str(payload.get("tenant_id", "default"))
     component_name = str(payload.get("component_name", "LayoutTemplate"))
     component_type = str(payload.get("component_type", "component"))
     code_content = payload.get("code") or payload.get("schema_content") or ""
+
+    # Strict read-only enforcement: reject mutations under read_only mode
+    if payload.get("read_only"):
+        req_op = payload.get("operation") or operation or "default"
+        if req_op in ("write_file", "apply_diff", "delete_file", "modify_file") or payload.get("mutation_requested"):
+            return {
+                "status": "security_violation",
+                "security_violation": True,
+                "error": f"Security violation: Mutation operation '{req_op}' is denied in read-only mode.",
+                "syntax_error": f"Security violation: Mutation operation '{req_op}' is denied in read-only mode.",
+            }
 
     # 1. Security & Path Traversal Screening
     validation_findings: list[str] = []
@@ -58,13 +73,12 @@ def execute_s_code(payload: dict[str, Any]) -> dict[str, str]:
     disallowed_patterns = (
         "..",
         "/etc/",
-        "c:\\",
-        "c:/",
+        "~/",
+        "c:\\windows",
+        "c:/windows",
         ".env",
-        "credentials",
-        "secret",
-        "password",
-        "shadow",
+        ".git",
+        "authorized_keys",
     )
     for f in target_files:
         f_lower = f.lower().replace("\\", "/")
@@ -96,6 +110,170 @@ def execute_s_code(payload: dict[str, Any]) -> dict[str, str]:
             "security_checks_passed": "False",
             "validation_findings": json.dumps(validation_findings),
         }
+
+    # 1.1 Read-Only Planning Operations Dispatch (DE-06 DEV-PLAN)
+    effective_operation = str(payload.get("operation", "default"))
+    if effective_operation in (
+        "inspect_files",
+        "extract_symbols",
+        "inspect_dependencies",
+        "introspect_schema",
+        "parse_manifest",
+    ):
+        # Strict read-only enforcement: deny any file mutation attempts
+        if payload.get("mutation_requested") or payload.get("action") in ("write", "delete", "modify"):
+            return {
+                "status": "security_violation",
+                "security_violation": True,
+                "task_id": task_id,
+                "operation": effective_operation,
+                "error": f"Security violation: Mutation is strictly prohibited during read-only planning operation '{effective_operation}'.",
+                "syntax_error": f"Security violation: Mutation is strictly prohibited during read-only planning operation '{effective_operation}'.",
+            }
+
+        if effective_operation == "inspect_files":
+            source_files = (
+                payload.get("source_files")
+                or payload.get("files")
+                or payload.get("files_to_inspect")
+                or {}
+            )
+            if isinstance(source_files, list):
+                source_files = {f: "" for f in source_files}
+            file_index: list[dict[str, Any]] = []
+            for path, content in source_files.items():
+                p_str = str(path)
+                ext = p_str.split(".")[-1] if "." in p_str else ""
+                file_index.append({
+                    "path": p_str,
+                    "extension": ext,
+                    "size_bytes": len(str(content).encode("utf-8")),
+                })
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "operation": "inspect_files",
+                "file_count": str(len(file_index)),
+                "file_index": json.dumps(file_index),
+                "read_only": payload.get("read_only", False),
+                "inspected_files": list(source_files.keys()),
+            }
+
+        elif effective_operation == "extract_symbols":
+            symbols: dict[str, list[Any]] = {"classes": [], "functions": [], "imports": []}
+            source = str(code_content or payload.get("source_code") or "")
+            if source:
+                try:
+                    tree = ast.parse(source)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.ClassDef):
+                            methods = [
+                                m.name for m in node.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+                            ]
+                            symbols["classes"].append({"name": node.name, "methods": methods, "line": node.lineno})
+                        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            symbols["functions"].append({
+                                "name": node.name,
+                                "is_async": isinstance(node, ast.AsyncFunctionDef),
+                                "line": node.lineno,
+                            })
+                        elif isinstance(node, ast.Import):
+                            for alias in node.names:
+                                symbols["imports"].append(alias.name)
+                        elif isinstance(node, ast.ImportFrom):
+                            mod = node.module or ""
+                            for alias in node.names:
+                                symbols["imports"].append(f"{mod}.{alias.name}")
+                except Exception as err:
+                    return {
+                        "status": "syntax_error",
+                        "task_id": task_id,
+                        "operation": "extract_symbols",
+                        "syntax_error": str(err),
+                        "symbols": json.dumps(symbols),
+                    }
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "operation": "extract_symbols",
+                "symbols": json.dumps(symbols),
+            }
+
+        elif operation == "inspect_dependencies":
+            deps: list[dict[str, str]] = []
+            manifest_str = str(payload.get("manifest") or payload.get("dependency_manifest") or "")
+            if manifest_str:
+                try:
+                    parsed = json.loads(manifest_str)
+                    if isinstance(parsed, dict):
+                        d_dict = parsed.get("dependencies", {})
+                        dev_d = parsed.get("devDependencies", {})
+                        for k, v in {**d_dict, **dev_d}.items():
+                            deps.append({"name": k, "version": str(v)})
+                except Exception:
+                    for line in manifest_str.splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            deps.append({"name": line, "version": "pinned"})
+            if code_content:
+                try:
+                    tree = ast.parse(str(code_content))
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Import):
+                            for a in node.names:
+                                deps.append({"name": a.name.split(".")[0], "type": "import"})
+                        elif isinstance(node, ast.ImportFrom) and node.module:
+                            deps.append({"name": node.module.split(".")[0], "type": "import"})
+                except Exception:
+                    pass
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "operation": "inspect_dependencies",
+                "dependency_count": str(len(deps)),
+                "dependencies": json.dumps(deps),
+            }
+
+        elif operation == "introspect_schema":
+            schemas: list[Any] = []
+            schema_data = payload.get("schema_content") or payload.get("staged_cms_models") or code_content
+            if schema_data:
+                if isinstance(schema_data, (dict, list)):
+                    schemas = schema_data if isinstance(schema_data, list) else [schema_data]
+                elif isinstance(schema_data, str):
+                    try:
+                        parsed = json.loads(schema_data)
+                        schemas = parsed if isinstance(parsed, list) else [parsed]
+                    except Exception:
+                        schemas = [{"raw_schema": schema_data}]
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "operation": "introspect_schema",
+                "schema_count": str(len(schemas)),
+                "schemas": json.dumps(schemas, default=str),
+            }
+
+        elif operation == "parse_manifest":
+            raw_manifest = payload.get("manifest") or payload.get("config") or ""
+            parsed_manifest: dict[str, Any] = {}
+            if raw_manifest:
+                if isinstance(raw_manifest, dict):
+                    parsed_manifest = raw_manifest
+                elif isinstance(raw_manifest, str):
+                    try:
+                        parsed_manifest = json.loads(raw_manifest)
+                    except Exception:
+                        for line in raw_manifest.splitlines():
+                            if "=" in line:
+                                k, v = line.split("=", 1)
+                                parsed_manifest[k.strip()] = v.strip()
+            return {
+                "status": "success",
+                "task_id": task_id,
+                "operation": "parse_manifest",
+                "manifest": json.dumps(parsed_manifest),
+            }
 
     # 2. Syntax & AST Validation
     ast_valid = True

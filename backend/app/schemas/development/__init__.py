@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.schemas.development.approval_token import DevelopmentApprovalToken
 from app.schemas.development.development_plan import (
     DevelopmentExecutionPlan,
+    DevelopmentPlan,
     DevelopmentPlanStep,
 )
 from app.schemas.development.development_result import (
@@ -24,6 +25,7 @@ from app.schemas.development.provenance import (
 __all__ = [
     "DevelopmentApprovalToken",
     "DevelopmentPlanStep",
+    "DevelopmentPlan",
     "DevelopmentExecutionPlan",
     "DevelopmentProvenanceRecord",
     "DevelopmentProvEvent",

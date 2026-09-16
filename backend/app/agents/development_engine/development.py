@@ -24,6 +24,8 @@ from app.schemas.development.development_result import (
     DevelopmentTaskGrant,
 )
 from app.schemas.governance import WorkerRole
+from app.schemas.development.development_plan import DevelopmentPlan
+from app.agents.development_engine.subagents.planning import DevelopmentPlanningAgent
 from app.schemas.sandbox import SandboxCapability
 
 logger = get_logger(__name__)
@@ -42,6 +44,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
     """
 
     capability = SandboxCapability.CODE
+    _planning_agent: DevelopmentPlanningAgent
 
     def __init__(
         self,
@@ -51,6 +54,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         super().__init__(sandbox_client, llm_client=llm_client)
         self._identity = DevelopmentEngineIdentity()
         self._status = DevelopmentEngineStatus()
+        self._planning_agent = DevelopmentPlanningAgent(sandbox_client, llm_client=llm_client)
 
     @property
     def identity(self) -> DevelopmentEngineIdentity:
@@ -61,6 +65,11 @@ class DevelopmentAgent(BoundedWorkerAgent):
     def status(self) -> DevelopmentEngineStatus:
         """Current operational status of W_DEV."""
         return self._status
+
+    @property
+    def planning_agent(self) -> DevelopmentPlanningAgent:
+        """Sub-agent responsible for planning and impact analysis (DEV-PLAN)."""
+        return self._planning_agent
 
     def get_identity(self) -> DevelopmentEngineIdentity:
         """Return engine identity and version."""
@@ -522,3 +531,58 @@ class DevelopmentAgent(BoundedWorkerAgent):
             self._status.active_task_id = None
             logger.error("W_DEV execution failed", exc_info=exc)
             raise
+
+    async def plan_development_task(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        previous_plan: DevelopmentPlan | None = None,
+        reviewer_feedback: str | None = None,
+        is_release_producing: bool = True,
+        provenance_recorder: Any = None,
+    ) -> tuple[DevelopmentPlan, str]:
+        """Execute DEV-PLAN sub-agent to generate a validated DevelopmentPlan.
+
+        Validates incoming grant, runs read-only planning inspection, computes plan hash,
+        records provenance if recorder is provided, and returns the sealed (plan, plan_hash).
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        plan = await self._planning_agent.create_plan(
+            grant=validated_grant,
+            context=ctx,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            previous_plan=previous_plan,
+            reviewer_feedback=reviewer_feedback,
+            is_release_producing=is_release_producing,
+        )
+        plan_hash = plan.plan_hash or plan.compute_plan_hash()
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-plan-{plan.plan_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"plan:{plan.plan_id}:{plan_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-PLAN",
+                    metadata={
+                        "plan_id": plan.plan_id,
+                        "task_id": validated_grant.task_id,
+                        "plan_hash": plan_hash,
+                        "attempt_id": attempt_id,
+                        "steps_count": len(plan.steps),
+                        "risk_class": plan.risk_class,
+                        "is_release_producing": is_release_producing,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-PLAN", exc_info=exc)
+
+        return plan, plan_hash
