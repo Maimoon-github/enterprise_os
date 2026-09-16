@@ -26,7 +26,6 @@ from app.persistence.repositories.vector import VectorRepository
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.provenance import ProvenanceRecord
 from app.schemas.sandbox import (
-    SandboxCapability,
     SandboxExecutionStatus,
     SandboxInvocationMandate,
     SandboxResult,
@@ -122,6 +121,14 @@ class FakeProvenanceRepository(ProvenanceRepository):
         super().__init__(session_factory=None)  # type: ignore[arg-type]
         self._chains: dict[str, list[ProvenanceRecord]] = {}
 
+    @property
+    def records(self) -> list[ProvenanceRecord]:
+        """Convenience property returning all stored records across all tenants."""
+        recs: list[ProvenanceRecord] = []
+        for chain in self._chains.values():
+            recs.extend(chain)
+        return recs
+
     async def _latest(self, tenant_id: str) -> ProvenanceRecord | None:
         records = self._chains.get(tenant_id, [])
         return records[-1] if records else None
@@ -156,7 +163,9 @@ class FakeProvenanceRepository(ProvenanceRepository):
             occurred_at=occurred_at,
             prev_record_hash=prev_hash,
             metadata_hash=meta_hash,
-            record_hash=_compute_hash(prev_hash, entity_id, activity, agent, occurred_at, meta_hash),
+            record_hash=_compute_hash(
+                prev_hash, entity_id, activity, agent, occurred_at, meta_hash
+            ),
             metadata=metadata or {},
             w3c_prov=w3c_prov or {},
         )

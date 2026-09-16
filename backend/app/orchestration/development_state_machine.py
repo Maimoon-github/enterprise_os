@@ -298,6 +298,24 @@ class DevelopmentStateMachine:
                         f"'{dossier_verdict}' (must be 'PASS' to advance to DEV-SEC)."
                     )
 
+            sec_dossier = state_data.get("security_dossier")
+            if sec_dossier is not None:
+                sec_verdict = getattr(sec_dossier, "verdict", None) or (
+                    sec_dossier.get("verdict") if isinstance(sec_dossier, dict) else None
+                )
+                hard_blocks = getattr(sec_dossier, "hard_block_count", 0) or (
+                    sec_dossier.get("hard_block_count", 0)
+                    if isinstance(sec_dossier, dict)
+                    else 0
+                )
+                if (sec_verdict and str(sec_verdict) != "PASS") or hard_blocks > 0:
+                    raise PolicyViolationError(
+                        "Transition to APPROVED blocked: Security dossier verdict is "
+                        f"'{sec_verdict}' with {hard_blocks} hard-block findings "
+                        "(must be 'PASS' with 0 hard blocks to advance to DEV-REL). "
+                        "Machine DENY overrides human approval."
+                    )
+
             token = state_data.get("approval_token")
             decision = state_data.get("approval_decision")
 
@@ -401,6 +419,16 @@ class DevelopmentStateMachine:
                     f"Transition to CORRECTION_REQUIRED requires decision in ('REJECT', 'REQUEST_REVISION'), "
                     f"got '{actual_decision}'."
                 )
+
+        elif (
+            target_state == DevelopmentWorkflowState.RELEASE_READY
+            and not state_data.get("release_candidate")
+            and not state_data.get("release_hash")
+        ):
+            raise PolicyViolationError(
+                "Transition to RELEASE_READY requires release_candidate or "
+                "release_hash in state data."
+            )
 
         # 8. Provenance & Audit fail-closed transition guard (DE-05)
         if state_data.get("provenance_recording_failed") is True:

@@ -7,6 +7,18 @@ from app.agents.development_engine.subagents.implementation import (
     CodeImplementationAgent,
     ImplementationAgent,
 )
+from app.agents.development_engine.subagents.verification import (
+    DevVerifyAgent,
+    VerificationAgent,
+)
+from app.agents.development_engine.subagents.security_review import (
+    DevSecAgent,
+    SecurityReviewAgent,
+)
+from app.agents.development_engine.subagents.release_ops import (
+    DevRelAgent,
+    ReleaseOpsAgent,
+)
 
 __all__ = [
     "DevelopmentPlanningAgent",
@@ -14,5 +26,12 @@ __all__ = [
     "UiLayoutAgent",
     "CodeImplementationAgent",
     "ImplementationAgent",
+    "VerificationAgent",
+    "DevVerifyAgent",
+    "SecurityReviewAgent",
+    "DevSecAgent",
+    "ReleaseOpsAgent",
+    "DevRelAgent",
 ]
+
 

@@ -492,3 +492,335 @@ class VerificationDossier(BaseModel):
     def is_acceptable_for_dev_sec(self) -> bool:
         """Verify whether this dossier authorizes advancement to DEV-SEC."""
         return self.verdict == VerificationVerdict.PASS
+
+
+class SecuritySeverity(StrEnum):
+    """Vulnerability and risk severity classification for DEV-SEC."""
+
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    INFO = "INFO"
+
+
+class SecurityCategory(StrEnum):
+    """Categorization of security review findings."""
+
+    SAST = "SAST"
+    SECRET = "SECRET"
+    SCA = "SCA"
+    CONFIG = "CONFIG"
+    PERMISSION = "PERMISSION"
+    AST_PATTERN = "AST_PATTERN"
+
+
+class SecurityFinding(BaseModel):
+    """An individual security, vulnerability, or compliance finding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    finding_id: str
+    rule_id: str
+    category: SecurityCategory
+    severity: SecuritySeverity
+    title: str
+    description: str
+    file_path: str
+    line_number: int | None = None
+    code_snippet: str = ""
+    remediation_target: str = "DEV-CODE"
+    is_hard_block: bool = False
+    cve_id: str | None = None
+    cwe_id: str | None = None
+
+
+class SecurityVerdict(StrEnum):
+    """Machine policy determination verdict for DEV-SEC."""
+
+    PASS = "PASS"
+    DENY = "DENY"
+    ERROR = "ERROR"
+
+
+class SecurityDossier(BaseModel):
+    """Tamper-evident security audit dossier produced by DEV-SEC."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dossier_id: str
+    task_id: str
+    workflow_id: str
+    candidate_hash: str
+    target_candidate_id: str
+    component_name: str
+    verdict: SecurityVerdict
+    scanners_run: list[str] = Field(default_factory=list)
+    scanner_versions: dict[str, str] = Field(default_factory=dict)
+    findings: list[SecurityFinding] = Field(default_factory=list)
+    hard_block_count: int = 0
+    remediation_targets: list[str] = Field(default_factory=list)
+    evidence_envelopes: list[EvidenceEnvelope] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    dossier_hash: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def canonical_bytes(self) -> bytes:
+        """Deterministic byte representation of security dossier."""
+        canonical_findings = [
+            {
+                "finding_id": f.finding_id,
+                "rule_id": f.rule_id,
+                "category": f.category.value,
+                "severity": f.severity.value,
+                "file_path": f.file_path,
+                "line_number": f.line_number or 0,
+                "is_hard_block": f.is_hard_block,
+                "remediation_target": f.remediation_target,
+            }
+            for f in sorted(self.findings, key=lambda x: x.finding_id)
+        ]
+        canonical_payload = {
+            "dossier_id": self.dossier_id,
+            "task_id": self.task_id,
+            "workflow_id": self.workflow_id,
+            "candidate_hash": self.candidate_hash,
+            "target_candidate_id": self.target_candidate_id,
+            "component_name": self.component_name,
+            "verdict": self.verdict.value,
+            "scanners_run": sorted(self.scanners_run),
+            "findings": canonical_findings,
+            "hard_block_count": self.hard_block_count,
+            "remediation_targets": sorted(self.remediation_targets),
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_dossier_hash(self) -> str:
+        """Compute SHA-256 digest of this security dossier."""
+        digest = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.dossier_hash = digest
+        return digest
+
+    def is_acceptable_for_release(self) -> bool:
+        """Verify whether this dossier authorizes progression to DEV-REL."""
+        return self.verdict == SecurityVerdict.PASS and self.hard_block_count == 0
+
+
+class CycloneDxComponent(BaseModel):
+    """Component entry within a CycloneDX v1.5 Software Bill of Materials."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    version: str
+    type: str = "library"
+    purl: str = ""
+    hashes: dict[str, str] = Field(default_factory=dict)
+    licenses: list[str] = Field(default_factory=list)
+
+
+class CycloneDxSbom(BaseModel):
+    """CycloneDX v1.5 Software Bill of Materials."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bomFormat: str = "CycloneDX"
+    specVersion: str = "1.5"
+    serialNumber: str
+    version: int = 1
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    components: list[CycloneDxComponent] = Field(default_factory=list)
+    dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    sbom_hash: str = ""
+
+    def canonical_bytes(self) -> bytes:
+        """Deterministic byte representation of CycloneDX SBOM."""
+        canonical_components = [
+            {
+                "name": c.name,
+                "version": c.version,
+                "type": c.type,
+                "purl": c.purl,
+                "hashes": dict(sorted(c.hashes.items())),
+            }
+            for c in sorted(self.components, key=lambda x: x.name)
+        ]
+        canonical_payload = {
+            "bomFormat": self.bomFormat,
+            "specVersion": self.specVersion,
+            "serialNumber": self.serialNumber,
+            "version": self.version,
+            "components": canonical_components,
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_sbom_hash(self) -> str:
+        """Compute SHA-256 digest of this SBOM."""
+        digest = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.sbom_hash = digest
+        return digest
+
+
+class DeploymentManifest(BaseModel):
+    """Content-addressable deployment specification for target runtime environment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    manifest_id: str
+    component_name: str
+    version: str = "1.0.0"
+    runtime: str = "python:3.11-slim"
+    entrypoint: str = "main.py"
+    environment_variables: dict[str, str] = Field(default_factory=dict)
+    healthcheck_endpoint: str = "/health"
+    resource_limits: dict[str, str] = Field(
+        default_factory=lambda: {"cpu": "1.0", "memory": "1Gi"}
+    )
+    ingress_route: str = ""
+    manifest_hash: str = ""
+
+    def canonical_bytes(self) -> bytes:
+        """Deterministic byte representation of deployment manifest."""
+        canonical_payload = {
+            "manifest_id": self.manifest_id,
+            "component_name": self.component_name,
+            "version": self.version,
+            "runtime": self.runtime,
+            "entrypoint": self.entrypoint,
+            "environment_variables": dict(sorted(self.environment_variables.items())),
+            "healthcheck_endpoint": self.healthcheck_endpoint,
+            "resource_limits": dict(sorted(self.resource_limits.items())),
+            "ingress_route": self.ingress_route,
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_manifest_hash(self) -> str:
+        """Compute SHA-256 digest of this deployment manifest."""
+        digest = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.manifest_hash = digest
+        return digest
+
+
+class MigrationInstruction(BaseModel):
+    """Validated database/CMS schema migration step and dry-run evidence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    step_number: int
+    operation: str
+    model_name: str
+    dry_run_passed: bool = True
+    sql_or_schema_change: str = ""
+
+
+class RollbackManifest(BaseModel):
+    """Deterministic rollback procedure and instructions for release reversal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rollback_id: str
+    target_release_id: str
+    previous_stable_version: str
+    rollback_strategy: str = "BLUE_GREEN_DRAIN"
+    revert_steps: list[str] = Field(default_factory=list)
+    migration_revert_instructions: list[MigrationInstruction] = Field(default_factory=list)
+    automated_verification_steps: list[str] = Field(default_factory=list)
+    rollback_hash: str = ""
+
+    def canonical_bytes(self) -> bytes:
+        """Deterministic byte representation of rollback manifest."""
+        canonical_payload = {
+            "rollback_id": self.rollback_id,
+            "target_release_id": self.target_release_id,
+            "previous_stable_version": self.previous_stable_version,
+            "rollback_strategy": self.rollback_strategy,
+            "revert_steps": self.revert_steps,
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_rollback_hash(self) -> str:
+        """Compute SHA-256 digest of this rollback manifest."""
+        digest = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.rollback_hash = digest
+        return digest
+
+
+class ReleaseArtifact(BaseModel):
+    """An individual packaged deliverable artifact with cryptographic digest."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_name: str
+    file_path: str
+    sha256: str
+    size_bytes: int
+    media_type: str = "application/octet-stream"
+
+
+class ReleaseCandidateDeliverable(BaseModel):
+    """Immutable, content-addressable release candidate package produced by DEV-REL."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    release_id: str
+    task_id: str
+    workflow_id: str
+    security_dossier_hash: str
+    candidate_hash: str
+    component_name: str
+    version: str = "1.0.0"
+    release_artifacts: list[ReleaseArtifact] = Field(default_factory=list)
+    artifact_digests: dict[str, str] = Field(default_factory=dict)
+    sbom: CycloneDxSbom
+    deployment_manifest: DeploymentManifest
+    rollback_manifest: RollbackManifest
+    migration_dry_run_evidence: list[MigrationInstruction] = Field(default_factory=list)
+    attestation_statement: dict[str, Any] | None = None
+    evidence_envelopes: list[EvidenceEnvelope] = Field(default_factory=list)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    release_hash: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def canonical_bytes(self) -> bytes:
+        """Deterministic byte representation of release candidate package."""
+        canonical_artifacts = [
+            {
+                "artifact_name": a.artifact_name,
+                "file_path": a.file_path,
+                "sha256": a.sha256,
+                "size_bytes": a.size_bytes,
+            }
+            for a in sorted(self.release_artifacts, key=lambda x: x.artifact_name)
+        ]
+        canonical_payload = {
+            "release_id": self.release_id,
+            "task_id": self.task_id,
+            "workflow_id": self.workflow_id,
+            "security_dossier_hash": self.security_dossier_hash,
+            "candidate_hash": self.candidate_hash,
+            "component_name": self.component_name,
+            "version": self.version,
+            "release_artifacts": canonical_artifacts,
+            "artifact_digests": dict(sorted(self.artifact_digests.items())),
+            "sbom_hash": self.sbom.sbom_hash or self.sbom.compute_sbom_hash(),
+            "deployment_manifest_hash": (
+                self.deployment_manifest.manifest_hash
+                or self.deployment_manifest.compute_manifest_hash()
+            ),
+            "rollback_manifest_hash": (
+                self.rollback_manifest.rollback_hash
+                or self.rollback_manifest.compute_rollback_hash()
+            ),
+        }
+        return json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_release_hash(self) -> str:
+        """Compute SHA-256 digest of this release candidate package."""
+        digest = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.release_hash = digest
+        return digest
+
+
+# Canonical alias
+ReleaseDossier = ReleaseCandidateDeliverable
+

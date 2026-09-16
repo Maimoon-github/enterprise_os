@@ -1673,6 +1673,679 @@ def execute_s_code(
             res_cov["output"] = dict(res_cov)
             return res_cov
 
+    # 1.6 Security Review Operations Dispatch (DE-11 DEV-SEC)
+    if effective_operation in (
+        "scan_sast",
+        "scan_secrets",
+        "scan_dependencies_sca",
+        "review_manifest_configs",
+        "check_authorization_boundaries",
+        "analyze_ast_dangerous_patterns",
+    ):
+        # DEV-SEC enforces strict read-only execution: mutation attempts fail closed
+        if (
+            payload.get("mutation_attempted")
+            or payload.get("write_file")
+            or payload.get("apply_patch")
+        ):
+            res_sec_mut: dict[str, Any] = {
+                "status": "security_violation",
+                "security_violation": True,
+                "operation": effective_operation,
+                "error": (
+                    "Security violation: DEV-SEC is strictly read-only; mutation attempts "
+                    "are rejected."
+                ),
+                "mutation_rejected": True,
+            }
+            res_sec_mut["output"] = dict(res_sec_mut)
+            return res_sec_mut
+
+        sec_findings: list[dict[str, Any]] = []
+        # Pre-injected simulated findings (e.g. for testing specific vulnerability paths)
+        for sf in payload.get("simulated_findings") or []:
+            if isinstance(sf, dict):
+                sec_findings.append(sf)
+
+        candidate_sources: dict[str, str] = {}
+        if isinstance(payload.get("source_code"), dict):
+            candidate_sources.update(payload["source_code"])
+        elif isinstance(payload.get("candidate_source"), dict):
+            candidate_sources.update(payload["candidate_source"])
+        elif code_content:
+            candidate_sources["candidate_code.py"] = str(code_content)
+
+        if effective_operation == "scan_sast":
+            for fpath, fcontent in candidate_sources.items():
+                try:
+                    tree = ast.parse(fcontent)
+                    for node in ast.walk(tree):
+                        # Detect dangerous eval/exec
+                        if isinstance(node, ast.Call):
+                            func_name = ""
+                            if isinstance(node.func, ast.Name):
+                                func_name = node.func.id
+                            elif isinstance(node.func, ast.Attribute):
+                                func_name = node.func.attr
+                            if func_name in ("eval", "exec", "compile"):
+                                sec_findings.append({
+                                    "finding_id": f"sast-eval-{uuid.uuid4().hex[:8]}",
+                                    "rule_id": "SEC-SAST-001",
+                                    "category": "SAST",
+                                    "severity": "CRITICAL",
+                                    "title": f"Use of dangerous built-in '{func_name}'",
+                                    "description": (
+                                        f"Dynamic code execution via '{func_name}' allows arbitrary "
+                                        "code injection."
+                                    ),
+                                    "file_path": fpath,
+                                    "line_number": getattr(node, "lineno", 1),
+                                    "code_snippet": f"{func_name}(...)",
+                                    "remediation_target": "DEV-CODE",
+                                    "is_hard_block": True,
+                                    "cwe_id": "CWE-95",
+                                })
+                            elif (
+                                func_name in ("system", "popen")
+                                and getattr(node.func, "value", None)
+                                and getattr(node.func.value, "id", "") == "os"
+                            ):
+                                sec_findings.append({
+                                    "finding_id": f"sast-cmd-{uuid.uuid4().hex[:8]}",
+                                    "rule_id": "SEC-SAST-002",
+                                    "category": "SAST",
+                                    "severity": "CRITICAL",
+                                    "title": "Unsafe command execution via os.system",
+                                    "description": (
+                                        "Direct shell invocation allows command injection vulnerabilities."
+                                    ),
+                                    "file_path": fpath,
+                                    "line_number": getattr(node, "lineno", 1),
+                                    "code_snippet": f"os.{func_name}(...)",
+                                    "remediation_target": "DEV-CODE",
+                                    "is_hard_block": True,
+                                    "cwe_id": "CWE-78",
+                                })
+                            # Check subprocess with shell=True
+                            elif func_name in ("call", "check_call", "check_output", "Popen", "run"):
+                                for kw in getattr(node, "keywords", []):
+                                    if (
+                                        kw.arg == "shell"
+                                        and isinstance(kw.value, ast.Constant)
+                                        and kw.value.value is True
+                                    ):
+                                        sec_findings.append({
+                                            "finding_id": f"sast-subproc-{uuid.uuid4().hex[:8]}",
+                                            "rule_id": "SEC-SAST-003",
+                                            "category": "SAST",
+                                            "severity": "HIGH",
+                                            "title": "subprocess invoked with shell=True",
+                                            "description": (
+                                                "Invoking subprocesses with shell=True opens command "
+                                                "injection risk."
+                                            ),
+                                            "file_path": fpath,
+                                            "line_number": getattr(node, "lineno", 1),
+                                            "code_snippet": "subprocess(..., shell=True)",
+                                            "remediation_target": "DEV-CODE",
+                                            "is_hard_block": True,
+                                            "cwe_id": "CWE-78",
+                                        })
+                except Exception as parse_exc:
+                    sec_findings.append({
+                        "finding_id": f"sast-syntax-{uuid.uuid4().hex[:8]}",
+                        "rule_id": "SEC-SAST-000",
+                        "category": "SAST",
+                        "severity": "HIGH",
+                        "title": f"AST parsing failed for {fpath}",
+                        "description": str(parse_exc),
+                        "file_path": fpath,
+                        "line_number": 1,
+                        "code_snippet": "",
+                        "remediation_target": "DEV-CODE",
+                        "is_hard_block": True,
+                    })
+
+        elif effective_operation == "scan_secrets":
+            secret_regexes = [
+                (
+                    "SEC-SECRET-001",
+                    "CRITICAL",
+                    "Private Key Header",
+                    r"-----BEGIN (RSA|EC|OPENSSH|DSA|PGP)?\s?PRIVATE KEY-----",
+                ),
+                (
+                    "SEC-SECRET-002",
+                    "HIGH",
+                    "AWS Access Key ID",
+                    r"AKIA[0-9A-Z]{16}",
+                ),
+                (
+                    "SEC-SECRET-003",
+                    "HIGH",
+                    "GitHub Personal Access Token",
+                    r"ghp_[A-Za-z0-9]{36}",
+                ),
+                (
+                    "SEC-SECRET-004",
+                    "HIGH",
+                    "Hardcoded Secret / Password",
+                    r"""(?i)(api[_-]?key|secret[_-]?key|client[_-]?secret|password|passwd)\s*[:=]\s*['"][A-Za-z0-9_\-.~+/=]{8,}['"]""",
+                ),
+            ]
+            for fpath, fcontent in candidate_sources.items():
+                for rule_id, sev, title, pat in secret_regexes:
+                    for match in re.finditer(pat, fcontent):
+                        start = max(0, match.start() - 10)
+                        end = min(len(fcontent), match.end() + 10)
+                        matched_snippet = fcontent[start:end]
+                        lineno = fcontent[: match.start()].count("\n") + 1
+                        sec_findings.append({
+                            "finding_id": f"secret-{uuid.uuid4().hex[:8]}",
+                            "rule_id": rule_id,
+                            "category": "SECRET",
+                            "severity": sev,
+                            "title": title,
+                            "description": f"Potential hardcoded credential exposed ({title}).",
+                            "file_path": fpath,
+                            "line_number": lineno,
+                            "code_snippet": matched_snippet[:60],
+                            "remediation_target": "DEV-CODE",
+                            "is_hard_block": True,
+                            "cwe_id": "CWE-798",
+                        })
+
+        elif effective_operation == "scan_dependencies_sca":
+            known_vulns: dict[str, dict[str, Any]] = {
+                "requests": {
+                    "vulnerable_before": "2.31.0",
+                    "cve": "CVE-2023-32681",
+                    "severity": "MEDIUM",
+                    "description": "Proxy-Authorization header leak on HTTPS redirect.",
+                },
+                "urllib3": {
+                    "vulnerable_before": "2.0.7",
+                    "cve": "CVE-2023-45803",
+                    "severity": "HIGH",
+                    "description": "Request body not stripped on redirect.",
+                },
+                "cryptography": {
+                    "vulnerable_before": "41.0.0",
+                    "cve": "CVE-2023-38325",
+                    "severity": "HIGH",
+                    "description": "Vulnerable OpenSSL cipher parsing.",
+                },
+                "jinja2": {
+                    "vulnerable_before": "3.1.3",
+                    "cve": "CVE-2024-22195",
+                    "severity": "HIGH",
+                    "description": "Cross-site scripting via xmlattr filter.",
+                },
+                "pillow": {
+                    "vulnerable_before": "10.0.1",
+                    "cve": "CVE-2023-4863",
+                    "severity": "CRITICAL",
+                    "description": "Heap buffer overflow in libwebp.",
+                },
+                "pyyaml": {
+                    "vulnerable_before": "6.0",
+                    "cve": "CVE-2020-14343",
+                    "severity": "CRITICAL",
+                    "description": "Arbitrary code execution through FullLoader.",
+                },
+            }
+
+            sca_raw_deps: Any = payload.get("dependencies") or {}
+            req_content = str(payload.get("requirements_content", ""))
+
+            dep_dict: dict[str, str] = {}
+            if isinstance(sca_raw_deps, dict):
+                dep_dict = {str(k).lower(): str(v) for k, v in sca_raw_deps.items()}
+            elif isinstance(sca_raw_deps, list):
+                for item in sca_raw_deps:
+                    parts = re.split(r"[=><~^!]", str(item), maxsplit=1)
+                    pkg = parts[0].strip().lower()
+                    v = parts[1].strip() if len(parts) > 1 else "1.0.0"
+                    dep_dict[pkg] = v
+
+            if req_content:
+                for line in req_content.splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = re.split(r"[=><~^!]", line, maxsplit=1)
+                        pkg_name = parts[0].strip().lower()
+                        pkg_ver = parts[1].strip() if len(parts) > 1 else "1.0.0"
+                        dep_dict[pkg_name] = pkg_ver
+
+            for pkg, ver in dep_dict.items():
+                if pkg in known_vulns:
+                    vuln_info = known_vulns[pkg]
+                    cutoff = vuln_info["vulnerable_before"]
+                    is_vuln = ver.lstrip("v<>=~^") < cutoff
+                    if is_vuln or payload.get("simulate_vulnerability"):
+                        sev = vuln_info["severity"]
+                        is_hb = sev in ("CRITICAL", "HIGH")
+                        sec_findings.append({
+                            "finding_id": f"sca-{pkg}-{uuid.uuid4().hex[:8]}",
+                            "rule_id": f"SEC-SCA-{pkg.upper()}",
+                            "category": "SCA",
+                            "severity": sev,
+                            "title": f"Vulnerable dependency: {pkg}@{ver}",
+                            "description": f"{vuln_info['description']} (Fixed in {cutoff})",
+                            "file_path": "requirements.txt",
+                            "line_number": 1,
+                            "code_snippet": f"{pkg}=={ver}",
+                            "remediation_target": "DEV-CODE",
+                            "is_hard_block": is_hb,
+                            "cve_id": vuln_info["cve"],
+                        })
+
+        elif effective_operation == "review_manifest_configs":
+            manifests = payload.get("manifests") or {}
+            if not manifests and "manifest_content" in payload:
+                manifests = {"manifest.yaml": str(payload["manifest_content"])}
+
+            for mpath, mcontent in manifests.items():
+                mstr = str(mcontent)
+                if re.search(r"(?i)debug\s*[:=]\s*true", mstr):
+                    sec_findings.append({
+                        "finding_id": f"cfg-debug-{uuid.uuid4().hex[:8]}",
+                        "rule_id": "SEC-CFG-001",
+                        "category": "CONFIG",
+                        "severity": "HIGH",
+                        "title": "Debug mode enabled in runtime configuration",
+                        "description": "Debug flag exposes stack traces and internal endpoints.",
+                        "file_path": mpath,
+                        "line_number": 1,
+                        "code_snippet": "DEBUG=True",
+                        "remediation_target": "DEV-CODE",
+                        "is_hard_block": True,
+                        "cwe_id": "CWE-489",
+                    })
+                if re.search(r"(?i)privileged\s*:\s*true", mstr):
+                    sec_findings.append({
+                        "finding_id": f"cfg-priv-{uuid.uuid4().hex[:8]}",
+                        "rule_id": "SEC-CFG-002",
+                        "category": "CONFIG",
+                        "severity": "CRITICAL",
+                        "title": "Container configured with privileged: true",
+                        "description": "Privileged containers can escape isolation and compromise host.",
+                        "file_path": mpath,
+                        "line_number": 1,
+                        "code_snippet": "privileged: true",
+                        "remediation_target": "DEV-CODE",
+                        "is_hard_block": True,
+                        "cwe_id": "CWE-250",
+                    })
+                if re.search(r"(?i)network_mode\s*:\s*host|hostNetwork\s*:\s*true", mstr):
+                    sec_findings.append({
+                        "finding_id": f"cfg-net-{uuid.uuid4().hex[:8]}",
+                        "rule_id": "SEC-CFG-003",
+                        "category": "CONFIG",
+                        "severity": "HIGH",
+                        "title": "Host networking requested",
+                        "description": "Host networking bypasses container isolation boundaries.",
+                        "file_path": mpath,
+                        "line_number": 1,
+                        "code_snippet": "hostNetwork: true",
+                        "remediation_target": "DEV-CODE",
+                        "is_hard_block": True,
+                    })
+
+        elif effective_operation == "check_authorization_boundaries":
+            routes = payload.get("routes") or []
+            for r in routes:
+                if isinstance(r, dict) and not r.get("authenticated", True):
+                    sec_findings.append({
+                        "finding_id": f"perm-route-{uuid.uuid4().hex[:8]}",
+                        "rule_id": "SEC-PERM-001",
+                        "category": "PERMISSION",
+                        "severity": "HIGH",
+                        "title": f"Unauthenticated route: {r.get('path', 'unknown')}",
+                        "description": "Route does not enforce authentication or tenant isolation.",
+                        "file_path": r.get("file_path", "routes.py"),
+                        "line_number": r.get("line_number", 1),
+                        "code_snippet": f"{r.get('method', 'GET')} {r.get('path', '')}",
+                        "remediation_target": "DEV-CODE",
+                        "is_hard_block": True,
+                        "cwe_id": "CWE-306",
+                    })
+
+        elif effective_operation == "analyze_ast_dangerous_patterns":
+            for fpath, fcontent in candidate_sources.items():
+                try:
+                    tree = ast.parse(fcontent)
+                    for node in ast.walk(tree):
+                        if (
+                            isinstance(node, ast.Attribute)
+                            and node.attr in ("__globals__", "__subclasses__")
+                        ):
+                            sec_findings.append({
+                                "finding_id": f"ast-magic-{uuid.uuid4().hex[:8]}",
+                                "rule_id": "SEC-AST-001",
+                                "category": "AST_PATTERN",
+                                "severity": "CRITICAL",
+                                "title": f"Introspection attack pattern '{node.attr}'",
+                                "description": (
+                                    f"Access to Python magic attribute '{node.attr}' indicates "
+                                    "sandbox escape attempt."
+                                ),
+                                "file_path": fpath,
+                                "line_number": getattr(node, "lineno", 1),
+                                "code_snippet": f".{node.attr}",
+                                "remediation_target": "DEV-CODE",
+                                "is_hard_block": True,
+                                "cwe_id": "CWE-94",
+                            })
+                except Exception as ast_err:
+                    sec_findings.append({
+                        "finding_id": f"ast-err-{uuid.uuid4().hex[:8]}",
+                        "rule_id": "SEC-AST-ERR",
+                        "category": "AST_PATTERN",
+                        "severity": "HIGH",
+                        "title": "AST Pattern check failed",
+                        "description": str(ast_err),
+                        "file_path": fpath,
+                        "line_number": 1,
+                        "code_snippet": "",
+                        "remediation_target": "DEV-CODE",
+                        "is_hard_block": True,
+                    })
+
+        hard_block_count = sum(
+            1
+            for f in sec_findings
+            if f.get("is_hard_block") or f.get("severity") in ("CRITICAL", "HIGH")
+        )
+        verdict = "DENY" if hard_block_count > 0 else "PASS"
+
+        res_sec: dict[str, Any] = {
+            "status": "SUCCESS" if verdict == "PASS" else "DENIED",
+            "operation": effective_operation,
+            "verdict": verdict,
+            "findings": sec_findings,
+            "total_findings": len(sec_findings),
+            "hard_block_count": hard_block_count,
+            "remediation_targets": sorted(
+                list({f.get("remediation_target", "DEV-CODE") for f in sec_findings})
+            ),
+            "scanners_run": [effective_operation],
+        }
+        res_sec["output"] = dict(res_sec)
+        return res_sec
+
+    # 1.7 Release Packaging Operations Dispatch (DE-11 DEV-REL)
+    if effective_operation in (
+        "package_release_bundle",
+        "generate_cyclonedx_sbom",
+        "generate_deployment_manifest",
+        "generate_rollback_manifest",
+        "simulate_migration_dry_run",
+        "verify_release_integrity",
+    ):
+        rel_component = str(payload.get("component_name", component_name))
+        rel_version = str(payload.get("version", "1.0.0"))
+        rel_task_id = str(payload.get("task_id", task_id))
+
+        if effective_operation == "package_release_bundle":
+            source_files = payload.get("source_files") or {}
+            artifacts_list: list[dict[str, Any]] = []
+            digests_map: dict[str, str] = {}
+
+            if isinstance(source_files, dict):
+                for fname, fcontent in sorted(source_files.items()):
+                    content_bytes = (
+                        fcontent.encode("utf-8")
+                        if isinstance(fcontent, str)
+                        else bytes(fcontent)
+                    )
+                    sha = hashlib.sha256(content_bytes).hexdigest()
+                    artifacts_list.append({
+                        "artifact_name": fname,
+                        "file_path": f"dist/{fname}",
+                        "sha256": sha,
+                        "size_bytes": len(content_bytes),
+                        "media_type": (
+                            "text/plain"
+                            if fname.endswith((".py", ".txt", ".json", ".md"))
+                            else "application/octet-stream"
+                        ),
+                    })
+                    digests_map[fname] = sha
+            elif isinstance(source_files, list):
+                for item in source_files:
+                    fname = str(item)
+                    dummy_bytes = f"# packaged artifact: {fname}\n".encode("utf-8")
+                    sha = hashlib.sha256(dummy_bytes).hexdigest()
+                    artifacts_list.append({
+                        "artifact_name": fname,
+                        "file_path": f"dist/{fname}",
+                        "sha256": sha,
+                        "size_bytes": len(dummy_bytes),
+                        "media_type": "application/octet-stream",
+                    })
+                    digests_map[fname] = sha
+
+            bundle_digest = hashlib.sha256(
+                json.dumps(digests_map, sort_keys=True).encode("utf-8")
+            ).hexdigest()
+
+            res_bundle: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "package_release_bundle",
+                "component_name": rel_component,
+                "version": rel_version,
+                "release_artifacts": artifacts_list,
+                "artifact_digests": digests_map,
+                "bundle_digest": bundle_digest,
+                "artifact_count": len(artifacts_list),
+            }
+            res_bundle["output"] = dict(res_bundle)
+            return res_bundle
+
+        elif effective_operation == "generate_cyclonedx_sbom":
+            sbom_raw_deps: Any = payload.get("dependencies") or {}
+            components_list: list[dict[str, Any]] = []
+
+            dep_items: list[tuple[str, str]] = []
+            if isinstance(sbom_raw_deps, dict):
+                dep_items = [(str(k), str(v)) for k, v in sbom_raw_deps.items()]
+            elif isinstance(sbom_raw_deps, list):
+                for item in sbom_raw_deps:
+                    parts = re.split(r"[=><~^!]", str(item), maxsplit=1)
+                    pkg = parts[0].strip()
+                    v = parts[1].strip() if len(parts) > 1 else "1.0.0"
+                    dep_items.append((pkg, v))
+
+            for pkg_name, pkg_ver in sorted(dep_items):
+                purl = f"pkg:pypi/{pkg_name}@{pkg_ver}"
+                comp_hash = hashlib.sha256(purl.encode("utf-8")).hexdigest()
+                components_list.append({
+                    "name": pkg_name,
+                    "version": pkg_ver,
+                    "type": "library",
+                    "purl": purl,
+                    "hashes": {"SHA-256": comp_hash},
+                    "licenses": ["MIT"],
+                })
+
+            sbom_dict: dict[str, Any] = {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "serialNumber": f"urn:uuid:{uuid.uuid4()}",
+                "version": 1,
+                "metadata": {
+                    "component": {
+                        "name": rel_component,
+                        "version": rel_version,
+                        "type": "application",
+                    }
+                },
+                "components": components_list,
+                "dependencies": [],
+            }
+            sbom_bytes = json.dumps(sbom_dict, sort_keys=True).encode("utf-8")
+            sbom_dict["sbom_hash"] = hashlib.sha256(sbom_bytes).hexdigest()
+
+            res_sbom: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "generate_cyclonedx_sbom",
+                "sbom": sbom_dict,
+                "sbom_hash": sbom_dict["sbom_hash"],
+                "component_count": len(components_list),
+            }
+            res_sbom["output"] = dict(res_sbom)
+            return res_sbom
+
+        elif effective_operation == "generate_deployment_manifest":
+            manifest_id = str(
+                payload.get("manifest_id") or f"deploy-{rel_component}-{rel_version}"
+            )
+            deploy_dict: dict[str, Any] = {
+                "manifest_id": manifest_id,
+                "component_name": rel_component,
+                "version": rel_version,
+                "runtime": str(payload.get("runtime", "python:3.11-slim")),
+                "entrypoint": str(payload.get("entrypoint", "main.py")),
+                "environment_variables": dict(
+                    sorted(payload.get("environment_variables", {}).items())
+                ),
+                "healthcheck_endpoint": str(payload.get("healthcheck_endpoint", "/health")),
+                "resource_limits": payload.get("resource_limits")
+                or {"cpu": "1.0", "memory": "1Gi"},
+                "ingress_route": str(payload.get("ingress_route", f"/{rel_component}")),
+            }
+            manifest_bytes = json.dumps(deploy_dict, sort_keys=True).encode("utf-8")
+            deploy_dict["manifest_hash"] = hashlib.sha256(manifest_bytes).hexdigest()
+
+            res_deploy: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "generate_deployment_manifest",
+                "deployment_manifest": deploy_dict,
+                "manifest_hash": deploy_dict["manifest_hash"],
+            }
+            res_deploy["output"] = dict(res_deploy)
+            return res_deploy
+
+        elif effective_operation == "generate_rollback_manifest":
+            target_rel_id = str(payload.get("target_release_id", f"rel-{rel_task_id}"))
+            prev_ver = str(payload.get("previous_stable_version", "0.9.0"))
+            revert_steps = payload.get("revert_steps") or [
+                "Drain active traffic from candidate pods",
+                "Route 100% traffic to previous stable version",
+                "Verify health check endpoints respond with 200 OK",
+            ]
+            mig_revert = payload.get("migration_revert_instructions") or []
+            auto_checks = payload.get("automated_verification_steps") or [
+                "GET /health returns status UP",
+                "Validate error rate < 0.01% over 5-minute window",
+            ]
+
+            rollback_dict: dict[str, Any] = {
+                "rollback_id": f"rollback-{target_rel_id}",
+                "target_release_id": target_rel_id,
+                "previous_stable_version": prev_ver,
+                "rollback_strategy": str(
+                    payload.get("rollback_strategy", "BLUE_GREEN_DRAIN")
+                ),
+                "revert_steps": revert_steps,
+                "migration_revert_instructions": mig_revert,
+                "automated_verification_steps": auto_checks,
+            }
+            rb_bytes = json.dumps(rollback_dict, sort_keys=True).encode("utf-8")
+            rollback_dict["rollback_hash"] = hashlib.sha256(rb_bytes).hexdigest()
+
+            res_rb: dict[str, Any] = {
+                "status": "SUCCESS",
+                "operation": "generate_rollback_manifest",
+                "rollback_manifest": rollback_dict,
+                "rollback_hash": rollback_dict["rollback_hash"],
+            }
+            res_rb["output"] = dict(res_rb)
+            return res_rb
+
+        elif effective_operation == "simulate_migration_dry_run":
+            sim_failure = bool(payload.get("simulate_migration_failure", False))
+            raw_instructions = (
+                payload.get("migrations")
+                or payload.get("migration_instructions")
+                or [
+                    {
+                        "step_number": 1,
+                        "operation": "CREATE_TABLE_IF_NOT_EXISTS",
+                        "model_name": rel_component,
+                        "dry_run_passed": not sim_failure,
+                        "sql_or_schema_change": (
+                            f"-- dry-run schema migration for {rel_component}"
+                        ),
+                    }
+                ]
+            )
+            processed_instructions: list[dict[str, Any]] = []
+            for idx, inst in enumerate(raw_instructions, 1):
+                if isinstance(inst, dict):
+                    processed_instructions.append({
+                        "step_number": inst.get("step_number", idx),
+                        "operation": str(inst.get("operation", "APPLY_SCHEMA_DELTA")),
+                        "model_name": str(inst.get("model_name", rel_component)),
+                        "dry_run_passed": not sim_failure and bool(
+                            inst.get("dry_run_passed", True)
+                        ),
+                        "sql_or_schema_change": str(inst.get("sql_or_schema_change", "")),
+                    })
+
+            all_passed = not sim_failure and all(
+                i["dry_run_passed"] for i in processed_instructions
+            )
+            res_mig: dict[str, Any] = {
+                "status": "SUCCESS" if all_passed else "FAIL",
+                "operation": "simulate_migration_dry_run",
+                "dry_run_passed": all_passed,
+                "migration_instructions": processed_instructions,
+                "error": (
+                    ""
+                    if all_passed
+                    else "Database migration dry-run simulation failed: backward-incompatible schema delta."
+                ),
+            }
+            res_mig["output"] = dict(res_mig)
+            return res_mig
+
+        elif effective_operation == "verify_release_integrity":
+            artifacts_to_check = payload.get("release_artifacts") or []
+            expected_digests = payload.get("artifact_digests") or {}
+            mismatches: list[str] = []
+            matched = 0
+
+            for art in artifacts_to_check:
+                if isinstance(art, dict):
+                    aname = art.get("artifact_name", "")
+                    asha = art.get("sha256", "")
+                    if aname in expected_digests:
+                        if expected_digests[aname] == asha:
+                            matched += 1
+                        else:
+                            mismatches.append(
+                                f"{aname}: expected {expected_digests[aname]}, got {asha}"
+                            )
+                    else:
+                        matched += 1
+
+            integrity_ok = len(mismatches) == 0
+            res_integ: dict[str, Any] = {
+                "status": "SUCCESS" if integrity_ok else "INTEGRITY_FAIL",
+                "operation": "verify_release_integrity",
+                "integrity_verified": integrity_ok,
+                "matched_count": matched,
+                "mismatches": mismatches,
+                "error": (
+                    ""
+                    if integrity_ok
+                    else f"Release integrity verification failed on {len(mismatches)} artifacts."
+                ),
+            }
+            res_integ["output"] = dict(res_integ)
+            return res_integ
 
     # 2. Syntax & AST Validation
     ast_valid = True
