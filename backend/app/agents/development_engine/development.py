@@ -25,7 +25,9 @@ from app.schemas.development.development_result import (
 )
 from app.schemas.governance import WorkerRole
 from app.schemas.development.development_plan import DevelopmentPlan
+from app.schemas.cms import CmsCandidateDeliverable
 from app.agents.development_engine.subagents.planning import DevelopmentPlanningAgent
+from app.agents.development_engine.subagents.cms_contract import CmsContractAgent
 from app.schemas.sandbox import SandboxCapability
 
 logger = get_logger(__name__)
@@ -45,6 +47,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
 
     capability = SandboxCapability.CODE
     _planning_agent: DevelopmentPlanningAgent
+    _cms_agent: CmsContractAgent
 
     def __init__(
         self,
@@ -55,6 +58,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         self._identity = DevelopmentEngineIdentity()
         self._status = DevelopmentEngineStatus()
         self._planning_agent = DevelopmentPlanningAgent(sandbox_client, llm_client=llm_client)
+        self._cms_agent = CmsContractAgent(sandbox_client, llm_client=llm_client)
 
     @property
     def identity(self) -> DevelopmentEngineIdentity:
@@ -70,6 +74,12 @@ class DevelopmentAgent(BoundedWorkerAgent):
     def planning_agent(self) -> DevelopmentPlanningAgent:
         """Sub-agent responsible for planning and impact analysis (DEV-PLAN)."""
         return self._planning_agent
+
+    @property
+    def cms_agent(self) -> CmsContractAgent:
+        """Sub-agent responsible for CMS contracts, migrations, and compatibility (DEV-CMS)."""
+        return self._cms_agent
+
 
     def get_identity(self) -> DevelopmentEngineIdentity:
         """Return engine identity and version."""
@@ -586,3 +596,59 @@ class DevelopmentAgent(BoundedWorkerAgent):
                 logger.warning("Failed to record provenance for DEV-PLAN", exc_info=exc)
 
         return plan, plan_hash
+
+    async def execute_cms_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        plan: DevelopmentPlan | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        previous_candidate: CmsCandidateDeliverable | None = None,
+        reviewer_feedback: str | None = None,
+        provenance_recorder: Any = None,
+    ) -> tuple[CmsCandidateDeliverable, str]:
+        """Execute DEV-CMS sub-agent to generate a validated CmsCandidateDeliverable.
+
+        Validates incoming grant, enforces approved DevelopmentPlan authority,
+        runs isolated sandbox schema/contract/migration analysis, computes candidate hash,
+        records provenance if recorder is provided, and returns sealed (candidate, candidate_hash).
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        candidate = await self._cms_agent.execute_cms_task(
+            grant=validated_grant,
+            plan=plan,
+            context=ctx,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            previous_candidate=previous_candidate,
+            reviewer_feedback=reviewer_feedback,
+        )
+        candidate_hash = candidate.candidate_hash or candidate.compute_candidate_hash()
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-cms-{candidate.candidate_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"cms_candidate:{candidate.candidate_id}:{candidate_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-CMS",
+                    metadata={
+                        "candidate_id": candidate.candidate_id,
+                        "task_id": validated_grant.task_id,
+                        "candidate_hash": candidate_hash,
+                        "attempt_id": attempt_id,
+                        "schema_id": candidate.schema_definition.schema_id,
+                        "change_classification": candidate.change_classification.value,
+                        "is_breaking": candidate.compatibility_report.is_breaking,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-CMS", exc_info=exc)
+
+        return candidate, candidate_hash
