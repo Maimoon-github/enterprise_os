@@ -446,7 +446,7 @@ class UiLayoutAgent:
                 all_target_candidates.append(ctx["target_files"])
 
         for tf in all_target_candidates:
-            tf_lower = str(tf).lower().replace("\\", "/")
+            tf_lower = tf.lower().replace("\\", "/")
             if any(p in tf_lower for p in disallowed_system_patterns) or tf_lower.startswith("/"):
                 raise PolicyViolationError(
                     f"Security policy violation: Unauthorized target file or system path '{tf}' detected."

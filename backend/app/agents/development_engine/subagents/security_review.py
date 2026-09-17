@@ -59,6 +59,67 @@ class SecurityReviewAgent:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
 
+    async def _reason_with_llm(
+        self,
+        *,
+        component_name: str,
+        verdict: SecurityVerdict,
+        findings: list[SecurityFinding],
+        author_subagent: str,
+    ) -> dict[str, Any]:
+        """LLM cognitive reflection for DEV-SEC: Think -> Ponder -> Reflect -> React.
+
+        - Think & Ponder: Evaluates threat posture, dangerous AST patterns, secrets, and CVE risks.
+        - Reflect: Synthesizes threat analysis, severity justifications, and remediation directives.
+        - React: Formulates structured remediation guidance for the author sub-agent without altering source.
+        """
+        hard_blocks = [f for f in findings if f.is_hard_block]
+        cognitive_result: dict[str, Any] = {
+            "threat_thought": f"Assessed security posture for '{component_name}': verdict {verdict.value} with {len(findings)} total finding(s).",
+            "risk_analysis": [f"{f.rule_id} ({f.severity.value}): {f.title}" for f in hard_blocks] or ["Zero high/critical security risks detected."],
+            "remediation_guidance": [
+                f"Direct {f.remediation_target} to resolve {f.rule_id} in {f.file_path}: {f.description}"
+                for f in hard_blocks
+            ] if hard_blocks else ["Security posture acceptable; release progression permitted."],
+            "security_confidence": 1.0 if verdict == SecurityVerdict.PASS else 0.3,
+        }
+
+        if self._llm_client is not None and findings:
+            system_prompt = (
+                "You are DEV-SEC, the Development Engine's independent security review agent. "
+                "Ponder security vulnerabilities, secrets, SAST, and AST violations. "
+                "Reflect on threat exposure and formulate clear remediation guidance for authoring agents. "
+                "Structure output strictly as a JSON dictionary."
+            )
+            user_prompt = (
+                f"Component: {component_name}\n"
+                f"Verdict: {verdict.value}\n"
+                f"Author Sub-Agent: {author_subagent}\n"
+                f"Findings: {json.dumps([{'rule_id': f.rule_id, 'severity': f.severity.value, 'title': f.title, 'path': f.file_path} for f in findings])}\n"
+                "Return JSON with keys: threat_thought (str), risk_analysis (list[str]), remediation_guidance (list[str])"
+            )
+            try:
+                raw: Any = None
+                if hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                elif callable(self._llm_client):
+                    raw = await self._llm_client(user_prompt)
+                if isinstance(raw, str):
+                    clean_str = raw.strip()
+                    if clean_str.startswith("```"):
+                        clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    raw = json.loads(clean_str)
+                if isinstance(raw, dict):
+                    for k in ("threat_thought", "risk_analysis", "remediation_guidance"):
+                        if k in raw:
+                            cognitive_result[k] = raw[k]
+            except Exception:
+                pass
+
+        return cognitive_result
+
     async def _invoke_sandbox(
         self,
         *,
@@ -419,6 +480,14 @@ class SecurityReviewAgent:
         remediation_targets = sorted(list({f.remediation_target for f in all_findings}))
         final_verdict = SecurityVerdict.DENY if hard_blocks > 0 else SecurityVerdict.PASS
 
+        # Perform LLM cognitive reflection on security findings
+        cognitive_reasoning = await self._reason_with_llm(
+            component_name=component_name,
+            verdict=final_verdict,
+            findings=all_findings,
+            author_subagent=author_subagent,
+        )
+
         dossier = SecurityDossier(
             dossier_id=f"sec-dossier-{uuid.uuid4().hex[:8]}",
             task_id=task_id,
@@ -445,6 +514,7 @@ class SecurityReviewAgent:
                 "evaluated_at": datetime.now(UTC).isoformat(),
                 "verdict": final_verdict.value,
                 "hard_block_count": hard_blocks,
+                "llm_reasoning": cognitive_reasoning,
             },
         )
         dossier.compute_dossier_hash()

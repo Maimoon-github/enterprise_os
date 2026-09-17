@@ -50,6 +50,83 @@ class DevelopmentPlanningAgent:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
 
+    async def _reason_with_llm(
+        self,
+        *,
+        objective: str,
+        task_id: str,
+        component_name: str,
+        target_files: list[str],
+        context: dict[str, Any],
+        reviewer_feedback: str | None = None,
+        discovered_facts: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """LLM cognitive reasoning loop for DEV-PLAN: Think -> Ponder -> Reflect -> React.
+
+        - Think & Ponder: Decomposes requirements, evaluates architectural impacts and risks.
+        - Reflect: Processes reviewer feedback and past attempt history to resolve gaps.
+        - React: Synthesizes risk classification, architectural rationale, and tailored acceptance criteria.
+        Falls back to deterministic rule-based planning if LLM client is unconfigured.
+        """
+        cognitive_result: dict[str, Any] = {
+            "thought_process": f"Pondered architectural requirements for '{objective}' on '{component_name}'.",
+            "architectural_insights": [
+                f"Scoped impact across {len(target_files)} target file(s).",
+                "Enforcing read-only isolation during analysis phase.",
+            ],
+            "risk_assessment": "Standard development risk tier.",
+            "reflection_notes": f"Incorporated feedback: {reviewer_feedback}" if reviewer_feedback else "Initial attempt baseline.",
+        }
+
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are DEV-PLAN, the Development Engine's specialist planning and impact-analysis agent. "
+                "Your role is to think, ponder, and reflect upon software development task grants, "
+                "repository architecture, dependency risks, and reviewer feedback to produce "
+                "robust architectural rationales and risk classifications. "
+                "Structure your output strictly as a JSON dictionary."
+            )
+            user_prompt = (
+                f"Task ID: {task_id}\n"
+                f"Objective: {objective}\n"
+                f"Component Name: {component_name}\n"
+                f"Target Files: {json.dumps(target_files)}\n"
+                f"Reviewer Feedback: {reviewer_feedback or 'None'}\n"
+                f"Discovered Facts: {json.dumps(discovered_facts or {})}\n"
+                "Return a JSON object with keys:\n"
+                "- thought_process: string description of cognitive analysis\n"
+                "- architectural_insights: list of strings detailing architecture/impact insights\n"
+                "- risk_assessment: string assessment of technical and integration risk\n"
+                "- reflection_notes: string reflecting on prior feedback or edge cases\n"
+                "- additional_assumptions: list of strings (optional)\n"
+            )
+            try:
+                raw_res: Any = None
+                if hasattr(self._llm_client, "generate"):
+                    raw_res = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw_res = await self._llm_client.complete(user_prompt, system=system_prompt)
+                elif callable(self._llm_client):
+                    raw_res = await self._llm_client(user_prompt)
+
+                parsed = None
+                if isinstance(raw_res, dict):
+                    parsed = raw_res
+                elif isinstance(raw_res, str):
+                    clean_str = raw_res.strip()
+                    if clean_str.startswith("```"):
+                        clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    parsed = json.loads(clean_str)
+                if isinstance(parsed, dict):
+                    for k in ("thought_process", "architectural_insights", "risk_assessment", "reflection_notes", "additional_assumptions"):
+                        if k in parsed:
+                            cognitive_result[k] = parsed[k]
+            except Exception:
+                pass
+
+        return cognitive_result
+
+
     async def _execute_read_only_analysis(
         self,
         *,
@@ -248,7 +325,20 @@ class DevelopmentPlanningAgent:
             )
             discovered_facts["dependencies"] = dep_report
 
+        # 1.1 Cognitive Reasoning Loop: Think -> Ponder -> Reflect -> React
+        cognitive_reasoning = await self._reason_with_llm(
+            objective=grant.objective,
+            task_id=grant.task_id,
+            component_name=getattr(grant, "component_name", "Component"),
+            target_files=files_to_inspect,
+            context=ctx,
+            reviewer_feedback=effective_feedback,
+            discovered_facts=discovered_facts,
+        )
+        discovered_facts["cognitive_reasoning"] = cognitive_reasoning
+
         # 2. Determine Sub-Agent Step Applicability & Exclusions
+
         (
             cms_needed,
             cms_skip_reason,
@@ -447,6 +537,11 @@ class DevelopmentPlanningAgent:
         if effective_feedback:
             assumptions.append(f"Revised under attempt {attempt_id} addressing human feedback: {effective_feedback}")
             unresolved_items.append(f"Reviewer feedback incorporated: {effective_feedback}")
+
+        for extra in cognitive_reasoning.get("additional_assumptions", []):
+            if isinstance(extra, str) and extra not in assumptions:
+                assumptions.append(extra)
+
 
         # 6. Risk Tiering
         grant_risk = getattr(grant, "risk_tier", "LOW").upper()

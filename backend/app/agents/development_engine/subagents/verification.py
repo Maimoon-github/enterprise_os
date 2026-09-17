@@ -20,6 +20,7 @@ Responsible for:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -57,6 +58,68 @@ class VerificationAgent:
     ) -> None:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
+
+    async def _reason_with_llm(
+        self,
+        *,
+        component_name: str,
+        verdict: VerificationVerdict,
+        checks: list[VerificationCheckResult],
+        test_totals: TestTotals,
+        author_subagent: str,
+    ) -> dict[str, Any]:
+        """LLM cognitive reflection for DEV-VERIFY: Think -> Ponder -> Reflect -> React.
+
+        - Think & Ponder: Analyzes build, lint, type, and test results to interpret failure modes.
+        - Reflect: Synthesizes precise diagnostic rationale and remediation directives.
+        - React: Emits structured remediation advice for the author sub-agent without altering source.
+        """
+        failed_checks = [c for c in checks if c.outcome != CheckOutcome.PASS]
+        cognitive_result: dict[str, Any] = {
+            "diagnostic_thought": f"Analyzed verification outcome: {verdict.value} across {len(checks)} check(s).",
+            "failure_root_causes": [c.output_summary for c in failed_checks] or ["All checks passed cleanly."],
+            "remediation_directives": [
+                f"Notify {author_subagent} to address: {c.check_type}" for c in failed_checks
+            ] if failed_checks else ["None: candidate ready for security review."],
+            "confidence_assessment": 1.0 if verdict == VerificationVerdict.PASS else 0.4,
+        }
+
+        if self._llm_client is not None and failed_checks:
+            system_prompt = (
+                "You are DEV-VERIFY, the Development Engine's independent verification agent. "
+                "Ponder verification check failures, reflect on diagnostic errors, and synthesize "
+                "clear remediation directives for the responsible authoring agent. "
+                "Structure output strictly as a JSON dictionary."
+            )
+            user_prompt = (
+                f"Component: {component_name}\n"
+                f"Verdict: {verdict.value}\n"
+                f"Responsible Author: {author_subagent}\n"
+                f"Failed Checks: {json.dumps([{'check': c.check_type, 'error': c.output_summary, 'reasons': c.failure_reasons} for c in failed_checks])}\n"
+                "Return JSON with keys: diagnostic_thought (str), failure_root_causes (list[str]), remediation_directives (list[str])"
+            )
+            try:
+                raw: Any = None
+                if hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                elif callable(self._llm_client):
+                    raw = await self._llm_client(user_prompt)
+                if isinstance(raw, str):
+                    clean_str = raw.strip()
+                    if clean_str.startswith("```"):
+                        clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    raw = json.loads(clean_str)
+                if isinstance(raw, dict):
+                    for k in ("diagnostic_thought", "failure_root_causes", "remediation_directives"):
+                        if k in raw:
+                            cognitive_result[k] = raw[k]
+            except Exception:
+                pass
+
+        return cognitive_result
+
 
     async def _invoke_sandbox(
         self,
@@ -599,6 +662,14 @@ class VerificationAgent:
             )
         )
 
+        cognitive_reasoning = await self._reason_with_llm(
+            component_name=component_name,
+            verdict=overall_verdict,
+            checks=checks_results,
+            test_totals=test_totals,
+            author_subagent=author_subagent,
+        )
+
         return self._build_dossier(
             task_id=task_id,
             workflow_id=wf_id,
@@ -612,6 +683,7 @@ class VerificationAgent:
             coverage_report=coverage_report,
             evidence_envelopes=evidence_envelopes,
             author_subagent=author_subagent,
+            cognitive_reasoning=cognitive_reasoning,
         )
 
     def _build_dossier(
@@ -629,8 +701,18 @@ class VerificationAgent:
         coverage_report: CoverageReport | None,
         evidence_envelopes: list[EvidenceEnvelope],
         author_subagent: str,
+        cognitive_reasoning: dict[str, Any] | None = None,
     ) -> VerificationDossier:
         """Construct and seal a VerificationDossier with SHA-256 digest."""
+        prov: dict[str, Any] = {
+            "subagent": "DEV-VERIFY",
+            "author_subagent": author_subagent,
+            "verified_candidate_hash": candidate_hash,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        if cognitive_reasoning:
+            prov["llm_reasoning"] = cognitive_reasoning
+
         dossier = VerificationDossier(
             dossier_id=f"dos-{uuid.uuid4().hex[:12]}",
             task_id=task_id,
@@ -644,15 +726,11 @@ class VerificationAgent:
             test_totals=test_totals,
             coverage_report=coverage_report,
             evidence_envelopes=evidence_envelopes,
-            provenance={
-                "subagent": "DEV-VERIFY",
-                "author_subagent": author_subagent,
-                "verified_candidate_hash": candidate_hash,
-                "timestamp": datetime.now(UTC).isoformat(),
-            },
+            provenance=prov,
         )
         dossier.compute_dossier_hash()
         return dossier
+
 
     execute_step = execute_verification_task
 

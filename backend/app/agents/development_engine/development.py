@@ -136,6 +136,66 @@ class DevelopmentAgent(BoundedWorkerAgent):
         """Return current operational status."""
         return self._status
 
+    async def reason_orchestration(
+        self,
+        *,
+        objective: str,
+        active_subagent: str,
+        task_id: str = "unknown",
+        current_state: dict[str, Any] | None = None,
+        feedback: str | None = None,
+    ) -> dict[str, Any]:
+        """LLM cognitive reasoning loop for Development Engine orchestration: Think -> Ponder -> Reflect -> React.
+
+        - Think & Ponder: Analyzes development lifecycle status, subagent progression, and technical dependencies.
+        - Reflect: Evaluates feedback, failure loops, or blocker conditions across the engine.
+        - React: Emits structured orchestration guidance, determining next steps or remediation routes.
+        """
+        st = current_state or {}
+        cognitive_result: dict[str, Any] = {
+            "orchestration_thought": f"Assessing development lifecycle for task '{task_id}' ({objective}) currently at '{active_subagent}'.",
+            "lifecycle_reflection": f"Evaluating state: {st.get('phase', 'IN_PROGRESS')}. Feedback: {feedback or 'None'}.",
+            "recommended_next_action": f"Proceed with {active_subagent} execution.",
+            "cognitive_confidence": 0.9,
+        }
+
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are the W_DEV Development Engine Orchestrator. "
+                "Ponder development engine progression across specialist sub-agents (DEV-PLAN, DEV-CMS, DEV-UI, DEV-CODE, DEV-VERIFY, DEV-SEC, DEV-REL). "
+                "Reflect on development status, feedback, and blocker conditions to provide clear orchestration directives. "
+                "Structure output strictly as a JSON dictionary."
+            )
+            user_prompt = (
+                f"Task ID: {task_id}\n"
+                f"Objective: {objective}\n"
+                f"Active Sub-Agent: {active_subagent}\n"
+                f"State: {json.dumps(st)}\n"
+                f"Feedback: {feedback or 'None'}\n"
+                "Return JSON with keys: orchestration_thought (str), lifecycle_reflection (str), recommended_next_action (str), cognitive_confidence (float)"
+            )
+            try:
+                raw: Any = None
+                if hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                elif callable(self._llm_client):
+                    raw = await self._llm_client(user_prompt)
+                if isinstance(raw, str):
+                    clean_str = raw.strip()
+                    if clean_str.startswith("```"):
+                        clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    raw = json.loads(clean_str)
+                if isinstance(raw, dict):
+                    for k in ("orchestration_thought", "lifecycle_reflection", "recommended_next_action", "cognitive_confidence"):
+                        if k in raw:
+                            cognitive_result[k] = raw[k]
+            except Exception:
+                pass
+
+        return cognitive_result
+
     def validate_task_grant(
         self, grant: TaskGrant | DevelopmentTaskGrant
     ) -> DevelopmentTaskGrant:
