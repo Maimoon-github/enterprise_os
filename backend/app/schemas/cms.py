@@ -254,6 +254,56 @@ class CmsContentModelSchema(BaseModel):
         lines.append("}")
         return "\n".join(lines)
 
+    def to_openapi_3_1_schema(self) -> dict[str, Any]:
+        """Export this content model to OpenAPI 3.1.0 schema specification."""
+        json_schema = self.to_json_schema_draft_2020_12()
+        return {
+            "openapi": "3.1.0",
+            "info": {
+                "title": f"{self.model_name} CMS API",
+                "version": self.version,
+                "description": self.description or f"OpenAPI 3.1 specification for CMS model {self.model_name}",
+            },
+            "components": {
+                "schemas": {
+                    self.model_name: {
+                        "type": "object",
+                        "description": json_schema.get("description", ""),
+                        "properties": json_schema.get("properties", {}),
+                        "required": json_schema.get("required", []),
+                    }
+                }
+            },
+        }
+
+    def to_graphql_sdl(self) -> str:
+        """Export this content model to standard GraphQL Schema Definition Language (SDL)."""
+        gql_types = {
+            "string": "String",
+            "text": "String",
+            "richtext": "String",
+            "integer": "Int",
+            "number": "Float",
+            "boolean": "Boolean",
+            "date": "String",
+            "datetime": "String",
+            "json": "JSON",
+            "reference": "ID",
+            "media": "String",
+            "array": "[String]",
+            "object": "JSON",
+        }
+        type_name = "".join(part.capitalize() for part in self.model_name.replace("-", "_").split("_")) if ("_" in self.model_name or "-" in self.model_name) else self.model_name
+        lines = [f"\"\"\"{self.description or f'GraphQL type for {type_name}'}\"\"\""]
+        lines.append(f"type {type_name} {{")
+        lines.append(f"  {self.primary_key}: ID!")
+        for f in self.fields:
+            t = gql_types.get(f.field_type.lower(), "String")
+            bang = "!" if f.required else ""
+            lines.append(f"  {f.name}: {t}{bang}")
+        lines.append("}")
+        return "\n".join(lines)
+
 
 class CmsChangeClassification(StrEnum):
     """Backward compatibility risk classification for CMS schema changes."""
@@ -451,6 +501,14 @@ class CmsCandidateDeliverable(BaseModel):
     @property
     def typescript_interfaces(self) -> str:
         return self.generated_types.get("typescript", "")
+
+    @property
+    def openapi_schema(self) -> dict[str, Any]:
+        return self.contracts.get("openapi_3_1") or {}
+
+    @property
+    def graphql_sdl(self) -> str:
+        return self.generated_types.get("graphql_sdl") or ""
 
     def canonical_bytes(self) -> bytes:
         """Return deterministic JSON-serialized byte representation of candidate deliverable."""

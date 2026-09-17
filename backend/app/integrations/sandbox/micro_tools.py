@@ -435,7 +435,14 @@ def execute_s_code(
                     has_def = tf.get("default_value") is not None or tf.get("default") is not None
                     classification = "ADDITIVE"
                     reason = f"Added new field '{name}' ({tf.get('field_type', 'string')})."
-                    if is_req and not has_def:
+
+                    # Check if this addition is actually a renamed field
+                    renamed_from = tf.get("renamed_from") or tf.get("constraints", {}).get("renamed_from")
+                    if renamed_from and renamed_from in base_fields:
+                        classification = "BREAKING"
+                        reason = f"Renamed field from '{renamed_from}' to '{name}' (requires consumer migration)."
+                        breaking_changes.append(f"Renamed field '{renamed_from}' to '{name}' without dual-write alias.")
+                    elif is_req and not has_def:
                         classification = "POTENTIALLY_BREAKING"
                         breaking_changes.append(f"Added required field '{name}' without a default value.")
                     field_diffs.append({
@@ -480,9 +487,40 @@ def execute_s_code(
                     breaking_changes.append(msg)
                     data_loss_risks.append(f"Existing values for '{name}' may fail casting to '{tf_type}'.")
 
-                if not bf_req and tf_req and tf.get("default_value") is None:
+                if not bf_req and tf_req:
+                    if tf.get("default_value") is None and tf.get("default") is None:
+                        classification = "BREAKING"
+                        msg = f"Field '{name}' made REQUIRED without a default value."
+                        diff_reasons.append(msg)
+                        breaking_changes.append(msg)
+                    else:
+                        diff_reasons.append(f"Field '{name}' made REQUIRED with default value.")
+                elif bf_req and not tf_req:
+                    diff_reasons.append(f"Field '{name}' relaxed from REQUIRED to OPTIONAL.")
+
+                # Check enum constraint reductions (removing allowed values is breaking)
+                bf_constraints = bf.get("constraints", {}) or {}
+                tf_constraints = tf.get("constraints", {}) or {}
+                bf_enum = bf_constraints.get("enum") or bf.get("enum")
+                tf_enum = tf_constraints.get("enum") or tf.get("enum")
+                if bf_enum and tf_enum:
+                    removed_enums = set(bf_enum) - set(tf_enum)
+                    if removed_enums:
+                        classification = "BREAKING"
+                        msg = f"Enum values removed on '{name}': {sorted(list(removed_enums))}."
+                        diff_reasons.append(msg)
+                        breaking_changes.append(msg)
+                        data_loss_risks.append(f"Existing records with enum values {sorted(list(removed_enums))} will fail validation.")
+                    added_enums = set(tf_enum) - set(bf_enum)
+                    if added_enums and not removed_enums:
+                        diff_reasons.append(f"Added enum values on '{name}': {sorted(list(added_enums))}.")
+
+                # Check max length reduction
+                bf_max = bf.get("max_length") or bf_constraints.get("max_length") or bf_constraints.get("maxLength")
+                tf_max = tf.get("max_length") or tf_constraints.get("max_length") or tf_constraints.get("maxLength")
+                if bf_max is not None and tf_max is not None and int(tf_max) < int(bf_max):
                     classification = "BREAKING"
-                    msg = f"Field '{name}' made REQUIRED without a default value."
+                    msg = f"Max length decreased on '{name}' from {bf_max} to {tf_max}."
                     diff_reasons.append(msg)
                     breaking_changes.append(msg)
 
@@ -773,6 +811,36 @@ def execute_s_code(
             ts_lines.append("}")
 
             ts_content = "\n".join(ts_lines)
+
+            # OpenAPI 3.1.0 Contract
+            openapi_schema = {
+                "openapi": "3.1.0",
+                "info": {
+                    "title": f"{model_name} CMS API",
+                    "version": schema_info.get("version", "1.0.0"),
+                    "description": schema_info.get("description") or f"OpenAPI 3.1 specification for CMS model {model_name}",
+                },
+                "components": {
+                    "schemas": {
+                        model_name: {
+                            "type": "object",
+                            "properties": json_schema.get("properties", {}),
+                            "required": json_schema.get("required", []),
+                        }
+                    }
+                },
+            }
+
+            # GraphQL SDL Contract
+            gql_lines = [f"\"\"\"GraphQL type for {interface_name}\"\"\"", f"type {interface_name} {{"]
+            for prop_name, prop_def in json_schema.get("properties", {}).items():
+                p_type = prop_def.get("type", "string")
+                gql_t = "Int" if p_type == "integer" else ("Float" if p_type == "number" else ("Boolean" if p_type == "boolean" else ("ID" if prop_name == "id" else "String")))
+                bang = "!" if prop_name in json_schema.get("required", []) else ""
+                gql_lines.append(f"  {prop_name}: {gql_t}{bang}")
+            gql_lines.append("}")
+            graphql_sdl = "\n".join(gql_lines)
+
             res: dict[str, Any] = {
                 "status": "SUCCESS",
                 "operation": "generate_contracts",
@@ -781,6 +849,9 @@ def execute_s_code(
                 "json_schema": json_schema,
                 "typescript_interface": ts_content,
                 "typescript_interfaces": ts_content,
+                "openapi_schema": openapi_schema,
+                "openapi_3_1": openapi_schema,
+                "graphql_sdl": graphql_sdl,
             }
             res["output"] = dict(res)
             return res

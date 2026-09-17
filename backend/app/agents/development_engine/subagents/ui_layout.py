@@ -346,6 +346,14 @@ class UiLayoutAgent:
 
         if cms_candidate_raw:
             if isinstance(cms_candidate_raw, CmsCandidateDeliverable):
+                if (
+                    cms_candidate_raw.candidate_hash
+                    and len(cms_candidate_raw.candidate_hash) == 64
+                    and cms_candidate_raw.candidate_hash != cms_candidate_raw.compute_candidate_hash()
+                ):
+                    raise PolicyViolationError(
+                        "Predecessor verification failed: CMS candidate deliverable hash mismatch or candidate has been tampered."
+                    )
                 cms_contract = cms_candidate_raw.schema_definition.model_dump(mode="json")
                 cms_contract_hash = cms_candidate_raw.candidate_hash
             elif isinstance(cms_candidate_raw, dict):

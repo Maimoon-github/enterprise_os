@@ -654,6 +654,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         attempt_id: str = "att-1",
         previous_candidate: CmsCandidateDeliverable | None = None,
         reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
         provenance_recorder: Any = None,
     ) -> tuple[CmsCandidateDeliverable, str]:
         """Execute DEV-CMS sub-agent to generate a validated CmsCandidateDeliverable.
@@ -673,6 +674,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
             attempt_id=attempt_id,
             previous_candidate=previous_candidate,
             reviewer_feedback=reviewer_feedback,
+            expected_predecessor_hash=expected_predecessor_hash,
         )
         candidate_hash = candidate.candidate_hash or candidate.compute_candidate_hash()
 
