@@ -290,6 +290,14 @@ class CodeImplementationAgent:
 
         if predecessor_candidate is not None:
             if isinstance(predecessor_candidate, (UiCandidateDeliverable, CmsCandidateDeliverable, CodeCandidateDeliverable)):
+                if (
+                    predecessor_candidate.candidate_hash
+                    and len(predecessor_candidate.candidate_hash) == 64
+                    and predecessor_candidate.candidate_hash != predecessor_candidate.compute_candidate_hash()
+                ):
+                    raise PolicyViolationError(
+                        "Predecessor verification failed: Predecessor candidate deliverable hash mismatch or candidate has been tampered."
+                    )
                 predecessor_hash = predecessor_candidate.candidate_hash
             elif isinstance(predecessor_candidate, dict):
                 predecessor_hash = (
