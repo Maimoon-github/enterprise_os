@@ -219,7 +219,7 @@ def execute_s_code(
                 "symbols": json.dumps(symbols),
             }
 
-        elif operation == "inspect_dependencies":
+        elif effective_operation == "inspect_dependencies":
             deps: list[dict[str, str]] = []
             manifest_str = str(payload.get("manifest") or payload.get("dependency_manifest") or "")
             if manifest_str:
@@ -254,7 +254,7 @@ def execute_s_code(
                 "dependencies": json.dumps(deps),
             }
 
-        elif operation == "introspect_schema":
+        elif effective_operation == "introspect_schema":
             schemas: list[Any] = []
             schema_data = payload.get("schema_content") or payload.get("staged_cms_models") or code_content
             if schema_data:
@@ -274,7 +274,7 @@ def execute_s_code(
                 "schemas": json.dumps(schemas, default=str),
             }
 
-        elif operation == "parse_manifest":
+        elif effective_operation == "parse_manifest":
             raw_manifest = payload.get("manifest") or payload.get("config") or ""
             parsed_manifest: dict[str, Any] = {}
             if raw_manifest:

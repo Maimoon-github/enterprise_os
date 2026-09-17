@@ -7,6 +7,7 @@ Runs inside an isolated sandbox with read-only capabilities.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import uuid
 from typing import Any
@@ -182,8 +183,29 @@ class DevelopmentPlanningAgent:
                 f"Unauthorized worker role '{grant.worker_role}'; DEV-PLAN only accepts '{WorkerRole.DEVELOPMENT}'."
             )
 
+        if hasattr(grant, "is_expired") and grant.is_expired():
+            raise PolicyViolationError("Task grant has expired for DEV-PLAN invocation.")
+        if (
+            hasattr(grant, "expires_at")
+            and grant.expires_at is not None
+            and grant.expires_at < datetime.now(UTC)
+        ):
+            raise PolicyViolationError("Task grant has expired for DEV-PLAN invocation.")
+
+        if not getattr(grant, "tenant_scope", None) or not grant.tenant_scope.tenant_id:
+            raise PolicyViolationError("Task grant must include a valid tenant scope for DEV-PLAN invocation.")
+
+        if hasattr(grant, "sandbox_capabilities") and grant.sandbox_capabilities:
+            for cap in grant.sandbox_capabilities:
+                cap_str = str(getattr(cap, "value", cap))
+                if cap_str not in (SandboxCapability.CODE.value, "S_CODE", "CODE"):
+                    raise PolicyViolationError(
+                        f"Unauthorized sandbox capability '{cap_str}' in task grant; "
+                        "DEV-PLAN only permits S_CODE read-only capability."
+                    )
+
         ctx = context or {}
-        tenant_id = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
+        tenant_id = grant.tenant_scope.tenant_id
         wf_id = workflow_id or f"wf-{uuid.uuid4().hex[:10]}"
         plan_id = f"plan-{uuid.uuid4().hex[:12]}"
         effective_feedback = reviewer_feedback or ctx.get("rejection_notes") or ctx.get("reviewer_feedback")
