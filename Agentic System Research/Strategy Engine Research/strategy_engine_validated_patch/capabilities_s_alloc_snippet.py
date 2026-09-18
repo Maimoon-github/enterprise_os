@@ -1,0 +1,23 @@
+SandboxCapability.ALLOC: CapabilityProfile(
+    capability=SandboxCapability.ALLOC,
+    specialist_name="Media & Budget Allocator",
+    allowed_worker=WorkerRole.STRATEGY,
+    allowed_operations=(
+        "model_media_mix",
+        "optimize_budget",
+        "simulate_funnel",
+        "simulate_scenarios",
+        "calculate_roas",
+        "default",
+    ),
+    network_policy=NetworkPolicy.DISABLED,
+    default_timeout_seconds=120,
+    allowed_tools=(
+        "media_mix_modeler",
+        "budget_allocator_tool",
+        "funnel_simulator",
+        "optimization_modeler",
+        "allocation_solver",
+        "diminishing_returns_model",
+    ),
+),
