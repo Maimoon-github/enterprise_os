@@ -126,6 +126,21 @@ class LlmClient:
         content, _ = await self.complete_with_metadata(prompt, system=system)
         return content
 
+    async def generate(
+        self,
+        prompt: str | None = None,
+        *,
+        system: str | None = None,
+        system_prompt: str | None = None,
+        user_prompt: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Universal generate method supporting prompt/system and user_prompt/system_prompt."""
+        effective_prompt = prompt or user_prompt or ""
+        effective_system = system or system_prompt
+        return await self.complete(effective_prompt, system=effective_system)
+
+
     async def generate_structured(
         self,
         *,

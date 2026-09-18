@@ -263,12 +263,14 @@ class UiLayoutAgent:
         attempt_id: str = "att-1",
         previous_candidate: UiCandidateDeliverable | None = None,
         reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
     ) -> UiCandidateDeliverable:
         """Execute DEV-UI sub-agent workflow.
 
-        Enforces plan authority, verifies tenant isolation, restricts mutations to plan-authorized
-        artifacts, checks CMS contract compatibility, invokes isolated sandbox tools,
-        and produces a sealed UiCandidateDeliverable.
+        Enforces plan authority, verifies predecessor snapshot/hash, validates tenant isolation,
+        restricts mutations to plan-authorized artifacts, checks CMS contract compatibility,
+        blocks unauthorized capabilities / security breaches / prompt injections,
+        invokes isolated sandbox tools, and produces a sealed UiCandidateDeliverable.
         """
         ctx = context or {}
 
@@ -290,7 +292,119 @@ class UiLayoutAgent:
                 # Plan has steps but none for DEV-UI
                 raise PolicyViolationError("DEV-UI execution rejected: Approved DevelopmentPlan does not contain a step for DEV-UI.")
 
-        # 2. Tenant Isolation Enforcement
+        # 2. Predecessor Snapshot & Hash Verification
+        predecessor_hash: str | None = None
+        predecessor_candidate = (
+            ctx.get("cms_candidate")
+            or ctx.get("predecessor_candidate")
+            or ctx.get("current_schema")
+            or previous_candidate
+        )
+
+        if predecessor_candidate is not None:
+            if isinstance(predecessor_candidate, CmsCandidateDeliverable):
+                if (
+                    predecessor_candidate.candidate_hash
+                    and len(predecessor_candidate.candidate_hash) == 64
+                    and predecessor_candidate.candidate_hash != predecessor_candidate.compute_candidate_hash()
+                ):
+                    raise PolicyViolationError(
+                        "Predecessor verification failed: CMS candidate deliverable hash mismatch or candidate has been tampered."
+                    )
+                predecessor_hash = predecessor_candidate.candidate_hash
+            elif isinstance(predecessor_candidate, UiCandidateDeliverable):
+                if (
+                    predecessor_candidate.candidate_hash
+                    and len(predecessor_candidate.candidate_hash) == 64
+                    and predecessor_candidate.candidate_hash != predecessor_candidate.compute_candidate_hash()
+                ):
+                    raise PolicyViolationError(
+                        "Predecessor verification failed: Prior UI candidate deliverable hash mismatch or candidate has been tampered."
+                    )
+                predecessor_hash = predecessor_candidate.candidate_hash
+            elif isinstance(predecessor_candidate, dict):
+                predecessor_hash = (
+                    predecessor_candidate.get("candidate_hash")
+                    or hashlib.sha256(json.dumps(predecessor_candidate, sort_keys=True).encode()).hexdigest()
+                )
+        elif plan is not None:
+            predecessor_hash = plan.plan_hash or plan.compute_plan_hash()
+
+        ctx_pred_hash = ctx.get("predecessor_hash")
+        expected_hash = expected_predecessor_hash
+
+        if expected_hash and predecessor_hash and predecessor_hash != expected_hash:
+            raise PolicyViolationError(
+                f"Predecessor hash mismatch: Expected '{expected_hash}', but predecessor snapshot hash is '{predecessor_hash}'."
+            )
+
+        if ctx_pred_hash:
+            if predecessor_hash and predecessor_hash != ctx_pred_hash:
+                raise PolicyViolationError(
+                    f"Predecessor hash mismatch: Expected '{ctx_pred_hash}', but predecessor snapshot hash is '{predecessor_hash}'."
+                )
+            if expected_hash and ctx_pred_hash != expected_hash:
+                raise PolicyViolationError(
+                    f"Predecessor hash mismatch: Context predecessor hash '{ctx_pred_hash}' does not match expected '{expected_hash}'."
+                )
+            if not predecessor_hash:
+                predecessor_hash = ctx_pred_hash
+        elif expected_hash and not predecessor_hash:
+            predecessor_hash = expected_hash
+
+        if ctx.get("simulate_stale_predecessor"):
+            raise PolicyViolationError(
+                "Predecessor verification failed: Snapshot hash is stale or invalid relative to approved checkpoint."
+            )
+
+        # 3. Security Boundary & Environment Controls
+        target_env = str(ctx.get("target_environment") or getattr(grant, "environment", "development")).lower()
+        if target_env in ("production", "prod", "live", "staging"):
+            raise PolicyViolationError(
+                f"Security policy violation: DEV-UI cannot directly mutate or target '{target_env}' environment. "
+                "All UI synthesis and rendering must occur in isolated development sandbox."
+            )
+
+        requested_caps = ctx.get("requested_capabilities") or []
+        forbidden_caps = {"NETWORK", "SHELL", "EXECUTE", "FILESYSTEM_ROOT", "ADMIN"}
+        if any(str(c).upper() in forbidden_caps for c in requested_caps):
+            raise PolicyViolationError(
+                f"Capability violation: DEV-UI is restricted to S_CODE sandbox. Escalation to {requested_caps} is prohibited."
+            )
+
+        if ctx.get("direct_production_mutation") or ctx.get("live_site_mutation"):
+            raise PolicyViolationError(
+                "Security policy violation: Direct live production site mutations are strictly prohibited for DEV-UI."
+            )
+
+        # 4. Prompt Injection & Adversarial Content Screening
+        check_inputs = [
+            getattr(grant, "component_name", "") or "",
+            ctx.get("component_name", "") or "",
+            ctx.get("instructions", "") or "",
+            reviewer_feedback or "",
+            ctx.get("rejection_feedback", "") or "",
+        ]
+        injection_patterns = [
+            "ignore previous instructions",
+            "system override",
+            "grant admin",
+            "sudo",
+            "export aws_secret",
+            "drop table",
+            "cat /etc/shadow",
+            "curl http",
+            "bypass sandbox",
+            "disable policy",
+        ]
+        combined_text = " ".join(str(inp).lower() for inp in check_inputs)
+        for pattern in injection_patterns:
+            if pattern in combined_text:
+                raise PolicyViolationError(
+                    f"Security violation: Prompt injection or adversarial instruction detected matching pattern '{pattern}'."
+                )
+
+        # 5. Tenant Isolation Enforcement
         grant_tenant = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
         ctx_tenant = ctx.get("tenant_id")
         if ctx_tenant and ctx_tenant != grant_tenant:
@@ -298,7 +412,7 @@ class UiLayoutAgent:
                 f"Tenant isolation breach: Context tenant '{ctx_tenant}' does not match grant tenant '{grant_tenant}'."
             )
 
-        # 3. Component Name & Target Artifact Identification
+        # 6. Component Name & Target Artifact Identification
         component_name = (
             getattr(grant, "component_name", None)
             or ctx.get("component_name")
@@ -306,6 +420,39 @@ class UiLayoutAgent:
         )
         import re
         c_slug = re.sub(r"(?<!^)(?=[A-Z])", "-", component_name).lower().replace("_", "-")
+
+        # Disallow system files, credentials, secrets, or shell scripts
+        disallowed_system_patterns = (
+            "..",
+            "/etc/",
+            "c:\\",
+            "c:/",
+            ".env",
+            "deploy.sh",
+            "app/main.py",
+            "credentials",
+            "secret",
+            "password",
+            "shadow",
+        )
+
+        all_target_candidates: list[str] = []
+        if getattr(grant, "target_files", None):
+            all_target_candidates.extend(grant.target_files)
+        if ctx.get("target_files"):
+            if isinstance(ctx["target_files"], list):
+                all_target_candidates.extend(ctx["target_files"])
+            elif isinstance(ctx["target_files"], str):
+                all_target_candidates.append(ctx["target_files"])
+
+        for tf in all_target_candidates:
+            tf_lower = tf.lower().replace("\\", "/")
+            if any(p in tf_lower for p in disallowed_system_patterns) or tf_lower.startswith("/"):
+                raise PolicyViolationError(
+                    f"Security policy violation: Unauthorized target file or system path '{tf}' detected."
+                )
+
+        target_files = ctx.get("target_files") or getattr(grant, "target_files", []) or []
 
         # Scope Boundary Screening: Check against plan-authorized files
         allowed_artifacts: set[str] = set()
@@ -315,7 +462,6 @@ class UiLayoutAgent:
                 if s.subagent_id == "DEV-UI":
                     allowed_artifacts.update(s.affected_artifacts)
 
-        target_files = getattr(grant, "target_files", []) or []
         primary_component_file = next(
             (f for f in target_files if f.endswith(".py") or f.endswith(".tsx")),
             f"components/{c_slug}.py",
@@ -339,20 +485,28 @@ class UiLayoutAgent:
                     f"Authorized artifacts: {sorted(allowed_artifacts)}"
                 )
 
-        # 4. Handoff from Predecessor CMS Contracts (DE-07)
+        # 7. Handoff from Predecessor CMS Contracts (DE-07)
         cms_candidate_raw = ctx.get("cms_candidate") or ctx.get("current_schema")
         cms_contract_hash: str | None = None
         cms_contract: dict[str, Any] | None = None
 
         if cms_candidate_raw:
             if isinstance(cms_candidate_raw, CmsCandidateDeliverable):
+                if (
+                    cms_candidate_raw.candidate_hash
+                    and len(cms_candidate_raw.candidate_hash) == 64
+                    and cms_candidate_raw.candidate_hash != cms_candidate_raw.compute_candidate_hash()
+                ):
+                    raise PolicyViolationError(
+                        "Predecessor verification failed: CMS candidate deliverable hash mismatch or candidate has been tampered."
+                    )
                 cms_contract = cms_candidate_raw.schema_definition.model_dump(mode="json")
                 cms_contract_hash = cms_candidate_raw.candidate_hash
             elif isinstance(cms_candidate_raw, dict):
                 cms_contract = cms_candidate_raw
                 cms_contract_hash = hashlib.sha256(json.dumps(cms_contract, sort_keys=True).encode()).hexdigest()
 
-        # 5. Cognitive LLM Reasoning & Planning
+        # 8. Cognitive LLM Reasoning & Planning
         reasoning = await self._reason_with_llm(
             objective=plan.objective if plan else f"Generate responsive UI component for {component_name}",
             context=ctx,

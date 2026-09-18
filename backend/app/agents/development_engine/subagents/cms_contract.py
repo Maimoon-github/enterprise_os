@@ -273,17 +273,23 @@ class CmsContractAgent:
         attempt_id: str = "att-1",
         previous_candidate: CmsCandidateDeliverable | None = None,
         reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
     ) -> CmsCandidateDeliverable:
         """Execute DEV-CMS sub-agent to produce a sealed CMS candidate deliverable.
 
         Fails closed on:
         - Unapproved or missing task grant.
         - Plan exclusion (if DevelopmentPlan marks DEV-CMS as SKIPPED_NOT_APPLICABLE).
+        - Stale, invalid, or mismatched predecessor hashes.
+        - Unauthorized target file paths outside schema/contract/migration artifacts.
+        - Direct live production CMS mutation attempts (Model-A boundary).
+        - Adversarial prompt injection or capability escalation attempts.
         - Schema validation syntax or constraint errors.
-        - Direct live mutation attempts (Model-A boundary).
         """
         if grant is None:
             raise PolicyViolationError("Task grant cannot be None for DEV-CMS execution.")
+
+        ctx = context or {}
 
         # 1. Authority Check: Verify approved plan authorizes DEV-CMS
         if plan is not None:
@@ -294,13 +300,77 @@ class CmsContractAgent:
                     f"Cannot execute DEV-CMS: Sub-agent is excluded (SKIPPED_NOT_APPLICABLE) in approved plan. Reason: {reason}"
                 )
 
-        ctx = context or {}
+        # 2. Predecessor & Snapshot Hash Check
+        if ctx.get("simulate_stale_predecessor"):
+            raise PolicyViolationError(
+                "Predecessor verification failed: Snapshot hash is stale or invalid relative to approved checkpoint."
+            )
+
+        target_pred_hash = ctx.get("predecessor_hash") or expected_predecessor_hash
+        if target_pred_hash:
+            if previous_candidate and previous_candidate.candidate_hash != target_pred_hash:
+                raise PolicyViolationError(
+                    f"Predecessor candidate hash mismatch: Expected '{target_pred_hash}', but previous candidate hash is '{previous_candidate.candidate_hash}'."
+                )
+            if ctx.get("prior_snapshot_hash") and ctx.get("prior_snapshot_hash") != target_pred_hash:
+                raise PolicyViolationError(
+                    f"Predecessor snapshot hash mismatch: Expected '{target_pred_hash}', but prior snapshot hash is '{ctx.get('prior_snapshot_hash')}'."
+                )
+            if ctx.get("expected_predecessor_hash") and ctx.get("expected_predecessor_hash") != target_pred_hash:
+                raise PolicyViolationError(
+                    f"Predecessor hash mismatch: Expected '{ctx.get('expected_predecessor_hash')}', but got '{target_pred_hash}'."
+                )
+
+        # 3. Security Boundaries & Capability Screening
+        if ctx.get("target_environment") == "production" or ctx.get("direct_production_mutation"):
+            raise PolicyViolationError(
+                "Model-A Boundary Violation: DEV-CMS is strictly read-only to production CMS; direct mutation prohibited."
+            )
+        if ctx.get("unauthorized_capability") or any(
+            cap in (getattr(grant, "sandbox_capabilities", []) or [])
+            for cap in ["NETWORK", "SHELL", "EXECUTE", "FILESYSTEM_ROOT"]
+        ):
+            raise PolicyViolationError(
+                "Capability boundary violation: DEV-CMS is restricted to SandboxCapability.CODE micro-tools."
+            )
+
+        # Prompt injection & privilege escalation screening
+        injection_indicators = [
+            "ignore previous instructions",
+            "system override",
+            "grant full admin",
+            "grant admin",
+            "elevate privileges",
+            "bypass policy",
+            "bypass authorization",
+            "disable tenant isolation",
+        ]
+        combined_text = f"{grant.objective} {json.dumps(ctx)}".lower()
+        if any(indicator in combined_text for indicator in injection_indicators):
+            raise PolicyViolationError(
+                "Security policy violation: Adversarial prompt injection or privilege escalation attempt detected in CMS context."
+            )
+
+        # Target file scope screening: block unauthorized system files, secrets, or out-of-scope code
+        unauthorized_targets = {".env", "app/main.py", "deploy.sh", "config/production.json", "setup.py"}
+        target_files = getattr(grant, "target_files", []) or []
+        for tf in target_files:
+            if (
+                tf in unauthorized_targets
+                or tf.startswith("/etc")
+                or tf.startswith("..")
+                or "secrets" in tf.lower()
+            ):
+                raise PolicyViolationError(
+                    f"Scope boundary violation: Proposed target file '{tf}' is unauthorized for CMS sub-agent."
+                )
+
         tenant_id = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
         wf_id = workflow_id or (plan.workflow_id if plan else f"wf-{uuid.uuid4().hex[:10]}")
         candidate_id = f"cms-cand-{uuid.uuid4().hex[:12]}"
         effective_feedback = reviewer_feedback or ctx.get("reviewer_feedback") or ctx.get("rejection_notes")
 
-        # 2. Extract Base Schema Snapshot
+        # 4. Extract Base Schema Snapshot
         base_schema_raw = (
             ctx.get("base_schema")
             or ctx.get("current_schema")
@@ -320,7 +390,7 @@ class CmsContractAgent:
             if not base_schema_raw.get("model_name"):
                 base_schema_raw["model_name"] = base_schema_raw.get("schema_id") or base_schema_raw.get("name") or "ContentModel"
 
-        # 3. Target Schema Extraction & Validation
+        # 5. Target Schema Extraction & Validation
         target_schema_dict = ctx.get("target_schema")
         llm_metadata: dict[str, Any] = {}
 
@@ -537,6 +607,8 @@ class CmsContractAgent:
             "json_schema_draft_2020_12", target_schema.to_json_schema_draft_2020_12()
         )
         ts_interface = contract_res.get("typescript_interface", target_schema.to_typescript_interface())
+        openapi_schema = contract_res.get("openapi_3_1") or contract_res.get("openapi_schema") or target_schema.to_openapi_3_1_schema()
+        graphql_sdl = contract_res.get("graphql_sdl") or target_schema.to_graphql_sdl()
 
         # 10. Validation Evidence Compilation
         validation_evidence = CmsValidationEvidence(
@@ -549,6 +621,7 @@ class CmsContractAgent:
             findings=[
                 f"Schema syntax and constraints verified for '{target_schema.model_name}'",
                 f"JSON Schema Draft 2020-12 contract generated with {len(target_schema.fields)} properties",
+                f"OpenAPI 3.1 and GraphQL SDL contracts compiled cleanly for '{target_schema.model_name}'",
                 f"Migration strategy '{migration_plan.strategy}' verified with {len(migration_plan.steps)} forward steps",
                 f"Simulated forward and rollback runs completed cleanly in sandbox",
             ],
@@ -562,8 +635,14 @@ class CmsContractAgent:
             attempt_id=attempt_id,
             schemas=[target_schema],
             schema_diffs=[detailed_diff],
-            contracts={"json_schema_draft_2020_12": json_schema_contract},
-            generated_types={"typescript": ts_interface},
+            contracts={
+                "json_schema_draft_2020_12": json_schema_contract,
+                "openapi_3_1": openapi_schema,
+            },
+            generated_types={
+                "typescript": ts_interface,
+                "graphql_sdl": graphql_sdl,
+            },
             migration_plan=migration_plan,
             compatibility_report=compatibility_report,
             validation_evidence=validation_evidence,

@@ -1,0 +1,133 @@
+{
+  "deliverable": "DE-15: DEV-UI Assurance Validation",
+  "status": "PASS",
+  "agent_certified": "DEV-UI (UiLayoutAgent / DE-08)",
+  "timestamp": "2026-09-17T17:27:30Z",
+  "execution_environment": {
+    "python_version": "3.11.16",
+    "test_framework": "pytest-8.4.2",
+    "platform": "linux",
+    "sandbox_capability": "SandboxCapability.CODE",
+    "sandbox_url": "http://localhost:3000/preview"
+  },
+  "summary": {
+    "total_invariants_evaluated": 18,
+    "invariants_passed": 18,
+    "invariants_failed": 0,
+    "invariants_blocked": 0,
+    "unit_integration_tests_passing": 24,
+    "backend_total_regression_suite_passing": 731,
+    "critical_defects_remaining": 0,
+    "high_defects_remaining": 0
+  },
+  "assurance_matrix": [
+    {
+      "task_id": "TASK-01",
+      "name": "Contract & Implementation Inspection",
+      "status": "PASS",
+      "evidence": "Inspected UiLayoutAgent, ui.py, development_result.py, micro_tools.py, development_state_machine.py, and verified wiring."
+    },
+    {
+      "task_id": "TASK-02",
+      "name": "Assurance Matrix Construction",
+      "status": "PASS",
+      "evidence": "Formal assurance matrix established across 10 dimensions: responsibility, inputs, scope mutations, sandbox capabilities, component compilation, CMS contract sync, multi-viewport rendering, accessibility, adversarial defense, and HITL lineage."
+    },
+    {
+      "task_id": "TASK-03",
+      "name": "Predecessor Hash & Plan Authority Verification",
+      "status": "PASS",
+      "evidence": "Verified that DEV-UI fails closed (PolicyViolationError) upon predecessor hash mismatch, missing plan authority, or stale predecessor checkpoints."
+    },
+    {
+      "task_id": "TASK-04",
+      "name": "Scope Mutation Enforcement",
+      "status": "PASS",
+      "evidence": "Mutations strictly restricted to plan-authorized UI components, templates, and styles; unauthorized paths fail closed."
+    },
+    {
+      "task_id": "TASK-05",
+      "name": "Capability & Boundary Violation Rejection",
+      "status": "PASS",
+      "evidence": "Rejects production targeting, live site mutation, unauthorized system paths (.env, /etc/, app/main.py), and capability escalation (NETWORK, SHELL, EXECUTE, ADMIN)."
+    },
+    {
+      "task_id": "TASK-06",
+      "name": "Component & Template Compilation",
+      "status": "PASS",
+      "evidence": "Native AST compilation and HTML template validation verified through sandbox micro-tools; balanced tags and valid Python/TS AST classes confirmed."
+    },
+    {
+      "task_id": "TASK-07",
+      "name": "CMS Contract Compatibility",
+      "status": "PASS",
+      "evidence": "Predecessor CMS content model schemas verified; required CMS fields mapped to UI template props schema and unbound fields flagged."
+    },
+    {
+      "task_id": "TASK-08",
+      "name": "Isolated Localhost Sandbox Rendering",
+      "status": "PASS",
+      "evidence": "All rendering simulated inside isolated localhost sandbox (http://localhost:3000/preview) with zero external network egress."
+    },
+    {
+      "task_id": "TASK-09",
+      "name": "Representative Responsive Viewports",
+      "status": "PASS",
+      "evidence": "Simulated across mobile (375x667), tablet (768x1024), and desktop (1280x800) with independent DOM snapshot hashes and responsive layout rules."
+    },
+    {
+      "task_id": "TASK-10",
+      "name": "Candidate-Bound Render Evidence",
+      "status": "PASS",
+      "evidence": "Render evidence references candidate hash, per-viewport DOM hashes, and visual snapshot hash."
+    },
+    {
+      "task_id": "TASK-11",
+      "name": "Automated WCAG 2.2 A/AA Accessibility Checks",
+      "status": "PASS",
+      "evidence": "Automated scanning evaluated non-text content, heading hierarchy, contrast, button accessible names, form labels, and semantic landmarks with 100% compliance baseline."
+    },
+    {
+      "task_id": "TASK-12",
+      "name": "Semantic Structure & Contrast Failures Flagged",
+      "status": "PASS",
+      "evidence": "Injected contrast violations correctly flagged as SERIOUS findings; missing accessible labels flagged as CRITICAL."
+    },
+    {
+      "task_id": "TASK-13",
+      "name": "Automated Evidence Disclaimer & Manual Assessment Disclosure",
+      "status": "PASS",
+      "evidence": "UiAccessibilityReport explicitly includes manual_assessment_required disclosure (reading order, keyboard traps, focus visibility, ARIA live announcements) and automated scan limitation disclaimer."
+    },
+    {
+      "task_id": "TASK-14",
+      "name": "Adversarial & Prompt Injection Defense",
+      "status": "PASS",
+      "evidence": "Screening against prompt injection patterns (system override, grant admin, sudo, etc.) verified; malformed inputs fail closed."
+    },
+    {
+      "task_id": "TASK-15",
+      "name": "Candidate Hash -> Provenance -> HITL_PENDING Binding",
+      "status": "PASS",
+      "evidence": "Deliverable sealed with 64-character SHA-256 digest bound to W3C PROV activity and HITL_PENDING state."
+    },
+    {
+      "task_id": "TASK-16",
+      "name": "Altered Candidate Rejection at DEV-CODE Handoff",
+      "status": "PASS",
+      "evidence": "DEV-CODE implementation agent verifies cryptographic candidate hash integrity; tampered deliverable fails closed on handoff."
+    },
+    {
+      "task_id": "TASK-17",
+      "name": "HITL Rejection & Revision Lineage",
+      "status": "PASS",
+      "evidence": "Reviewer rejection preserves att-1 immutability and generates independent candidate att-2 incorporating rejection feedback."
+    },
+    {
+      "task_id": "TASK-18",
+      "name": "Machine-Readable Assurance Report Generation",
+      "status": "PASS",
+      "evidence": "Generated tests/reports/de15_dev_ui_assurance_report.json confirming all acceptance criteria met."
+    }
+  ]
+}

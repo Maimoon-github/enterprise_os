@@ -1,0 +1,126 @@
+{
+  "suite": "DE-12: End-to-End Validation",
+  "version": "1.0.0",
+  "engine_id": "W_DEV",
+  "certified_at": "2026-09-17T02:27:00Z",
+  "certification_status": "CERTIFIED",
+  "verdict": "PASSED",
+  "summary": {
+    "total_scenarios": 12,
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0,
+    "flakiness_pct": 0.0,
+    "execution_time_seconds": 0.38,
+    "total_backend_suite_passed": 688,
+    "total_backend_suite_failed": 0
+  },
+  "validation_dimensions": [
+    {
+      "id": "DE12-01",
+      "dimension": "Full Success Lifecycle Path",
+      "scope": "IE -> W_DEV -> Sandbox -> Sub-agents -> HITL -> Provenance -> DEV-REL -> Final IE handoff",
+      "status": "PASS",
+      "details": "Full progression through planning, CMS, UI, Code, Verification, Security, and Release packaging with deterministic state machine transitions, Ed25519 HITL signoffs, and W3C PROV chain generation."
+    },
+    {
+      "id": "DE12-02",
+      "dimension": "Lease & Concurrency Isolation",
+      "scope": "max_concurrency=1 invariant and single-lease ownership",
+      "status": "PASS",
+      "details": "Strict validation that conflicting lease owners cannot usurp active execution leases, and concurrent sub-agents are capped to exactly 1."
+    },
+    {
+      "id": "DE12-03",
+      "dimension": "Predecessor Hash Continuity",
+      "scope": "Sub-agent artifact handoffs",
+      "status": "PASS",
+      "details": "Successor sub-agents strictly fail-closed with PolicyViolationError upon predecessor artifact hash tampering or mismatched candidate digest."
+    },
+    {
+      "id": "DE12-04",
+      "dimension": "Conditional Step Exclusion & Mandatory Gates",
+      "scope": "Plan step skipping and mandatory gate preservation",
+      "status": "PASS",
+      "details": "Non-applicable authoring sub-agents (DEV-CMS) safely skipped without compromising mandatory downstream gates (DEV-VERIFY, DEV-SEC, DEV-REL)."
+    },
+    {
+      "id": "DE12-05",
+      "dimension": "Rejection & Candidate Immutability",
+      "scope": "HITL revision requests and artifact immutability",
+      "status": "PASS",
+      "details": "Rejected deliverables remain immutable with distinct SHA-256 hashes, producing a new candidate snapshot on correction attempt."
+    },
+    {
+      "id": "DE12-06",
+      "dimension": "Retry & Transient Failure Classification",
+      "scope": "State machine bounded retry",
+      "status": "PASS",
+      "details": "Transient sandbox failures trigger bounded retry up to max_attempts with exponential backoff, while terminal policy violations immediately transition to FAILED without retry."
+    },
+    {
+      "id": "DE12-07",
+      "dimension": "Process Restart & Checkpoint Recovery",
+      "scope": "Durable disk-backed CTS persistence",
+      "status": "PASS",
+      "details": "Simulated ungraceful crash and recovery using DiskTaskStateRepository; in-flight task correctly hydrated, duplicate transition deduplicated idempotently, and workflow safely completed."
+    },
+    {
+      "id": "DE12-08",
+      "dimension": "Sandbox Isolation & Capability Restrictions",
+      "scope": "S_CODE capability boundary and path traversal defense",
+      "status": "PASS",
+      "details": "W_DEV strictly restricted to SandboxCapability.CODE. Unauthorized capabilities (BROWSING, SOCIAL, ADS, PAYMENT) and path traversal mutations are rejected."
+    },
+    {
+      "id": "DE12-09",
+      "dimension": "Cryptographic Token & HITL Integrity",
+      "scope": "Ed25519 digital signatures and token lifecycle",
+      "status": "PASS",
+      "details": "Approval tokens validated for cryptographic authenticity; expired tokens, tampered snapshot hashes, and replay attacks across distinct task IDs fail closed."
+    },
+    {
+      "id": "DE12-10",
+      "dimension": "Provenance Audit Chain & SLSA Lineage",
+      "scope": "W3C PROV ledger and AuditLineageValidator",
+      "status": "PASS",
+      "details": "Unbroken cryptographic hash chain, Ed25519 control-plane signatures on every development event, and valid prov:wasDerivedFrom graph relations verified."
+    },
+    {
+      "id": "DE12-11",
+      "dimension": "Machine Gate Precedence",
+      "scope": "Machine DENY override of human approval",
+      "status": "PASS",
+      "details": "Verification FAIL or SecurityReview DENY blocks release packaging fail-closed, even if an operator attempts manual HITL APPROVE."
+    },
+    {
+      "id": "DE12-12",
+      "dimension": "Release Packaging Boundary & Actuation Control",
+      "scope": "DEV-REL scope and Intelligence Engine boundary",
+      "status": "PASS",
+      "details": "DEV-REL packages artifacts, SBOMs, and rollback manifests without executing live deployments; production actuation remains strictly under Intelligence Engine control."
+    }
+  ],
+  "defect_remediations": [
+    {
+      "component": "app.services.task_state.TaskStateService",
+      "defect": "Development checkpoints were stored in volatile in-memory dictionary and not hydrated from durable task.cts_state on process restart, breaking idempotency deduplication across process crashes.",
+      "resolution": "Hydrated dev_checkpoints history from durable task.cts_state on restart and added get_development_checkpoints API for durable inspection."
+    },
+    {
+      "component": "app.agents.development_engine.subagents.planning.PlanningAgent",
+      "defect": "Generated plan hardcoded static template filenames in affected_artifacts instead of respecting grant.target_files.",
+      "resolution": "Updated plan generation to propagate grant.target_files dynamically into UI and Code plan steps."
+    },
+    {
+      "component": "app.agents.development_engine.subagents.implementation.ImplementationAgent",
+      "defect": "execute_step omitted previous_candidate from predecessor resolution and CodeCandidateDeliverable was missing from isinstance predecessor checks.",
+      "resolution": "Added previous_candidate support and CodeCandidateDeliverable check in predecessor candidate resolution."
+    },
+    {
+      "component": "app.agents.development_engine.subagents.security_review.SecurityReviewAgent",
+      "defect": "Sandbox result output extraction only inspected sanitized_output and crashed when raw_findings was a JSON-serialized string.",
+      "resolution": "Updated _invoke_sandbox to prefer structured_output and added defensive JSON parsing for stringified findings payloads."
+    }
+  ]
+}

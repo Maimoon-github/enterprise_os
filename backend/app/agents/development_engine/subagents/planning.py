@@ -7,6 +7,7 @@ Runs inside an isolated sandbox with read-only capabilities.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import uuid
 from typing import Any
@@ -48,6 +49,83 @@ class DevelopmentPlanningAgent:
     ) -> None:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
+
+    async def _reason_with_llm(
+        self,
+        *,
+        objective: str,
+        task_id: str,
+        component_name: str,
+        target_files: list[str],
+        context: dict[str, Any],
+        reviewer_feedback: str | None = None,
+        discovered_facts: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """LLM cognitive reasoning loop for DEV-PLAN: Think -> Ponder -> Reflect -> React.
+
+        - Think & Ponder: Decomposes requirements, evaluates architectural impacts and risks.
+        - Reflect: Processes reviewer feedback and past attempt history to resolve gaps.
+        - React: Synthesizes risk classification, architectural rationale, and tailored acceptance criteria.
+        Falls back to deterministic rule-based planning if LLM client is unconfigured.
+        """
+        cognitive_result: dict[str, Any] = {
+            "thought_process": f"Pondered architectural requirements for '{objective}' on '{component_name}'.",
+            "architectural_insights": [
+                f"Scoped impact across {len(target_files)} target file(s).",
+                "Enforcing read-only isolation during analysis phase.",
+            ],
+            "risk_assessment": "Standard development risk tier.",
+            "reflection_notes": f"Incorporated feedback: {reviewer_feedback}" if reviewer_feedback else "Initial attempt baseline.",
+        }
+
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are DEV-PLAN, the Development Engine's specialist planning and impact-analysis agent. "
+                "Your role is to think, ponder, and reflect upon software development task grants, "
+                "repository architecture, dependency risks, and reviewer feedback to produce "
+                "robust architectural rationales and risk classifications. "
+                "Structure your output strictly as a JSON dictionary."
+            )
+            user_prompt = (
+                f"Task ID: {task_id}\n"
+                f"Objective: {objective}\n"
+                f"Component Name: {component_name}\n"
+                f"Target Files: {json.dumps(target_files)}\n"
+                f"Reviewer Feedback: {reviewer_feedback or 'None'}\n"
+                f"Discovered Facts: {json.dumps(discovered_facts or {})}\n"
+                "Return a JSON object with keys:\n"
+                "- thought_process: string description of cognitive analysis\n"
+                "- architectural_insights: list of strings detailing architecture/impact insights\n"
+                "- risk_assessment: string assessment of technical and integration risk\n"
+                "- reflection_notes: string reflecting on prior feedback or edge cases\n"
+                "- additional_assumptions: list of strings (optional)\n"
+            )
+            try:
+                raw_res: Any = None
+                if hasattr(self._llm_client, "generate"):
+                    raw_res = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw_res = await self._llm_client.complete(user_prompt, system=system_prompt)
+                elif callable(self._llm_client):
+                    raw_res = await self._llm_client(user_prompt)
+
+                parsed = None
+                if isinstance(raw_res, dict):
+                    parsed = raw_res
+                elif isinstance(raw_res, str):
+                    clean_str = raw_res.strip()
+                    if clean_str.startswith("```"):
+                        clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    parsed = json.loads(clean_str)
+                if isinstance(parsed, dict):
+                    for k in ("thought_process", "architectural_insights", "risk_assessment", "reflection_notes", "additional_assumptions"):
+                        if k in parsed:
+                            cognitive_result[k] = parsed[k]
+            except Exception:
+                pass
+
+        return cognitive_result
+
 
     async def _execute_read_only_analysis(
         self,
@@ -182,8 +260,29 @@ class DevelopmentPlanningAgent:
                 f"Unauthorized worker role '{grant.worker_role}'; DEV-PLAN only accepts '{WorkerRole.DEVELOPMENT}'."
             )
 
+        if hasattr(grant, "is_expired") and grant.is_expired():
+            raise PolicyViolationError("Task grant has expired for DEV-PLAN invocation.")
+        if (
+            hasattr(grant, "expires_at")
+            and grant.expires_at is not None
+            and grant.expires_at < datetime.now(UTC)
+        ):
+            raise PolicyViolationError("Task grant has expired for DEV-PLAN invocation.")
+
+        if not getattr(grant, "tenant_scope", None) or not grant.tenant_scope.tenant_id:
+            raise PolicyViolationError("Task grant must include a valid tenant scope for DEV-PLAN invocation.")
+
+        if hasattr(grant, "sandbox_capabilities") and grant.sandbox_capabilities:
+            for cap in grant.sandbox_capabilities:
+                cap_str = str(getattr(cap, "value", cap))
+                if cap_str not in (SandboxCapability.CODE.value, "S_CODE", "CODE"):
+                    raise PolicyViolationError(
+                        f"Unauthorized sandbox capability '{cap_str}' in task grant; "
+                        "DEV-PLAN only permits S_CODE read-only capability."
+                    )
+
         ctx = context or {}
-        tenant_id = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
+        tenant_id = grant.tenant_scope.tenant_id
         wf_id = workflow_id or f"wf-{uuid.uuid4().hex[:10]}"
         plan_id = f"plan-{uuid.uuid4().hex[:12]}"
         effective_feedback = reviewer_feedback or ctx.get("rejection_notes") or ctx.get("reviewer_feedback")
@@ -226,7 +325,20 @@ class DevelopmentPlanningAgent:
             )
             discovered_facts["dependencies"] = dep_report
 
+        # 1.1 Cognitive Reasoning Loop: Think -> Ponder -> Reflect -> React
+        cognitive_reasoning = await self._reason_with_llm(
+            objective=grant.objective,
+            task_id=grant.task_id,
+            component_name=getattr(grant, "component_name", "Component"),
+            target_files=files_to_inspect,
+            context=ctx,
+            reviewer_feedback=effective_feedback,
+            discovered_facts=discovered_facts,
+        )
+        discovered_facts["cognitive_reasoning"] = cognitive_reasoning
+
         # 2. Determine Sub-Agent Step Applicability & Exclusions
+
         (
             cms_needed,
             cms_skip_reason,
@@ -265,6 +377,13 @@ class DevelopmentPlanningAgent:
         if cms_needed:
             active_step_ids.append(step_cms_id)
 
+        grant_target_files = [str(f) for f in getattr(grant, "target_files", [])]
+        ui_targets = [f for f in grant_target_files if f.endswith((".html", ".css", ".tsx", ".jsx", ".vue"))]
+        code_targets = [f for f in grant_target_files if f not in ui_targets and not f.endswith(".json")]
+
+        ui_artifacts = ui_targets if ui_targets else (["templates/component.html"] if ui_needed else [])
+        code_artifacts = code_targets if code_targets else (["components/component.py"] if code_needed else [])
+
         # Step 2: DEV-UI (Conditional)
         step_ui_id = "step-02-ui"
         ui_deps = list(active_step_ids)
@@ -280,7 +399,7 @@ class DevelopmentPlanningAgent:
                 dependencies=ui_deps,
                 required_capabilities=["template_rendering"],
                 required_tools=["template_generator"],
-                affected_artifacts=["templates/component.html"] if ui_needed else [],
+                affected_artifacts=ui_artifacts,
                 risk_class="LOW",
                 acceptance_criteria=[
                     "Mobile, tablet, and desktop responsive breakpoints validated",
@@ -306,7 +425,7 @@ class DevelopmentPlanningAgent:
                 dependencies=code_deps,
                 required_capabilities=["ast_parsing", "diff_generation"],
                 required_tools=["ast_parser", "diff_generator"],
-                affected_artifacts=["components/component.py"] if code_needed else [],
+                affected_artifacts=code_artifacts,
                 risk_class="MEDIUM",
                 acceptance_criteria=[
                     "Syntax and AST clean with zero parse errors",
@@ -402,6 +521,9 @@ class DevelopmentPlanningAgent:
         for s in steps:
             if s.status == "REQUIRED":
                 affected_files.extend(s.affected_artifacts)
+        for f in grant_target_files:
+            if f not in affected_files:
+                affected_files.append(f)
         if not affected_files:
             affected_files = ["dist/deliverable.json"]
 
@@ -415,6 +537,11 @@ class DevelopmentPlanningAgent:
         if effective_feedback:
             assumptions.append(f"Revised under attempt {attempt_id} addressing human feedback: {effective_feedback}")
             unresolved_items.append(f"Reviewer feedback incorporated: {effective_feedback}")
+
+        for extra in cognitive_reasoning.get("additional_assumptions", []):
+            if isinstance(extra, str) and extra not in assumptions:
+                assumptions.append(extra)
+
 
         # 6. Risk Tiering
         grant_risk = getattr(grant, "risk_tier", "LOW").upper()

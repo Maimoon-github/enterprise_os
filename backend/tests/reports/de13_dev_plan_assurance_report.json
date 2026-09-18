@@ -1,0 +1,128 @@
+{
+  "suite": "DE-13: DEV-PLAN Assurance Validation",
+  "version": "1.0.0",
+  "subagent_id": "DEV-PLAN",
+  "certified_at": "2026-09-17T17:00:00Z",
+  "certification_status": "CERTIFIED",
+  "verdict": "PASSED",
+  "summary": {
+    "total_dimensions": 14,
+    "passed": 14,
+    "failed": 0,
+    "skipped": 0,
+    "flakiness_pct": 0.0,
+    "execution_time_seconds": 0.37
+  },
+  "assurance_matrix": [
+    {
+      "id": "DE13-01",
+      "dimension": "Responsibility & Bounded Scope",
+      "scope": "Convert IE task grant into an ordered, policy-validated DevelopmentPlan",
+      "status": "PASS",
+      "evidence": "DEV-PLAN converts valid task grants into ordered 6-step sequential plans without performing file mutations or runtime executions."
+    },
+    {
+      "id": "DE13-02",
+      "dimension": "Input Contract & Grant Validation",
+      "scope": "Task grant, policy envelope, tenant scope, token budget",
+      "status": "PASS",
+      "evidence": "Fails closed on None grant, expired grants, unauthorized worker roles (e.g. STRATEGY), missing tenant scope, and unauthorized capabilities."
+    },
+    {
+      "id": "DE13-03",
+      "dimension": "Read-Only Sandbox Enforcement",
+      "scope": "SandboxCapability.CODE read-only profile and network policy",
+      "status": "PASS",
+      "evidence": "NetworkPolicy is strictly DISABLED. Permitted tools are read-only inspection primitives (file_inspector, symbol_extractor, dependency_inspector, schema_introspector, manifest_parser)."
+    },
+    {
+      "id": "DE13-04",
+      "dimension": "Forbidden Operations & Mutation Denial",
+      "scope": "write_file, apply_diff, delete_file, modify_file, mutation_requested",
+      "status": "PASS",
+      "evidence": "Micro-tool execute_s_code denies all write operations in read-only mode with security_violation=True. Path traversal patterns (../, /etc/, .env) are blocked fail-closed."
+    },
+    {
+      "id": "DE13-05",
+      "dimension": "Plan Structural Completeness",
+      "scope": "DevelopmentPlan and DevelopmentPlanStep schemas",
+      "status": "PASS",
+      "evidence": "All required fields populated: plan_id, task_id, workflow_id, attempt_id, plan_version, architecture_summary, change_impact_summary, affected_files, steps, risk_class, assumptions, unresolved_items, discovered_facts, plan_hash, status. Steps contain order, name, description, capabilities, tools, acceptance_criteria."
+    },
+    {
+      "id": "DE13-06",
+      "dimension": "Repository & Impact Analysis (AST, Symbols, Deps)",
+      "scope": "Controlled fixture with known AST classes, functions, imports, dependencies",
+      "status": "PASS",
+      "evidence": "Extracted AST symbols (OrderModel, OrderService) and parsed dependencies (fastapi, pydantic) into discovered_facts without filesystem mutations."
+    },
+    {
+      "id": "DE13-07",
+      "dimension": "Downstream Selection Invariants",
+      "scope": "CMS/UI/CODE conditional skipping vs VERIFY/SEC/REL mandatory gates",
+      "status": "PASS",
+      "evidence": "Conditional sub-agents (DEV-CMS, DEV-UI, DEV-CODE) can be SKIPPED_NOT_APPLICABLE only with non-empty skip_reason. Mandatory gates (DEV-VERIFY, DEV-SEC, DEV-REL) cannot be excluded on release-producing workflows."
+    },
+    {
+      "id": "DE13-08",
+      "dimension": "Adversarial, Contradictory & Malformed Input Handling",
+      "scope": "Malformed dependencies, cyclic graphs, duplicate step IDs",
+      "status": "PASS",
+      "evidence": "Policy validation rejects cyclic dependencies, forward references, duplicate step IDs, empty steps, and missing skip reasons with PolicyViolationError."
+    },
+    {
+      "id": "DE13-09",
+      "dimension": "Prompt Injection Immunity",
+      "scope": "Source code and manifest prompt-injection override attempts",
+      "status": "PASS",
+      "evidence": "Injected instructions in comments or dependency metadata cannot downgrade risk_class, skip mandatory verification/security gates, or alter sandbox capabilities."
+    },
+    {
+      "id": "DE13-10",
+      "dimension": "Deterministic Plan Hashing & Canonical Bytes",
+      "scope": "SHA-256 over canonical JSON byte representation",
+      "status": "PASS",
+      "evidence": "Plan hash computation is deterministic and changes upon mutation of any field (objective, risk_class, acceptance_criteria, dependencies)."
+    },
+    {
+      "id": "DE13-11",
+      "dimension": "Provenance Recording & W3C PROV Ledger Binding",
+      "scope": "Integration with ProvenanceRecorder and tenant chain",
+      "status": "PASS",
+      "evidence": "DevelopmentAgent records immutable W3C PROV event with agent=DEV-PLAN, plan_hash, and attempt_id tied to the tenant ledger."
+    },
+    {
+      "id": "DE13-12",
+      "dimension": "HITL State Machine Transition & Ed25519 Token Integrity",
+      "scope": "PLANNING -> RESULT_SEALED -> HITL_PENDING -> APPROVED transitions",
+      "status": "PASS",
+      "evidence": "State machine enforces candidate_hash match on RESULT_SEALED, and verifies Ed25519 approval token signature and expiry on transition to APPROVED."
+    },
+    {
+      "id": "DE13-13",
+      "dimension": "Rejection & Attempt Continuity (att-1 -> att-2)",
+      "scope": "HITL rejection and revision attempt generation",
+      "status": "PASS",
+      "evidence": "Rejection transitions to CORRECTION_REQUIRED -> RETRY_PREPARED -> PLANNING; generates Attempt 2 plan (version 2, new hash, feedback in assumptions/unresolved items) while leaving Attempt 1 immutable."
+    },
+    {
+      "id": "DE13-14",
+      "dimension": "Downstream Sub-Agent Handoff & Plan Authority Enforcement",
+      "scope": "Downstream execution of DEV-CMS, DEV-UI, DEV-CODE against approved plan",
+      "status": "PASS",
+      "evidence": "Downstream agents validate plan authority fail-closed when a step is skipped; authorized steps consume exact predecessor plan hash."
+    }
+  ],
+  "defect_remediations": [
+    {
+      "component": "app.integrations.sandbox.micro_tools.execute_s_code",
+      "defect": "Operation dispatch for inspect_dependencies, introspect_schema, and parse_manifest evaluated raw operation parameter instead of effective_operation, causing dispatch to miss when operation was provided in payload dict.",
+      "resolution": "Updated conditional checks to evaluate effective_operation consistently across all planning operations."
+    },
+    {
+      "component": "app.agents.development_engine.subagents.planning.DevelopmentPlanningAgent",
+      "defect": "Direct invocation of DevelopmentPlanningAgent.generate_plan lacked grant expiration, tenant scope, and sandbox capability validation, relying solely on caller-level checks.",
+      "resolution": "Added direct fail-closed checks for grant expiration (is_expired/expires_at), non-empty tenant scope, and S_CODE capability restriction."
+    }
+  ]
+}

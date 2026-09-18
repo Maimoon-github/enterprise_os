@@ -65,6 +65,16 @@ class UiAccessibilityReport(BaseModel):
     contrast_ratio_verified: bool = True
     keyboard_navigable_verified: bool = True
     aria_semantics_verified: bool = True
+    manual_assessment_required: list[str] = Field(
+        default_factory=lambda: [
+            "WCAG 2.2 1.3.2 Meaningful Sequence (DOM and visual reading order)",
+            "WCAG 2.2 2.1.2 No Keyboard Trap (manual tab/shift-tab cycle verification)",
+            "WCAG 2.2 2.4.3 Focus Order (logical focus navigation with screen reader)",
+            "WCAG 2.2 2.4.7 Focus Visible (custom indicator visual contrast)",
+            "WCAG 2.2 3.1.2 Language of Parts (multilingual passage identification)",
+            "WCAG 2.2 4.1.3 Status Messages (ARIA live region announcement verification)",
+        ]
+    )
     disclaimer: str = (
         "Automated scan provides evidence of WCAG 2.2 A/AA criteria adherence, "
         "but does not constitute comprehensive manual screen-reader or assistive-technology certification."

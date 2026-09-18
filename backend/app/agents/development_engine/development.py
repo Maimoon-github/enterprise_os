@@ -27,9 +27,19 @@ from app.schemas.governance import WorkerRole
 from app.schemas.development.development_plan import DevelopmentPlan
 from app.schemas.cms import CmsCandidateDeliverable
 from app.schemas.development.ui import UiCandidateDeliverable
+from app.schemas.development.development_result import (
+    CodeCandidateDeliverable,
+    ReleaseCandidateDeliverable,
+    SecurityDossier,
+    VerificationDossier,
+)
 from app.agents.development_engine.subagents.planning import DevelopmentPlanningAgent
 from app.agents.development_engine.subagents.cms_contract import CmsContractAgent
 from app.agents.development_engine.subagents.ui_layout import UiLayoutAgent
+from app.agents.development_engine.subagents.implementation import CodeImplementationAgent
+from app.agents.development_engine.subagents.verification import VerificationAgent
+from app.agents.development_engine.subagents.security_review import SecurityReviewAgent
+from app.agents.development_engine.subagents.release_ops import ReleaseOpsAgent
 from app.schemas.sandbox import SandboxCapability
 
 logger = get_logger(__name__)
@@ -51,6 +61,10 @@ class DevelopmentAgent(BoundedWorkerAgent):
     _planning_agent: DevelopmentPlanningAgent
     _cms_agent: CmsContractAgent
     _ui_agent: UiLayoutAgent
+    _code_agent: CodeImplementationAgent
+    _verify_agent: VerificationAgent
+    _security_agent: SecurityReviewAgent
+    _release_agent: ReleaseOpsAgent
 
     def __init__(
         self,
@@ -63,6 +77,10 @@ class DevelopmentAgent(BoundedWorkerAgent):
         self._planning_agent = DevelopmentPlanningAgent(sandbox_client, llm_client=llm_client)
         self._cms_agent = CmsContractAgent(sandbox_client, llm_client=llm_client)
         self._ui_agent = UiLayoutAgent(sandbox_client, llm_client=llm_client)
+        self._code_agent = CodeImplementationAgent(sandbox_client, llm_client=llm_client)
+        self._verify_agent = VerificationAgent(sandbox_client, llm_client=llm_client)
+        self._security_agent = SecurityReviewAgent(sandbox_client, llm_client=llm_client)
+        self._release_agent = ReleaseOpsAgent(sandbox_client, llm_client=llm_client)
 
     @property
     def identity(self) -> DevelopmentEngineIdentity:
@@ -89,6 +107,26 @@ class DevelopmentAgent(BoundedWorkerAgent):
         """Sub-agent responsible for UI layouts, components, and accessibility (DEV-UI)."""
         return self._ui_agent
 
+    @property
+    def code_agent(self) -> CodeImplementationAgent:
+        """Sub-agent responsible for application/integration code authoring (DEV-CODE)."""
+        return self._code_agent
+
+    @property
+    def verify_agent(self) -> VerificationAgent:
+        """Sub-agent responsible for technical verification (DEV-VERIFY)."""
+        return self._verify_agent
+
+    @property
+    def security_agent(self) -> SecurityReviewAgent:
+        """Sub-agent responsible for independent security review (DEV-SEC)."""
+        return self._security_agent
+
+    @property
+    def release_agent(self) -> ReleaseOpsAgent:
+        """Sub-agent responsible for release packaging and delivery (DEV-REL)."""
+        return self._release_agent
+
 
     def get_identity(self) -> DevelopmentEngineIdentity:
         """Return engine identity and version."""
@@ -97,6 +135,66 @@ class DevelopmentAgent(BoundedWorkerAgent):
     def get_status(self) -> DevelopmentEngineStatus:
         """Return current operational status."""
         return self._status
+
+    async def reason_orchestration(
+        self,
+        *,
+        objective: str,
+        active_subagent: str,
+        task_id: str = "unknown",
+        current_state: dict[str, Any] | None = None,
+        feedback: str | None = None,
+    ) -> dict[str, Any]:
+        """LLM cognitive reasoning loop for Development Engine orchestration: Think -> Ponder -> Reflect -> React.
+
+        - Think & Ponder: Analyzes development lifecycle status, subagent progression, and technical dependencies.
+        - Reflect: Evaluates feedback, failure loops, or blocker conditions across the engine.
+        - React: Emits structured orchestration guidance, determining next steps or remediation routes.
+        """
+        st = current_state or {}
+        cognitive_result: dict[str, Any] = {
+            "orchestration_thought": f"Assessing development lifecycle for task '{task_id}' ({objective}) currently at '{active_subagent}'.",
+            "lifecycle_reflection": f"Evaluating state: {st.get('phase', 'IN_PROGRESS')}. Feedback: {feedback or 'None'}.",
+            "recommended_next_action": f"Proceed with {active_subagent} execution.",
+            "cognitive_confidence": 0.9,
+        }
+
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are the W_DEV Development Engine Orchestrator. "
+                "Ponder development engine progression across specialist sub-agents (DEV-PLAN, DEV-CMS, DEV-UI, DEV-CODE, DEV-VERIFY, DEV-SEC, DEV-REL). "
+                "Reflect on development status, feedback, and blocker conditions to provide clear orchestration directives. "
+                "Structure output strictly as a JSON dictionary."
+            )
+            user_prompt = (
+                f"Task ID: {task_id}\n"
+                f"Objective: {objective}\n"
+                f"Active Sub-Agent: {active_subagent}\n"
+                f"State: {json.dumps(st)}\n"
+                f"Feedback: {feedback or 'None'}\n"
+                "Return JSON with keys: orchestration_thought (str), lifecycle_reflection (str), recommended_next_action (str), cognitive_confidence (float)"
+            )
+            try:
+                raw: Any = None
+                if hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                elif callable(self._llm_client):
+                    raw = await self._llm_client(user_prompt)
+                if isinstance(raw, str):
+                    clean_str = raw.strip()
+                    if clean_str.startswith("```"):
+                        clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                    raw = json.loads(clean_str)
+                if isinstance(raw, dict):
+                    for k in ("orchestration_thought", "lifecycle_reflection", "recommended_next_action", "cognitive_confidence"):
+                        if k in raw:
+                            cognitive_result[k] = raw[k]
+            except Exception:
+                pass
+
+        return cognitive_result
 
     def validate_task_grant(
         self, grant: TaskGrant | DevelopmentTaskGrant
@@ -616,6 +714,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         attempt_id: str = "att-1",
         previous_candidate: CmsCandidateDeliverable | None = None,
         reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
         provenance_recorder: Any = None,
     ) -> tuple[CmsCandidateDeliverable, str]:
         """Execute DEV-CMS sub-agent to generate a validated CmsCandidateDeliverable.
@@ -635,6 +734,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
             attempt_id=attempt_id,
             previous_candidate=previous_candidate,
             reviewer_feedback=reviewer_feedback,
+            expected_predecessor_hash=expected_predecessor_hash,
         )
         candidate_hash = candidate.candidate_hash or candidate.compute_candidate_hash()
 
@@ -672,6 +772,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
         attempt_id: str = "att-1",
         previous_candidate: UiCandidateDeliverable | None = None,
         reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
         provenance_recorder: Any = None,
     ) -> tuple[UiCandidateDeliverable, str]:
         """Execute DEV-UI sub-agent to generate a validated UiCandidateDeliverable.
@@ -691,6 +792,7 @@ class DevelopmentAgent(BoundedWorkerAgent):
             attempt_id=attempt_id,
             previous_candidate=previous_candidate,
             reviewer_feedback=reviewer_feedback,
+            expected_predecessor_hash=expected_predecessor_hash,
         )
         candidate_hash = candidate.candidate_hash or candidate.compute_candidate_hash()
 
@@ -718,3 +820,257 @@ class DevelopmentAgent(BoundedWorkerAgent):
                 logger.warning("Failed to record provenance for DEV-UI", exc_info=exc)
 
         return candidate, candidate_hash
+
+    async def execute_code_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        plan: DevelopmentPlan | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        previous_candidate: CodeCandidateDeliverable | None = None,
+        reviewer_feedback: str | None = None,
+        expected_predecessor_hash: str | None = None,
+        provenance_recorder: Any = None,
+    ) -> tuple[CodeCandidateDeliverable, str]:
+        """Execute DEV-CODE sub-agent to generate a validated CodeCandidateDeliverable.
+
+        Validates incoming grant, enforces approved DevelopmentPlan authority,
+        runs isolated sandbox code authoring, AST inspection, formatting, and compiler sanity checks,
+        computes candidate hash, records provenance if recorder is provided, and returns sealed (candidate, candidate_hash).
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        candidate = await self._code_agent.execute_code_task(
+            grant=validated_grant,
+            plan=plan,
+            context=ctx,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            previous_candidate=previous_candidate,
+            reviewer_feedback=reviewer_feedback,
+            expected_predecessor_hash=expected_predecessor_hash,
+        )
+        candidate_hash = candidate.candidate_hash or candidate.compute_candidate_hash()
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-code-{candidate.candidate_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"code_candidate:{candidate.candidate_id}:{candidate_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-CODE",
+                    metadata={
+                        "candidate_id": candidate.candidate_id,
+                        "task_id": validated_grant.task_id,
+                        "candidate_hash": candidate_hash,
+                        "attempt_id": attempt_id,
+                        "component_name": candidate.component_name,
+                        "changed_files": candidate.changed_files,
+                        "compiler_passed": candidate.sanity_check_result.compiler_passed,
+                        "is_valid": candidate.sanity_check_result.is_valid,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-CODE", exc_info=exc)
+
+        return candidate, candidate_hash
+
+    async def execute_verify_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        candidate: CodeCandidateDeliverable | UiCandidateDeliverable | CmsCandidateDeliverable | None,
+        expected_candidate_hash: str | None = None,
+        plan: DevelopmentPlan | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        provenance_recorder: Any = None,
+    ) -> VerificationDossier:
+        """Execute DEV-VERIFY sub-agent to produce a sealed VerificationDossier.
+
+        Enforces plan authority, validates candidate deliverable and exact digest hash,
+        executes repository-native builds, lint checks, formatting checks, type checks,
+        automated tests, and coverage analysis in isolated sandbox,
+        computes dossier hash, records provenance, and returns sealed VerificationDossier.
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        dossier = await self._verify_agent.execute_verification_task(
+            grant=validated_grant,
+            candidate=candidate,
+            expected_candidate_hash=expected_candidate_hash,
+            plan=plan,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            context=ctx,
+        )
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-verify-{dossier.dossier_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"verification_dossier:{dossier.dossier_id}:{dossier.dossier_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-VERIFY",
+                    metadata={
+                        "dossier_id": dossier.dossier_id,
+                        "task_id": validated_grant.task_id,
+                        "dossier_hash": dossier.dossier_hash,
+                        "candidate_hash": dossier.candidate_hash,
+                        "verdict": dossier.verdict.value,
+                        "remediation_step": dossier.remediation_step,
+                        "checks_count": len(dossier.checks),
+                        "tests_passed": dossier.test_totals.passed,
+                        "tests_failed": dossier.test_totals.failed,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-VERIFY", exc_info=exc)
+
+        return dossier
+
+    async def execute_security_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        candidate: (
+            CodeCandidateDeliverable
+            | UiCandidateDeliverable
+            | CmsCandidateDeliverable
+            | None
+        ) = None,
+        expected_candidate_hash: str | None = None,
+        verification_dossier: VerificationDossier | None = None,
+        plan: DevelopmentPlan | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        provenance_recorder: Any = None,
+    ) -> SecurityDossier:
+        """Execute DEV-SEC sub-agent to produce a sealed SecurityDossier.
+
+        Enforces plan authority, validates unexpired task grant, checks DE-10 verification prerequisite,
+        executes SAST, secret detection, SCA, configuration review, boundary checks, and AST pattern analysis,
+        computes tamper-evident dossier hash, records provenance, and returns sealed SecurityDossier.
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        dossier = await self._security_agent.execute_security_task(
+            grant=validated_grant,
+            candidate=candidate,
+            expected_candidate_hash=expected_candidate_hash,
+            verification_dossier=verification_dossier,
+            plan=plan,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            context=ctx,
+        )
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-sec-{dossier.dossier_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"security_dossier:{dossier.dossier_id}:{dossier.dossier_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-SEC",
+                    metadata={
+                        "dossier_id": dossier.dossier_id,
+                        "task_id": validated_grant.task_id,
+                        "dossier_hash": dossier.dossier_hash,
+                        "candidate_hash": dossier.candidate_hash,
+                        "verdict": dossier.verdict.value,
+                        "hard_block_count": dossier.hard_block_count,
+                        "total_findings": len(dossier.findings),
+                        "remediation_targets": dossier.remediation_targets,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-SEC", exc_info=exc)
+
+        return dossier
+
+    async def execute_release_step(
+        self,
+        *,
+        grant: TaskGrant | DevelopmentTaskGrant,
+        security_dossier: SecurityDossier,
+        candidate: (
+            CodeCandidateDeliverable
+            | UiCandidateDeliverable
+            | CmsCandidateDeliverable
+            | None
+        ) = None,
+        expected_candidate_hash: str | None = None,
+        plan: DevelopmentPlan | None = None,
+        hitl_approved: bool = True,
+        hitl_approval_token: str | None = None,
+        context: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        attempt_id: str = "att-1",
+        provenance_recorder: Any = None,
+    ) -> ReleaseCandidateDeliverable:
+        """Execute DEV-REL sub-agent to produce an immutable ReleaseCandidateDeliverable.
+
+        Enforces security dossier PASS gate (machine DENY overrides human approval),
+        validates pre-DEV-REL HITL authorization, packages immutable release artifacts,
+        generates CycloneDX v1.5 SBOM, deployment and rollback manifests, migration dry-run evidence,
+        binds SLSA v1.0 / in-toto attestations, computes release hash, and records provenance.
+        """
+        validated_grant = self.validate_task_grant(grant)
+        ctx = context or {}
+
+        if (
+            provenance_recorder is not None
+            and getattr(self._release_agent, "_provenance_recorder", None) is None
+        ):
+            self._release_agent._provenance_recorder = provenance_recorder
+
+        deliverable = await self._release_agent.execute_release_task(
+            grant=validated_grant,
+            candidate=candidate,
+            expected_candidate_hash=expected_candidate_hash,
+            security_dossier=security_dossier,
+            plan=plan,
+            hitl_approved=hitl_approved,
+            hitl_approval_token=hitl_approval_token,
+            workflow_id=workflow_id,
+            attempt_id=attempt_id,
+            context=ctx,
+        )
+
+        if provenance_recorder is not None:
+            try:
+                tenant_id = validated_grant.tenant_scope.tenant_id
+                activity_id = f"act-rel-{deliverable.release_id}"
+                await provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=f"release_deliverable:{deliverable.release_id}:{deliverable.release_hash[:12]}",
+                    activity=activity_id,
+                    agent="DEV-REL",
+                    metadata={
+                        "release_id": deliverable.release_id,
+                        "task_id": validated_grant.task_id,
+                        "release_hash": deliverable.release_hash,
+                        "candidate_hash": deliverable.candidate_hash,
+                        "security_dossier_hash": deliverable.security_dossier_hash,
+                        "version": deliverable.version,
+                        "artifact_count": len(deliverable.release_artifacts),
+                        "sbom_hash": deliverable.sbom.sbom_hash,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for DEV-REL", exc_info=exc)
+
+        return deliverable
