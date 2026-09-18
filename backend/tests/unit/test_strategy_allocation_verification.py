@@ -906,3 +906,208 @@ def test_strat03_backward_compatible_existing_outputs_and_schema_extraction() ->
     assert plan.provenance["model_diagnostics"]["causal_mmm"] is False
 
 
+# =====================================================================
+# STRAT-04: Enforce AIO-Sandbox Execution Boundary Targeted Tests
+# =====================================================================
+
+
+@pytest.mark.asyncio
+async def test_strat04_configured_s_alloc_uses_remote_sandbox_apis_and_scoped_workspace() -> None:
+    """When SANDBOX_ENDPOINT is configured, S_ALLOC executes via remote file and shell APIs in an execution-scoped workspace."""
+    from unittest.mock import MagicMock
+    from app.core.settings import SandboxSettings
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
+
+    mock_remote = MagicMock()
+    mock_remote.file.write_file.return_value = None
+    mock_remote.shell.exec_command.return_value = MagicMock(exit_code=0, stderr="")
+    mock_remote.file.read_file.return_value = MagicMock(
+        data=MagicMock(content=json.dumps({
+            "status": "success",
+            "task_id": "task-strat04-remote",
+            "budget_total": "10000.0",
+            "allocated_total": "10000.0",
+            "allocations": json.dumps({"meta": 5000.0, "google": 5000.0}),
+            "expected_blended_roas": "3.5",
+            "primary_channel": "meta",
+            "strategy_plan": json.dumps({
+                "plan_id": "strat-task-strat04-remote",
+                "tenant_id": "tenant_01",
+                "brand_id": "brand_01",
+                "time_horizon": "90_days",
+                "budget_ceiling": 10000.0,
+                "total_allocated": 10000.0,
+            }),
+        }))
+    )
+
+    settings = SandboxSettings(endpoint="http://remote-sandbox:8080")
+    client = SandboxClient(settings=settings)
+    client._sandbox = mock_remote
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-remote",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    result = await client.invoke(mandate)
+
+    assert result.success is True
+    assert result.status == SandboxExecutionStatus.COMPLETED
+
+    exec_id = mandate.execution_id
+    scoped_dir = f"/workspace/{exec_id}"
+    input_file = f"{scoped_dir}/input.json"
+    output_file = f"{scoped_dir}/output.json"
+
+    # Verify execution-scoped directory creation
+    mock_remote.shell.exec_command.assert_any_call(command=f"mkdir -p {scoped_dir}")
+
+    # Verify payload written to scoped input file
+    mock_remote.file.write_file.assert_called_once_with(
+        file=input_file,
+        content=json.dumps(mandate.payload, ensure_ascii=False),
+    )
+
+    # Verify programmatic invocation of mounted skill script with redirection
+    expected_cmd = f"python /home/gem/skills/s-alloc/scripts/run.py < {input_file} > {output_file}"
+    mock_remote.shell.exec_command.assert_any_call(command=expected_cmd)
+
+    # Verify reading from output file
+    mock_remote.file.read_file.assert_called_once_with(file=output_file)
+
+
+@pytest.mark.asyncio
+async def test_strat04_configured_remote_failure_fails_closed_without_local_fallback() -> None:
+    """Configured remote sandbox failure fails closed with FAILED status and never falls back to local micro-tools."""
+    from unittest.mock import MagicMock, patch
+    from app.core.settings import SandboxSettings
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
+
+    mock_remote = MagicMock()
+    mock_remote.shell.exec_command.return_value = MagicMock(exit_code=1, stderr="Remote process crashed")
+
+    settings = SandboxSettings(endpoint="http://remote-sandbox:8080")
+    client = SandboxClient(settings=settings)
+    client._sandbox = mock_remote
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-fail",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    with patch("app.integrations.sandbox.client.dispatch_micro_tool") as mock_dispatch:
+        result = await client.invoke(mandate)
+
+        # Fails closed
+        assert result.success is False
+        assert result.status == SandboxExecutionStatus.FAILED
+        assert "exit code 1" in str(result.error)
+
+        # Proves local fallback was NEVER invoked
+        mock_dispatch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_strat04_endpoint_configured_but_unreachable_fails_closed() -> None:
+    """When SANDBOX_ENDPOINT is configured but initialization/execution fails, it fails closed without silent fallback."""
+    from unittest.mock import patch
+    from app.core.settings import SandboxSettings
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
+
+    settings = SandboxSettings(endpoint="http://unreachable-sandbox:8080")
+    client = SandboxClient(settings=settings)
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-init-fail",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    with patch("app.integrations.sandbox.client.dispatch_micro_tool") as mock_dispatch:
+        result = await client.invoke(mandate)
+
+        assert result.success is False
+        assert result.status == SandboxExecutionStatus.FAILED
+        assert result.error is not None and len(result.error) > 0
+        mock_dispatch.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_strat04_no_endpoint_retains_local_fallback() -> None:
+    """When no sandbox endpoint is configured, execution safely uses local micro-tool fallback."""
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
+
+    client = SandboxClient(settings=None)
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-no-endpoint",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    result = await client.invoke(mandate)
+    assert result.success is True
+    assert result.status == SandboxExecutionStatus.COMPLETED
+    assert "allocations" in result.sanitized_output
+
+
+@pytest.mark.asyncio
+async def test_strat04_network_disabled_and_external_url_rejected_for_s_alloc() -> None:
+    """S_ALLOC has network_policy DISABLED; any attempt to pass external URLs fails closed immediately."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+
+    client = SandboxClient(settings=None)
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-net-reject",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google", "url": "https://malicious-external-target.com"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    with pytest.raises(SandboxInvocationError, match="Network access denied"):
+        await client.invoke(mandate)
+
+
+def test_strat04_docker_compose_hardened_spec_enforces_isolation() -> None:
+    """Hardened docker-compose guarantees tmpfs workspace, ro skills mount, DENY_ALL egress, and no backend source mount."""
+    from pathlib import Path
+    compose_path = Path(__file__).resolve().parents[3] / "sandbox" / "docker" / "hardened" / "docker-compose.hardened.yaml"
+    assert compose_path.exists()
+    content = compose_path.read_text(encoding="utf-8")
+
+    # Verify ro skills mount
+    assert "./skills:/home/gem/skills:ro" in content
+    # Verify tmpfs workspace
+    assert "/workspace:rw,size=2048m" in content
+    # Verify default DENY_ALL network policy
+    assert "EGRESS_NETWORK_POLICY: DENY_ALL" in content
+    # Verify no backend or repo source mounted
+    assert "backend:" not in content
+    assert "../backend" not in content
+    assert "../../backend" not in content
+
+

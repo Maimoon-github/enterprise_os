@@ -10,6 +10,7 @@ and returns a strongly typed ``SandboxResult``.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
 from datetime import UTC, datetime
@@ -109,9 +110,11 @@ class SandboxClient:
             if self._settings.api_key:
                 headers["Authorization"] = f"Bearer {self._settings.api_key}"
             self._sandbox = agent_sandbox.Sandbox(base_url=base_url, headers=headers)
-        except (ImportError, Exception):
-            # Fall back to specialist micro-tool sandbox execution
+        except (ImportError, Exception) as exc:
             self._sandbox = None
+            raise SandboxInvocationError(
+                f"Configured remote sandbox endpoint '{self._settings.endpoint}' failed to initialize: {exc}"
+            ) from exc
         return self._sandbox
 
     def provision_sandbox(
@@ -503,51 +506,141 @@ class SandboxClient:
 
     def _execute_in_isolated_runtime(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
         """Execute micro-tool inside sandbox boundary."""
+        if (self._settings is not None and bool(self._settings.endpoint)) or self._sandbox is not None:
+            raise SandboxInvocationError(
+                "Local micro-tool execution is prohibited when remote sandbox endpoint is configured."
+            )
         return dispatch_micro_tool(mandate.capability, mandate.payload)
 
     def _execute_specialist(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
         """Dispatch mandate to the appropriate sandbox specialist runtime."""
+        remote_configured = (self._settings is not None and bool(self._settings.endpoint)) or (self._sandbox is not None)
         remote_client = self._get_sandbox()
+
+        if remote_configured and remote_client is None:
+            raise SandboxInvocationError(
+                "Remote sandbox endpoint is configured but client failed to initialize."
+            )
+
         if remote_client is not None:
-            try:
-                # 1. Code / AST execution via remote SDK code interface
-                if mandate.capability == SandboxCapability.CODE and hasattr(remote_client, "code"):
-                    code = mandate.payload.get("code", "")
-                    if code:
-                        resp = remote_client.code.execute_code(language="python", code=code)
-                        stdout = getattr(resp, "stdout", "")
-                        return {"status": "success", "stdout": stdout, "diff": code, "ast_valid": "True"}
-
-                # 2. Browser / DOM extraction via remote SDK browser interface under governed egress
-                elif mandate.capability == SandboxCapability.SCRAPE and hasattr(remote_client, "browser"):
-                    url = (
-                        mandate.payload.get("url")
-                        or mandate.payload.get("target_url")
-                        or mandate.payload.get("competitor_url")
+            # 1. S_ALLOC execution via mounted skill in remote AIO sandbox
+            if mandate.capability == SandboxCapability.ALLOC:
+                if not (
+                    hasattr(remote_client, "file")
+                    and (hasattr(remote_client.file, "write_file") or hasattr(remote_client.file, "write"))
+                    and hasattr(remote_client, "shell")
+                    and hasattr(remote_client.shell, "exec_command")
+                ):
+                    raise SandboxInvocationError(
+                        "Configured AIO sandbox does not expose required file/shell interfaces for S_ALLOC."
                     )
-                    if url and hasattr(remote_client.browser, "navigate"):
-                        nav_resp = remote_client.browser.navigate(url=url)
-                        content = getattr(nav_resp, "content", "") or ""
-                        return {
-                            "status": "success",
-                            "competitor": mandate.payload.get("competitor", "CompetitorCorp"),
-                            "benchmark_price": mandate.payload.get("benchmark_price", "49.99"),
-                            "active_ads": mandate.payload.get("active_ads", "14"),
-                            "dom_snippet": content[:500],
-                            "top_ad_hook": "Save 25% on our premium bundle this week only.",
-                            "pricing_trajectory": "discounting_aggressive",
-                            "threat_level": "medium",
-                        }
 
-                # 3. Computational specialists (S_ALLOC, S_COPY, S_VAL, S_PARSE, S_ATTR)
-                # executed in isolated Python / Shell runtime in remote sandbox
-                elif hasattr(remote_client, "shell") and hasattr(remote_client.shell, "exec_command"):
-                    # Fallback to isolated micro-tool execution for consistent deterministic behavior
-                    pass
-            except Exception:
-                # Fall back to local specialist micro-tool execution
-                pass
+                workspace_dir = f"/workspace/{mandate.execution_id}"
+                input_path = f"{workspace_dir}/input.json"
+                output_path = f"{workspace_dir}/output.json"
 
+                # Create execution-scoped directory in sandbox
+                try:
+                    mkdir_res = remote_client.shell.exec_command(command=f"mkdir -p {workspace_dir}")
+                except TypeError:
+                    mkdir_res = remote_client.shell.exec_command(f"mkdir -p {workspace_dir}")
+                mkdir_code = getattr(mkdir_res, "exit_code", 0)
+                if mkdir_code not in (0, None):
+                    stderr = getattr(mkdir_res, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"Failed to create execution workspace directory {workspace_dir} (exit code {mkdir_code}): {stderr}"
+                    )
+
+                # Write bounded payload to execution-scoped workspace
+                write_fn = getattr(remote_client.file, "write_file", None) or getattr(remote_client.file, "write", None)
+                if not callable(write_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable write_file method.")
+                payload_json = json.dumps(mandate.payload, ensure_ascii=False)
+                try:
+                    write_fn(file=input_path, content=payload_json)
+                except TypeError:
+                    write_fn(input_path, payload_json)
+
+                # Execute mounted read-only S_ALLOC skill script
+                command = (
+                    "python /home/gem/skills/s-alloc/scripts/run.py "
+                    f"< {input_path} > {output_path}"
+                )
+                try:
+                    response = remote_client.shell.exec_command(command=command)
+                except TypeError:
+                    response = remote_client.shell.exec_command(command)
+                exit_code = getattr(response, "exit_code", 0)
+                if exit_code not in (0, None):
+                    stderr = getattr(response, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"S_ALLOC remote execution failed with exit code {exit_code}: {stderr}"
+                    )
+
+                # Read and parse structured output from task workspace
+                read_fn = getattr(remote_client.file, "read_file", None) or getattr(remote_client.file, "read", None)
+                if not callable(read_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable read_file method.")
+                try:
+                    output = read_fn(file=output_path)
+                except TypeError:
+                    output = read_fn(output_path)
+                raw_content = getattr(getattr(output, "data", output), "content", output)
+                if not isinstance(raw_content, str):
+                    raw_content = str(raw_content)
+
+                try:
+                    parsed = json.loads(raw_content)
+                except Exception as parse_err:
+                    raise SandboxInvocationError(
+                        f"Failed to parse S_ALLOC structured output from {output_path}: {parse_err}"
+                    ) from parse_err
+
+                if not isinstance(parsed, dict):
+                    raise SandboxInvocationError("S_ALLOC returned a non-object payload.")
+
+                return parsed
+
+            # 2. Code / AST execution via remote SDK code interface
+            elif mandate.capability == SandboxCapability.CODE and hasattr(remote_client, "code"):
+                code = mandate.payload.get("code", "")
+                if code:
+                    resp = remote_client.code.execute_code(language="python", code=code)
+                    stdout = getattr(resp, "stdout", "")
+                    return {"status": "success", "stdout": stdout, "diff": code, "ast_valid": "True"}
+
+            # 3. Browser / DOM extraction via remote SDK browser interface under governed egress
+            elif mandate.capability == SandboxCapability.SCRAPE and hasattr(remote_client, "browser"):
+                url = (
+                    mandate.payload.get("url")
+                    or mandate.payload.get("target_url")
+                    or mandate.payload.get("competitor_url")
+                )
+                if url and hasattr(remote_client.browser, "navigate"):
+                    nav_resp = remote_client.browser.navigate(url=url)
+                    content = getattr(nav_resp, "content", "") or ""
+                    return {
+                        "status": "success",
+                        "competitor": mandate.payload.get("competitor", "CompetitorCorp"),
+                        "benchmark_price": mandate.payload.get("benchmark_price", "49.99"),
+                        "active_ads": mandate.payload.get("active_ads", "14"),
+                        "dom_snippet": content[:500],
+                        "top_ad_hook": "Save 25% on our premium bundle this week only.",
+                        "pricing_trajectory": "discounting_aggressive",
+                        "threat_level": "medium",
+                    }
+
+            elif remote_configured:
+                raise SandboxInvocationError(
+                    f"Remote sandbox does not support execution for capability '{mandate.capability.value}'."
+                )
+
+        if remote_configured:
+            raise SandboxInvocationError(
+                f"Configured remote sandbox failed to execute capability '{mandate.capability.value}'."
+            )
+
+        # Fall back to local specialist micro-tool execution ONLY when no endpoint is configured
         return self._execute_in_isolated_runtime(mandate)
 
     def _build_provenance(self, mandate: SandboxInvocationMandate, status: str) -> dict[str, str]:
