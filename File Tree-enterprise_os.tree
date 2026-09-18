@@ -155,6 +155,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   │   ├── 🐍 capabilities.py
 │   │   │   │   ├── 🐍 client.py
 │   │   │   │   ├── 🐍 micro_tools.py
+│   │   │   │   ├── 🐍 s_alloc_core.py
 │   │   │   │   └── 🐍 sandbox_policy.py
 │   │   │   ├── 📁 social/
 │   │   │   │   ├── 🐍 __init__.py
