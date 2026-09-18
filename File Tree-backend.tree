@@ -1,5 +1,5 @@
 File Tree: backend
-Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
+Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,9 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 product_evidence.py
 │   │   ├── 📁 strategy_engine/
+│   │   │   ├── 📁 subagents/
+│   │   │   │   ├── 🐍 __init.py
+│   │   │   │   └── 🐍 allocation.py
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 strategy.py
 │   │   ├── 🐍 __init__.py
@@ -160,6 +163,8 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 │   ├── 🐍 __init__.py
 │   └── 🐍 main.py
 ├── 📁 scripts/
+│   ├── 📁 lib/
+│   │   └── 📄 common.sh
 │   ├── 📄 bootstrap.sh
 │   ├── 📄 lint.sh
 │   ├── 📄 run_dev_server.sh
@@ -177,6 +182,7 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_development_provenance.py
 │   │   ├── 🐍 test_end_to_end_validation.py
 │   │   ├── 🐍 test_hitl_gateway.py
+│   │   ├── 🐍 test_llm_cognitive_access.py
 │   │   ├── 🐍 test_planning_agent.py
 │   │   ├── 🐍 test_release_ops_agent.py
 │   │   ├── 🐍 test_sandbox_control_plane.py
@@ -200,7 +206,10 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   └── 🐍 test_worker_sandbox_boundary.py
 │   ├── 📁 reports/
-│   │   └── ⚙️ de12_validation_report.json
+│   │   ├── ⚙️ de12_validation_report.json
+│   │   ├── ⚙️ de13_dev_plan_assurance_report.json
+│   │   ├── ⚙️ de14_dev_cms_assurance_report.json
+│   │   └── ⚙️ de15_dev_ui_assurance_report.json
 │   ├── 📁 unit/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_action_preview_verification.py

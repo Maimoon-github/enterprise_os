@@ -1,11 +1,34 @@
 File Tree: enterprise_os
-Root path: /home/maimoon-nixos/Antigravity code/enterprise_os
+Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 
 ────────────────────────────────────────────────────────────────────────────────
 
 ├── 📁 Agentic System Research/
 │   ├── 📁 Development Engine Research/
 │   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
+│   ├── 📁 Strategy Engine Research/
+│   │   ├── 📁 strategy_engine_validated_patch/
+│   │   │   ├── 📁 backend/
+│   │   │   │   └── 📁 app/
+│   │   │   │       └── 📁 agents/
+│   │   │   │           └── 📁 strategy_engine/
+│   │   │   │               └── 📁 subagents/
+│   │   │   │                   ├── 🐍 __init__.py
+│   │   │   │                   └── 🐍 allocation.py
+│   │   │   ├── 📁 sandbox/
+│   │   │   │   └── 📁 docker/
+│   │   │   │       └── 📁 hardened/
+│   │   │   │           └── 📁 skills/
+│   │   │   │               └── 📁 s-alloc/
+│   │   │   │                   └── 📝 SKILL.md
+│   │   │   ├── 📝 IMPLEMENTATION.md
+│   │   │   ├── 🐍 capabilities_s_alloc_snippet.py
+│   │   │   ├── 🐍 s_alloc_core.py
+│   │   │   ├── 🐍 sandbox_client_s_alloc_snippet.py
+│   │   │   └── 🐍 test_s_alloc_core.py
+│   │   ├── 📝 research findings.md
+│   │   ├── 📦 strategy_engine_validated_patch.zip
 │   │   └── 📝 task plan.md
 │   ├── 📁 final/
 │   │   ├── 📝 Backend Hierarchy.md
@@ -85,6 +108,9 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 product_evidence.py
 │   │   │   ├── 📁 strategy_engine/
+│   │   │   │   ├── 📁 subagents/
+│   │   │   │   │   ├── 🐍 __init.py
+│   │   │   │   │   └── 🐍 allocation.py
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 strategy.py
 │   │   │   ├── 🐍 __init__.py
@@ -229,6 +255,7 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_development_provenance.py
 │   │   │   ├── 🐍 test_end_to_end_validation.py
 │   │   │   ├── 🐍 test_hitl_gateway.py
+│   │   │   ├── 🐍 test_llm_cognitive_access.py
 │   │   │   ├── 🐍 test_planning_agent.py
 │   │   │   ├── 🐍 test_release_ops_agent.py
 │   │   │   ├── 🐍 test_sandbox_control_plane.py
@@ -252,7 +279,10 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   │   └── 🐍 test_worker_sandbox_boundary.py
 │   │   ├── 📁 reports/
-│   │   │   └── ⚙️ de12_validation_report.json
+│   │   │   ├── ⚙️ de12_validation_report.json
+│   │   │   ├── ⚙️ de13_dev_plan_assurance_report.json
+│   │   │   ├── ⚙️ de14_dev_cms_assurance_report.json
+│   │   │   └── ⚙️ de15_dev_ui_assurance_report.json
 │   │   ├── 📁 unit/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_action_preview_verification.py
@@ -1145,6 +1175,7 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os
 │   │   │   │   └── 📄 index.ts
 │   │   │   ├── ⚙️ .gitignore
 │   │   │   ├── 📝 README.md
+│   │   │   ├── ⚙️ package-lock.json
 │   │   │   ├── ⚙️ package.json
 │   │   │   ├── 📄 rslib.config.ts
 │   │   │   ├── ⚙️ tsconfig.json

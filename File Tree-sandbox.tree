@@ -1,5 +1,5 @@
 File Tree: sandbox
-Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/sandbox
+Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\sandbox
 
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -868,11 +868,349 @@ Root path: /home/maimoon-nixos/Antigravity code/enterprise_os/sandbox
 │   │   │   └── 📄 index.ts
 │   │   ├── ⚙️ .gitignore
 │   │   ├── 📝 README.md
+│   │   ├── ⚙️ package-lock.json
 │   │   ├── ⚙️ package.json
 │   │   ├── 📄 rslib.config.ts
 │   │   ├── ⚙️ tsconfig.json
 │   │   └── 📄 vitest.config.ts
 │   ├── 📁 python/
+│   │   ├── 📁 agent_sandbox/
+│   │   │   ├── 📁 auth/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 bash/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser/
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 action.py
+│   │   │   │   │   └── 🐍 format.py
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser_captcha/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser_cookies/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser_network/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser_page/
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 navigate_request_wait_until.py
+│   │   │   │   │   ├── 🐍 record_request_action.py
+│   │   │   │   │   └── 🐍 type.py
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser_state/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 browser_tabs/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 code/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 core/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 api_error.py
+│   │   │   │   ├── 🐍 client_wrapper.py
+│   │   │   │   ├── 🐍 datetime_utils.py
+│   │   │   │   ├── 🐍 file.py
+│   │   │   │   ├── 🐍 force_multipart.py
+│   │   │   │   ├── 🐍 http_client.py
+│   │   │   │   ├── 🐍 http_response.py
+│   │   │   │   ├── 🐍 jsonable_encoder.py
+│   │   │   │   ├── 🐍 pydantic_utilities.py
+│   │   │   │   ├── 🐍 query_encoder.py
+│   │   │   │   ├── 🐍 remove_none_from_dict.py
+│   │   │   │   ├── 🐍 request_options.py
+│   │   │   │   └── 🐍 serialization.py
+│   │   │   ├── 📁 display/
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   └── 🐍 display_record_request_action.py
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 errors/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 conflict_error.py
+│   │   │   │   └── 🐍 unprocessable_entity_error.py
+│   │   │   ├── 📁 file/
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 app_schemas_file_watch_wait_request_event_types_item.py
+│   │   │   │   │   ├── 🐍 command.py
+│   │   │   │   │   └── 🐍 str_replace_editor_request_replace_mode.py
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 jupyter/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 mcp/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 nodejs/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 providers/
+│   │   │   │   ├── 📝 README.md
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 base.py
+│   │   │   │   ├── 🐍 sign.py
+│   │   │   │   └── 🐍 volcengine.py
+│   │   │   ├── 📁 proxy/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 sandbox/
+│   │   │   │   ├── 📁 types/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   └── 🐍 observe_start_mode.py
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 shell/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 skills/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── 📁 types/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 action_data.py
+│   │   │   │   ├── 🐍 action_response.py
+│   │   │   │   ├── 🐍 active_sessions_result.py
+│   │   │   │   ├── 🐍 active_shell_sessions_result.py
+│   │   │   │   ├── 🐍 annotations.py
+│   │   │   │   ├── 🐍 annotations_audience_item.py
+│   │   │   │   ├── 🐍 audio_content.py
+│   │   │   │   ├── 🐍 available_tool.py
+│   │   │   │   ├── 🐍 bash_command_info.py
+│   │   │   │   ├── 🐍 bash_command_status.py
+│   │   │   │   ├── 🐍 bash_exec_result.py
+│   │   │   │   ├── 🐍 bash_output_result.py
+│   │   │   │   ├── 🐍 bash_session_info.py
+│   │   │   │   ├── 🐍 blob_resource_contents.py
+│   │   │   │   ├── 🐍 browser_info_result.py
+│   │   │   │   ├── 🐍 browser_viewport.py
+│   │   │   │   ├── 🐍 button.py
+│   │   │   │   ├── 🐍 call_tool_result.py
+│   │   │   │   ├── 🐍 captcha_wait_result.py
+│   │   │   │   ├── 🐍 check_request.py
+│   │   │   │   ├── 🐍 click_action.py
+│   │   │   │   ├── 🐍 code_execute_response.py
+│   │   │   │   ├── 🐍 code_info_response.py
+│   │   │   │   ├── 🐍 code_language_info.py
+│   │   │   │   ├── 🐍 command_status.py
+│   │   │   │   ├── 🐍 console_record.py
+│   │   │   │   ├── 🐍 dependency_command_result.py
+│   │   │   │   ├── 🐍 display_record_result.py
+│   │   │   │   ├── 🐍 double_click_action.py
+│   │   │   │   ├── 🐍 drag_rel_action.py
+│   │   │   │   ├── 🐍 drag_to_action.py
+│   │   │   │   ├── 🐍 embedded_resource.py
+│   │   │   │   ├── 🐍 file_content_encoding.py
+│   │   │   │   ├── 🐍 file_download_change_policy.py
+│   │   │   │   ├── 🐍 file_find_result.py
+│   │   │   │   ├── 🐍 file_glob_result.py
+│   │   │   │   ├── 🐍 file_grep_result.py
+│   │   │   │   ├── 🐍 file_info.py
+│   │   │   │   ├── 🐍 file_list_result.py
+│   │   │   │   ├── 🐍 file_operation_error.py
+│   │   │   │   ├── 🐍 file_read_result.py
+│   │   │   │   ├── 🐍 file_replace_result.py
+│   │   │   │   ├── 🐍 file_search_result.py
+│   │   │   │   ├── 🐍 file_upload_result.py
+│   │   │   │   ├── 🐍 file_write_result.py
+│   │   │   │   ├── 🐍 glob_file_info.py
+│   │   │   │   ├── 🐍 grep_match.py
+│   │   │   │   ├── 🐍 hotkey_action.py
+│   │   │   │   ├── 🐍 http_validation_error.py
+│   │   │   │   ├── 🐍 icon.py
+│   │   │   │   ├── 🐍 image_content.py
+│   │   │   │   ├── 🐍 jupyter_create_session_response.py
+│   │   │   │   ├── 🐍 jupyter_execute_response.py
+│   │   │   │   ├── 🐍 jupyter_info_response.py
+│   │   │   │   ├── 🐍 jupyter_output.py
+│   │   │   │   ├── 🐍 key_down_action.py
+│   │   │   │   ├── 🐍 key_up_action.py
+│   │   │   │   ├── 🐍 language.py
+│   │   │   │   ├── 🐍 list_tools_result.py
+│   │   │   │   ├── 🐍 mouse_down_action.py
+│   │   │   │   ├── 🐍 mouse_up_action.py
+│   │   │   │   ├── 🐍 move_rel_action.py
+│   │   │   │   ├── 🐍 move_to_action.py
+│   │   │   │   ├── 🐍 node_js_create_session_response.py
+│   │   │   │   ├── 🐍 node_js_delete_session_response.py
+│   │   │   │   ├── 🐍 node_js_execute_response.py
+│   │   │   │   ├── 🐍 node_js_output.py
+│   │   │   │   ├── 🐍 node_js_package_info.py
+│   │   │   │   ├── 🐍 node_js_runtime_info.py
+│   │   │   │   ├── 🐍 node_js_session_info.py
+│   │   │   │   ├── 🐍 node_js_session_list_response.py
+│   │   │   │   ├── 🐍 node_js_session_response.py
+│   │   │   │   ├── 🐍 node_js_update_session_response.py
+│   │   │   │   ├── 🐍 observation_cgroup_snapshot.py
+│   │   │   │   ├── 🐍 observation_disk_snapshot.py
+│   │   │   │   ├── 🐍 observation_event.py
+│   │   │   │   ├── 🐍 observation_export_result.py
+│   │   │   │   ├── 🐍 observation_live_snapshot.py
+│   │   │   │   ├── 🐍 observation_mode.py
+│   │   │   │   ├── 🐍 observation_process_snapshot.py
+│   │   │   │   ├── 🐍 observation_report_info.py
+│   │   │   │   ├── 🐍 observation_start_result.py
+│   │   │   │   ├── 🐍 observation_status.py
+│   │   │   │   ├── 🐍 observation_stop_result.py
+│   │   │   │   ├── 🐍 press_action.py
+│   │   │   │   ├── 🐍 proxy_bypass_request.py
+│   │   │   │   ├── 🐍 proxy_diagnose_result.py
+│   │   │   │   ├── 🐍 proxy_health_check.py
+│   │   │   │   ├── 🐍 proxy_mapping_route.py
+│   │   │   │   ├── 🐍 proxy_upstream_info.py
+│   │   │   │   ├── 🐍 resolution.py
+│   │   │   │   ├── 🐍 resource.py
+│   │   │   │   ├── 🐍 resource_link.py
+│   │   │   │   ├── 🐍 response.py
+│   │   │   │   ├── 🐍 response_active_sessions_result.py
+│   │   │   │   ├── 🐍 response_active_shell_sessions_result.py
+│   │   │   │   ├── 🐍 response_bash_exec_result.py
+│   │   │   │   ├── 🐍 response_bash_output_result.py
+│   │   │   │   ├── 🐍 response_bash_session_info.py
+│   │   │   │   ├── 🐍 response_browser_info_result.py
+│   │   │   │   ├── 🐍 response_call_tool_result_model.py
+│   │   │   │   ├── 🐍 response_call_tool_result_model_data_content_item.py
+│   │   │   │   ├── 🐍 response_captcha_wait_result.py
+│   │   │   │   ├── 🐍 response_code_execute_response.py
+│   │   │   │   ├── 🐍 response_code_info_response.py
+│   │   │   │   ├── 🐍 response_dict.py
+│   │   │   │   ├── 🐍 response_display_record_result.py
+│   │   │   │   ├── 🐍 response_jupyter_create_session_response.py
+│   │   │   │   ├── 🐍 response_jupyter_execute_response.py
+│   │   │   │   ├── 🐍 response_jupyter_info_response.py
+│   │   │   │   ├── 🐍 response_list.py
+│   │   │   │   ├── 🐍 response_list_bash_session_info.py
+│   │   │   │   ├── 🐍 response_list_observation_report_info.py
+│   │   │   │   ├── 🐍 response_list_proxy_mapping_route.py
+│   │   │   │   ├── 🐍 response_list_sandbox_hook.py
+│   │   │   │   ├── 🐍 response_list_str.py
+│   │   │   │   ├── 🐍 response_list_tools_result_model.py
+│   │   │   │   ├── 🐍 response_node_js_create_session_response.py
+│   │   │   │   ├── 🐍 response_node_js_delete_session_response.py
+│   │   │   │   ├── 🐍 response_node_js_execute_response.py
+│   │   │   │   ├── 🐍 response_node_js_runtime_info.py
+│   │   │   │   ├── 🐍 response_node_js_session_list_response.py
+│   │   │   │   ├── 🐍 response_node_js_session_response.py
+│   │   │   │   ├── 🐍 response_node_js_update_session_response.py
+│   │   │   │   ├── 🐍 response_observation_export_result.py
+│   │   │   │   ├── 🐍 response_observation_live_snapshot.py
+│   │   │   │   ├── 🐍 response_observation_report_info.py
+│   │   │   │   ├── 🐍 response_observation_start_result.py
+│   │   │   │   ├── 🐍 response_observation_status.py
+│   │   │   │   ├── 🐍 response_observation_stop_result.py
+│   │   │   │   ├── 🐍 response_proxy_diagnose_result.py
+│   │   │   │   ├── 🐍 response_proxy_health_check.py
+│   │   │   │   ├── 🐍 response_proxy_mapping_route.py
+│   │   │   │   ├── 🐍 response_proxy_upstream_info.py
+│   │   │   │   ├── 🐍 response_sandbox_hook.py
+│   │   │   │   ├── 🐍 response_shell_command_result.py
+│   │   │   │   ├── 🐍 response_shell_create_session_response.py
+│   │   │   │   ├── 🐍 response_shell_kill_result.py
+│   │   │   │   ├── 🐍 response_shell_session_stats.py
+│   │   │   │   ├── 🐍 response_shell_view_result.py
+│   │   │   │   ├── 🐍 response_shell_wait_result.py
+│   │   │   │   ├── 🐍 response_shell_write_result.py
+│   │   │   │   ├── 🐍 response_skill_content_result.py
+│   │   │   │   ├── 🐍 response_skill_metadata.py
+│   │   │   │   ├── 🐍 response_skill_metadata_collection.py
+│   │   │   │   ├── 🐍 response_skill_registration_result.py
+│   │   │   │   ├── 🐍 response_str.py
+│   │   │   │   ├── 🐍 response_union_file_find_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_find_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_glob_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_glob_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_grep_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_grep_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_list_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_list_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_read_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_read_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_replace_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_replace_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_search_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_search_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_upload_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_upload_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_file_write_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_file_write_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 response_union_proxy_upstream_info_none_type.py
+│   │   │   │   ├── 🐍 response_union_str_replace_editor_result_file_operation_error.py
+│   │   │   │   ├── 🐍 response_union_str_replace_editor_result_file_operation_error_data.py
+│   │   │   │   ├── 🐍 restart_mode.py
+│   │   │   │   ├── 🐍 restart_request.py
+│   │   │   │   ├── 🐍 right_click_action.py
+│   │   │   │   ├── 🐍 route_response_model.py
+│   │   │   │   ├── 🐍 runtime_env.py
+│   │   │   │   ├── 🐍 sandbox_detail.py
+│   │   │   │   ├── 🐍 sandbox_hook.py
+│   │   │   │   ├── 🐍 sandbox_response.py
+│   │   │   │   ├── 🐍 scroll_action.py
+│   │   │   │   ├── 🐍 session_info.py
+│   │   │   │   ├── 🐍 session_status.py
+│   │   │   │   ├── 🐍 shell_command_result.py
+│   │   │   │   ├── 🐍 shell_create_session_response.py
+│   │   │   │   ├── 🐍 shell_kill_result.py
+│   │   │   │   ├── 🐍 shell_session_info.py
+│   │   │   │   ├── 🐍 shell_session_stats.py
+│   │   │   │   ├── 🐍 shell_view_result.py
+│   │   │   │   ├── 🐍 shell_wait_result.py
+│   │   │   │   ├── 🐍 shell_write_result.py
+│   │   │   │   ├── 🐍 skill_content_result.py
+│   │   │   │   ├── 🐍 skill_metadata.py
+│   │   │   │   ├── 🐍 skill_metadata_collection.py
+│   │   │   │   ├── 🐍 skill_registration_result.py
+│   │   │   │   ├── 🐍 status.py
+│   │   │   │   ├── 🐍 str_replace_editor_result.py
+│   │   │   │   ├── 🐍 system_env.py
+│   │   │   │   ├── 🐍 text_content.py
+│   │   │   │   ├── 🐍 text_resource_contents.py
+│   │   │   │   ├── 🐍 tool.py
+│   │   │   │   ├── 🐍 tool_annotations.py
+│   │   │   │   ├── 🐍 tool_category.py
+│   │   │   │   ├── 🐍 tool_execution.py
+│   │   │   │   ├── 🐍 tool_execution_task_support.py
+│   │   │   │   ├── 🐍 tool_spec.py
+│   │   │   │   ├── 🐍 typing_action.py
+│   │   │   │   ├── 🐍 validation_error.py
+│   │   │   │   ├── 🐍 validation_error_loc_item.py
+│   │   │   │   └── 🐍 wait_action.py
+│   │   │   ├── 📁 util/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 client.py
+│   │   │   │   └── 🐍 raw_client.py
+│   │   │   ├── ⚙️ .fernignore
+│   │   │   ├── 🐍 __init__.py
+│   │   │   └── 🐍 client.py
 │   │   ├── ⚙️ .gitignore
 │   │   ├── 📄 MANIFEST.in
 │   │   ├── 📝 README.md
