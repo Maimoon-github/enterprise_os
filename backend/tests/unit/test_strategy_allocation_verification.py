@@ -703,3 +703,206 @@ async def test_s_alloc_llm_error_fallback_preserves_deterministic_execution() ->
     assert plan.recommended_scenario == "scenario_balanced"
 
 
+# =====================================================================
+# STRAT-03: Governed S_ALLOC Toolchain Targeted Verification Tests
+# =====================================================================
+
+
+def test_strat03_channel_min_max_bounds_and_contingency() -> None:
+    """Channel bounds (min/max spend/share) are strictly enforced and unallocated contingency is preserved."""
+    # Test 1: Max spend constraints prevent over-allocation and preserve contingency
+    payload = {
+        "task_id": "task-strat03-bounds",
+        "budget": "20000.0",
+        "budget_ceiling": "20000.0",
+        "channels": "meta,google",
+        "channel_constraints": json.dumps({
+            "meta": {"max_spend": 4000.0},
+            "google": {"max_spend": 8000.0},
+        }),
+    }
+    res = execute_s_alloc(payload)
+    alloc = json.loads(res["allocations"])
+    assert alloc["meta"] <= 4000.0
+    assert alloc["google"] <= 8000.0
+    assert float(res["allocated_total"]) <= 12000.0
+
+    plan = json.loads(res["strategy_plan"])
+    assert plan["total_allocated"] <= 12000.0
+    assert plan["unallocated_contingency"] >= 8000.0
+    assert plan["budget_ceiling"] == 20000.0
+
+    # Test 2: Min share and max share constraints
+    payload2 = {
+        "task_id": "task-strat03-shares",
+        "budget": "10000.0",
+        "budget_ceiling": "10000.0",
+        "channels": "meta,google",
+        "channel_constraints": json.dumps({
+            "meta": {"max_share": 0.25},
+            "google": {"min_share": 0.50},
+        }),
+    }
+    res2 = execute_s_alloc(payload2)
+    alloc2 = json.loads(res2["allocations"])
+    assert alloc2["meta"] <= 2500.0
+    assert alloc2["google"] >= 5000.0
+    assert float(res2["allocated_total"]) <= 10000.0
+
+
+def test_strat03_diminishing_returns_and_mroi_reallocation() -> None:
+    """Allocation pivots to higher marginal ROI under saturation rather than higher historical ROAS alone."""
+    payload = {
+        "task_id": "task-strat03-saturation",
+        "budget": "25000.0",
+        "channels": "meta,google",
+        "prior_roas_meta": 3.0,
+        "prior_roas_google": 4.5,  # Higher historical ROAS
+        "media_history": json.dumps({
+            # Google is heavily saturated with low headroom
+            "google": {"spend": 20000.0, "saturation_spend": 4000.0},
+            # Meta has substantial unsaturated headroom
+            "meta": {"spend": 1000.0, "saturation_spend": 25000.0},
+        }),
+    }
+    res = execute_s_alloc(payload)
+    alloc = json.loads(res["allocations"])
+
+    # Meta receives higher budget than Google because Google's marginal ROI saturates rapidly
+    assert alloc["meta"] > alloc["google"]
+
+    # Response curves show strictly diminishing marginal ROI across spend intervals
+    curves = json.loads(res["response_curves"])
+    assert "google" in curves and "meta" in curves
+    assert curves["google"][0]["mroi"] > curves["google"][-1]["mroi"]
+    assert curves["meta"][0]["mroi"] > curves["meta"][-1]["mroi"]
+
+    marginal = json.loads(res["marginal_roas"])
+    assert "google" in marginal and "meta" in marginal
+
+
+def test_strat03_explicit_model_diagnostics_and_non_causal_proxy() -> None:
+    """S_ALLOC results are explicitly labeled non-causal planning proxy with observable diagnostics."""
+    # Standard planning execution without causal MMM
+    payload = {
+        "task_id": "task-strat03-diag",
+        "budget": "10000.0",
+        "channels": "meta,google",
+    }
+    res = execute_s_alloc(payload)
+    diag = json.loads(res["model_diagnostics"])
+
+    assert diag["causal_mmm"] is False
+    assert diag["measurement_mode"] == "deterministic_response_curve_proxy"
+    assert diag["health_status"] == "REVIEW"
+    assert any("not a fitted causal MMM" in r for r in diag["health_reasons"])
+    assert diag["incrementality_calibrated"] is False
+
+    # Fail diagnostic status when budget is zero
+    payload_zero = {
+        "task_id": "task-strat03-zero",
+        "budget": "0.0",
+        "channels": "meta,google",
+    }
+    res_zero = execute_s_alloc(payload_zero)
+    diag_zero = json.loads(res_zero["model_diagnostics"])
+    assert diag_zero["health_status"] == "FAIL"
+    assert any("zero" in r.lower() for r in diag_zero["health_reasons"])
+
+
+def test_strat03_backend_and_sandbox_parity() -> None:
+    """Backend execute_s_alloc and sandbox run_s_alloc exhibit 100% functional behavioral equivalence."""
+    import importlib.util
+    from pathlib import Path
+
+    sandbox_run_path = Path(__file__).resolve().parents[3] / "sandbox" / "docker" / "hardened" / "skills" / "s-alloc" / "scripts" / "run.py"
+    spec = importlib.util.spec_from_file_location("sandbox_s_alloc_run", str(sandbox_run_path))
+    assert spec is not None and spec.loader is not None
+    sandbox_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sandbox_mod)
+    sandbox_run_s_alloc = getattr(sandbox_mod, "run_s_alloc")
+
+    test_payload = {
+        "task_id": "task-strat03-parity-01",
+        "tenant_id": "acme_tenant",
+        "brand_id": "acme_brand",
+        "budget": "30000.0",
+        "budget_ceiling": "25000.0",
+        "channels": "meta,google,tiktok",
+        "prior_roas_meta": "3.5",
+        "prior_roas_google": "4.2",
+        "prior_roas_tiktok": "2.8",
+        "channel_constraints": json.dumps({
+            "meta": {"max_spend": 10000.0},
+            "google": {"min_spend": 5000.0, "max_spend": 15000.0},
+        }),
+        "media_history": json.dumps({
+            "meta": {"spend": 5000.0, "saturation_spend": 12000.0},
+            "google": {"spend": 10000.0, "saturation_spend": 8000.0},
+        }),
+        "incrementality_evidence": json.dumps({
+            "meta": {"lift_multiplier": 1.15},
+        }),
+        "t16_claims": json.dumps([{"text": "Clinically validated", "status": "SUPPORTED"}]),
+        "t17_objections": json.dumps([{"theme": "price_point"}]),
+        "t18_competitor": json.dumps({"competitor": "Rival", "threat_level": "high"}),
+    }
+
+    backend_res = execute_s_alloc(test_payload)
+    sandbox_res = sandbox_run_s_alloc(test_payload)
+
+    # Assert exact functional equivalence across all outputs
+    assert backend_res["status"] == sandbox_res["status"] == "success"
+    assert backend_res["budget_total"] == sandbox_res["budget_total"]
+    assert backend_res["allocated_total"] == sandbox_res["allocated_total"]
+    assert json.loads(backend_res["allocations"]) == json.loads(sandbox_res["allocations"])
+    assert backend_res["expected_blended_roas"] == sandbox_res["expected_blended_roas"]
+    assert backend_res["primary_channel"] == sandbox_res["primary_channel"]
+    assert json.loads(backend_res["marginal_roas"]) == json.loads(sandbox_res["marginal_roas"])
+    assert json.loads(backend_res["response_curves"]) == json.loads(sandbox_res["response_curves"])
+    assert json.loads(backend_res["model_diagnostics"]) == json.loads(sandbox_res["model_diagnostics"])
+    assert json.loads(backend_res["funnel_model"]) == json.loads(sandbox_res["funnel_model"])
+    assert json.loads(backend_res["scenarios"]) == json.loads(sandbox_res["scenarios"])
+    assert json.loads(backend_res["strategy_plan"]) == json.loads(sandbox_res["strategy_plan"])
+
+
+def test_strat03_backward_compatible_existing_outputs_and_schema_extraction() -> None:
+    """Enhanced S_ALLOC payload extracts into typed OmnichannelStrategyPlan and preserves legacy keys."""
+    payload = {
+        "task_id": "task-strat03-compat",
+        "budget": "15000.0",
+        "budget_ceiling": "15000.0",
+        "channels": "meta,google,tiktok",
+    }
+    result = execute_s_alloc(payload)
+
+    # Legacy public keys preserved
+    assert "status" in result
+    assert "task_id" in result
+    assert "budget_total" in result
+    assert "allocated_total" in result
+    assert "allocations" in result
+    assert "expected_blended_roas" in result
+    assert "primary_channel" in result
+    assert "funnel_model" in result
+    assert "scenarios" in result
+    assert "strategy_plan" in result
+
+    # New STRAT-03 keys present
+    assert "marginal_roas" in result
+    assert "response_curves" in result
+    assert "model_diagnostics" in result
+
+    # Fully validates into typed OmnichannelStrategyPlan schema
+    plan = OmnichannelStrategyPlan.model_validate_json(result["strategy_plan"])
+    assert plan.plan_id == "strat-task-strat03-compat"
+    assert plan.budget_ceiling == 15000.0
+    assert plan.total_allocated <= 15000.0
+    assert plan.unallocated_contingency >= 0.0
+    assert len(plan.channel_allocations) == 3
+    assert len(plan.funnel_stages) == 4
+    assert len(plan.scenarios) == 3
+    assert plan.provenance["modeled_by"] == "S_ALLOC"
+    assert plan.provenance["model_diagnostics"]["causal_mmm"] is False
+
+

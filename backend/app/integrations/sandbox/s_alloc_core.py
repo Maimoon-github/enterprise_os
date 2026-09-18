@@ -1,10 +1,13 @@
-#!/usr/bin/env python3
-"""S_ALLOC Optimization Modeler Execution Script (STRAT-03 Governed S_ALLOC)."""
+"""Deterministic Media & Budget Allocator Core for S_ALLOC (STRAT-03).
+
+Provides constrained diminishing-returns / marginal-ROI allocation,
+response curves, uncertainty weighting, channel min/max bounds,
+unallocated contingency, and explicit model diagnostics.
+"""
 
 from __future__ import annotations
 
 import json
-import sys
 from typing import Any
 
 
@@ -30,20 +33,27 @@ def _json(value: Any, default: Any) -> Any:
     return default
 
 
-def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
-    """S_ALLOC: Deterministic Media & Budget Allocator [Micro-Tool: Optimization Modeler]."""
+def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
+    """S_ALLOC: Deterministic Media & Budget Allocator [Micro-Tool: Optimization Modeler].
+
+    Applies deterministic, constrained, diminishing-returns / mROI allocation across
+    omnichannel ad networks, models full-funnel stage distribution, compares alternative
+    scenarios, and enforces strict financial budget caps and channel bounds.
+    """
     task_id = str(payload.get("task_id", "unknown"))
     tenant_id = str(payload.get("tenant_id", "default"))
     brand_id = str(payload.get("brand_id", "default"))
     time_horizon = str(payload.get("time_horizon", "90_days"))
     objective = str(payload.get("objective", "balanced omnichannel planning"))
 
+    # 1. Budget Ceiling & Authorized Total
     raw_budget = payload.get("budget", payload.get("budget_cap", payload.get("budget_ceiling", 10000.0)))
     requested_budget = max(0.0, _float(raw_budget, 10000.0))
     raw_ceiling = payload.get("budget_ceiling")
     ceiling = max(0.0, _float(raw_ceiling, requested_budget))
     budget_total = min(requested_budget, ceiling)
 
+    # 2. Channel Parsing and Normalization
     raw_channels = payload.get("channels", "meta,google,tiktok,linkedin")
     if isinstance(raw_channels, list):
         channels = [str(x).strip().lower() for x in raw_channels if str(x).strip()]
@@ -51,6 +61,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         channels = [x.strip().lower() for x in str(raw_channels).split(",") if x.strip()]
     if not channels:
         channels = ["meta", "google", "tiktok"]
+    # Deduplicate preserving order
     channels = list(dict.fromkeys(channels))
 
     defaults = {
@@ -74,6 +85,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
     incrementality = _json(payload.get("incrementality_evidence"), {})
     reasoning = _json(payload.get("s_alloc_reasoning"), {})
 
+    # 3. Claims, Objections & Competitor Signals
     applied_claims: list[str] = []
     claims = _json(payload.get("t16_claims") or payload.get("approved_claims"), [])
     if isinstance(claims, list):
@@ -108,6 +120,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         factored_competitor_signals.append(sig)
         competitor_threat_elevated = threat in {"high", "critical"} or comp.get("pricing_trajectory") == "discounting_aggressive"
 
+    # 4. Priors, Saturation & Incrementality Calibration
     priors: dict[str, float] = {}
     uncertainty: dict[str, float] = {}
     saturation: dict[str, float] = {}
@@ -135,6 +148,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         sat_default = max(reference_spend[ch], budget_total / max(len(channels), 1), 1.0)
         saturation[ch] = max(1.0, _float(sat_val, sat_default))
 
+    # Evidence adjustments
     if applied_claims:
         if "meta" in evidence_factor:
             evidence_factor["meta"] *= 1.10
@@ -145,6 +159,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
     if competitor_threat_elevated and "google" in evidence_factor:
         evidence_factor["google"] *= 1.10
 
+    # Incrementality calibration multiplier
     if isinstance(incrementality, dict):
         for ch, inc_data in incrementality.items():
             if ch in evidence_factor:
@@ -155,11 +170,14 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
                     evidence_factor[ch] *= max(0.1, min(2.0, float(inc_data)))
 
     def response(ch: str, spend: float) -> float:
+        """Saturating planning response proxy. This is not a fitted causal MMM."""
         return priors[ch] * evidence_factor[ch] * spend / (1.0 + spend / saturation[ch])
 
     def mroi(ch: str, spend: float) -> float:
+        """Marginal return on ad spend derivative."""
         return priors[ch] * evidence_factor[ch] / ((1.0 + spend / saturation[ch]) ** 2)
 
+    # 5. Channel Constraints: Min / Max bounds
     min_spend: dict[str, float] = {}
     max_spend: dict[str, float] = {}
     for ch in channels:
@@ -181,6 +199,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         scale = budget_total / min_total
         allocations = {ch: amount * scale for ch, amount in allocations.items()}
 
+    # 6. Constrained Diminishing-Returns / mROI Iterative Allocation
     remaining = max(0.0, budget_total - sum(allocations.values()))
     quantum = max(budget_total / 200.0, 0.01) if budget_total else 0.0
     mroi_floor = _float(payload.get("mroi_floor"), 0.0)
@@ -218,6 +237,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
     expected_blended_roas = blended_roi(allocations)
     marginal = {ch: round(mroi(ch, allocations[ch]), 4) for ch in channels}
 
+    # 7. Response Curves Sampling
     curves: dict[str, list[dict[str, float]]] = {}
     for ch in channels:
         top = max(max_spend[ch], allocations[ch], saturation[ch])
@@ -231,6 +251,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
             })
         curves[ch] = points
 
+    # 8. Channel Allocation Objects
     roles_map = {
         "meta": "Top-of-funnel acquisition, discovery, and dynamic retargeting",
         "google": "High-intent search capture and competitor brand defense",
@@ -257,6 +278,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
             ],
         })
 
+    # 9. Funnel Stages Model
     tofu_pct, mofu_pct, bofu_pct, ret_pct = (0.40, 0.30, 0.20, 0.10) if addressed_objections else (0.45, 0.25, 0.20, 0.10)
     stage_pcts = [("TOFU", tofu_pct), ("MOFU", mofu_pct), ("BOFU", bofu_pct), ("RETENTION", ret_pct)]
     stage_amounts = {name: round(budget_total * pct, 2) for name, pct in stage_pcts}
@@ -304,6 +326,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
             "target_metrics": stage_targets.get(name, {}),
         })
 
+    # 10. Alternative Scenarios
     def normalize(weights: dict[str, float]) -> dict[str, float]:
         total = sum(weights.values()) or 1.0
         return {c: round(budget_total * v / total, 2) for c, v in weights.items()}
@@ -368,6 +391,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         },
     ]
 
+    # 11. Explicit Model Health Diagnostics
     health_reasons = [
         "Current implementation is a deterministic response-curve planning proxy, not a fitted causal MMM."
     ]
@@ -391,6 +415,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "warnings": warnings,
     }
 
+    # 12. Assumptions, Caveats & Confidence
     conf = 0.65
     if applied_claims:
         conf += 0.05
@@ -420,6 +445,7 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "No automated outbound campaign publishing or spend modification without explicit HITL sign-off.",
     ]
 
+    # 13. Omnichannel Strategy Plan Assembly
     provenance_data: dict[str, Any] = {
         "modeled_by": "S_ALLOC",
         "task_id": task_id,
@@ -485,10 +511,3 @@ def run_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         result["s_alloc_reasoning"] = json.dumps(reasoning)
 
     return result
-
-
-if __name__ == "__main__":
-    raw_input = sys.stdin.read()
-    data = json.loads(raw_input) if raw_input.strip() else {}
-    run_result = run_s_alloc(data)
-    sys.stdout.write(json.dumps(run_result))
