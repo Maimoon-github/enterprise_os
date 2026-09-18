@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
     s_alloc_llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
-    sandbox_client = SandboxClient(settings.sandbox)
+    sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=provenance_recorder)
     workers = _build_workers(
         sandbox_client, llm_client=llm_client, s_alloc_llm_client=s_alloc_llm_client
     )
@@ -257,8 +257,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await cms_client.aclose()
         if s_alloc_llm_client is not None:
             await s_alloc_llm_client.aclose()
-        if llm_client is not None:
-            await llm_client.aclose()
         await database.dispose()
         logger.info("Governed backend shutdown complete")
 

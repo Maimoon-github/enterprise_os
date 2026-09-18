@@ -594,6 +594,7 @@ class StrategyAgent(BoundedWorkerAgent):
             "capability": self.capability.value,
             "task_id": grant.task_id,
             "execution_id": result.execution_id,
+            "sandbox_execution_id": result.execution_id,
             "status": result.status.value,
         }
         if llm_metadata:

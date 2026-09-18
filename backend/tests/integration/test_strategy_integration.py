@@ -8,11 +8,15 @@ from pathlib import Path
 
 import pytest
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+
 from app.agents.base import BoundedWorkerAgent
 from app.agents.customer_voice import CustomerVoiceAgent
 from app.agents.product_evidence import ProductEvidenceAgent
 from app.agents.strategy import StrategyAgent
-from app.core.exceptions import SandboxInvocationError
+from app.core.exceptions import PolicyViolationError, SandboxInvocationError
 from app.integrations.sandbox.capabilities import validate_capability_access
 from app.integrations.sandbox.client import SandboxClient
 from app.orchestration.context_assembly import BrandPersonaResolver, ContextAssembler
@@ -23,6 +27,8 @@ from app.orchestration.intelligence_engine import IntelligenceEngine
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.rag_query_dispatch import RagQueryDispatcher
 from app.orchestration.task_state_machine import TaskStateMachine
+from app.core.settings import SandboxSettings
+from app.schemas.action_preview import ActionPreviewKind, ReviewStatus
 from app.schemas.agent_contracts import (
     ConfidenceInterval,
     EvidenceEnvelope,
@@ -30,7 +36,7 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
-from app.schemas.sandbox import SandboxCapability
+from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 from app.services.hitl import HitlCoordinator
 from app.services.provenance import ProvenanceRecorder
@@ -43,8 +49,11 @@ from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
 
 def test_w_strat_module_has_zero_direct_persistence_or_rag_imports() -> None:
     """W_STRAT must not directly import persistence, RAG, CMS, DB, or services (Model-A Invariant)."""
-    source_file = Path(__file__).resolve().parents[2] / "app" / "agents" / "strategy.py"
-    tree = ast.parse(source_file.read_text(encoding="utf-8"))
+    agents_dir = Path(__file__).resolve().parents[2] / "app" / "agents"
+    source_files = [
+        agents_dir / "strategy.py",
+        agents_dir / "strategy_engine" / "strategy.py",
+    ]
 
     disallowed_prefixes = (
         "app.persistence",
@@ -58,14 +67,42 @@ def test_w_strat_module_has_zero_direct_persistence_or_rag_imports() -> None:
         "app.orchestration.rag_query_dispatch",
     )
 
+    for source_file in source_files:
+        tree = ast.parse(source_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    for prefix in disallowed_prefixes:
+                        assert not alias.name.startswith(prefix), f"Disallowed direct import in {source_file.name}: {alias.name}"
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                for prefix in disallowed_prefixes:
+                    assert not node.module.startswith(prefix), f"Disallowed direct import in {source_file.name}: {node.module}"
+
+
+def test_s_alloc_module_has_zero_persistence_or_rag_imports() -> None:
+    """S_ALLOC reasoning specialist must not directly import persistence, RAG, CMS, DB, or services."""
+    source_file = Path(__file__).resolve().parents[2] / "app" / "agents" / "strategy_engine" / "subagents" / "allocation.py"
+    tree = ast.parse(source_file.read_text(encoding="utf-8"))
+
+    disallowed_prefixes = (
+        "app.persistence",
+        "app.services",
+        "app.mcp",
+        "app.security",
+        "app.integrations.cms",
+        "app.integrations.ads",
+        "app.integrations.social",
+        "app.orchestration.rag_query_dispatch",
+    )
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 for prefix in disallowed_prefixes:
-                    assert not alias.name.startswith(prefix), f"Disallowed direct import in W_STRAT: {alias.name}"
+                    assert not alias.name.startswith(prefix), f"Disallowed direct import in S_ALLOC: {alias.name}"
         elif isinstance(node, ast.ImportFrom) and node.module:
             for prefix in disallowed_prefixes:
-                assert not node.module.startswith(prefix), f"Disallowed direct import in W_STRAT: {node.module}"
+                assert not node.module.startswith(prefix), f"Disallowed direct import in S_ALLOC: {node.module}"
 
 
 def test_unauthorized_capability_rejected_for_w_strat() -> None:
@@ -97,8 +134,20 @@ def test_unauthorized_capability_rejected_for_w_strat() -> None:
 @pytest.mark.asyncio
 async def test_governed_ie_grant_to_w_strat_pipeline(sample_directive: Directive) -> None:
     """Full governed execution: T16/T17/T18 context -> IE Grant -> W_STRAT -> S_ALLOC in sandbox -> Strategy EvidenceEnvelope -> IE."""
-    sandbox_client = SandboxClient()
+    prov_repo = FakeProvenanceRepository()
+    provenance_recorder = ProvenanceRecorder(prov_repo)
+    sandbox_client = SandboxClient(provenance_recorder=provenance_recorder)
     w_strat = StrategyAgent(sandbox_client)
+
+    # Verify W_STRAT and S_ALLOC use distinct purpose-scoped LLM client identities when configured
+    w_strat_client = MagicMock()
+    s_alloc_client = MagicMock()
+    w_strat_with_llms = StrategyAgent(
+        sandbox_client,
+        llm_client=w_strat_client,
+        allocation_agent=w_strat.allocation_agent.__class__(llm_client=s_alloc_client),
+    )
+    assert w_strat_with_llms._llm_client is not w_strat_with_llms.allocation_agent._llm_client
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.STRATEGY: w_strat,
@@ -123,7 +172,7 @@ async def test_governed_ie_grant_to_w_strat_pipeline(sample_directive: Directive
         hitl_preview_generator=HitlPreviewGenerator(),
         hitl_coordinator=HitlCoordinator(),
         mcp_host=None,  # type: ignore[arg-type]
-        provenance_recorder=ProvenanceRecorder(FakeProvenanceRepository()),
+        provenance_recorder=provenance_recorder,
         workers=workers,
     )
 
@@ -176,6 +225,19 @@ async def test_governed_ie_grant_to_w_strat_pipeline(sample_directive: Directive
     assert "strategy:task-strat-governed-1" in envelope.generated_artifacts
     assert len(envelope.findings) > 0
     assert envelope.provenance["capability"] == "S_ALLOC"
+    assert "sandbox_execution_id" in envelope.provenance
+    assert envelope.provenance["sandbox_execution_id"] != ""
+
+    # Verify sandbox lifecycle provenance was persisted
+    sandbox_prov_records = [
+        r for r in prov_repo.records
+        if r.metadata.get("capability") == "S_ALLOC" or r.activity == "sandbox_execution"
+    ]
+    assert len(sandbox_prov_records) >= 1
+    assert any(
+        r.metadata.get("status") == "completed" and r.metadata.get("capability") == "S_ALLOC"
+        for r in sandbox_prov_records
+    )
 
     # Verify typed models
     plan = w_strat.extract_strategy_plan(envelope)
@@ -247,3 +309,174 @@ async def test_evidence_synthesizer_merges_w_strat_envelope() -> None:
     assert any("Omnichannel Strategy Plan" in line for line in synthesized.evidence)
     assert any("Verified claims dossier" in line for line in synthesized.evidence)
     assert any("Customer sentiment" in line for line in synthesized.evidence)
+
+
+@pytest.mark.asyncio
+async def test_strategy_spend_generates_hitl_preview_and_requires_authorized_approval(sample_directive: Directive) -> None:
+    """Strategy spend proposal reaches HITL as SPEND preview and cannot dispatch without authorized finance sign-off."""
+    prov_repo = FakeProvenanceRepository()
+    provenance_recorder = ProvenanceRecorder(prov_repo)
+    sandbox_client = SandboxClient(provenance_recorder=provenance_recorder)
+    w_strat = StrategyAgent(sandbox_client)
+
+    grant = TaskGrant(
+        task_id="task-strat-hitl",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=sample_directive.scope,
+        brand_id=sample_directive.tenant_id,
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+
+    context: dict[str, object] = {
+        "budget_ceiling": sample_directive.budget_cap,
+        "claims_dossier": {
+            "tenant_id": sample_directive.tenant_id,
+            "claims": [
+                {
+                    "claim_id": "c1",
+                    "claim_text": "Clinically proven 40% reduction in fine lines",
+                    "validation_status": "SUPPORTED",
+                    "confidence": 0.95,
+                }
+            ],
+        },
+        "customer_voice_analysis": {
+            "tenant_id": sample_directive.tenant_id,
+            "objection_profiles": [
+                {
+                    "objection_type": "price",
+                    "theme": "Price sensitivity objection",
+                    "frequency": 6,
+                }
+            ],
+        },
+        "competitor_intelligence": {
+            "tenant_id": sample_directive.tenant_id,
+            "competitor": "SerumCorp",
+            "benchmark_price": "50.00",
+            "threat_level": "medium",
+        },
+    }
+
+    envelope = await w_strat.run(grant, context)
+    plan = w_strat.extract_strategy_plan(envelope)
+    assert plan is not None
+
+    synthesizer = EvidenceSynthesizer()
+    synthesized = synthesizer.synthesize([envelope])
+
+    preview_generator = HitlPreviewGenerator()
+    preview = preview_generator.generate(
+        preview_id="prev-strat-spend-1",
+        evidence=synthesized,
+        kind=ActionPreviewKind.SPEND,
+        risk_level=RiskLevel.HIGH,
+        spend_amount=plan.total_allocated,
+    )
+    preview.tenant_id = sample_directive.tenant_id
+
+    coordinator = HitlCoordinator()
+    coordinator.submit_for_approval(preview)
+
+    # 1. Action preview starts PENDING and requires approval
+    assert preview.requires_approval is True
+    assert preview.review_status == ReviewStatus.PENDING
+    assert coordinator.is_pending(preview.preview_id) is True
+    assert coordinator.is_approved(preview.preview_id) is False
+
+    # 2. Unauthorized role cannot approve spend (engineering denied for SPEND preview)
+    with pytest.raises(PolicyViolationError, match="not authorized to sign off on 'spend'"):
+        coordinator.decide(
+            preview.preview_id,
+            approved=True,
+            approver="eng_lead",
+            approver_role="engineering",
+            tenant_id=sample_directive.tenant_id,
+        )
+    assert coordinator.is_approved(preview.preview_id) is False
+
+    # 3. Tenant mismatch rejected
+    with pytest.raises(PolicyViolationError, match="Tenant authority mismatch"):
+        coordinator.decide(
+            preview.preview_id,
+            approved=True,
+            approver="finance_lead",
+            approver_role="finance",
+            tenant_id="unauthorized_other_tenant",
+        )
+    assert coordinator.is_approved(preview.preview_id) is False
+
+    # 4. Authorized finance approver successfully approves spend
+    decision = coordinator.decide(
+        preview.preview_id,
+        approved=True,
+        approver="finance_director",
+        approver_role="finance",
+        tenant_id=sample_directive.tenant_id,
+    )
+    assert decision.approved is True
+    assert decision.clearance is not None
+    assert decision.clearance.is_valid is True
+    assert preview.review_status == ReviewStatus.APPROVED
+    assert coordinator.is_approved(preview.preview_id) is True
+
+
+@pytest.mark.asyncio
+async def test_strategy_remote_sandbox_failure_fails_closed_without_local_fallback() -> None:
+    """Configured remote sandbox failure never falls back to local micro-tools and records failure provenance."""
+    prov_repo = FakeProvenanceRepository()
+    provenance_recorder = ProvenanceRecorder(prov_repo)
+    client = SandboxClient(
+        settings=SandboxSettings(endpoint="http://remote-sandbox.internal:8000"),
+        provenance_recorder=provenance_recorder,
+    )
+
+    # Inject mock remote client whose execution fails
+    mock_sandbox = MagicMock()
+    mock_sandbox.file = MagicMock()
+    mock_sandbox.shell = MagicMock()
+    mock_sandbox.shell.exec_command.side_effect = RuntimeError("Container unreachable")
+    client._sandbox = mock_sandbox
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat-remote-fail",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "15000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    result = await client.invoke(mandate)
+    assert result.success is False
+    assert result.status.value == "failed"
+    assert "Container unreachable" in (result.error or "")
+
+    # And verify W_STRAT invocation fails closed with zero confidence envelope
+    w_strat = StrategyAgent(client)
+    grant = TaskGrant(
+        task_id="task-strat-remote-fail-w",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="tenant_01", allowed_channels=["meta", "google"]),
+        brand_id="tenant_01",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    envelope = await w_strat.run(grant, {"budget_ceiling": 15000.0})
+    assert envelope.confidence.point_estimate == 0.0
+    assert any("sandbox execution failed" in e for e in envelope.evidence)
+
+    # Directly verify that local micro-tool execution is strictly forbidden when remote is configured
+    with pytest.raises(SandboxInvocationError, match="Local micro-tool execution is prohibited"):
+        client._execute_in_isolated_runtime(mandate)
+
+    # Verify fail-closed: failure provenance recorded, no local fallback execution
+    failed_records = [
+        r for r in prov_repo.records
+        if r.metadata.get("status") == "failed" or r.metadata.get("lifecycle_stage") == "failed"
+    ]
+    assert len(failed_records) >= 1
+    assert failed_records[0].metadata.get("capability") == "S_ALLOC"
+    assert failed_records[0].metadata.get("execution_id") == mandate.execution_id
+    assert failed_records[0].metadata.get("task_id") == mandate.task_id
+
