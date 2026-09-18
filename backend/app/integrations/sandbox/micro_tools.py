@@ -2905,12 +2905,30 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
     ]
 
     # 7. Model Alternative Scenarios
-    # Scenario A: Balanced (Recommended)
+    # Advisory S_ALLOC reasoning inputs
+    s_alloc_reasoning_raw = payload.get("s_alloc_reasoning")
+    s_alloc_reasoning: dict[str, Any] = {}
+    if s_alloc_reasoning_raw:
+        try:
+            s_alloc_reasoning = (
+                json.loads(s_alloc_reasoning_raw)
+                if isinstance(s_alloc_reasoning_raw, str)
+                else s_alloc_reasoning_raw
+            )
+        except Exception:
+            s_alloc_reasoning = {}
+
+    pref = str(s_alloc_reasoning.get("scenario_emphasis", "")).lower()
+    if pref not in ("balanced", "aggressive", "conservative"):
+        pref = "balanced"
+    rec_scenario_id = f"scenario_{pref}"
+
+    # Scenario A: Balanced
     scenario_balanced = {
         "scenario_id": "scenario_balanced",
         "scenario_name": "Balanced Omnichannel Growth",
         "description": "Optimal risk-adjusted budget distribution balancing top-of-funnel acquisition with high-intent search capture and customer retention.",
-        "is_recommended": True,
+        "is_recommended": rec_scenario_id == "scenario_balanced",
         "allocations_by_channel": dict(allocations),
         "allocations_by_stage": {"TOFU": tofu_amt, "MOFU": mofu_amt, "BOFU": bofu_amt, "RETENTION": ret_amt},
         "expected_blended_roas": round(expected_blended_roas, 2),
@@ -2934,7 +2952,7 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "scenario_id": "scenario_aggressive",
         "scenario_name": "Aggressive Audience Scale",
         "description": "Maximizes top-of-funnel reach and market penetration on high-volume discovery channels. Higher CAC volatility.",
-        "is_recommended": False,
+        "is_recommended": rec_scenario_id == "scenario_aggressive",
         "allocations_by_channel": agg_allocs,
         "allocations_by_stage": {
             "TOFU": round(budget_total * 0.60, 2),
@@ -2963,7 +2981,7 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "scenario_id": "scenario_conservative",
         "scenario_name": "Conservative ROAS-First",
         "description": "Prioritizes high-intent search capture and customer retention for immediate capital efficiency and risk minimization.",
-        "is_recommended": False,
+        "is_recommended": rec_scenario_id == "scenario_conservative",
         "allocations_by_channel": cons_allocs,
         "allocations_by_stage": {
             "TOFU": round(budget_total * 0.30, 2),
@@ -3000,8 +3018,36 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "Competitor promotional pricing shifts may require dynamic reallocation of bottom-of-funnel conquesting budget.",
     ]
 
+    if s_alloc_reasoning.get("modeling_assumptions"):
+        for asm in s_alloc_reasoning["modeling_assumptions"]:
+            if asm and str(asm) not in assumptions:
+                assumptions.append(str(asm))
+
+    if s_alloc_reasoning.get("risk_flags"):
+        for rsk in s_alloc_reasoning["risk_flags"]:
+            if rsk and str(rsk) not in caveats:
+                caveats.append(str(rsk))
+
     # 9. Assemble Full Omnichannel Strategy Plan
-    plan_dict = {
+    provenance_data: dict[str, Any] = {
+        "modeled_by": "S_ALLOC",
+        "task_id": task_id,
+        "tenant_id": tenant_id,
+        "applied_evidence": {
+            "t16_claims_count": len(applied_claims),
+            "t17_objections_count": len(addressed_objections),
+            "t18_competitor_signals_count": len(factored_competitor_signals),
+        },
+    }
+
+    if s_alloc_reasoning:
+        provenance_data["s_alloc_reasoning"] = {
+            "scenario_emphasis": pref,
+            "kpi_priorities": s_alloc_reasoning.get("kpi_priorities", []),
+            "estimated_confidence": s_alloc_reasoning.get("estimated_confidence", 0.65),
+        }
+
+    plan_dict: dict[str, Any] = {
         "plan_id": f"strat-{task_id}",
         "tenant_id": tenant_id,
         "brand_id": brand_id,
@@ -3012,23 +3058,14 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "channel_allocations": channel_alloc_objs,
         "funnel_stages": funnel_stage_objs,
         "scenarios": scenarios,
-        "recommended_scenario": "scenario_balanced",
+        "recommended_scenario": rec_scenario_id,
         "approved_claims_applied": applied_claims,
         "objections_addressed": addressed_objections,
         "competitor_signals_factored": factored_competitor_signals,
         "assumptions": assumptions,
         "constraints": constraints,
         "unsupported_estimates_or_caveats": caveats,
-        "provenance": {
-            "modeled_by": "S_ALLOC",
-            "task_id": task_id,
-            "tenant_id": tenant_id,
-            "applied_evidence": {
-                "t16_claims_count": len(applied_claims),
-                "t17_objections_count": len(addressed_objections),
-                "t18_competitor_signals_count": len(factored_competitor_signals),
-            },
-        },
+        "provenance": provenance_data,
         "confidence": {
             "point_estimate": 0.85,
             "lower_bound": 0.72,
@@ -3038,7 +3075,7 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
 
     primary_ch = max(allocations, key=lambda ch: allocations[ch]) if allocations else "none"
 
-    return {
+    ret_payload = {
         "status": "success",
         "task_id": task_id,
         "budget_total": str(budget_total),
@@ -3050,6 +3087,9 @@ def execute_s_alloc(payload: dict[str, Any]) -> dict[str, str]:
         "scenarios": json.dumps(scenarios),
         "strategy_plan": json.dumps(plan_dict),
     }
+    if s_alloc_reasoning:
+        ret_payload["s_alloc_reasoning"] = json.dumps(s_alloc_reasoning)
+    return ret_payload
 
 
 def execute_s_copy(payload: dict[str, str]) -> dict[str, str]:

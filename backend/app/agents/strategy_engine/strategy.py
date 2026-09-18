@@ -5,14 +5,19 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.agents.base import BoundedWorkerAgent
+from app.agents.base import BoundedWorkerAgent, WorkerReasoningOutput
+from app.agents.strategy_engine.subagents import (
+    AllocationReasoningOutput,
+    StrategyAllocationAgent,
+)
+from app.integrations.sandbox.client import SandboxClient
 from app.schemas.agent_contracts import (
     ConfidenceInterval,
     EvidenceEnvelope,
     OmnichannelStrategyPlan,
     TaskGrant,
 )
-from app.schemas.sandbox import SandboxCapability
+from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
 
 
 class StrategyAgent(BoundedWorkerAgent):
@@ -20,13 +25,27 @@ class StrategyAgent(BoundedWorkerAgent):
 
     Consumes validated outputs from T16 (Product Evidence), T17 (Customer Voice),
     and T18 (Competitor Intelligence) through the Intelligence Engine bounded grant,
-    verifies dependency compliance and tenant isolation, formulates the S_ALLOC
-    optimization mandate, invokes S_ALLOC within the sandbox, and interprets the
-    sanitized output into evidence-backed omnichannel roadmaps, funnel models,
-    budget proposals, and scenario comparisons.
+    verifies dependency compliance and tenant isolation, invokes S_ALLOC purpose-scoped
+    reasoning, formulates the S_ALLOC optimization mandate, invokes S_ALLOC within the
+    sandbox, and interprets the sanitized output into evidence-backed omnichannel roadmaps,
+    funnel models, budget proposals, and scenario comparisons.
     """
 
     capability = SandboxCapability.ALLOC
+
+    def __init__(
+        self,
+        sandbox_client: SandboxClient,
+        llm_client: Any | None = None,
+        allocation_agent: StrategyAllocationAgent | None = None,
+    ) -> None:
+        super().__init__(sandbox_client, llm_client=llm_client)
+        self._allocation_agent = allocation_agent or StrategyAllocationAgent()
+
+    @property
+    def allocation_agent(self) -> StrategyAllocationAgent:
+        """Advisory S_ALLOC media and budget sub-agent."""
+        return self._allocation_agent
 
     def _verify_and_normalize_dependencies(
         self, grant: TaskGrant, context: dict[str, object]
@@ -401,6 +420,7 @@ class StrategyAgent(BoundedWorkerAgent):
             "control_variables",
             "incrementality_evidence",
             "channel_constraints",
+            "s_alloc_reasoning",
         ):
             if opt_key in context:
                 val = context[opt_key]
@@ -506,3 +526,113 @@ class StrategyAgent(BoundedWorkerAgent):
             return OmnichannelStrategyPlan.model_validate_json(raw_plan)
         except Exception:
             return None
+
+    async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
+        """Execute W_STRAT strategy formulation with advisory S_ALLOC reasoning."""
+        reasoning_output: WorkerReasoningOutput | None = None
+        llm_metadata: dict[str, Any] = {}
+
+        if self._llm_client is not None:
+            reasoning_output, llm_metadata = await self._reason_domain(grant, context)
+
+        alloc_reasoning, alloc_metadata = await self._allocation_agent.reason(grant, context)
+
+        augmented_context = dict(context)
+        if "s_alloc_reasoning" not in augmented_context:
+            augmented_context["s_alloc_reasoning"] = alloc_reasoning.model_dump()
+
+        payload = self.build_payload(grant, augmented_context)
+        operation = payload.get("operation", "default")
+        egress_grant = context.get("egress_grant")
+        mandate = SandboxInvocationMandate(
+            task_id=grant.task_id,
+            worker_role=grant.worker_role,
+            tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
+            capability=self.capability,
+            operation=operation,
+            payload=payload,
+            network_policy=NetworkPolicy.DISABLED,
+            egress_grant=egress_grant,  # type: ignore[arg-type]
+            timeout_seconds=grant.token_budget if grant.token_budget > 0 else 120,
+        )
+        result = await self._sandbox_client.invoke(mandate)
+
+        findings: list[str] = []
+        artifacts: list[str] = []
+        risks: list[str] = []
+
+        if reasoning_output:
+            findings.extend(reasoning_output.preliminary_findings)
+            risks.extend(reasoning_output.identified_risks)
+
+        findings.append(
+            f"S_ALLOC Advisory: Scenario '{alloc_reasoning.scenario_emphasis}' "
+            f"prioritizing {', '.join(alloc_reasoning.kpi_priorities)}."
+        )
+        if alloc_reasoning.rationale_summary:
+            findings.append(f"S_ALLOC Rationale: {alloc_reasoning.rationale_summary}")
+        risks.extend(alloc_reasoning.risk_flags)
+
+        if not result.success:
+            evidence = [f"sandbox execution failed: {result.error or 'unknown error'}"]
+            confidence = ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0)
+            risks.append(result.error or "sandbox execution failed")
+        else:
+            evidence, confidence = self.interpret_result(result.sanitized_output)
+            findings.extend([line for line in evidence if not line.startswith("error")])
+            if "strategy_plan" in result.sanitized_output or "strategy_roadmap" in result.sanitized_output:
+                artifacts.append(f"strategy:{grant.task_id}")
+            if result.generated_artifacts:
+                artifacts.extend(result.generated_artifacts)
+
+        findings = sorted(list(set(findings)))
+        artifacts = sorted(list(set(artifacts)))
+        risks = sorted(list(set(risks)))
+
+        provenance: dict[str, Any] = {
+            "agent": grant.worker_role.value if grant.worker_role else "unknown",
+            "capability": self.capability.value,
+            "task_id": grant.task_id,
+            "execution_id": result.execution_id,
+            "status": result.status.value,
+        }
+        if llm_metadata:
+            provenance.update({
+                "llm_reasoning_used": "true",
+                "llm_provider": str(llm_metadata.get("provider", "unset")),
+                "llm_model": str(llm_metadata.get("actual_model", "unset")),
+                "is_local_model": "true" if llm_metadata.get("is_local") else "false",
+                "prompt_tokens": str(llm_metadata.get("prompt_tokens", 0)),
+                "completion_tokens": str(llm_metadata.get("completion_tokens", 0)),
+                "total_tokens": str(llm_metadata.get("total_tokens", 0)),
+                "estimated_cost_usd": str(llm_metadata.get("estimated_cost_usd", 0.0)),
+                "governed_tools_authorized": ",".join(reasoning_output.selected_tools) if reasoning_output else "",
+            })
+        if alloc_metadata:
+            provenance.update({
+                "s_alloc_reasoning_used": "true",
+                "s_alloc_llm_model": str(alloc_metadata.get("actual_model", alloc_metadata.get("reasoning_mode", "fallback"))),
+                "s_alloc_llm_provider": str(alloc_metadata.get("provider", "local")),
+                "s_alloc_scenario_emphasis": alloc_reasoning.scenario_emphasis,
+                "s_alloc_confidence": str(alloc_reasoning.estimated_confidence),
+                "s_alloc_total_tokens": str(alloc_metadata.get("total_tokens", 0)),
+            })
+        if result.provenance:
+            provenance.update(result.provenance)
+
+        return EvidenceEnvelope(
+            task_id=grant.task_id,
+            worker_role=grant.worker_role,
+            confidence=confidence,
+            evidence=evidence,
+            payload=result.sanitized_output,
+            findings=findings,
+            generated_artifacts=artifacts,
+            supporting_evidence=evidence,
+            provenance=provenance,
+            proposed_state_changes={
+                "status": "completed" if result.success else "failed",
+                "capability": self.capability.value,
+            },
+            unresolved_risks_or_assumptions=risks,
+        )

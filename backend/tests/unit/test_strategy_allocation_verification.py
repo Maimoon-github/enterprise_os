@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+import httpx
 
 from app.agents.strategy import StrategyAgent
 from app.core.exceptions import SandboxInvocationError
@@ -496,4 +497,209 @@ def test_s_alloc_capability_spec_enforces_disabled_network() -> None:
     assert "budget_allocator_tool" in profile.allowed_tools
     assert "funnel_simulator" in profile.allowed_tools
     assert "optimization_modeler" in profile.allowed_tools
+
+
+def _mock_chat_transport(
+    content: str,
+    *,
+    model: str = "test-model",
+    prompt_tokens: int = 100,
+    completion_tokens: int = 50,
+) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {
+            "id": "chatcmpl-test",
+            "object": "chat.completion",
+            "created": 1726300000,
+            "model": model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+@pytest.mark.asyncio
+async def test_w_strat_and_s_alloc_use_distinct_purpose_scoped_reasoning() -> None:
+    """W_STRAT and S_ALLOC use independent LLMs, preserve bounded context, and record distinct provenance."""
+    import httpx
+    from app.agents.strategy_engine.subagents import StrategyAllocationAgent
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+
+    w_strat_json = json.dumps({
+        "domain_interpretation": "Omnichannel roadmap for brand scaling",
+        "requires_specialist_execution": True,
+        "selected_tools": ["S_ALLOC"],
+        "suggested_parameters": {"operation": "optimize_budget"},
+        "preliminary_findings": ["Strategic fit confirmed for multi-channel acquisition"],
+        "identified_risks": ["Creative fatigue on upper-funnel channels"],
+        "rationale_summary": "Delegate budget modeling to S_ALLOC",
+        "estimated_confidence": 0.88,
+    })
+    s_alloc_json = json.dumps({
+        "objective_interpretation": "Interpret media planning subtask with conservative emphasis",
+        "kpi_priorities": ["incremental ROAS", "marginal return"],
+        "scenario_emphasis": "conservative",
+        "modeling_assumptions": ["Saturating response curves require margin-first posture"],
+        "risk_flags": ["Elevated CAC during market expansion"],
+        "rationale_summary": "Conservative scenario selected for capital efficiency",
+        "estimated_confidence": 0.82,
+    })
+
+    w_settings = LlmSettings(provider="local", base_url="http://localhost:11434/v1", model_name="w-strat-llm")
+    s_settings = LlmSettings(provider="local", base_url="http://localhost:11434/v1", model_name="s-alloc-llm")
+
+    w_client = LlmClient(w_settings, client=httpx.AsyncClient(transport=_mock_chat_transport(w_strat_json, model="w-strat-llm")))
+    s_client = LlmClient(s_settings, client=httpx.AsyncClient(transport=_mock_chat_transport(s_alloc_json, model="s-alloc-llm")))
+
+    s_subagent = StrategyAllocationAgent(llm_client=s_client)
+    agent = StrategyAgent(SandboxClient(), llm_client=w_client, allocation_agent=s_subagent)
+
+    grant = TaskGrant(
+        task_id="task-strat-distinct-01",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta", "google"]),
+        brand_id="acme",
+        objective="Drive profitable customer acquisition",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+        cts_state={"budget_cap": 20000.0},
+    )
+    context: dict[str, object] = {
+        "budget_ceiling": 20000.0,
+        "claims_dossier": {"tenant_id": "acme", "claims": [{"claim_text": "Proven results", "validation_status": "SUPPORTED"}]},
+        "customer_voice_analysis": {"tenant_id": "acme", "objection_profiles": [{"theme": "pricing"}]},
+        "competitor_intelligence": {"tenant_id": "acme", "competitor": "Comp1"},
+    }
+
+    envelope = await agent.run(grant, context)
+
+    # 1. Verify W_STRAT provenance
+    assert envelope.provenance["llm_reasoning_used"] == "true"
+    assert envelope.provenance["llm_model"] == "w-strat-llm"
+
+    # 2. Verify distinct S_ALLOC provenance
+    assert envelope.provenance["s_alloc_reasoning_used"] == "true"
+    assert envelope.provenance["s_alloc_llm_model"] == "s-alloc-llm"
+    assert envelope.provenance["s_alloc_scenario_emphasis"] == "conservative"
+
+    # 3. Verify S_ALLOC conclusions reached envelope findings and risks
+    assert any("S_ALLOC Advisory: Scenario 'conservative'" in f for f in envelope.findings)
+    assert any("Conservative scenario selected" in f for f in envelope.findings)
+    assert any("Elevated CAC during market expansion" in r for r in envelope.unresolved_risks_or_assumptions)
+
+    # 4. Verify advisory scenario preference reached strategy plan without breaking numerical bounds
+    plan = agent.extract_strategy_plan(envelope)
+    assert plan is not None
+    assert plan.recommended_scenario == "scenario_conservative"
+    assert plan.total_allocated <= 20000.0
+
+
+@pytest.mark.asyncio
+async def test_s_alloc_reasoning_cannot_override_budget_ceiling_or_channels() -> None:
+    """S_ALLOC advisory reasoning cannot override the authoritative budget cap or expand allowed channels."""
+    import httpx
+    from app.agents.strategy_engine.subagents import StrategyAllocationAgent
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+
+    s_alloc_json = json.dumps({
+        "objective_interpretation": "Aggressive scaling objective",
+        "kpi_priorities": ["reach", "volume"],
+        "scenario_emphasis": "aggressive",
+        "modeling_assumptions": ["Aggressive growth posture"],
+        "risk_flags": [],
+        "rationale_summary": "Push maximum volume",
+        "estimated_confidence": 0.75,
+    })
+
+    s_settings = LlmSettings(provider="local", base_url="http://localhost:11434/v1", model_name="s-alloc-agg")
+    s_client = LlmClient(s_settings, client=httpx.AsyncClient(transport=_mock_chat_transport(s_alloc_json, model="s-alloc-agg")))
+    s_subagent = StrategyAllocationAgent(llm_client=s_client)
+    agent = StrategyAgent(SandboxClient(), allocation_agent=s_subagent)
+
+    # Directive/grant authorizes $10,000 and only 'meta'
+    grant = TaskGrant(
+        task_id="task-strat-no-override",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta"]),
+        brand_id="acme",
+        objective="Scale audience reach",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        cts_state={"budget_cap": 10000.0},
+    )
+
+    # Context attempts to inject excessive budget ($80,000) and unapproved channels
+    context: dict[str, object] = {
+        "budget": 80000.0,
+        "channels": "meta,tiktok,linkedin",
+        "claims_dossier": {"tenant_id": "acme", "claims": [{"claim_text": "Proven results", "validation_status": "SUPPORTED"}]},
+        "customer_voice_analysis": {"tenant_id": "acme", "objection_profiles": [{"theme": "pricing"}]},
+        "competitor_intelligence": {"tenant_id": "acme", "competitor": "Comp1"},
+    }
+
+    envelope = await agent.run(grant, context)
+    plan = agent.extract_strategy_plan(envelope)
+    assert plan is not None
+
+    # Budget ceiling strictly enforced by IE/grant, not overridden
+    assert plan.budget_ceiling == 10000.0
+    assert plan.total_allocated <= 10000.0
+
+    # Channel confined strictly to tenant scope
+    channels = [ca.channel for ca in plan.channel_allocations]
+    assert channels == ["meta"]
+    assert "tiktok" not in channels
+    assert "linkedin" not in channels
+
+    # Advisory recommendation applied
+    assert plan.recommended_scenario == "scenario_aggressive"
+
+
+@pytest.mark.asyncio
+async def test_s_alloc_llm_error_fallback_preserves_deterministic_execution() -> None:
+    """When S_ALLOC LLM fails, advisory reasoning gracefully falls back without failing strategy execution."""
+    import httpx
+    from app.agents.strategy_engine.subagents import StrategyAllocationAgent
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+
+    def failing_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, content="Internal Provider Error")
+
+    s_settings = LlmSettings(provider="local", base_url="http://localhost:11434/v1", model_name="s-alloc-err")
+    s_client = LlmClient(s_settings, client=httpx.AsyncClient(transport=httpx.MockTransport(failing_handler)))
+    s_subagent = StrategyAllocationAgent(llm_client=s_client)
+    agent = StrategyAgent(SandboxClient(), allocation_agent=s_subagent)
+
+    grant = TaskGrant(
+        task_id="task-strat-fallback-01",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta", "google"]),
+        brand_id="acme",
+        objective="Balanced acquisition test",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    context: dict[str, object] = {
+        "budget_ceiling": 15000.0,
+        "claims_dossier": {"tenant_id": "acme", "claims": [{"claim_text": "Proven results", "validation_status": "SUPPORTED"}]},
+        "customer_voice_analysis": {"tenant_id": "acme", "objection_profiles": [{"theme": "pricing"}]},
+        "competitor_intelligence": {"tenant_id": "acme", "competitor": "Comp1"},
+    }
+
+    envelope = await agent.run(grant, context)
+    assert envelope.task_id == "task-strat-fallback-01"
+    assert envelope.provenance["s_alloc_reasoning_used"] == "true"
+    assert envelope.provenance["s_alloc_llm_model"] == "llm_error_fallback"
+
+    plan = agent.extract_strategy_plan(envelope)
+    assert plan is not None
+    assert plan.total_allocated <= 15000.0
+    assert plan.recommended_scenario == "scenario_balanced"
+
 

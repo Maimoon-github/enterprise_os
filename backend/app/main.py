@@ -16,6 +16,7 @@ from app.agents.development import DevelopmentAgent
 from app.agents.learning_performance import LearningPerformanceAgent
 from app.agents.product_evidence import ProductEvidenceAgent
 from app.agents.strategy import StrategyAgent
+from app.agents.strategy_engine.subagents import StrategyAllocationAgent
 from app.api.router import api_router
 from app.core.exceptions import (
     ApprovalRequiredError,
@@ -97,13 +98,22 @@ logger = get_logger(__name__)
 def _build_workers(
     sandbox_client: SandboxClient,
     llm_client: LlmClient | None = None,
+    s_alloc_llm_client: LlmClient | None = None,
 ) -> dict[WorkerRole, BoundedWorkerAgent]:
     """Instantiate all seven bounded worker agents with sandbox adapter and optional LLM client."""
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {}
     for role, agent_class in _AGENT_CLASSES_BY_ROLE.items():
         assert get_capability_for_role(role) == agent_class.capability
-        workers[role] = agent_class(sandbox_client, llm_client=llm_client)
+        if role == WorkerRole.STRATEGY:
+            allocation_agent = StrategyAllocationAgent(llm_client=s_alloc_llm_client)
+            workers[role] = StrategyAgent(
+                sandbox_client,
+                llm_client=llm_client,
+                allocation_agent=allocation_agent,
+            )
+        else:
+            workers[role] = agent_class(sandbox_client, llm_client=llm_client)
     return workers
 
 
@@ -139,8 +149,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
     llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
+    s_alloc_llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
     sandbox_client = SandboxClient(settings.sandbox)
-    workers = _build_workers(sandbox_client, llm_client=llm_client)
+    workers = _build_workers(
+        sandbox_client, llm_client=llm_client, s_alloc_llm_client=s_alloc_llm_client
+    )
 
     hitl_coordinator = HitlCoordinator()
     crypto_validator = CryptographicValidator(settings.security.signing_public_key_pem)
@@ -242,6 +255,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         for social_adapter in social_adapters.values():
             await social_adapter.aclose()
         await cms_client.aclose()
+        if s_alloc_llm_client is not None:
+            await s_alloc_llm_client.aclose()
+        if llm_client is not None:
+            await llm_client.aclose()
         await database.dispose()
         logger.info("Governed backend shutdown complete")
 
