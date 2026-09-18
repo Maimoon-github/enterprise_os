@@ -390,3 +390,110 @@ def test_scenario_comparison_modeling() -> None:
     assert aggressive["allocations_by_stage"]["TOFU"] > conservative["allocations_by_stage"]["TOFU"]
     # Conservative has higher BOFU allocation than Aggressive
     assert conservative["allocations_by_stage"]["BOFU"] > aggressive["allocations_by_stage"]["BOFU"]
+
+
+def test_s_alloc_subagent_has_no_reverse_w_strat_or_disallowed_imports() -> None:
+    """S_ALLOC must not import W_STRAT, IE internals, RAG, persistence, databases, or outbound gateways."""
+    import ast
+    from pathlib import Path
+
+    subagent_file = (
+        Path(__file__).resolve().parents[2]
+        / "app"
+        / "agents"
+        / "strategy_engine"
+        / "subagents"
+        / "allocation.py"
+    )
+    assert subagent_file.exists(), f"Subagent file not found: {subagent_file}"
+
+    tree = ast.parse(subagent_file.read_text(encoding="utf-8"))
+    disallowed_prefixes = (
+        "app.agents.strategy_engine.strategy",
+        "app.agents.strategy",
+        "app.orchestration.intelligence_engine",
+        "app.persistence",
+        "app.services",
+        "app.mcp",
+        "app.integrations.ads",
+        "app.integrations.social",
+        "app.integrations.cms",
+    )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                for prefix in disallowed_prefixes:
+                    assert not alias.name.startswith(prefix), (
+                        f"Disallowed import in S_ALLOC: {alias.name}"
+                    )
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for prefix in disallowed_prefixes:
+                assert not node.module.startswith(prefix), (
+                    f"Disallowed import in S_ALLOC: {node.module}"
+                )
+            if "strategy" in node.module:
+                assert "StrategyAgent" not in [a.name for a in node.names], (
+                    "Reverse dependency: S_ALLOC must not import StrategyAgent"
+                )
+
+
+def test_w_strat_preserves_tenant_channel_boundary_and_caps_budget() -> None:
+    """Context channels cannot expand tenant scope allowed channels, and budget is clamped to grant cap."""
+    agent = StrategyAgent(SandboxClient())
+    grant = TaskGrant(
+        task_id="task-channel-scope-1",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta", "google"]),
+        brand_id="acme",
+        objective="Channel isolation test",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        cts_state={"budget_cap": 15000.0},
+    )
+
+    # Context attempts to expand channels to include tiktok and linkedin, and exceed budget
+    context: dict[str, object] = {
+        "channels": "meta,google,tiktok,linkedin",
+        "budget": 50000.0,
+    }
+
+    payload = agent.build_payload(grant, context)
+    allowed_ch = payload["allowed_channels"].split(",")
+    assert allowed_ch == ["meta", "google"], f"Channel scope was improperly expanded: {allowed_ch}"
+    assert float(payload["budget"]) == 15000.0
+    assert float(payload["budget_ceiling"]) == 15000.0
+
+
+def test_no_fabricated_evidence_when_dependencies_absent_in_w_strat() -> None:
+    """When dependencies are absent and not explicitly required, W_STRAT passes empty lists without fabrication."""
+    agent = StrategyAgent(SandboxClient())
+    grant = TaskGrant(
+        task_id="task-no-fabrication",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta"]),
+        brand_id="acme",
+        objective="No fabrication test",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+
+    payload = agent.build_payload(grant, context={})
+    assert json.loads(payload["t16_claims"]) == []
+    assert json.loads(payload["t17_objections"]) == []
+    assert json.loads(payload["t18_competitor"]) == {}
+
+
+def test_s_alloc_capability_spec_enforces_disabled_network() -> None:
+    """ALLOC capability registry profile enforces disabled network, correct worker role, and canonical tools."""
+    from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY
+    from app.schemas.sandbox import NetworkPolicy
+
+    profile = CAPABILITY_REGISTRY[SandboxCapability.ALLOC]
+    assert profile.network_policy == NetworkPolicy.DISABLED
+    assert profile.allowed_worker == WorkerRole.STRATEGY
+    assert "model_media_mix" in profile.allowed_operations
+    assert "simulate_funnel" in profile.allowed_operations
+    assert "media_mix_modeler" in profile.allowed_tools
+    assert "budget_allocator_tool" in profile.allowed_tools
+    assert "funnel_simulator" in profile.allowed_tools
+    assert "optimization_modeler" in profile.allowed_tools
+

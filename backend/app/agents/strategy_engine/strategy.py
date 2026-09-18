@@ -152,16 +152,10 @@ class StrategyAgent(BoundedWorkerAgent):
             )
         )
 
-        if not approved_claims:
-            if has_explicit_dependencies:
-                raise ValueError(
-                    "Missing or invalid T16 dependency: Verified product/claims evidence is required to formulate strategy."
-                )
-            approved_claims.append({
-                "id": f"claim-default-{grant.brand_id}",
-                "text": "Clinically proven to improve performance. *Results may vary based on usage.",
-                "status": "SUPPORTED",
-            })
+        if not approved_claims and has_explicit_dependencies:
+            raise ValueError(
+                "Missing or invalid T16 dependency: Verified product/claims evidence is required to formulate strategy."
+            )
 
         # -------------------------------------------------------------
         # 2. Verify T17: Customer Voice & Objection Profiles
@@ -231,16 +225,10 @@ class StrategyAgent(BoundedWorkerAgent):
                     "frequency": 1,
                 })
 
-        if not objections:
-            if has_explicit_dependencies:
-                raise ValueError(
-                    "Missing or invalid T17 dependency: Anonymized customer voice insights and objection profiles are required to formulate strategy."
-                )
-            objections.append({
-                "objection_id": "obj-default",
-                "theme": "general_product_inquiry",
-                "frequency": 1,
-            })
+        if not objections and has_explicit_dependencies:
+            raise ValueError(
+                "Missing or invalid T17 dependency: Anonymized customer voice insights and objection profiles are required to formulate strategy."
+            )
 
         # -------------------------------------------------------------
         # 3. Verify T18: Competitor Intelligence & Market Signals
@@ -295,16 +283,10 @@ class StrategyAgent(BoundedWorkerAgent):
                     "threat_level": ev.get("threat_level", "medium"),
                 })
 
-        if not competitor_signals:
-            if has_explicit_dependencies:
-                raise ValueError(
-                    "Missing or invalid T18 dependency: Competitor intelligence signals are required to formulate strategy."
-                )
-            competitor_signals = {
-                "competitor": "MarketBaseline",
-                "benchmark_price": "49.99",
-                "threat_level": "medium",
-            }
+        if not competitor_signals and has_explicit_dependencies:
+            raise ValueError(
+                "Missing or invalid T18 dependency: Competitor intelligence signals are required to formulate strategy."
+            )
 
         # -------------------------------------------------------------
         # 4. Normalize Budget Ceiling & Allowed Channels
@@ -324,16 +306,38 @@ class StrategyAgent(BoundedWorkerAgent):
         except (ValueError, TypeError):
             budget_ceiling = 10000.0
 
-        # Channels from grant tenant scope
-        allowed_channels = list(grant.tenant_scope.allowed_channels) if grant.tenant_scope else []
+        # Cap against IE-authorized budget cap from grant if available
+        if grant.cts_state.get("budget_cap"):
+            try:
+                grant_cap = float(str(grant.cts_state["budget_cap"]))
+                if grant_cap >= 0:
+                    budget_ceiling = min(budget_ceiling, grant_cap)
+            except (ValueError, TypeError):
+                pass
+
+        # Channels from grant tenant scope (prevent context from expanding tenant scope)
+        tenant_allowed = (
+            [c.strip().lower() for c in grant.tenant_scope.allowed_channels if c.strip()]
+            if grant.tenant_scope and grant.tenant_scope.allowed_channels
+            else []
+        )
         context_channels = context.get("channels")
+        requested_channels: list[str] = []
         if context_channels:
             if isinstance(context_channels, list):
-                allowed_channels = [str(c).strip().lower() for c in context_channels if str(c).strip()]
+                requested_channels = [str(c).strip().lower() for c in context_channels if str(c).strip()]
             elif isinstance(context_channels, str):
-                allowed_channels = [c.strip().lower() for c in context_channels.split(",") if c.strip()]
+                requested_channels = [c.strip().lower() for c in context_channels.split(",") if c.strip()]
 
-        if not allowed_channels:
+        if tenant_allowed and requested_channels:
+            allowed_channels = [c for c in requested_channels if c in tenant_allowed]
+            if not allowed_channels:
+                allowed_channels = list(tenant_allowed)
+        elif tenant_allowed:
+            allowed_channels = list(tenant_allowed)
+        elif requested_channels:
+            allowed_channels = requested_channels
+        else:
             allowed_channels = ["meta", "google", "tiktok", "linkedin"]
 
         time_horizon = str(context.get("time_horizon", grant.cts_state.get("time_horizon", "90_days")))
@@ -388,6 +392,19 @@ class StrategyAgent(BoundedWorkerAgent):
             "t18_competitor": json.dumps(competitor_signals),
             "constraints": json.dumps(constraints),
         }
+
+        # Pass through optional modeling telemetry and constraints if present in context
+        for opt_key in (
+            "kpi_name",
+            "media_history",
+            "performance_telemetry",
+            "control_variables",
+            "incrementality_evidence",
+            "channel_constraints",
+        ):
+            if opt_key in context:
+                val = context[opt_key]
+                payload[opt_key] = json.dumps(val) if isinstance(val, (dict, list)) else str(val)
 
         # Pass through any explicit ROAS priors in context
         for ch in allowed_channels:
