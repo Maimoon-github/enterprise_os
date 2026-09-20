@@ -2221,5 +2221,232 @@ def test_t6_provider_credentials_remain_outside_sandbox_payloads() -> None:
     assert "api_key" not in research_mandate.payload
 
 
+# =============================================================================
+# T7: Integrated Architecture, Immutability & Lineage Verification Tests
+# =============================================================================
+
+
+def test_t7_post_qa_content_mutation_invalidates_evaluation_hash() -> None:
+    """T7 Invariant: Post-QA content mutation alters SHA-256 digest, invalidating QA hash."""
+    copy_pack = CopyPack(
+        tenant_id="acme",
+        task_id="t7-immut-01",
+        concept_ref="cpt-1",
+        variants=[
+            AdCopyVariant(
+                variant_id="var-1",
+                channel="meta",
+                headline="Original Validated Hook",
+                body_copy="Original body copy.",
+                source_claim_ids=["claim-1"],
+            )
+        ],
+        factual_claim_refs=["claim-1"],
+        approved_channel_ids=["meta"],
+    )
+    vis_pack = VisualPack(
+        tenant_id="acme",
+        task_id="t7-immut-01",
+        concept_ref="cpt-1",
+        visual_territory="clean",
+        composition="split",
+        production_briefs=[
+            VisualBrief(brief_id="vb-1", asset_title="Asset 1", channel="meta")
+        ],
+    )
+    adapted = AdaptedCreativePack(
+        tenant_id="acme",
+        task_id="t7-immut-01",
+        channel="meta",
+        ad_copy_variants=copy_pack.variants,
+        visual_briefs=vis_pack.production_briefs,
+        calendar_proposal=[],
+    )
+    original_hash = adapted.compute_artifact_hash()
+
+    qa_report = QAReport(
+        tenant_id="acme",
+        task_id="t7-immut-01",
+        evaluated_artifact_hash=original_hash,
+        status=QAStatus.PASS,
+        passed_checks=["grounding", "format", "scope"],
+    )
+    qa_report.compute_artifact_hash()
+
+    # Verify initial hash match
+    assert qa_report.evaluated_artifact_hash == original_hash
+
+    # Mutate copy variant text post-QA
+    mutated_variants = [
+        AdCopyVariant(
+            variant_id="var-1",
+            channel="meta",
+            headline="Mutated Post-QA Headline",
+            body_copy="Rewritten content after QA evaluation.",
+            source_claim_ids=["claim-1"],
+        )
+    ]
+    mutated_adapted = AdaptedCreativePack(
+        tenant_id="acme",
+        task_id="t7-immut-01",
+        channel="meta",
+        ad_copy_variants=mutated_variants,
+        visual_briefs=vis_pack.production_briefs,
+        calendar_proposal=[],
+    )
+    mutated_hash = mutated_adapted.compute_artifact_hash()
+
+    # Content mutation strictly invalidates post-QA hash match
+    assert mutated_hash != original_hash
+    assert mutated_hash != qa_report.evaluated_artifact_hash
+
+
+@pytest.mark.asyncio
+async def test_t7_provenance_records_contain_full_lineage_and_derivation_links() -> None:
+    """T7 Invariant: Provenance captures task, tenant, specialist, model, tool, hashes, and W3C relations."""
+    from app.schemas.provenance import ProvRelationType
+    from app.services.provenance import ProvenanceRecorder
+    from tests.conftest import FakeProvenanceRepository
+
+    repo = FakeProvenanceRepository()
+    recorder = ProvenanceRecorder(repo)
+
+    rec = await recorder.record_sandbox_execution(
+        tenant_id="tenant-alpha",
+        task_id="task-prov-001",
+        execution_id="exec-copy-001",
+        worker_role="W_CREAT",
+        capability="S_COPY",
+        operation="s_copy_variant_gen",
+        lifecycle_stage="completed",
+        status="SUCCESS",
+        duration_ms=42.5,
+        input_payload={"task_id": "task-prov-001", "specialist_id": "CREAT-COPY"},
+        output_summary={"unique_variants": 2, "deterministic": True},
+        artifacts=["copy:task-prov-001"],
+    )
+
+    # 1. Base provenance fields
+    assert rec.tenant_id == "tenant-alpha"
+    assert rec.metadata["task_id"] == "task-prov-001"
+    assert rec.metadata["worker_role"] == "W_CREAT"
+    assert rec.metadata["capability"] == "S_COPY"
+    assert rec.metadata["operation"] == "s_copy_variant_gen"
+    assert rec.metadata["lifecycle_stage"] == "completed"
+    assert rec.metadata["duration_ms"] == 42.5
+    assert "copy:task-prov-001" in rec.metadata["artifacts"]
+
+    # 2. W3C PROV structure
+    prov = rec.w3c_prov
+    assert prov is not None
+    assert len(prov["activities"]) == 1
+    assert len(prov["agents"]) == 3
+    assert any(ag["role"] == "W_CREAT" for ag in prov["agents"])
+    assert any(ag["role"] == "sandbox_runtime" for ag in prov["agents"])
+
+    # 3. Input/output hashes in entities
+    entities = prov["entities"]
+    entity_labels = [e["label"] for e in entities]
+    assert any("Input Payload Hash" in l for l in entity_labels)
+    assert any("Sanitized Result" in l for l in entity_labels)
+    assert any("Exported Artifact" in l for l in entity_labels)
+
+    # 4. Derivation and association relations
+    relations = prov["relations"]
+    rel_types = [r["relation_type"] for r in relations]
+    assert ProvRelationType.WAS_ASSOCIATED_WITH in rel_types
+    assert ProvRelationType.ACTED_ON_BEHALF_OF in rel_types
+    assert ProvRelationType.USED in rel_types
+    assert ProvRelationType.WAS_GENERATED_BY in rel_types
+    assert ProvRelationType.WAS_ATTRIBUTED_TO in rel_types
+    assert ProvRelationType.WAS_DERIVED_FROM in rel_types
+
+    # 5. Cryptographic hash-chain integrity
+    assert await recorder.verify_chain("tenant-alpha") is True
+
+
+@pytest.mark.asyncio
+async def test_t7_attempt_scoped_runtimes_do_not_share_state_or_credentials() -> None:
+    """T7 Invariant: Fresh runtimes per attempt; no shared state, leaked credentials, or sibling reuse."""
+    from app.core.exceptions import SandboxIsolationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.integrations.sandbox.sandbox_policy import SandboxControlPlane
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import (
+        NetworkPolicy,
+        SandboxCapability,
+        SandboxCapabilityGrant,
+        SandboxEgressGrant,
+        SandboxIdentity,
+    )
+    from app.schemas.task_state import DevelopmentExecutionLease
+
+    # 1. Distinct attempt identities have distinct sandbox_id
+    id_att1 = SandboxIdentity.generate(
+        tenant_id="acme",
+        task_id="task-att",
+        step_id="step-copy",
+        attempt_id="att-1",
+        specialist_id="CREAT-COPY",
+    )
+    id_att2 = SandboxIdentity.generate(
+        tenant_id="acme",
+        task_id="task-att",
+        step_id="step-copy",
+        attempt_id="att-2",
+        specialist_id="CREAT-COPY",
+    )
+    assert id_att1.sandbox_id != id_att2.sandbox_id
+    assert id_att1.attempt_id != id_att2.attempt_id
+
+    # 2. ControlPlane provision and isolation enforcement
+    control_plane = SandboxControlPlane()
+    lease1 = DevelopmentExecutionLease(
+        workflow_id="wf-t7",
+        task_id="task-att",
+        step_id="step-copy",
+        attempt_id="att-1",
+        owner_id="CREAT-COPY",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    grant1 = SandboxCapabilityGrant(
+        lease_id=lease1.lease_id,
+        subagent_id="CREAT-COPY",
+        capability=SandboxCapability.COPY,
+        allowed_tools=("variant_generator",),
+        allowed_operations=("s_copy_variant_gen",),
+    )
+    instance = control_plane.provision(identity=id_att1, lease=lease1, grant=grant1)
+    assert instance.identity.sandbox_id == id_att1.sandbox_id
+
+    # Re-provision with identical sandbox_id fails closed
+    with pytest.raises(SandboxIsolationError, match="already exists"):
+        control_plane.provision(identity=id_att1, lease=lease1, grant=grant1)
+
+    control_plane.destroy(id_att1.sandbox_id)
+
+    # 3. Sibling credential & egress grant reuse fails closed
+    grant_research = SandboxEgressGrant(
+        tenant_id="acme",
+        task_id="task-att",
+        specialist_id="CREAT-RESEARCH",
+        worker_id="W_CREAT",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["ads.meta.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+    with pytest.raises(Exception):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-COPY",
+            operation="generate_variants",
+            requested_network=NetworkPolicy.ALLOWLIST,
+            egress_grant=grant_research,
+        )
+
+
+
 
 
