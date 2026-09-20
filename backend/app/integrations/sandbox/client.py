@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import time
 from datetime import UTC, datetime
@@ -82,6 +83,7 @@ class SandboxClient:
         settings: SandboxSettings | None = None,
         provenance_recorder: ProvenanceRecorder | None = None,
         control_plane: SandboxControlPlane | None = None,
+        environment: str | None = None,
     ) -> None:
         self._settings = settings
         self._provenance_recorder = provenance_recorder
@@ -90,6 +92,7 @@ class SandboxClient:
         self._control_plane = control_plane or SandboxControlPlane(
             base_dir=getattr(settings, "workspace_base_dir", None) if settings else None
         )
+        self._environment = environment or getattr(settings, "environment", None)
 
     @property
     def control_plane(self) -> SandboxControlPlane:
@@ -510,6 +513,19 @@ class SandboxClient:
             raise SandboxInvocationError(
                 "Local micro-tool execution is prohibited when remote sandbox endpoint is configured."
             )
+
+        env = (
+            self._environment
+            or (self._settings.environment if self._settings else None)
+            or os.environ.get("ENVIRONMENT", "development")
+        ).strip().lower()
+        allow_fallback = getattr(self._settings, "allow_local_fallback", True) if self._settings else True
+        if env in {"production", "prod", "staging"} or not allow_fallback:
+            raise SandboxInvocationError(
+                f"Local micro-tool execution fallback is prohibited in '{env}' environment. "
+                "A configured remote AIO Sandbox endpoint is required."
+            )
+
         return dispatch_micro_tool(mandate.capability, mandate.payload)
 
     def _execute_specialist(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:

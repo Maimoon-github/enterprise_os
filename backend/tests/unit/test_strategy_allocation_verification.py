@@ -1157,6 +1157,42 @@ def test_strat04_docker_compose_hardened_spec_enforces_isolation() -> None:
     assert "../../backend" not in content
 
 
+@pytest.mark.asyncio
+async def test_strat04_production_and_policy_gated_fallback_fails_closed() -> None:
+    """When running in production/staging or when disallowed without remote sandbox, local fallback fails closed."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.core.settings import SandboxSettings
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
+
+    # Case 1: Environment is production without configured remote endpoint -> Fail closed
+    prod_settings = SandboxSettings(endpoint=None, environment="production")
+    prod_client = SandboxClient(settings=prod_settings)
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-prod-fail",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    result = await prod_client.invoke(mandate)
+    assert result.success is False
+    assert result.status == SandboxExecutionStatus.FAILED
+    assert "Local micro-tool execution fallback is prohibited in 'production'" in str(result.error)
+
+    # Case 2: allow_local_fallback is explicitly False -> Fail closed
+    dev_no_fallback_settings = SandboxSettings(endpoint=None, allow_local_fallback=False, environment="development")
+    dev_client = SandboxClient(settings=dev_no_fallback_settings)
+
+    result2 = await dev_client.invoke(mandate)
+    assert result2.success is False
+    assert result2.status == SandboxExecutionStatus.FAILED
+    assert "Local micro-tool execution fallback is prohibited" in str(result2.error)
+
+
 # =====================================================================
 # STRAT-05: Holistic Omnichannel Strategy Synthesis Verification Tests
 # =====================================================================
