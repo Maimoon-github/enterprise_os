@@ -750,3 +750,390 @@ def test_existing_workers_sandbox_capabilities_unaffected() -> None:
     assert LearningPerformanceAgent.capability == SandboxCapability.ATTR
 
 
+# =============================================================================
+# T3: Creative Specialist Layer Verification Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_six_specialists_have_distinct_identities_and_independent_contexts() -> None:
+    """T3: Prove six distinct specialist identities with independent injected dependencies."""
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+    from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    class DummyLlmClient:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    research = CreativeResearchAgent(llm_client=DummyLlmClient("llm-research"))
+    concept = CreativeConceptAgent(llm_client=DummyLlmClient("llm-concept"))
+    copy = CreativeCopyAgent(llm_client=DummyLlmClient("llm-copy"))
+    visual = CreativeVisualAgent(llm_client=DummyLlmClient("llm-visual"))
+    adapt = CreativeAdaptationAgent(llm_client=DummyLlmClient("llm-adapt"))
+    qa = CreativeQualityAgent(llm_client=DummyLlmClient("llm-qa"))
+
+    specialists = [research, concept, copy, visual, adapt, qa]
+    identities = [s.specialist_id for s in specialists]
+
+    assert len(identities) == 6
+    assert len(set(identities)) == 6
+    assert identities == [
+        "CREAT-RESEARCH",
+        "CREAT-CONCEPT",
+        "CREAT-COPY",
+        "CREAT-VISUAL",
+        "CREAT-ADAPT",
+        "CREAT-QA",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_specialists_typed_io_contract_compliance() -> None:
+    """T3: Prove each specialist satisfies its typed input/output contract."""
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+    from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    grant = TaskGrant(
+        task_id="task-t3-001",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="tenant_acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+        objective="Q4 Enterprise Performance Campaign",
+    )
+
+    plan = CreativePlan(
+        tenant_id="tenant_acme",
+        task_id="task-t3-001",
+        approved_objectives=["Q4 Enterprise Performance Campaign"],
+        approved_channels=["meta", "linkedin", "tiktok"],
+        required_deliverables=["ad_copy", "visual_brief", "social_posts"],
+        evidence_manifest=["claim-perf-42", "claim-soc2-certified"],
+        prohibited_scope=["unverified", "cure"],
+        target_audience="enterprise IT buyers",
+    )
+    plan.compute_artifact_hash()
+
+    # 1. CREAT-RESEARCH -> (ResearchBrief, PlatformSpecSnapshot)
+    research_agent = CreativeResearchAgent()
+    brief, spec_snapshot = await research_agent.run(grant=grant, plan=plan)
+
+    assert isinstance(brief, ResearchBrief)
+    assert isinstance(spec_snapshot, PlatformSpecSnapshot)
+    assert brief.producing_agent_id == "CREAT-RESEARCH"
+    assert spec_snapshot.producing_agent_id == "CREAT-RESEARCH"
+    assert brief.artifact_hash != ""
+    assert spec_snapshot.artifact_hash != ""
+    assert len(brief.findings) >= 3
+    assert len(brief.citations) >= 3
+
+    # 2. CREAT-CONCEPT -> ConceptPack
+    concept_agent = CreativeConceptAgent()
+    concept_pack = await concept_agent.run(grant=grant, plan=plan)
+
+    assert isinstance(concept_pack, ConceptPack)
+    assert concept_pack.producing_agent_id == "CREAT-CONCEPT"
+    assert concept_pack.artifact_hash != ""
+    assert len(concept_pack.concepts) >= 2
+    for cpt in concept_pack.concepts:
+        assert cpt.approved_evidence_refs == ["claim-perf-42", "claim-soc2-certified"]
+        assert cpt.territory != ""
+        assert cpt.audience_tension != ""
+
+    # 3. CREAT-COPY -> CopyPack
+    copy_agent = CreativeCopyAgent()
+    copy_pack = await copy_agent.run(grant=grant, concept_pack=concept_pack, plan=plan)
+
+    assert isinstance(copy_pack, CopyPack)
+    assert copy_pack.producing_agent_id == "CREAT-COPY"
+    assert copy_pack.artifact_hash != ""
+    assert len(copy_pack.variants) == len(plan.approved_channels)
+    for variant in copy_pack.variants:
+        assert variant.source_claim_ids[0] in plan.evidence_manifest
+        assert variant.hook_angle != ""
+        assert variant.headline != ""
+
+    # 4. CREAT-VISUAL -> VisualPack
+    visual_agent = CreativeVisualAgent()
+    visual_pack = await visual_agent.run(
+        grant=grant, concept_pack=concept_pack, plan=plan, platform_specs=spec_snapshot
+    )
+
+    assert isinstance(visual_pack, VisualPack)
+    assert visual_pack.producing_agent_id == "CREAT-VISUAL"
+    assert visual_pack.artifact_hash != ""
+    assert len(visual_pack.storyboard) >= 3
+    assert len(visual_pack.production_briefs) == len(plan.approved_channels)
+
+    # 5. CREAT-ADAPT -> AdaptedCreativePack
+    adapt_agent = CreativeAdaptationAgent()
+    adapted_pack = await adapt_agent.run(
+        grant=grant,
+        copy_pack=copy_pack,
+        visual_pack=visual_pack,
+        platform_specs=spec_snapshot,
+        plan=plan,
+    )
+
+    assert isinstance(adapted_pack, AdaptedCreativePack)
+    assert adapted_pack.producing_agent_id == "CREAT-ADAPT"
+    assert adapted_pack.artifact_hash != ""
+    assert len(adapted_pack.ad_copy_variants) == len(plan.approved_channels)
+    assert len(adapted_pack.social_posts) == len(plan.approved_channels)
+    assert len(adapted_pack.calendar_proposal) == len(plan.approved_channels)
+
+    # 6. CREAT-QA -> QAReport
+    qa_agent = CreativeQualityAgent()
+    qa_report = await qa_agent.run(
+        grant=grant,
+        plan=plan,
+        concept_pack=concept_pack,
+        copy_pack=copy_pack,
+        visual_pack=visual_pack,
+        adapted_pack=adapted_pack,
+    )
+
+    assert isinstance(qa_report, QAReport)
+    assert qa_report.producing_agent_id == "CREAT-QA"
+    assert qa_report.artifact_hash != ""
+    assert qa_report.status == QAStatus.PASS
+    assert qa_report.reason_code is None
+    assert len(qa_report.passed_checks) >= 3
+
+
+@pytest.mark.asyncio
+async def test_specialist_tool_requests_cannot_exceed_fixed_allowlists() -> None:
+    """T3: Prove specialist sandbox requests cannot exceed fixed allowlists (DENY_ALL / fixed)."""
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+    from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+    from app.schemas.sandbox import NetworkPolicy
+
+    # CREAT-RESEARCH: allowlisted public egress only
+    research = CreativeResearchAgent()
+    valid_mandate = research.build_sandbox_mandate(
+        task_id="t1",
+        tenant_id="acme",
+        operation="fetch_platform_specs",
+        payload={"platform": "meta"},
+    )
+    assert valid_mandate.network_policy == NetworkPolicy.ALLOWLIST
+    assert valid_mandate.capability == SandboxCapability.SCRAPE
+    with pytest.raises(PolicyViolationError, match="not authorized"):
+        research.build_sandbox_mandate(
+            task_id="t1",
+            tenant_id="acme",
+            operation="unauthorized_exec",
+            payload={},
+        )
+
+    # CREAT-COPY: s_copy_variant_gen only, NetworkPolicy.DISABLED
+    copy = CreativeCopyAgent()
+    copy_mandate = copy.build_sandbox_mandate(
+        task_id="t1",
+        tenant_id="acme",
+        operation="s_copy_variant_gen",
+        payload={"task_id": "t1"},
+    )
+    assert copy_mandate.network_policy == NetworkPolicy.DISABLED
+    assert copy_mandate.capability == SandboxCapability.COPY
+    with pytest.raises(PolicyViolationError, match="not authorized"):
+        copy.build_sandbox_mandate(
+            task_id="t1",
+            tenant_id="acme",
+            operation="execute_arbitrary_shell",
+            payload={},
+        )
+
+    # CREAT-CONCEPT, CREAT-VISUAL, CREAT-ADAPT, CREAT-QA: DENY_ALL
+    for specialist in [
+        CreativeConceptAgent(),
+        CreativeVisualAgent(),
+        CreativeAdaptationAgent(),
+        CreativeQualityAgent(),
+    ]:
+        assert specialist.allowed_operations == ()
+        with pytest.raises(PolicyViolationError, match="DENY_ALL"):
+            specialist.build_sandbox_mandate(
+                task_id="t1",
+                tenant_id="acme",
+                operation="any_op",
+                payload={},
+            )
+
+
+@pytest.mark.asyncio
+async def test_unsupported_factual_claims_fail_closed() -> None:
+    """T3: Prove missing or unsupported claims fail closed in concept, copy, and QA."""
+    from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    # 1. Concept fails closed on missing evidence
+    concept_agent = CreativeConceptAgent()
+    empty_plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t1",
+        approved_objectives=["Awareness"],
+        approved_channels=["meta"],
+        evidence_manifest=[],
+    )
+    with pytest.raises(ValueError, match="Missing approved evidence"):
+        await concept_agent.run(plan=empty_plan)
+
+    # 2. Copy fails closed on missing evidence
+    copy_agent = CreativeCopyAgent()
+    with pytest.raises(ValueError, match="Missing authorized evidence"):
+        await copy_agent.run(concept_pack=None, plan=empty_plan)
+
+    # 3. QA blocks when unapproved claim is cited
+    qa_agent = CreativeQualityAgent()
+    valid_plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t1",
+        approved_objectives=["Awareness"],
+        approved_channels=["meta"],
+        evidence_manifest=["claim-real-01"],
+    )
+    unapproved_copy = CopyPack(
+        tenant_id="acme",
+        task_id="t1",
+        concept_ref="cpt-1",
+        variants=[
+            AdCopyVariant(
+                variant_id="var-1",
+                channel="meta",
+                headline="Ungrounded Magic Solution",
+                body_copy="Completely fabricated 100% cure statement.",
+                source_claim_ids=["claim-fake-unapproved"],
+            )
+        ],
+        factual_claim_refs=["claim-fake-unapproved"],
+        approved_channel_ids=["meta"],
+    )
+    unapproved_copy.compute_artifact_hash()
+
+    qa_report = await qa_agent.run(plan=valid_plan, copy_pack=unapproved_copy)
+    assert qa_report.status == QAStatus.BLOCK
+    assert qa_report.reason_code == QAReasonCode.EVIDENCE_MISSING
+    assert "claim-fake-unapproved" in qa_report.missing_evidence_claims
+
+
+@pytest.mark.asyncio
+async def test_qa_independent_evaluator_never_mutates_candidates() -> None:
+    """T3: Prove CREAT-QA is strictly non-mutating and returns PASS | REVISE | BLOCK."""
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t1",
+        approved_objectives=["Scale"],
+        approved_channels=["meta"],
+        evidence_manifest=["claim-1"],
+        prohibited_scope=["guaranteed"],
+    )
+
+    copy_pack = CopyPack(
+        tenant_id="acme",
+        task_id="t1",
+        concept_ref="cpt-1",
+        variants=[
+            AdCopyVariant(
+                variant_id="var-1",
+                channel="meta",
+                headline="Scale With Certainty",
+                body_copy="Tested benchmark performance.",
+                source_claim_ids=["claim-1"],
+            )
+        ],
+        factual_claim_refs=["claim-1"],
+        approved_channel_ids=["meta"],
+    )
+    original_hash = copy_pack.compute_artifact_hash()
+    original_headline = copy_pack.variants[0].headline
+
+    qa_agent = CreativeQualityAgent()
+    report = await qa_agent.run(plan=plan, copy_pack=copy_pack)
+
+    # Assert candidate is completely untouched
+    assert copy_pack.artifact_hash == original_hash
+    assert copy_pack.variants[0].headline == original_headline
+    assert report.status == QAStatus.PASS
+
+    # Test policy block when prohibited scope is violated
+    copy_pack_prohibited = CopyPack(
+        tenant_id="acme",
+        task_id="t1",
+        concept_ref="cpt-1",
+        variants=[
+            AdCopyVariant(
+                variant_id="var-1",
+                channel="meta",
+                headline="Guaranteed 100% Growth",
+                body_copy="Violates prohibited scope.",
+                source_claim_ids=["claim-1"],
+            )
+        ],
+        factual_claim_refs=["claim-1"],
+        approved_channel_ids=["meta"],
+    )
+    copy_pack_prohibited.compute_artifact_hash()
+    prohibited_hash = copy_pack_prohibited.artifact_hash
+
+    report_blocked = await qa_agent.run(plan=plan, copy_pack=copy_pack_prohibited)
+    assert report_blocked.status == QAStatus.BLOCK
+    assert report_blocked.reason_code == QAReasonCode.POLICY_BLOCK
+    assert copy_pack_prohibited.artifact_hash == prohibited_hash
+
+
+@pytest.mark.asyncio
+async def test_model_a_data_isolation_and_no_scope_expansion() -> None:
+    """T3: Prove Model-A data isolation and prevention of scope expansion."""
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    # 1. CREAT-RESEARCH rejects enterprise/internal data queries (Model-A isolation)
+    research = CreativeResearchAgent()
+    with pytest.raises(PolicyViolationError, match="strictly restricted to public reference research"):
+        await research.run(context={"retrieve_internal_data": True})
+
+    # 2. CREAT-QA blocks unapproved channels (Scope isolation)
+    qa = CreativeQualityAgent()
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t1",
+        approved_channels=["meta"],
+        evidence_manifest=["claim-1"],
+    )
+    unauthorized_channel_copy = CopyPack(
+        tenant_id="acme",
+        task_id="t1",
+        variants=[
+            AdCopyVariant(
+                variant_id="var-1",
+                channel="unapproved_tv_network",
+                headline="TV Ad Headline",
+                body_copy="Scope expansion.",
+                source_claim_ids=["claim-1"],
+            )
+        ],
+        approved_channel_ids=["unapproved_tv_network"],
+    )
+    unauthorized_channel_copy.compute_artifact_hash()
+
+    report = await qa.run(plan=plan, copy_pack=unauthorized_channel_copy)
+    assert report.status == QAStatus.BLOCK
+    assert report.reason_code == QAReasonCode.SCOPE_VIOLATION
+
+
+
