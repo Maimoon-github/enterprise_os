@@ -106,7 +106,7 @@ def intelligence_engine(
 
     fake_sandbox = FakeSandboxClient()
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
-        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(fake_sandbox),
+        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(),
         WorkerRole.DEVELOPMENT: DevelopmentAgent(fake_sandbox),
     }
 
@@ -177,8 +177,8 @@ async def test_valid_context_assembly_and_grant(
     assert grant.worker_role == WorkerRole.CREATIVE_CONTENT
     assert grant.tenant_scope.tenant_id == "tenant-alpha"
     assert grant.brand_id == "brand-premium"
-    assert grant.sandbox_capabilities == ["S_COPY"]
-    assert "variant_generator" in grant.tool_permissions
+    assert grant.sandbox_capabilities == []
+    assert grant.tool_permissions == []
     assert len(grant.provenance_references) == 1
     assert grant.provenance_references[0] == "hash-101"
     assert grant.cts_state["status"] == "pending"

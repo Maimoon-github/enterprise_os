@@ -78,6 +78,13 @@ async def test_worker_executes_only_through_sandbox_client(
     assert len(agent_classes) == 1
     agent_class = agent_classes[0]
 
+    if agent_class.capability is None:
+        from app.core.exceptions import PolicyViolationError
+        fake_sandbox = FakeSandboxClient()
+        with pytest.raises(PolicyViolationError, match="zero-sandbox"):
+            agent_class(sandbox_client=fake_sandbox)
+        return
+
     from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY
     authorized_role = CAPABILITY_REGISTRY[agent_class.capability].allowed_worker
 

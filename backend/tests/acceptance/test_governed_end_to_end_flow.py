@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.agents.base import BoundedWorkerAgent
 from app.core.exceptions import ApprovalRequiredError
 from app.integrations.ads.base import AdsAdapter
 from app.mcp.data_gateway import DataGateway
@@ -20,7 +21,6 @@ from app.orchestration.intelligence_engine import IntelligenceEngine
 from app.orchestration.policy_evaluator import PolicyEvaluator
 from app.orchestration.rag_query_dispatch import RagQueryDispatcher
 from app.orchestration.task_state_machine import TaskStateMachine
-from app.agents.base import BoundedWorkerAgent
 from app.schemas.action_preview import ActionPreviewKind
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
@@ -36,7 +36,7 @@ from app.services.rag.freshness import FreshnessPolicy
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.schema_validator import SchemaValidator
 from app.services.telemetry import TelemetryNormalizer
-from tests.conftest import FakeProvenanceRepository, FakeSandboxClient, FakeVectorRepository
+from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
 from tests.integration.test_telemetry_learning_loop import (
     _InMemoryMemoryRepository,
     _InMemoryTelemetryRepository,
@@ -70,11 +70,28 @@ async def test_governed_end_to_end_flow(
     )
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
-    fake_sandbox = FakeSandboxClient()
     from app.agents.creative_content import CreativeContentAgent
 
+    # Zero-sandbox W_CREAT coordinator
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
-        sample_task.worker_role: CreativeContentAgent(fake_sandbox)
+        sample_task.worker_role: CreativeContentAgent()
+    }
+    sample_task.cts_state = {
+        "claims_dossier": {
+            "tenant_id": sample_directive.tenant_id,
+            "claims": [
+                {
+                    "claim_id": "c-1",
+                    "text": "summer campaign hooks and offers verified",
+                    "validation_status": "SUPPORTED",
+                }
+            ],
+        },
+        "strategy_plan": {
+            "tenant_id": sample_directive.tenant_id,
+            "channels": ["meta"],
+            "target_audience": "enterprise growth audience",
+        },
     }
 
     hitl_coordinator = HitlCoordinator()
@@ -106,7 +123,8 @@ async def test_governed_end_to_end_flow(
         sample_directive, sample_task, query="summer campaign hooks"
     )
     assert envelope.task_id == sample_task.task_id
-    assert fake_sandbox.invocations, "the worker must have executed through the sandbox boundary"
+    assert envelope.provenance["capability"] == "NONE"
+    assert len(envelope.generated_artifacts) > 0
 
     # -- 2. The Intelligence Engine builds a mandatory human-review preview. --
     preview = await engine.build_preview(
@@ -194,12 +212,16 @@ async def test_governed_multi_worker_dag_pipeline(
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.STRATEGY: StrategyAgent(sandbox_client),
         WorkerRole.PRODUCT_EVIDENCE: ProductEvidenceAgent(sandbox_client),
-        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(sandbox_client),
+        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(),
         WorkerRole.DEVELOPMENT: DevelopmentAgent(sandbox_client),
     }
 
     vector_repository = FakeVectorRepository()
     vector_repository.seed(tenant_id=sample_directive.tenant_id, text="Q3 strategic positioning")
+    vector_repository.seed(
+        tenant_id=sample_directive.tenant_id,
+        text="Clinically tested to improve performance by 40% in enterprise benchmark testing.",
+    )
     rag_controller = RagController(
         HybridRetriever(vector_repository), FreshnessPolicy(), SchemaValidator()
     )

@@ -104,6 +104,9 @@ def _build_workers(
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {}
     for role, agent_class in _AGENT_CLASSES_BY_ROLE.items():
+        if role == WorkerRole.CREATIVE_CONTENT:
+            workers[role] = agent_class(llm_client=llm_client)
+            continue
         assert get_capability_for_role(role) == agent_class.capability
         if role == WorkerRole.STRATEGY:
             allocation_agent = StrategyAllocationAgent(llm_client=s_alloc_llm_client)

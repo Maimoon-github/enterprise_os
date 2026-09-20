@@ -250,9 +250,9 @@ class IntelligenceEngine:
 
         # 4. Derive Tool & Capability Permissions (Monotonic Attenuation)
         worker = self._workers.get(task.worker_role)
-        sandbox_capabilities = [worker.capability.value] if worker else []
+        sandbox_capabilities = [worker.capability.value] if (worker and worker.capability) else []
         allowed_tools = []
-        if worker and hasattr(worker, "capability"):
+        if worker and getattr(worker, "capability", None) is not None:
             from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY
 
             if worker.capability in CAPABILITY_REGISTRY:
@@ -492,6 +492,15 @@ class IntelligenceEngine:
             }
             if not all(uid in completed_tasks and completed_tasks[uid].status == TaskStatus.COMPLETED for uid in upstream_ids):
                 raise PolicyViolationError(f"Task {task_id} dependencies are not completed.")
+
+            # Inherit CTS state / evidence from upstream tasks
+            merged_cts_state = dict(task.cts_state)
+            for uid in completed_tasks:
+                up_env = envelopes.get(uid)
+                if up_env and up_env.payload:
+                    merged_cts_state.update(up_env.payload)
+            if merged_cts_state != task.cts_state:
+                task = task.model_copy(update={"cts_state": merged_cts_state})
 
             query = queries.get(task_id, f"{task.worker_role.value} execution for {directive.objective}")
             envelope = await self.delegate_task(

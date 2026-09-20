@@ -94,8 +94,10 @@ def test_unauthorized_capability_rejected_for_w_creat() -> None:
 @pytest.mark.asyncio
 async def test_governed_ie_grant_to_w_creat_pipeline(sample_directive: Directive) -> None:
     """Full governed execution: T16 claims + T19 strategy -> IE Grant -> W_CREAT -> S_COPY -> Creative EvidenceEnvelope -> IE."""
-    sandbox_client = SandboxClient()
-    w_creat = CreativeContentAgent(sandbox_client)
+    sample_directive = sample_directive.model_copy(
+        update={"scope": sample_directive.scope.model_copy(update={"allowed_channels": ["meta", "linkedin"]})}
+    )
+    w_creat = CreativeContentAgent()
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.CREATIVE_CONTENT: w_creat,
@@ -169,7 +171,7 @@ async def test_governed_ie_grant_to_w_creat_pipeline(sample_directive: Directive
     assert envelope.confidence.point_estimate >= 0.8
     assert "creative:task-creat-gov-1" in envelope.generated_artifacts
     assert "copy:task-creat-gov-1" in envelope.generated_artifacts
-    assert envelope.provenance["capability"] == "S_COPY"
+    assert envelope.provenance["capability"] == "NONE"
 
     # Extract strongly typed CreativePackage
     package = w_creat.extract_creative_package(envelope)

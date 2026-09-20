@@ -411,6 +411,19 @@ async def test_all_seven_workers_bounded_llm_inference(
                 provenance = {"sandbox": "dummy"}
             return DummyResult()
 
+    if getattr(agent_class, "capability", None) is None:
+        agent = agent_class(llm_client=llm)
+        grant = _make_sample_grant(role, capability)
+        context = {
+            "claims_dossier": {"tenant_id": "tenant-alpha", "claims": [{"claim_id": "c1", "text": "Valid", "validation_status": "SUPPORTED"}]},
+            "strategy_plan": {"tenant_id": "tenant-alpha", "channels": ["meta"]},
+        }
+        envelope = await agent.run(grant, context)
+        assert envelope.worker_role == role
+        assert envelope.provenance["agent"] == "W_CREAT"
+        assert envelope.provenance["capability"] == "NONE"
+        return
+
     agent = agent_class(DummySandboxClient(), llm_client=llm)
     grant = _make_sample_grant(role, capability)
     context: dict[str, Any] = {"staged_cms_models": [{"model_id": "m1"}], "tenant_id": "tenant-alpha"}

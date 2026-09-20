@@ -14,14 +14,14 @@ from app.integrations.sandbox.capabilities import validate_capability_access
 from app.integrations.sandbox.client import SandboxClient
 from app.integrations.sandbox.micro_tools import execute_s_copy
 from app.schemas.agent_contracts import (
-    AdCopyVariant,
     AdaptedCreativePack,
+    AdCopyVariant,
     ConceptItem,
     ConceptPack,
     ContentScheduleItem,
     CopyPack,
-    CreativePlan,
     CreativePackage,
+    CreativePlan,
     PlatformSpecItem,
     PlatformSpecSnapshot,
     QAFinding,
@@ -30,7 +30,6 @@ from app.schemas.agent_contracts import (
     QAStatus,
     ResearchBrief,
     ResearchFindingItem,
-    SocialPostVariant,
     TaskGrant,
     VisualBrief,
     VisualPack,
@@ -164,7 +163,7 @@ def test_s_copy_flags_unsupported_claims() -> None:
 @pytest.mark.asyncio
 async def test_w_creat_generates_valid_evidence_envelope_and_creative_package() -> None:
     """CreativeContentAgent processes T16 and T19 inputs and produces valid EvidenceEnvelope and CreativePackage."""
-    agent = CreativeContentAgent(SandboxClient())
+    agent = CreativeContentAgent()
 
     grant = TaskGrant(
         task_id="task-creat-e2e-1",
@@ -208,7 +207,8 @@ async def test_w_creat_generates_valid_evidence_envelope_and_creative_package() 
     assert envelope.confidence.point_estimate >= 0.8
     assert "creative:task-creat-e2e-1" in envelope.generated_artifacts
     assert "copy:task-creat-e2e-1" in envelope.generated_artifacts
-    assert envelope.provenance["capability"] == "S_COPY"
+    assert envelope.provenance["capability"] == "NONE"
+    assert envelope.provenance["agent"] == "W_CREAT"
     assert len(envelope.findings) >= 4
 
     # Extract strongly typed CreativePackage
@@ -224,7 +224,7 @@ async def test_w_creat_generates_valid_evidence_envelope_and_creative_package() 
 @pytest.mark.asyncio
 async def test_missing_t16_product_evidence_fails_closed() -> None:
     """CreativeContentAgent fails closed when T16 approved claims evidence is missing."""
-    agent = CreativeContentAgent(SandboxClient())
+    agent = CreativeContentAgent()
     grant = TaskGrant(
         task_id="task-creat-fail-t16",
         worker_role=WorkerRole.CREATIVE_CONTENT,
@@ -244,7 +244,7 @@ async def test_missing_t16_product_evidence_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_missing_t19_strategy_fails_closed() -> None:
     """CreativeContentAgent fails closed when T19 omnichannel strategy is missing."""
-    agent = CreativeContentAgent(SandboxClient())
+    agent = CreativeContentAgent()
     grant = TaskGrant(
         task_id="task-creat-fail-t19",
         worker_role=WorkerRole.CREATIVE_CONTENT,
@@ -267,7 +267,7 @@ async def test_missing_t19_strategy_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_cross_tenant_t16_dossier_breach_fails_closed() -> None:
     """CreativeContentAgent rejects T16 evidence originating from another tenant."""
-    agent = CreativeContentAgent(SandboxClient())
+    agent = CreativeContentAgent()
     grant = TaskGrant(
         task_id="task-creat-tenant-breach",
         worker_role=WorkerRole.CREATIVE_CONTENT,
@@ -290,7 +290,7 @@ async def test_cross_tenant_t16_dossier_breach_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_cross_tenant_t19_strategy_breach_fails_closed() -> None:
     """CreativeContentAgent rejects T19 strategy originating from another tenant."""
-    agent = CreativeContentAgent(SandboxClient())
+    agent = CreativeContentAgent()
     grant = TaskGrant(
         task_id="task-creat-strat-breach",
         worker_role=WorkerRole.CREATIVE_CONTENT,
@@ -316,7 +316,7 @@ async def test_cross_tenant_t19_strategy_breach_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_policy_strictly_overrides_brand_persona() -> None:
     """Policy constraints strictly take precedence over brand persona preferences."""
-    agent = CreativeContentAgent(SandboxClient())
+    agent = CreativeContentAgent()
 
     class MockBrandPersona:
         voice = "bold and disruptive"
@@ -340,13 +340,22 @@ async def test_policy_strictly_overrides_brand_persona() -> None:
         "strategy_plan": {"tenant_id": "tenant_sec", "channels": ["meta"]},
     }
 
-    payload = agent.build_payload(grant, context)
-    prohibited_in_payload = payload["prohibited_terms"].split(",")
+    (
+        approved_claims,
+        strategy_plan,
+        channels,
+        prohibited_terms,
+        required_disclaimers,
+        unapproved_claims,
+        brand_voice,
+        objective,
+        target_audience,
+    ) = agent._verify_and_normalize_dependencies(grant, context)
 
-    # Policy terms must be present in payload
-    assert "miracle" in prohibited_in_payload
-    assert "cure" in prohibited_in_payload
-    assert "boring" in prohibited_in_payload
+    # Policy terms must be present in prohibited_terms
+    assert "miracle" in prohibited_terms
+    assert "cure" in prohibited_terms
+    assert "boring" in prohibited_terms
 
 
 def test_unauthorized_capability_access_rejection() -> None:
@@ -360,34 +369,118 @@ def test_unauthorized_capability_access_rejection() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_sandbox_failure_returns_risk_envelope() -> None:
-    """When sandbox execution fails, CreativeContentAgent returns risk envelope with 0.0 confidence."""
-    failing_client = FakeSandboxClient(should_fail=True)
-    agent = CreativeContentAgent(failing_client)
+def test_w_creat_rejects_sandbox_client() -> None:
+    """W_CREAT coordinator has zero sandbox capability and strictly rejects SandboxClient."""
+    with pytest.raises(PolicyViolationError, match="zero-sandbox and must not receive a SandboxClient"):
+        CreativeContentAgent(sandbox_client=SandboxClient())
 
+
+def test_w_creat_cannot_build_sandbox_payload() -> None:
+    """W_CREAT coordinator cannot build sandbox payloads."""
+    agent = CreativeContentAgent()
     grant = TaskGrant(
-        task_id="task-fail-exec",
+        task_id="task-test-payload",
         worker_role=WorkerRole.CREATIVE_CONTENT,
         tenant_scope=TenantScope(tenant_id="t1"),
         expires_at=datetime.now(UTC) + timedelta(minutes=15),
     )
+    with pytest.raises(PolicyViolationError, match="zero sandbox capability"):
+        agent.build_payload(grant, {})
 
+
+@pytest.mark.asyncio
+async def test_w_creat_plan_scope_expansion_fails_closed() -> None:
+    """W_CREAT fails closed if LLM produces CreativePlan with unauthorized channels or evidence."""
+    class BadChannelLlm:
+        async def generate_structured_with_metadata(self, **kwargs):
+            return CreativePlan(
+                tenant_id="t1",
+                task_id="task-expand",
+                approved_objectives=["Growth"],
+                approved_channels=["meta", "unauthorized_tiktok"],
+                required_deliverables=["copy_pack"],
+                evidence_manifest=["c1"],
+                prohibited_scope=[],
+                expected_artifact_types=["AdCopyVariant"],
+            ), {}
+
+    agent = CreativeContentAgent(llm_client=BadChannelLlm())  # type: ignore[arg-type]
+    grant = TaskGrant(
+        task_id="task-expand",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="t1", allowed_channels=["meta"]),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
     context: dict[str, object] = {
-        "claims_dossier": {"tenant_id": "t1", "claims": [{"validation_status": "SUPPORTED"}]},
+        "claims_dossier": {"tenant_id": "t1", "claims": [{"claim_id": "c1", "text": "Valid", "validation_status": "SUPPORTED"}]},
         "strategy_plan": {"tenant_id": "t1", "channels": ["meta"]},
     }
+    with pytest.raises(PolicyViolationError, match="CreativePlan expanded channel scope"):
+        await agent.run(grant, context)
 
+
+@pytest.mark.asyncio
+async def test_w_creat_qa_block_returns_fail_closed_envelope() -> None:
+    """When QA reports BLOCK, W_CREAT returns zero-confidence blocked envelope with empty deliverables."""
+    class BlockWorkflow:
+        async def run(self, grant, plan, context):
+            from app.orchestration.creative_content_workflow import CreativeWorkflowResult
+            report = QAReport(
+                tenant_id=grant.tenant_scope.tenant_id,
+                task_id=grant.task_id,
+                evaluated_artifact_hash="bad_hash" + "0" * 56,
+                status=QAStatus.BLOCK,
+                reason_code=QAReasonCode.EVIDENCE_MISSING,
+                findings=[QAFinding(layer="grounding", severity="critical", message="Unsupported claim detected.")],
+            )
+            report.compute_artifact_hash()
+            return CreativeWorkflowResult(plan=plan, qa_report=report, artifact_hashes={})
+
+    agent = CreativeContentAgent(workflow=BlockWorkflow())  # type: ignore[arg-type]
+    grant = TaskGrant(
+        task_id="task-qa-block",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="t1"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    context: dict[str, object] = {
+        "claims_dossier": {"tenant_id": "t1", "claims": [{"claim_id": "c1", "text": "Valid", "validation_status": "SUPPORTED"}]},
+        "strategy_plan": {"tenant_id": "t1", "channels": ["meta"]},
+    }
     envelope = await agent.run(grant, context)
-
     assert envelope.confidence.point_estimate == 0.0
-    assert len(envelope.unresolved_risks_or_assumptions) >= 1
-    assert "simulated sandbox failure" in envelope.unresolved_risks_or_assumptions[0]
+    assert envelope.proposed_state_changes["status"] == "blocked"
+    assert envelope.generated_artifacts == []
+
+
+@pytest.mark.asyncio
+async def test_w_creat_packages_unchanged_approved_artifacts_with_matching_hashes() -> None:
+    """W_CREAT packages workflow artifacts without post-QA mutation; artifact hashes remain identical."""
+    agent = CreativeContentAgent()
+    grant = TaskGrant(
+        task_id="task-immutable-pkg",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="t1", allowed_channels=["meta"]),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    context: dict[str, object] = {
+        "claims_dossier": {"tenant_id": "t1", "claims": [{"claim_id": "c1", "text": "Real metric", "validation_status": "SUPPORTED"}]},
+        "strategy_plan": {"tenant_id": "t1", "channels": ["meta"]},
+    }
+    envelope = await agent.run(grant, context)
+    pkg = agent.extract_creative_package(envelope)
+    assert pkg is not None
+    assert pkg.qa_status == "PASS"
+    assert envelope.provenance["qa_status"] == "PASS"
+    assert envelope.provenance["capability"] == "NONE"
+    assert "qa_hash" in pkg.provenance
+    assert pkg.provenance["qa_hash"] == envelope.provenance["qa_report_hash"]
 
 
 def test_model_a_no_direct_rag_or_database_imports() -> None:
     """Model-A architectural invariant: W_CREAT must not import RAG or persistence modules."""
     import inspect
+
     import app.agents.creative_content as cc_module
 
     source = inspect.getsource(cc_module)
