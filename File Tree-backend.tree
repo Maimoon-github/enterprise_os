@@ -1,5 +1,5 @@
 File Tree: backend
-Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
+Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 
 ────────────────────────────────────────────────────────────────────────────────
 
@@ -9,6 +9,13 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 competitor_intel.py
 │   │   ├── 📁 creative_content_engine/
+│   │   │   ├── 📁 subagents/
+│   │   │   │   ├── 🐍 adaptation.py
+│   │   │   │   ├── 🐍 concept.py
+│   │   │   │   ├── 🐍 copy.py
+│   │   │   │   ├── 🐍 quality.py
+│   │   │   │   ├── 🐍 research.py
+│   │   │   │   └── 🐍 visual.py
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 creative_content.py
 │   │   ├── 📁 customer_voice_engine/
@@ -99,6 +106,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 brand_persona.py
 │   │   ├── 🐍 context_assembly.py
+│   │   ├── 🐍 creative_content_workflow.py
 │   │   ├── 🐍 dag_scheduler.py
 │   │   ├── 🐍 development_state_machine.py
 │   │   ├── 🐍 evidence_synthesis.py
@@ -163,9 +171,8 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os\backend
 │   │   └── 🐍 telemetry_engine.py
 │   ├── 🐍 __init__.py
 │   └── 🐍 main.py
+├── 📁 ephemeral_workspaces/
 ├── 📁 scripts/
-│   ├── 📁 lib/
-│   │   └── 📄 common.sh
 │   ├── 📄 bootstrap.sh
 │   ├── 📄 lint.sh
 │   ├── 📄 run_dev_server.sh

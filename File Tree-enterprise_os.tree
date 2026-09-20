@@ -1,9 +1,12 @@
 File Tree: enterprise_os
-Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
+Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 
 ────────────────────────────────────────────────────────────────────────────────
 
 ├── 📁 Agentic System Research/
+│   ├── 📁 Creative & Content Engine Research/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 Development Engine Research/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
@@ -84,6 +87,13 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 competitor_intel.py
 │   │   │   ├── 📁 creative_content_engine/
+│   │   │   │   ├── 📁 subagents/
+│   │   │   │   │   ├── 🐍 adaptation.py
+│   │   │   │   │   ├── 🐍 concept.py
+│   │   │   │   │   ├── 🐍 copy.py
+│   │   │   │   │   ├── 🐍 quality.py
+│   │   │   │   │   ├── 🐍 research.py
+│   │   │   │   │   └── 🐍 visual.py
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 creative_content.py
 │   │   │   ├── 📁 customer_voice_engine/
@@ -174,6 +184,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 brand_persona.py
 │   │   │   ├── 🐍 context_assembly.py
+│   │   │   ├── 🐍 creative_content_workflow.py
 │   │   │   ├── 🐍 dag_scheduler.py
 │   │   │   ├── 🐍 development_state_machine.py
 │   │   │   ├── 🐍 evidence_synthesis.py
@@ -238,6 +249,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   └── 🐍 telemetry_engine.py
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 main.py
+│   ├── 📁 ephemeral_workspaces/
 │   ├── 📁 scripts/
 │   │   ├── 📄 bootstrap.sh
 │   │   ├── 📄 lint.sh
@@ -324,6 +336,7 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   ├── 📄 Makefile
 │   ├── 📝 README.md
 │   └── ⚙️ pyproject.toml
+├── 📁 ephemeral_workspaces/
 ├── 📁 sandbox/
 │   ├── 📁 .github/
 │   │   └── 📁 workflows/
@@ -1176,7 +1189,6 @@ Root path: c:\Users\shehran\Desktop\vscode\enterprise_os
 │   │   │   │   └── 📄 index.ts
 │   │   │   ├── ⚙️ .gitignore
 │   │   │   ├── 📝 README.md
-│   │   │   ├── ⚙️ package-lock.json
 │   │   │   ├── ⚙️ package.json
 │   │   │   ├── 📄 rslib.config.ts
 │   │   │   ├── ⚙️ tsconfig.json
