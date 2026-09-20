@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -99,13 +100,17 @@ def _build_workers(
     sandbox_client: SandboxClient,
     llm_client: LlmClient | None = None,
     s_alloc_llm_client: LlmClient | None = None,
+    creative_workflow: Any = None,
 ) -> dict[WorkerRole, BoundedWorkerAgent]:
     """Instantiate all seven bounded worker agents with sandbox adapter and optional LLM client."""
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {}
     for role, agent_class in _AGENT_CLASSES_BY_ROLE.items():
         if role == WorkerRole.CREATIVE_CONTENT:
-            workers[role] = agent_class(llm_client=llm_client)
+            workers[role] = CreativeContentAgent(
+                llm_client=llm_client,
+                workflow=creative_workflow,
+            )
             continue
         assert get_capability_for_role(role) == agent_class.capability
         if role == WorkerRole.STRATEGY:
@@ -153,9 +158,55 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
     s_alloc_llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
+
+    # Wire 7 independent Creative LLM identities: W_CREAT + 6 specialists
+    creative_llm_clients: list[LlmClient] = []
+    creative_workflow = None
+    w_creat_llm = None
     sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=provenance_recorder)
+
+    if settings.llm.provider != "unset":
+        from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+        from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+        from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+        from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+        from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+        from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+        from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+
+        w_creat_llm = LlmClient(settings.llm, agent_identity="W_CREAT")
+        research_llm = LlmClient(settings.llm, agent_identity="CREAT-RESEARCH")
+        concept_llm = LlmClient(settings.llm, agent_identity="CREAT-CONCEPT")
+        copy_llm = LlmClient(settings.llm, agent_identity="CREAT-COPY")
+        visual_llm = LlmClient(settings.llm, agent_identity="CREAT-VISUAL")
+        adapt_llm = LlmClient(settings.llm, agent_identity="CREAT-ADAPT")
+        qa_llm = LlmClient(settings.llm, agent_identity="CREAT-QA")
+        creative_llm_clients = [
+            w_creat_llm,
+            research_llm,
+            concept_llm,
+            copy_llm,
+            visual_llm,
+            adapt_llm,
+            qa_llm,
+        ]
+
+        creative_workflow = CreativeContentWorkflow(
+            research_agent=CreativeResearchAgent(
+                llm_client=research_llm, sandbox_client=sandbox_client
+            ),
+            concept_agent=CreativeConceptAgent(llm_client=concept_llm),
+            copy_agent=CreativeCopyAgent(llm_client=copy_llm, sandbox_client=sandbox_client),
+            visual_agent=CreativeVisualAgent(llm_client=visual_llm),
+            adaptation_agent=CreativeAdaptationAgent(llm_client=adapt_llm),
+            qa_agent=CreativeQualityAgent(llm_client=qa_llm),
+        )
+
     workers = _build_workers(
-        sandbox_client, llm_client=llm_client, s_alloc_llm_client=s_alloc_llm_client
+        sandbox_client,
+        llm_client=w_creat_llm or llm_client,
+        s_alloc_llm_client=s_alloc_llm_client,
+        creative_workflow=creative_workflow,
     )
 
     hitl_coordinator = HitlCoordinator()
@@ -247,12 +298,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.intelligence_engine = intelligence_engine
     app.state.attribution_coordinator = attribution_coordinator
     app.state.llm_client = llm_client
+    app.state.creative_workflow = creative_workflow
+    app.state.creative_llm_clients = creative_llm_clients
 
     try:
         yield
     finally:
         if llm_client is not None:
             await llm_client.aclose()
+        for c_client in creative_llm_clients:
+            await c_client.aclose()
         for ads_adapter in ads_adapters.values():
             await ads_adapter.aclose()
         for social_adapter in social_adapters.values():

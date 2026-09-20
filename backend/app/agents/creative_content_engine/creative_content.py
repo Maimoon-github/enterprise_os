@@ -49,7 +49,44 @@ class CreativeContentAgent(BoundedWorkerAgent):
                 "W_CREAT coordinator is zero-sandbox and must not receive a SandboxClient."
             )
         super().__init__(sandbox_client=None, llm_client=llm_client)
-        self._workflow = workflow or CreativeContentWorkflow()
+        if workflow is not None:
+            self._workflow = workflow
+        elif llm_client is not None and getattr(llm_client, "settings", None) is not None:
+            from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+            from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+            from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+            from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+            from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+            from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+
+            client_cls = llm_client.__class__
+            settings = llm_client.settings
+            self._workflow = CreativeContentWorkflow(
+                research_agent=CreativeResearchAgent(
+                    llm_client=client_cls(settings, agent_identity="CREAT-RESEARCH")
+                ),
+                concept_agent=CreativeConceptAgent(
+                    llm_client=client_cls(settings, agent_identity="CREAT-CONCEPT")
+                ),
+                copy_agent=CreativeCopyAgent(
+                    llm_client=client_cls(settings, agent_identity="CREAT-COPY")
+                ),
+                visual_agent=CreativeVisualAgent(
+                    llm_client=client_cls(settings, agent_identity="CREAT-VISUAL")
+                ),
+                adaptation_agent=CreativeAdaptationAgent(
+                    llm_client=client_cls(settings, agent_identity="CREAT-ADAPT")
+                ),
+                qa_agent=CreativeQualityAgent(
+                    llm_client=client_cls(settings, agent_identity="CREAT-QA")
+                ),
+            )
+        else:
+            self._workflow = CreativeContentWorkflow()
+
+    @property
+    def workflow(self) -> CreativeContentWorkflow:
+        return self._workflow
 
     def build_payload(self, grant: TaskGrant, context: dict[str, Any]) -> dict[str, str]:
         """Reject sandbox payload construction: W_CREAT has zero sandbox capability."""

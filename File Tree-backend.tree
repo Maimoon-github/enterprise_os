@@ -88,6 +88,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   │   ├── 🐍 client.py
 │   │   │   ├── 🐍 micro_tools.py
 │   │   │   ├── 🐍 s_alloc_core.py
+│   │   │   ├── 🐍 s_copy_core.py
 │   │   │   └── 🐍 sandbox_policy.py
 │   │   ├── 📁 social/
 │   │   │   ├── 🐍 __init__.py

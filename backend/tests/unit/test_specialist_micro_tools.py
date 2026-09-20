@@ -62,24 +62,45 @@ def test_s_alloc_media_budget_optimizer() -> None:
     assert result["primary_channel"] == "google"  # Highest ROAS gets highest share
 
 
-def test_s_copy_variant_generator_with_prohibited_terms() -> None:
+def test_s_copy_deterministic_utilities_screening_and_deduplication() -> None:
+    # 1. Proves zero-generation when only high-level prompt is passed (no hallucinated copy)
+    empty_payload = {
+        "task_id": "task-copy-empty",
+        "brand_voice": "punchy and premium",
+        "objective": "Q4 launch",
+        "prohibited_terms": "secret, formula",
+    }
+    empty_result = execute_s_copy(empty_payload)
+    assert empty_result["status"] == "success"
+    assert empty_result["deterministic"] == "true"
+    assert empty_result["generative_execution"] == "denied"
+    assert empty_result["variants_count"] == "0"
+
+    # 2. Proves deterministic screening and deduplication on candidate variants
     payload = {
         "task_id": "task-copy-1",
         "brand_voice": "punchy and premium",
         "objective": "Q4 launch",
         "prohibited_terms": "secret, formula",
+        "variants": json.dumps([
+            {"hook": "Upgrade your enterprise workflows today.", "score": 0.92},
+            {"hook": "Discover the secret to 10x ROI.", "score": 0.85},
+            {"hook": "Here is the proven formula for growth.", "score": 0.88},
+            {"hook": "Upgrade your enterprise workflows today.", "score": 0.92},  # duplicate
+        ]),
     }
     result = execute_s_copy(payload)
 
     assert result["status"] == "success"
     assert result["brand_voice"] == "punchy and premium"
-    assert "headline" in result
-    assert float(result["hook_score"]) > 0.8
-    # Best hook shouldn't contain prohibited terms
+    assert result["deterministic"] == "true"
+    assert int(result["variants_count"]) == 1
+
+    # Filtered variants must not contain prohibited terms and duplicate removed
     variants = json.loads(result["variants"])
-    for var in variants:
-        assert "secret" not in var["hook"].lower()
-        assert "formula" not in var["hook"].lower()
+    assert len(variants) == 1
+    assert "secret" not in variants[0]["hook"].lower()
+    assert "formula" not in variants[0]["hook"].lower()
 
 
 def test_s_val_claim_validator_clean_claim() -> None:

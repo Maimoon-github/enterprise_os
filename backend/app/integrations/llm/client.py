@@ -29,14 +29,31 @@ class LlmResponseError(RuntimeError):
 class LlmClient:
     """Provider-neutral chat-completion boundary with local-model priority."""
 
-    def __init__(self, settings: LlmSettings, *, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        settings: LlmSettings,
+        *,
+        client: httpx.AsyncClient | None = None,
+        agent_identity: str | None = None,
+        model_identity: str | None = None,
+    ) -> None:
         self._settings = settings
         self._client = client or httpx.AsyncClient(timeout=settings.request_timeout_seconds)
+        self._agent_identity = agent_identity
+        self._model_identity = model_identity or settings.model_name
         self._last_metadata: dict[str, Any] = {}
 
     @property
     def settings(self) -> LlmSettings:
         return self._settings
+
+    @property
+    def agent_identity(self) -> str | None:
+        return self._agent_identity
+
+    @property
+    def model_identity(self) -> str:
+        return self._model_identity
 
     @property
     def last_metadata(self) -> dict[str, Any]:
@@ -109,6 +126,8 @@ class LlmClient:
         cost = self._calculate_cost(prompt_tokens, completion_tokens)
 
         metadata = {
+            "agent_identity": self._agent_identity,
+            "model_identity": self._model_identity,
             "provider": self._settings.provider,
             "configured_model": self._settings.model_name,
             "actual_model": actual_model,

@@ -88,6 +88,30 @@ class CreativeContentWorkflow:
         self._adaptation_agent = adaptation_agent or CreativeAdaptationAgent()
         self._qa_agent = qa_agent or CreativeQualityAgent()
 
+    @property
+    def research_agent(self) -> CreativeResearchAgent:
+        return self._research_agent
+
+    @property
+    def concept_agent(self) -> CreativeConceptAgent:
+        return self._concept_agent
+
+    @property
+    def copy_agent(self) -> CreativeCopyAgent:
+        return self._copy_agent
+
+    @property
+    def visual_agent(self) -> CreativeVisualAgent:
+        return self._visual_agent
+
+    @property
+    def adaptation_agent(self) -> CreativeAdaptationAgent:
+        return self._adaptation_agent
+
+    @property
+    def qa_agent(self) -> CreativeQualityAgent:
+        return self._qa_agent
+
     async def run(
         self,
         grant: TaskGrant,

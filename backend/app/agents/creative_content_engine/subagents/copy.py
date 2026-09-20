@@ -47,6 +47,15 @@ class CreativeCopyAgent:
     def allowed_operations(self) -> tuple[str, ...]:
         return self.ALLOWED_OPERATIONS
 
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    @property
+    def sandbox_client(self) -> Any:
+        return self._sandbox_client
+
+
     def build_sandbox_mandate(
         self,
         task_id: str,

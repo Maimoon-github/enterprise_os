@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""S_COPY Deterministic Creative Utilities Script.
+"""Deterministic Creative Utilities and Validator Core for S_COPY.
 
 Contains ONLY deterministic validation, screening, deduplication, and hashing tools:
 - Schema / required-field validation
@@ -18,12 +17,12 @@ Contains ZERO generative responsibility (no claim invention, no hook/headline/bo
 generation, no concept selection, no visual brief synthesis, no schedule creation,
 no fallback evidence/strategy generation).
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import re
-import sys
 from typing import Any
 
 STANDARD_ASPECT_RATIOS = frozenset({"1:1", "9:16", "16:9", "4:5", "1.91:1"})
@@ -39,6 +38,7 @@ SUPPORTED_CHANNELS = frozenset({
     "email",
 })
 
+# Canonical platform formatting constraints
 PLATFORM_FORMAT_CONSTRAINTS: dict[str, dict[str, Any]] = {
     "google": {
         "formats": ["search_ad", "display_ad", "pmax"],
@@ -80,6 +80,7 @@ PLATFORM_FORMAT_CONSTRAINTS: dict[str, dict[str, Any]] = {
 
 
 def hash_artifact(data: Any) -> str:
+    """Compute deterministic SHA-256 hash of an artifact string, dict, or list."""
     if isinstance(data, (dict, list)):
         serialized = json.dumps(data, sort_keys=True, separators=(",", ":"))
     else:
@@ -88,6 +89,7 @@ def hash_artifact(data: Any) -> str:
 
 
 def normalize_text_for_dedup(text: str) -> str:
+    """Normalize text by lowercasing, stripping punctuation, and collapsing whitespace."""
     clean = re.sub(r"[^\w\s]", "", text.lower())
     return re.sub(r"\s+", " ", clean).strip()
 
@@ -96,6 +98,7 @@ def prohibited_term_check(
     text_or_items: str | list[Any] | dict[str, Any],
     prohibited_terms: list[str],
 ) -> dict[str, Any]:
+    """Screen provided text or items against prohibited terms (case-insensitive)."""
     norm_terms = [t.strip().lower() for t in prohibited_terms if t.strip()]
     if not norm_terms:
         return {
@@ -153,6 +156,7 @@ def deduplicate_variants(
     variants: list[dict[str, Any]] | list[str],
     key: str | None = None,
 ) -> dict[str, Any]:
+    """Deterministically deduplicate variants while preserving original ordering."""
     seen: set[str] = set()
     deduped: list[Any] = []
     duplicates_found: list[Any] = []
@@ -190,6 +194,7 @@ def validate_claim_refs(
     cited_claim_ids: list[str],
     approved_claims: list[dict[str, Any]] | list[str],
 ) -> dict[str, Any]:
+    """Verify that cited claims strictly exist in the approved claims set."""
     approved_ids: set[str] = set()
     approved_texts: set[str] = set()
 
@@ -198,10 +203,10 @@ def validate_claim_refs(
             status = c.get("validation_status", c.get("status", "SUPPORTED"))
             confidence = float(str(c.get("confidence", 1.0)))
             if status in ("SUPPORTED", "VALIDATED") or confidence >= 0.7:
-                cid = str(c.get("id") or c.get("claim_id") or "")
+                c_id = str(c.get("id") or c.get("claim_id") or "")
                 c_text = str(c.get("text") or c.get("claim_text") or "")
-                if cid:
-                    approved_ids.add(cid)
+                if c_id:
+                    approved_ids.add(c_id)
                 if c_text:
                     approved_texts.add(c_text)
         elif isinstance(c, str) and c.strip():
@@ -229,6 +234,7 @@ def validate_aspect_ratio(
     aspect_ratio: str,
     allowed_ratios: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Validate aspect ratio against standard or platform-allowed aspect ratios."""
     allowed = set(allowed_ratios) if allowed_ratios else STANDARD_ASPECT_RATIOS
     is_valid = aspect_ratio in allowed
     return {
@@ -239,6 +245,7 @@ def validate_aspect_ratio(
 
 
 def validate_safe_zone_metadata(safe_zones: dict[str, Any]) -> dict[str, Any]:
+    """Validate that UI safe-zone specifications contain valid non-negative margins."""
     errors: list[str] = []
     if not isinstance(safe_zones, dict):
         return {
@@ -268,6 +275,7 @@ def validate_platform_format(
     character_count: int | None = None,
     aspect_ratio: str | None = None,
 ) -> dict[str, Any]:
+    """Deterministically check channel formatting, post type, char limits, and ratios."""
     ch_lower = channel.lower().strip()
     errors: list[str] = []
 
@@ -301,6 +309,7 @@ def validate_platform_format(
 
 
 def validate_schema(data: dict[str, Any], required_fields: list[str]) -> dict[str, Any]:
+    """Verify presence of required fields in artifact or metadata dictionaries."""
     missing = [f for f in required_fields if f not in data or data[f] is None]
     return {
         "is_valid": len(missing) == 0,
@@ -309,8 +318,19 @@ def validate_schema(data: dict[str, Any], required_fields: list[str]) -> dict[st
     }
 
 
-def run_s_copy(payload: dict[str, Any]) -> dict[str, str]:
-    """S_COPY: Deterministic Creative Utilities execution script."""
+def execute_s_copy(payload: dict[str, Any]) -> dict[str, str]:
+    """S_COPY: Deterministic Creative Utilities [Micro-Tool: Validator, Screener, Deduplicator].
+
+    Strictly deterministic. Performs:
+    1. Prohibited term screening
+    2. Claim reference validation against approved evidence
+    3. Platform format and character limit checking
+    4. Aspect-ratio and UI safe-zone validation
+    5. Deduplication of copy variants
+    6. Artifact hashing
+
+    Does NOT fabricate claims, hooks, headlines, visual briefs, social posts, or schedules.
+    """
     task_id = str(payload.get("task_id", "unknown"))
     brand_voice = str(payload.get("brand_voice", "authoritative"))
     operation = str(payload.get("operation", "default"))
@@ -465,6 +485,8 @@ def run_s_copy(payload: dict[str, Any]) -> dict[str, str]:
             "artifact_hash": art_hash,
         }
 
+    # Default / Composite Validation (validate_copy / format_validation / default)
+    # 5. Deterministic screening & deduplication of candidate variants
     clean_variants: list[dict[str, Any]] = []
     compliance_warnings: list[str] = []
 
@@ -487,6 +509,7 @@ def run_s_copy(payload: dict[str, Any]) -> dict[str, str]:
         "flagged_claims": flagged_unsupported_claims,
     })
 
+    # Return deterministic validation envelope
     return {
         "status": "success",
         "task_id": task_id,
@@ -506,10 +529,3 @@ def run_s_copy(payload: dict[str, Any]) -> dict[str, str]:
         "artifact_hash": art_hash,
         "is_compliant": str(len(compliance_warnings) == 0),
     }
-
-
-if __name__ == "__main__":
-    raw_input = sys.stdin.read()
-    data = json.loads(raw_input) if raw_input.strip() else {}
-    result = run_s_copy(data)
-    sys.stdout.write(json.dumps(result))

@@ -40,7 +40,7 @@ from tests.conftest import FakeSandboxClient
 
 
 def test_s_copy_with_t16_claims_and_t19_strategy() -> None:
-    """S_COPY grounds copy variants in T16 claims, adapts across T19 channels, and generates briefs and schedules."""
+    """S_COPY validates claims and strategy deterministically, refusing generative fabrication."""
     payload = {
         "task_id": "task-copy-001",
         "tenant_id": "acme_corp",
@@ -75,41 +75,18 @@ def test_s_copy_with_t16_claims_and_t19_strategy() -> None:
 
     assert result["status"] == "success"
     assert result["task_id"] == "task-copy-001"
-    assert "headline" in result
-    assert float(result["hook_score"]) >= 0.8
-    assert int(result["variants_count"]) == 5
-    assert int(result["visual_briefs_count"]) == 5
-    assert int(result["schedules_count"]) == 5
-
-    # Verify structured package
-    package_data = json.loads(result["creative_package"])
-    package = CreativePackage.model_validate(package_data)
-
-    assert package.package_id == "pkg-task-copy-001"
-    assert package.tenant_id == "acme_corp"
-    assert len(package.ad_copy_variants) == 5
-    assert len(package.visual_briefs) == 5
-    assert len(package.social_posts) >= 3
-    assert len(package.schedules) == 5
-
-    # Check channels adapted
-    channels = [v.channel for v in package.ad_copy_variants]
-    assert "meta" in channels
-    assert "google" in channels
-    assert "tiktok" in channels
-    assert "linkedin" in channels
-    assert "email" in channels
-
-    # Check claim grounding
-    for variant in package.ad_copy_variants:
-        assert len(variant.source_claim_ids) >= 1
-        assert variant.source_claim_ids[0] in ("claim-hydra-01", "claim-perf-02")
-        assert variant.cta != ""
-        assert len(variant.cta_variants) >= 2
+    assert result["tool"] == "S_COPY"
+    assert result["deterministic"] == "true"
+    # Proves zero-generation: S_COPY does NOT fabricate creative content
+    assert result["generative_execution"] == "denied"
+    assert result["variants_count"] == "0"
+    assert int(result["approved_claims_count"]) == 2
+    assert "creative_package" not in result
+    assert "artifact_hash" in result
 
 
 def test_s_copy_screens_prohibited_terms() -> None:
-    """S_COPY strictly screens out prohibited terms from headlines, hooks, and body copy."""
+    """S_COPY strictly screens out prohibited terms from candidate variants deterministically."""
     payload = {
         "task_id": "task-copy-proh",
         "brand_voice": "innovative",
@@ -119,18 +96,25 @@ def test_s_copy_screens_prohibited_terms() -> None:
         "t16_claims": json.dumps([
             {"id": "c1", "text": "Validated workflow improvement.", "status": "SUPPORTED"}
         ]),
+        "variants": json.dumps([
+            {"hook": "Discover the miracle solution for enterprise.", "headline": "A Miracle"},
+            {"hook": "Empowering performance with validated precision.", "headline": "Precision"},
+            {"hook": "Unlock the secret growth formula.", "headline": "Secret Formula"},
+        ]),
     }
 
     result = execute_s_copy(payload)
     assert result["status"] == "success"
+    assert result["deterministic"] == "true"
 
-    package = CreativePackage.model_validate_json(result["creative_package"])
-    for variant in package.ad_copy_variants:
-        assert "secret" not in variant.headline.lower()
-        assert "formula" not in variant.headline.lower()
-        assert "miracle" not in variant.headline.lower()
-        assert "secret" not in variant.body_copy.lower()
-        assert "formula" not in variant.body_copy.lower()
+    clean_variants = json.loads(result["variants"])
+    assert len(clean_variants) == 1
+    assert "precision" in clean_variants[0]["headline"].lower()
+    for variant in clean_variants:
+        combined = (variant.get("hook", "") + " " + variant.get("headline", "")).lower()
+        assert "secret" not in combined
+        assert "formula" not in combined
+        assert "miracle" not in combined
 
 
 def test_s_copy_flags_unsupported_claims() -> None:
@@ -148,16 +132,14 @@ def test_s_copy_flags_unsupported_claims() -> None:
 
     result = execute_s_copy(payload)
     assert result["status"] == "success"
+    assert result["deterministic"] == "true"
 
-    package = CreativePackage.model_validate_json(result["creative_package"])
-    assert len(package.flagged_unsupported_claims) == 1
-    assert "Cures all workflow issues instantly" in package.flagged_unsupported_claims[0]
-    assert len(package.compliance_warnings) >= 1
-
-    # Verify that only the approved claim was linked to variants
-    for variant in package.ad_copy_variants:
-        assert "claim-approved-1" in variant.source_claim_ids
-        assert "1000% ROI" not in variant.body_copy
+    flagged = json.loads(result["flagged_claims"])
+    assert len(flagged) == 1
+    assert "Cures all workflow issues instantly" in flagged[0]
+    warnings = json.loads(result["compliance_warnings"])
+    assert len(warnings) >= 1
+    assert any("Unsupported claim flagged" in w for w in warnings)
 
 
 @pytest.mark.asyncio
@@ -1967,6 +1949,276 @@ async def test_t5_runtime_destroyed_and_grant_revoked_after_completion() -> None
 
     # 2. Egress grant expired/revoked
     assert grant.is_expired() is True
+
+
+# =============================================================================
+# T6 Creative Utilities, Deterministic S_COPY & LLM Composition Verification
+# =============================================================================
+
+
+def test_t6_s_copy_purely_deterministic_no_generative_content() -> None:
+    """T6: Prove S_COPY contains deterministic utilities only and refuses generative creation."""
+    from app.integrations.sandbox.s_copy_core import execute_s_copy
+
+    # 1. Zero-generation: when called with only objective/campaign prompt and no candidate copy
+    payload = {
+        "task_id": "t6-gen-refusal",
+        "tenant_id": "acme",
+        "brand_id": "brand-1",
+        "objective": "Launch AI product",
+        "target_audience": "enterprise architects",
+        "channels": "meta,google,tiktok",
+    }
+    res = execute_s_copy(payload)
+    assert res["status"] == "success"
+    assert res["deterministic"] == "true"
+    assert res["generative_execution"] == "denied"
+    assert res["variants_count"] == "0"
+    assert "creative_package" not in res
+    assert "headline" not in res
+    assert "visual_briefs" not in res
+    assert "schedules" not in res
+
+    # 2. No fabricated fallback claims: missing claims results in 0 approved claims
+    assert int(res["approved_claims_count"]) == 0
+    assert "claim-base-001" not in str(res)
+
+
+def test_t6_deterministic_validators_produce_repeatable_outputs() -> None:
+    """T6: Prove S_COPY deterministic validators produce repeatable outputs."""
+    from app.integrations.sandbox.s_copy_core import (
+        deduplicate_variants,
+        hash_artifact,
+        prohibited_term_check,
+        validate_aspect_ratio,
+        validate_claim_refs,
+        validate_platform_format,
+        validate_safe_zone_metadata,
+        validate_schema,
+    )
+
+    # 1. Deduplication
+    input_vars = [
+        {"hook": "Fastest workflow automation engine.", "score": 0.9},
+        {"hook": "Fastest workflow automation engine.", "score": 0.9},  # exact duplicate
+        {"hook": "fastest workflow automation engine", "score": 0.88},  # normalized duplicate
+        {"hook": "Verified benchmark performance.", "score": 0.85},
+    ]
+    dedup_1 = deduplicate_variants(input_vars)
+    dedup_2 = deduplicate_variants(input_vars)
+    assert dedup_1 == dedup_2
+    assert dedup_1["unique_count"] == 2
+    assert dedup_1["duplicates_removed"] == 2
+
+    # 2. Prohibited terms screening
+    proh_1 = prohibited_term_check(input_vars, ["miracle", "secret", "fastest"])
+    proh_2 = prohibited_term_check(input_vars, ["miracle", "secret", "fastest"])
+    assert proh_1 == proh_2
+    assert proh_1["is_clean"] is False
+    assert "fastest" in proh_1["detected_terms"]
+    assert len(proh_1["clean_items"]) == 1
+
+    # 3. Claim reference checking
+    approved = [{"id": "claim-01", "validation_status": "SUPPORTED"}]
+    claim_res = validate_claim_refs(["claim-01", "claim-unauthorized"], approved)
+    assert claim_res["all_grounded"] is False
+    assert "claim-01" in claim_res["valid_citations"]
+    assert "claim-unauthorized" in claim_res["unsupported_claims"]
+
+    # 4. Aspect ratio validation
+    assert validate_aspect_ratio("1:1")["is_valid"] is True
+    assert validate_aspect_ratio("9:16")["is_valid"] is True
+    assert validate_aspect_ratio("21:9")["is_valid"] is False
+
+    # 5. UI Safe zone metadata validation
+    assert validate_safe_zone_metadata({"top_px": 250, "bottom_px": 340})["is_valid"] is True
+    assert validate_safe_zone_metadata({"top_px": -10, "bottom_px": 340})["is_valid"] is False
+
+    # 6. Platform formatting validation
+    fmt_res = validate_platform_format("google", "search_ad", character_count=25)
+    assert fmt_res["is_valid"] is True
+    fmt_err = validate_platform_format("google", "search_ad", character_count=200)
+    assert fmt_err["is_valid"] is False
+    assert any("exceeds" in e for e in fmt_err["errors"])
+
+    # 7. Schema validation
+    schema_ok = validate_schema({"headline": "Test", "body": "Copy"}, ["headline", "body"])
+    assert schema_ok["is_valid"] is True
+    schema_bad = validate_schema({"headline": "Test"}, ["headline", "body"])
+    assert schema_bad["is_valid"] is False
+
+    # 8. Deterministic artifact hashing
+    h1 = hash_artifact({"key": "val", "arr": [1, 2, 3]})
+    h2 = hash_artifact({"arr": [1, 2, 3], "key": "val"})  # different key order
+    assert h1 == h2
+
+
+def test_t6_seven_creative_llm_identities_distinct_and_isolated() -> None:
+    """T6: Prove W_CREAT + six specialists have distinct identities and isolated mutable state."""
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+
+    settings = LlmSettings(
+        provider="local",
+        base_url="http://localhost:11434/v1",
+        model_name="local-qwen",
+    )
+
+    identities = [
+        "W_CREAT",
+        "CREAT-RESEARCH",
+        "CREAT-CONCEPT",
+        "CREAT-COPY",
+        "CREAT-VISUAL",
+        "CREAT-ADAPT",
+        "CREAT-QA",
+    ]
+
+    clients = [LlmClient(settings, agent_identity=ident) for ident in identities]
+
+    # Verify distinct agent identities
+    agent_ids = [c.agent_identity for c in clients]
+    assert len(set(agent_ids)) == 7
+    assert set(agent_ids) == set(identities)
+
+    # Verify mutable context isolation: mutating metadata on one client does not affect others
+    clients[0]._last_metadata["isolated_flag"] = "W_CREAT_ONLY"
+    assert clients[0].last_metadata.get("isolated_flag") == "W_CREAT_ONLY"
+    for other_client in clients[1:]:
+        assert "isolated_flag" not in other_client.last_metadata
+
+
+def test_t6_settings_reuse_without_identity_or_context_leakage() -> None:
+    """T6: Prove model and settings can be reused without sharing identity or run context."""
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+
+    shared_settings = LlmSettings(
+        provider="local",
+        base_url="http://localhost:11434/v1",
+        model_name="mistral-7b-instruct",
+    )
+
+    client_research = LlmClient(shared_settings, agent_identity="CREAT-RESEARCH")
+    client_copy = LlmClient(shared_settings, agent_identity="CREAT-COPY")
+
+    # Settings are identical immutable objects
+    assert client_research.settings is shared_settings
+    assert client_copy.settings is shared_settings
+
+    # Identities and client instances are strictly distinct
+    assert client_research is not client_copy
+    assert client_research.agent_identity != client_copy.agent_identity
+    assert client_research.agent_identity == "CREAT-RESEARCH"
+    assert client_copy.agent_identity == "CREAT-COPY"
+
+
+def test_t6_correct_llm_injected_into_creative_coordinator_and_specialists() -> None:
+    """T6: Prove correct LLMs are injected into W_CREAT and each specialist."""
+    from app.agents.creative_content import CreativeContentAgent
+    from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+    from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+    from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+
+    settings = LlmSettings(
+        provider="local",
+        base_url="http://localhost:11434/v1",
+        model_name="local-qwen",
+    )
+
+    w_creat_llm = LlmClient(settings, agent_identity="W_CREAT")
+    research_llm = LlmClient(settings, agent_identity="CREAT-RESEARCH")
+    concept_llm = LlmClient(settings, agent_identity="CREAT-CONCEPT")
+    copy_llm = LlmClient(settings, agent_identity="CREAT-COPY")
+    visual_llm = LlmClient(settings, agent_identity="CREAT-VISUAL")
+    adapt_llm = LlmClient(settings, agent_identity="CREAT-ADAPT")
+    qa_llm = LlmClient(settings, agent_identity="CREAT-QA")
+
+    workflow = CreativeContentWorkflow(
+        research_agent=CreativeResearchAgent(llm_client=research_llm),
+        concept_agent=CreativeConceptAgent(llm_client=concept_llm),
+        copy_agent=CreativeCopyAgent(llm_client=copy_llm),
+        visual_agent=CreativeVisualAgent(llm_client=visual_llm),
+        adaptation_agent=CreativeAdaptationAgent(llm_client=adapt_llm),
+        qa_agent=CreativeQualityAgent(llm_client=qa_llm),
+    )
+
+    coordinator = CreativeContentAgent(llm_client=w_creat_llm, workflow=workflow)
+
+    # Prove coordinator injection
+    assert coordinator.llm_client is w_creat_llm
+    assert coordinator.llm_client.agent_identity == "W_CREAT"
+
+    # Prove each specialist injection
+    wf = coordinator.workflow
+    assert wf.research_agent.llm_client is research_llm
+    assert wf.research_agent.llm_client.agent_identity == "CREAT-RESEARCH"
+
+    assert wf.concept_agent.llm_client is concept_llm
+    assert wf.concept_agent.llm_client.agent_identity == "CREAT-CONCEPT"
+
+    assert wf.copy_agent.llm_client is copy_llm
+    assert wf.copy_agent.llm_client.agent_identity == "CREAT-COPY"
+
+    assert wf.visual_agent.llm_client is visual_llm
+    assert wf.visual_agent.llm_client.agent_identity == "CREAT-VISUAL"
+
+    assert wf.adaptation_agent.llm_client is adapt_llm
+    assert wf.adaptation_agent.llm_client.agent_identity == "CREAT-ADAPT"
+
+    assert wf.qa_agent.llm_client is qa_llm
+    assert wf.qa_agent.llm_client.agent_identity == "CREAT-QA"
+
+
+def test_t6_provider_credentials_remain_outside_sandbox_payloads() -> None:
+    """T6: Prove no LLM credentials, provider keys, or tokens enter sandbox payloads."""
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.core.settings import LlmSettings
+    from app.integrations.llm.client import LlmClient
+
+    secret_key = "sk-super-secret-production-key-999"
+    settings = LlmSettings(
+        provider="cloud",
+        base_url="https://api.openai.com/v1",
+        api_key=secret_key,
+        model_name="gpt-4o",
+    )
+    llm = LlmClient(settings, agent_identity="CREAT-COPY")
+
+    # Specialist holds host-side LLM client with credentials
+    specialist = CreativeCopyAgent(llm_client=llm)
+
+    # Construct sandbox invocation mandate
+    mandate = specialist.build_sandbox_mandate(
+        task_id="t6-cred-isolation",
+        tenant_id="acme",
+        operation="s_copy_variant_gen",
+        payload={"task_id": "t6-cred-isolation", "variants": []},
+    )
+
+    # Verify secret key is absent from mandate payload, operation, and metadata
+    serialized_mandate = mandate.model_dump_json()
+    assert secret_key not in serialized_mandate
+    assert "sk-" not in serialized_mandate
+    assert "api_key" not in mandate.payload
+
+    # Research specialist verification
+    research_agent = CreativeResearchAgent(llm_client=LlmClient(settings, agent_identity="CREAT-RESEARCH"))
+    research_mandate = research_agent.build_sandbox_mandate(
+        task_id="t6-research-cred-isolation",
+        tenant_id="acme",
+        operation="public_search",
+        payload={"task_id": "t6-research-cred-isolation", "platform": "meta"},
+    )
+    assert secret_key not in research_mandate.model_dump_json()
+    assert "api_key" not in research_mandate.payload
 
 
 
