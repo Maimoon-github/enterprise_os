@@ -7,6 +7,8 @@ the seven bounded worker agents. Workers never see more than what a
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
@@ -353,6 +355,230 @@ class ContentScheduleItem(BaseModel):
     cadence_notes: str = ""
 
 
+class QAStatus(StrEnum):
+    """Evaluation status returned by CREAT-QA."""
+
+    PASS = "PASS"
+    REVISE = "REVISE"
+    BLOCK = "BLOCK"
+
+
+class QAReasonCode(StrEnum):
+    """Deterministic reason codes for QA revision routing or blockage."""
+
+    RESEARCH = "RESEARCH"
+    CONCEPT = "CONCEPT"
+    COPY = "COPY"
+    VISUAL = "VISUAL"
+    ADAPT = "ADAPT"
+    EVIDENCE_MISSING = "EVIDENCE_MISSING"
+    SCOPE_VIOLATION = "SCOPE_VIOLATION"
+    POLICY_BLOCK = "POLICY_BLOCK"
+
+
+class CreativeArtifactEnvelope(BaseModel):
+    """Immutable lineage envelope carried by creative stage artifacts."""
+
+    tenant_id: str
+    task_id: str
+    run_id: str = Field(default_factory=lambda: f"run-{uuid.uuid4().hex[:8]}")
+    stage_attempt_id: str = Field(default_factory=lambda: f"attempt-{uuid.uuid4().hex[:8]}")
+    strategy_version: str = ""
+    strategy_hash: str = ""
+    policy_version: str = ""
+    policy_hash: str = ""
+    brand_persona_version: str = ""
+    brand_persona_hash: str = ""
+    approved_channel_ids: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    input_artifact_hashes: list[str] = Field(default_factory=list)
+    producing_agent_id: str = "W_CREAT"
+    model_identity: str = ""
+    model_version: str = ""
+    tool_invocation_refs: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    artifact_hash: str = ""
+
+    def canonical_bytes(self) -> bytes:
+        """Return deterministic JSON bytes for tamper-evident hashing."""
+        data = self.model_dump(mode="json", exclude={"artifact_hash"})
+        return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+    def compute_artifact_hash(self) -> str:
+        """Compute SHA-256 tamper-evident digest of this artifact."""
+        computed = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        self.artifact_hash = computed
+        return computed
+
+
+class CreativePlan(CreativeArtifactEnvelope):
+    """Bounded creative execution plan produced by W_CREAT coordinator."""
+
+    plan_id: str = Field(default_factory=lambda: f"cplan-{uuid.uuid4().hex[:8]}")
+    approved_objectives: list[str] = Field(default_factory=list)
+    approved_channels: list[str] = Field(default_factory=list)
+    required_deliverables: list[str] = Field(default_factory=list)
+    evidence_manifest: list[str] = Field(default_factory=list)
+    prohibited_scope: list[str] = Field(default_factory=list)
+    expected_artifact_types: list[str] = Field(default_factory=list)
+    target_audience: str = ""
+    max_revision_attempts: int = 2
+
+
+class ResearchFindingItem(BaseModel):
+    """Authoritative public research reference or pattern finding."""
+
+    source_url: str = ""
+    domain: str = ""
+    publisher: str = ""
+    retrieved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source_content_hash: str = ""
+    extracted_finding: str
+    citation: str = ""
+    confidence: float = 1.0
+    unresolved_question: str = ""
+
+
+class ResearchBrief(CreativeArtifactEnvelope):
+    """Public references, citations, and platform spec snapshots produced by CREAT-RESEARCH."""
+
+    brief_id: str = Field(default_factory=lambda: f"rb-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-RESEARCH"
+    objective: str = ""
+    platform_scope: list[str] = Field(default_factory=list)
+    findings: list[ResearchFindingItem] = Field(default_factory=list)
+    citations: list[str] = Field(default_factory=list)
+    confidence: float = 1.0
+    unresolved_questions: list[str] = Field(default_factory=list)
+
+
+class PlatformSpecItem(BaseModel):
+    """Specific placement format, aspect ratio, text limit, or safe-zone rules."""
+
+    platform: str
+    placement: str
+    retrieved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source_refs: list[str] = Field(default_factory=list)
+    dimensions: dict[str, Any] = Field(default_factory=dict)
+    ratios: list[str] = Field(default_factory=list)
+    text_limits: dict[str, int] = Field(default_factory=dict)
+    safe_zone_requirements: dict[str, Any] = Field(default_factory=dict)
+    deterministic_constraints: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlatformSpecSnapshot(CreativeArtifactEnvelope):
+    """Frozen, cited platform specification snapshot for platform-native execution."""
+
+    snapshot_id: str = Field(default_factory=lambda: f"spec-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-RESEARCH"
+    platform: str = ""
+    placement: str = ""
+    specs: list[PlatformSpecItem] = Field(default_factory=list)
+    spec_version: str = "2026.1"
+    dimensions: dict[str, Any] = Field(default_factory=dict)
+    ratios: list[str] = Field(default_factory=list)
+    text_limits: dict[str, int] = Field(default_factory=dict)
+    safe_zone_requirements: dict[str, Any] = Field(default_factory=dict)
+    deterministic_constraints: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConceptItem(BaseModel):
+    """Message territory, audience tension, and narrative architecture for a concept."""
+
+    concept_id: str = Field(default_factory=lambda: f"cpt-{uuid.uuid4().hex[:8]}")
+    territory: str
+    audience_tension: str
+    message_angle: str
+    narrative_architecture: str
+    approved_evidence_refs: list[str] = Field(default_factory=list)
+    prohibited_claims: list[str] = Field(default_factory=list)
+
+
+class ConceptPack(CreativeArtifactEnvelope):
+    """Message territories, campaign concepts, and angles produced by CREAT-CONCEPT."""
+
+    pack_id: str = Field(default_factory=lambda: f"cpk-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-CONCEPT"
+    concepts: list[ConceptItem] = Field(default_factory=list)
+    narrative_framework: str = ""
+
+
+class CopyPack(CreativeArtifactEnvelope):
+    """Genuinely distinct hooks, headlines, copy variants, and CTAs produced by CREAT-COPY."""
+
+    pack_id: str = Field(default_factory=lambda: f"copypk-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-COPY"
+    concept_ref: str = ""
+    variants: list[AdCopyVariant] = Field(default_factory=list)
+    copy_variant_id: str = ""
+    variant_purpose: str = ""
+    factual_claim_refs: list[str] = Field(default_factory=list)
+    non_factual_classifications: dict[str, str] = Field(default_factory=dict)
+
+
+class VisualPack(CreativeArtifactEnvelope):
+    """Art direction, storyboards, shot lists, and visual briefs produced by CREAT-VISUAL."""
+
+    pack_id: str = Field(default_factory=lambda: f"vispk-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-VISUAL"
+    visual_variant_id: str = ""
+    concept_ref: str = ""
+    visual_territory: str = ""
+    composition: str = ""
+    storyboard: list[dict[str, Any]] = Field(default_factory=list)
+    shot_list: list[str] = Field(default_factory=list)
+    production_briefs: list[VisualBrief] = Field(default_factory=list)
+    product_brand_refs: list[str] = Field(default_factory=list)
+
+
+class AdaptedCreativePack(CreativeArtifactEnvelope):
+    """Channel-adapted creative variants, asset matrix, and release schedule produced by CREAT-ADAPT."""
+
+    pack_id: str = Field(default_factory=lambda: f"adaptpk-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-ADAPT"
+    source_copy_refs: list[str] = Field(default_factory=list)
+    source_visual_refs: list[str] = Field(default_factory=list)
+    channel: str = ""
+    placement: str = ""
+    format: str = ""
+    adaptation_notes: str = ""
+    ad_copy_variants: list[AdCopyVariant] = Field(default_factory=list)
+    social_posts: list[SocialPostVariant] = Field(default_factory=list)
+    visual_briefs: list[VisualBrief] = Field(default_factory=list)
+    asset_matrix: list[dict[str, Any]] = Field(default_factory=list)
+    calendar_proposal: list[ContentScheduleItem] = Field(default_factory=list)
+    platform_spec_version: str = ""
+
+
+class QAFinding(BaseModel):
+    """Individual finding or check result from CREAT-QA evaluation."""
+
+    finding_id: str = Field(default_factory=lambda: f"find-{uuid.uuid4().hex[:8]}")
+    layer: str = "grounding"  # grounding | brand | originality | platform | policy_scope
+    severity: str = "high"  # info | warning | high | critical
+    reason_code: QAReasonCode | str = QAReasonCode.SCOPE_VIOLATION
+    message: str
+    affected_artifact_ids: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+    recommended_responsible_stage: str = ""
+    failed_deterministic_checks: list[str] = Field(default_factory=list)
+
+
+class QAReport(CreativeArtifactEnvelope):
+    """Independent evaluation report (PASS/REVISE/BLOCK) produced by CREAT-QA."""
+
+    report_id: str = Field(default_factory=lambda: f"qar-{uuid.uuid4().hex[:8]}")
+    producing_agent_id: str = "CREAT-QA"
+    evaluated_artifact_hash: str = ""
+    status: QAStatus = QAStatus.BLOCK
+    reason_code: QAReasonCode | str | None = None
+    findings: list[QAFinding] = Field(default_factory=list)
+    severity: str = "medium"
+    failed_deterministic_checks: list[str] = Field(default_factory=list)
+    missing_evidence_claims: list[str] = Field(default_factory=list)
+    passed_checks: list[str] = Field(default_factory=list)
+
+
 class CreativePackage(BaseModel):
     """Consolidated creative deliverable produced by W_CREAT + S_COPY."""
 
@@ -372,6 +598,13 @@ class CreativePackage(BaseModel):
     persona_voice: str = "authoritative"
     provenance: dict[str, Any] = Field(default_factory=dict)
     confidence: ConfidenceInterval | None = None
+    research_references: list[str] = Field(default_factory=list)
+    concept_refs: list[str] = Field(default_factory=list)
+    platform_spec_refs: list[str] = Field(default_factory=list)
+    claim_evidence_refs: list[str] = Field(default_factory=list)
+    qa_status: str | None = None
+    qa_findings: list[str] = Field(default_factory=list)
+    artifact_hashes: dict[str, str] = Field(default_factory=dict)
 
 
 class ResponsiveBreakpoint(BaseModel):
@@ -683,6 +916,26 @@ __all__ = [
     "ContextRequest",
     "ConfidenceInterval",
     "EvidenceEnvelope",
+    "QAStatus",
+    "QAReasonCode",
+    "QAFinding",
+    "CreativeArtifactEnvelope",
+    "CreativePlan",
+    "ResearchFindingItem",
+    "ResearchBrief",
+    "PlatformSpecItem",
+    "PlatformSpecSnapshot",
+    "ConceptItem",
+    "ConceptPack",
+    "CopyPack",
+    "VisualPack",
+    "AdaptedCreativePack",
+    "QAReport",
+    "AdCopyVariant",
+    "VisualBrief",
+    "SocialPostVariant",
+    "ContentScheduleItem",
+    "CreativePackage",
     "DevelopmentDeliverable",
     "CmsSchemaDiff",
     "CodeDiffEntry",

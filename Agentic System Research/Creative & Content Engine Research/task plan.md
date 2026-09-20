@@ -1,48 +1,49 @@
-Based on the Strategy Engine architecture in the provided project materials, the essential implementation plan can be reduced to **7 sequential tasks**. The core runtime remains:
+Based on the currently available Creative Engine attachment, this is the **essential implementation plan**, compressed into **7 sequential tasks** while preserving the intended architecture and minimal-change approach.
 
-`IE → W_STRAT → S_ALLOC → W_STRAT → IE → downstream W_CREAT / HITL as required`
+| Task ID | Phase                     | Task Name                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Predecessor | Milestone                                                                              | Resource / Owner                 |
+| ------- | ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------- | -------------------------------- |
+| **T1**  | Foundation                | **Define Creative Contracts & Boundaries**                 | Establish typed contracts for `CreativePlan`, `ResearchBrief`, `PlatformSpecSnapshot`, `ConceptPack`, `CopyPack`, `VisualPack`, `AdaptedCreativePack`, and `QAReport`. Add immutable lineage fields: tenant/task/run/attempt IDs, hashes, evidence refs, model/tool refs. Update `agents/base.py` minimally so `W_CREAT` can have `capability=None`. **Subtasks:** scope enforcement; evidence fail-closed rules; approved-channel constraints; artifact envelope/schema updates.                                                                 | —           | **Creative contracts and zero-sandbox W_CREAT boundary defined**                       | Backend / Agent Architecture     |
+| **T2**  | Coordinator               | **Refactor `W_CREAT`**                                     | Modify `creative_content_engine/creative_content.py` so `W_CREAT` performs only task validation, Creative planning, deterministic scope checks, workflow invocation, and final packaging. Remove direct `S_COPY` / `SandboxClient` execution. After QA `PASS`, W_CREAT may package/select approved artifacts but must not rewrite them.                                                                                                                                                                                                           | T1          | **W_CREAT operates as LLM coordinator with zero sandbox capability**                   | Creative Engine / Backend        |
+| **T3**  | Specialist Layer          | **Implement Creative Sub-Agents**                          | Add `research.py`, `concept.py`, `copy.py`, `visual.py`, `adaptation.py`, and `quality.py`. Each specialist receives its own purpose-scoped LLM identity/context, typed I/O contract, sandbox mandate, fixed tool allowlist, and provenance identity. **Subtasks:** RESEARCH → public reference/spec gathering; CONCEPT → territories/angles; COPY → variants; VISUAL → art direction/storyboards; ADAPT → placement/channel variants; QA → independent `PASS / REVISE / BLOCK`.                                                                  | T2          | **Six isolated Creative specialists implemented**                                      | AI/Agent Engineering             |
+| **T4**  | Orchestration             | **Build Deterministic Creative Workflow**                  | Add `creative_content_workflow.py` implementing the fixed DAG: `RESEARCH → CONCEPT → [COPY ∥ VISUAL] → ADAPT → QA`. Only COPY and VISUAL may run in predefined parallelism. Add static QA revision routes and bounded `max_revision_attempts`; workflow structure must never be redesigned by an LLM.                                                                                                                                                                                                                                             | T3          | **Deterministic Creative pipeline executable end-to-end**                              | Orchestration / Backend          |
+| **T5**  | Security & Execution      | **Enforce Specialist Sandbox Policies**                    | Modify `sandbox/capabilities.py`, `client.py`, and `sandbox_policy.py`. Deny sandbox access to `W_CREAT`; authorize only known `CREAT-*` identities. Provision a fresh AIO sandbox per `(task_id, specialist_id, stage_attempt_id)`. Set `CREAT-RESEARCH` to allowlisted proxy egress only; all other specialists use `DENY_ALL`. No backend-process fallback when AIO fails. **Subtasks:** identity-bound authorization; ephemeral execution; credential stripping; sealed inputs/outputs; sandbox teardown; research anti-SSRF/egress controls. | T4          | **Least-privilege AIO execution and network isolation enforced**                       | Security / Sandbox Platform      |
+| **T6**  | Shared Utilities & Wiring | **Refactor Creative Tools, `S_COPY`, and LLM Composition** | Convert `S_COPY` from monolithic Creative generation into deterministic utilities only: schema checks, claim refs, character limits, channel scope, prohibited terms, aspect ratios, safe-zone metadata, format validation, deduplication, citation validation, hashing. Reuse `integrations/llm/client.py` and create separate identities for W_CREAT + six specialists in `main.py`. Keep all provider credentials outside sandboxes.                                                                                                           | T5          | **Creative generation separated from deterministic tooling; all LLM identities wired** | Backend / LLM Platform / Sandbox |
+| **T7**  | Validation                | **Integrate, Test & Prove Architecture**                   | Extend unit/integration tests for the complete design. Verify: W_CREAT sandbox denial; specialist sandbox access; separate LLM identities; Model-A/IE-only enterprise data access; fixed workflow order; COPY/VISUAL parallelism; research-only egress; unsupported-channel rejection; missing-evidence fail-closed behavior; QA immutability; no post-QA rewrite; provenance completeness; no autonomous publishing; `IE → HITL → Outbound MCP` enforcement.                                                                                     | T6          | **Creative Engine passes architectural, security, workflow, and acceptance tests**     | QA / Backend / Security          |
 
-| Task ID      | Phase                      | Task Name                                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                | Predecessor | Milestone                                                  | Resource / Owner               |
-| ------------ | -------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------- | ------------------------------ |
-| **CREAT-01** | Foundation                 | **Define Strategy Engine Contracts & Boundaries**    | Establish `W_STRAT` as the bounded Layer-5 Strategy worker. Define TaskGrant inputs, tenant scope, strategy outputs, Model-A restrictions, and the `W_STRAT ↔ S_ALLOC` boundary. **Sub-tasks:** validate T16 Product Evidence, T17 Customer Voice, T18 Competitor Intelligence dependencies; define allowed channels, budget ceiling, objectives, time horizon, constraints, and fail-closed behavior.                     | —           | **M1 — Strategy contracts frozen**                         | Architecture / `W_STRAT`       |
-| **CREAT-02** | Reasoning                  | **Implement W_STRAT Strategic Reasoning**            | Give `W_STRAT` its own purpose-scoped LLM for qualitative strategy synthesis. It interprets IE-supplied evidence, campaign objectives, funnel roles, channel roles, KPIs, constraints, and planning assumptions without calculating or mutating budgets itself. **Sub-tasks:** dependency normalization, tenant isolation, channel-scope enforcement, strategy brief creation, risk/assumption identification.             | STRAT-01    | **M2 — W_STRAT reasoning operational**                     | `W_STRAT` / LLM Integration    |
-| **CREAT-03** | Specialist                 | **Implement S_ALLOC Reasoning Sub-Agent**            | Create/validate the purpose-scoped `StrategyAllocationAgent` (`S_ALLOC`). Its independent LLM interprets KPI priorities, scenario emphasis, modeling assumptions, and risks. It cannot access RAG, DB, IE internals, outbound systems, or expand budget/channel scope. **Sub-tasks:** structured reasoning schema, independent LLM context, scope checks, model metadata/provenance.                                       | STRAT-02    | **M3 — S_ALLOC reasoning isolated**                        | `S_ALLOC` / AI-ML              |
-| **CREAT-04** | Sandbox Execution          | **Build Deterministic Allocation & Funnel Modeling** | Execute quantitative work through fresh task-scoped AIO-Sandbox capability `S_ALLOC`. **Sub-tasks:** media-mix modeling, budget optimization, funnel simulation, ROAS/scenario calculations, diminishing-return constraints, resource limits, deny-all network policy, output sanitization, sandbox teardown. Numerical allocation remains deterministic rather than LLM-generated.                                        | STRAT-03    | **M4 — Sandboxed allocation engine validated**             | `S_ALLOC` / Sandbox & Security |
-| **CREAT-05** | Synthesis                  | **Assemble Holistic Omnichannel Strategy**           | `W_STRAT` combines its strategic reasoning with sanitized S_ALLOC results into the canonical `OmnichannelStrategyPlan`. **Sub-tasks:** channel allocations, funnel-stage allocations, channel roles, media mix, campaign proposals, budget distribution, scenario comparison, KPI targets, assumptions, evidence references, caveats and confidence. Ensure total allocation cannot exceed the IE-approved budget ceiling. | STRAT-04    | **M5 — Complete strategy package produced**                | `W_STRAT`                      |
-| **CREAT-06** | Governance                 | **Validate Scope, Provenance & IE Handoff**          | Validate the final strategy before returning it to IE. **Sub-tasks:** tenant/channel/budget checks, evidence-reference verification, unsupported-estimate marking, W3C PROV lineage, LLM/model metadata, sandbox execution references, artifact hashing and EvidenceEnvelope creation. IE remains the authority for downstream routing; external spend or mutation still requires governed HITL/outbound flow.             | STRAT-05    | **M6 — Governed Strategy EvidenceEnvelope accepted by IE** | `W_STRAT` + IE / Governance    |
-| **CREAT-07** | Integration & Verification | **Integrate, Test & Enable Creative Handoff**        | Wire the completed Strategy Engine into Enterprise OS and prove architectural boundaries. **Sub-tasks:** register `W_STRAT` and `S_ALLOC` LLMs, sandbox capability wiring, update composition root, test Model-A isolation, cross-tenant denial, budget/channel enforcement, missing-evidence failure, sandbox isolation, provenance persistence, and final `IE → W_CREAT` strategy handoff.                               | STRAT-06    | **M7 — Strategy Engine production-ready**                  | Backend / QA / Security / IE   |
-
-### Essential task dependency chain
+### Final implementation sequence
 
 ```text
-CREAT-01
-Contracts & Boundaries
-    ↓
-CREAT-02
-W_STRAT Reasoning
-    ↓
-CREAT-03
-S_ALLOC Reasoning
-    ↓
-CREAT-04
-Sandboxed Quantitative Modeling
-    ↓
-CREAT-05
-Holistic Strategy Synthesis
-    ↓
-CREAT-06
-Governance + IE Handoff
-    ↓
-CREAT-07
-Integration + Verification + W_CREAT Handoff
+T1  Contracts & Boundaries
+ ↓
+T2  W_CREAT Refactor
+ ↓
+T3  Six Creative Specialists
+ ↓
+T4  Deterministic Workflow
+ ↓
+T5  Sandbox & Security Enforcement
+ ↓
+T6  Microtools + S_COPY Refactor + LLM Wiring
+ ↓
+T7  Integration & Acceptance Testing
 ```
 
-The most important separation to preserve is:
+The resulting implementation keeps the intended responsibility split:
 
-**`W_STRAT` = qualitative strategic authority and synthesis**
-**`S_ALLOC` = bounded allocation reasoning + deterministic quantitative execution**
-**`IE` = enterprise-data authority, orchestration authority, and downstream handoff authority**
+```text
+W_CREAT
+  = plan + orchestrate + synthesize/package
+  ≠ sandbox execution
 
-No additional Strategy sub-agent appears essential from the supplied architecture; **`S_ALLOC` remains the single justified Strategy specialist**.
+CREAT-*
+  = purpose-scoped LLM + fresh AIO sandbox
 
-Some earlier uploaded attachments are no longer directly loadable in this session. I used the Strategy Engine architecture already established from those materials in this project; if you want this plan cross-checked line-by-line against those exact files again, re-upload them.
+IE
+  = exclusive enterprise/RAG broker
+
+QA
+  = independent evaluator, not rewriter
+
+Publishing
+  = IE → HITL → Outbound MCP
+```

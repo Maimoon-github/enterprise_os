@@ -7,18 +7,33 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from app.agents.base import BoundedWorkerAgent
 from app.agents.creative_content import CreativeContentAgent
-from app.core.exceptions import SandboxInvocationError
+from app.core.exceptions import PolicyViolationError, SandboxInvocationError
 from app.integrations.sandbox.capabilities import validate_capability_access
 from app.integrations.sandbox.client import SandboxClient
 from app.integrations.sandbox.micro_tools import execute_s_copy
 from app.schemas.agent_contracts import (
     AdCopyVariant,
+    AdaptedCreativePack,
+    ConceptItem,
+    ConceptPack,
     ContentScheduleItem,
+    CopyPack,
+    CreativePlan,
     CreativePackage,
+    PlatformSpecItem,
+    PlatformSpecSnapshot,
+    QAFinding,
+    QAReasonCode,
+    QAReport,
+    QAStatus,
+    ResearchBrief,
+    ResearchFindingItem,
     SocialPostVariant,
     TaskGrant,
     VisualBrief,
+    VisualPack,
 )
 from app.schemas.governance import TenantScope, WorkerRole
 from app.schemas.sandbox import SandboxCapability
@@ -382,3 +397,263 @@ def test_model_a_no_direct_rag_or_database_imports() -> None:
     assert "app.orchestration.rag_query_dispatch" not in source
     assert "sqlalchemy" not in source
     assert "publish" not in source.lower() or "no publish" in source.lower() or "cadence" in source.lower()
+
+
+class _ZeroSandboxWorker(BoundedWorkerAgent):
+    """Test worker representing zero-capability coordinator (W_CREAT)."""
+
+    capability = None
+
+    def build_payload(self, grant: TaskGrant, context: dict) -> dict:
+        return {"operation": "noop"}
+
+
+@pytest.mark.asyncio
+async def test_zero_sandbox_worker_fails_closed_on_sandbox_execution() -> None:
+    """T1 boundary: BoundedWorkerAgent with capability=None fails closed on sandbox call."""
+    fake_sandbox = FakeSandboxClient()
+    agent = _ZeroSandboxWorker(sandbox_client=fake_sandbox)
+
+    grant = TaskGrant(
+        task_id="task-zero-sbx-01",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+
+    with pytest.raises(PolicyViolationError, match="has no authorized sandbox capability"):
+        await agent.run(grant, context={})
+
+    assert len(fake_sandbox.invocations) == 0
+
+
+@pytest.mark.asyncio
+async def test_bounded_worker_missing_sandbox_client_fails_closed() -> None:
+    """T1 boundary: BoundedWorkerAgent without sandbox_client fails closed on sandbox call."""
+    class _WorkerWithCap(BoundedWorkerAgent):
+        capability = SandboxCapability.COPY
+
+        def build_payload(self, grant: TaskGrant, context: dict) -> dict:
+            return {"operation": "generate_variants"}
+
+    agent = _WorkerWithCap(sandbox_client=None)
+    grant = TaskGrant(
+        task_id="task-no-client-01",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+
+    with pytest.raises(PolicyViolationError, match="has no sandbox client configured"):
+        await agent.run(grant, context={})
+
+
+def test_creative_contracts_scope_lineage_and_hashing() -> None:
+    """T1 contracts: Typed contracts validate scope, lineage, and SHA-256 digests."""
+    # 1. CreativePlan
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        approved_objectives=["Q4 acquisition"],
+        approved_channels=["meta", "linkedin"],
+        required_deliverables=["copy_pack", "visual_pack", "adapted_pack"],
+        evidence_manifest=["claim-hydra-01"],
+        prohibited_scope=["tiktok", "unsupported_claims"],
+        expected_artifact_types=["AdCopyVariant", "VisualBrief"],
+    )
+    plan_hash = plan.compute_artifact_hash()
+    assert len(plan_hash) == 64
+    assert plan.artifact_hash == plan_hash
+    assert plan.approved_channels == ["meta", "linkedin"]
+
+    # 2. ResearchBrief
+    brief = ResearchBrief(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        objective="Platform specs research",
+        platform_scope=["meta", "linkedin"],
+        findings=[
+            ResearchFindingItem(
+                source_url="https://ads.meta.com/guidance",
+                domain="ads.meta.com",
+                publisher="Meta",
+                extracted_finding="Meta recommends 9:16 vertical video for Reels.",
+                citation="[Meta Guidance 2026]",
+            )
+        ],
+        citations=["https://ads.meta.com/guidance"],
+    )
+    brief_hash = brief.compute_artifact_hash()
+    assert len(brief_hash) == 64
+    assert brief.findings[0].domain == "ads.meta.com"
+
+    # 3. PlatformSpecSnapshot
+    spec = PlatformSpecSnapshot(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        platform="meta",
+        placement="reels",
+        specs=[
+            PlatformSpecItem(
+                platform="meta",
+                placement="reels",
+                ratios=["9:16"],
+                text_limits={"headline": 40, "primary_text": 125},
+                safe_zone_requirements={"top_margin_px": 100, "bottom_margin_px": 250},
+            )
+        ],
+    )
+    spec_hash = spec.compute_artifact_hash()
+    assert len(spec_hash) == 64
+    assert spec.specs[0].ratios == ["9:16"]
+
+    # 4. ConceptPack
+    concept = ConceptPack(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        concepts=[
+            ConceptItem(
+                concept_id="cpt-1",
+                territory="clinical efficacy",
+                audience_tension="skepticism about synthetic moisturizers",
+                message_angle="proven clinical turnaround",
+                narrative_architecture="hook: clinical failure -> body: hydration -> cta: trial",
+                approved_evidence_refs=["claim-hydra-01"],
+            )
+        ],
+    )
+    assert len(concept.compute_artifact_hash()) == 64
+
+    # 5. CopyPack
+    copy_pack = CopyPack(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        concept_ref="cpt-1",
+        variants=[
+            AdCopyVariant(
+                variant_id="var-1",
+                channel="meta",
+                headline="Clinically Proven 42% Hydration",
+                body_copy="See real results in 28 days.",
+                cta="Shop Now",
+                source_claim_ids=["claim-hydra-01"],
+            )
+        ],
+        factual_claim_refs=["claim-hydra-01"],
+    )
+    assert len(copy_pack.compute_artifact_hash()) == 64
+
+    # 6. VisualPack
+    vis_pack = VisualPack(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        concept_ref="cpt-1",
+        visual_territory="laboratory clean",
+        composition="minimalist split-screen before/after",
+        production_briefs=[
+            VisualBrief(
+                brief_id="vb-1",
+                asset_title="Clinical Results 1:1",
+                channel="meta",
+                aspect_ratio="1:1",
+            )
+        ],
+    )
+    assert len(vis_pack.compute_artifact_hash()) == 64
+
+    # 7. AdaptedCreativePack
+    adapt_pack = AdaptedCreativePack(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        channel="meta",
+        ad_copy_variants=copy_pack.variants,
+        visual_briefs=vis_pack.production_briefs,
+        calendar_proposal=[
+            ContentScheduleItem(
+                schedule_id="sch-1",
+                day_or_week="Week 1 - Day 1",
+                channel="meta",
+                variant_ref="var-1",
+                primary_objective="Cold audience clinical proof",
+            )
+        ],
+    )
+    assert len(adapt_pack.compute_artifact_hash()) == 64
+
+
+def test_qa_report_status_and_fail_closed_unsupported_evidence() -> None:
+    """T1 QA contract: QAReport enforces PASS/REVISE/BLOCK and fails closed on bad evidence."""
+    # PASS
+    pass_report = QAReport(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        evaluated_artifact_hash="a" * 64,
+        status=QAStatus.PASS,
+        passed_checks=["grounding_verified", "channel_scope_verified", "format_verified"],
+    )
+    assert pass_report.status == QAStatus.PASS
+    assert pass_report.reason_code is None
+
+    # REVISE with static reason code
+    revise_report = QAReport(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        evaluated_artifact_hash="b" * 64,
+        status=QAStatus.REVISE,
+        reason_code=QAReasonCode.COPY,
+        findings=[
+            QAFinding(
+                layer="platform",
+                severity="high",
+                reason_code=QAReasonCode.COPY,
+                message="Headline exceeds LinkedIn 40-character limit.",
+                affected_artifact_ids=["var-1"],
+                recommended_responsible_stage="COPY",
+            )
+        ],
+    )
+    assert revise_report.status == QAStatus.REVISE
+    assert revise_report.reason_code == QAReasonCode.COPY
+
+    # BLOCK with unsupported evidence
+    block_report = QAReport(
+        tenant_id="acme",
+        task_id="task-creat-001",
+        evaluated_artifact_hash="c" * 64,
+        status=QAStatus.BLOCK,
+        reason_code=QAReasonCode.EVIDENCE_MISSING,
+        missing_evidence_claims=["claim-unsupported-magic-cure"],
+        findings=[
+            QAFinding(
+                layer="grounding",
+                severity="critical",
+                reason_code=QAReasonCode.EVIDENCE_MISSING,
+                message="Factual claim has no approved T16 evidence ref; fail closed.",
+                evidence_refs=[],
+            )
+        ],
+    )
+    assert block_report.status == QAStatus.BLOCK
+    assert block_report.reason_code == QAReasonCode.EVIDENCE_MISSING
+    assert "claim-unsupported-magic-cure" in block_report.missing_evidence_claims
+
+
+def test_existing_workers_sandbox_capabilities_unaffected() -> None:
+    """T1 boundary: Other worker classes retain their required sandbox capabilities."""
+    from app.agents.competitor_intel_engine.competitor_intel import CompetitorIntelAgent
+    from app.agents.customer_voice_engine.customer_voice import CustomerVoiceAgent
+    from app.agents.development_engine.development import DevelopmentAgent
+    from app.agents.learning_performance_engine.learning_performance import (
+        LearningPerformanceAgent,
+    )
+    from app.agents.product_evidence_engine.product_evidence import ProductEvidenceAgent
+    from app.agents.strategy_engine.strategy import StrategyAgent
+
+    assert DevelopmentAgent.capability == SandboxCapability.CODE
+    assert StrategyAgent.capability == SandboxCapability.ALLOC
+    assert ProductEvidenceAgent.capability == SandboxCapability.VAL
+    assert CompetitorIntelAgent.capability == SandboxCapability.SCRAPE
+    assert CustomerVoiceAgent.capability == SandboxCapability.PARSE
+    assert LearningPerformanceAgent.capability == SandboxCapability.ATTR
+
+

@@ -38,12 +38,12 @@ class WorkerReasoningOutput(BaseModel):
 class BoundedWorkerAgent(ABC):
     """Base class for a single bounded worker with one sandbox capability and domain reasoning."""
 
-    #: The sandbox capability this worker is authorized to request.
-    capability: SandboxCapability
+    #: The sandbox capability this worker is authorized to request (None for zero-sandbox workers like W_CREAT).
+    capability: SandboxCapability | None = None
 
     def __init__(
         self,
-        sandbox_client: SandboxClient,
+        sandbox_client: SandboxClient | None = None,
         llm_client: LlmClient | None = None,
     ) -> None:
         self._sandbox_client = sandbox_client
@@ -77,14 +77,15 @@ class BoundedWorkerAgent(ABC):
         """Perform bounded LLM domain reasoning over the supplied task grant and context."""
         assert self._llm_client is not None
 
+        cap_val = self.capability.value if self.capability is not None else "none"
         system_prompt = (
             f"You are the {grant.worker_role.value} bounded domain worker agent in a governed system. "
             "Interpret your grant and context strictly within your domain. "
             "Boundaries: "
             "- You have zero direct access to RAG, databases, or external systems (Model A). "
             "- You cannot authorize actions or grant permissions; reasoning never equals authorization. "
-            f"- Tool usage is restricted strictly to your authorized sandbox capability '{self.capability.value}' "
-            f"and permitted tools: {grant.tool_permissions or [self.capability.value]}. "
+            f"- Tool usage is restricted strictly to your authorized sandbox capability '{cap_val}' "
+            f"and permitted tools: {grant.tool_permissions or ([cap_val] if self.capability is not None else [])}. "
             "- Provide structured domain findings, evaluate whether specialist execution is needed, "
             "and identify any risks or assumptions."
         )
@@ -98,7 +99,7 @@ class BoundedWorkerAgent(ABC):
             "task_scope": grant.task_scope,
             "task_slice": grant.task_slice,
             "allowed_tools": grant.tool_permissions,
-            "allowed_capabilities": grant.sandbox_capabilities or [self.capability.value],
+            "allowed_capabilities": grant.sandbox_capabilities or ([self.capability.value] if self.capability is not None else []),
             "token_budget": grant.token_budget,
             "stop_conditions": grant.stop_conditions,
             "available_context_keys": list(context.keys()),
@@ -114,7 +115,7 @@ class BoundedWorkerAgent(ABC):
         # -------------------------------------------------------------
         # Governed Tool Calling Enforcement (Model output never grants authority)
         # -------------------------------------------------------------
-        effective_allowlist = set(grant.tool_permissions) | set(grant.sandbox_capabilities) | {self.capability.value}
+        effective_allowlist = set(grant.tool_permissions) | set(grant.sandbox_capabilities) | ({self.capability.value} if self.capability is not None else set())
         unauthorized_tools = [t for t in reasoning.selected_tools if t not in effective_allowlist]
         if unauthorized_tools:
             raise PolicyViolationError(
@@ -142,6 +143,14 @@ class BoundedWorkerAgent(ABC):
 
     async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
         """Execute this worker's bounded task grant and return its evidence."""
+        if self.capability is None:
+            raise PolicyViolationError(
+                f"Worker {grant.worker_role.value if grant.worker_role else 'unknown'} has no authorized sandbox capability."
+            )
+        if self._sandbox_client is None:
+            raise PolicyViolationError(
+                f"Worker {grant.worker_role.value if grant.worker_role else 'unknown'} has no sandbox client configured."
+            )
 
         reasoning_output: WorkerReasoningOutput | None = None
         llm_metadata: dict[str, Any] = {}
