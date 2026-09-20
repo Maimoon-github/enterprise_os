@@ -34,6 +34,7 @@ _FORBIDDEN_PREFIXES = (
 
 def _imported_module_names(module_dotted_path: str) -> list[str]:
     module = importlib.import_module(module_dotted_path)
+    assert module.__file__ is not None
     tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
     names: list[str] = []
     for node in ast.walk(tree):
