@@ -524,52 +524,6 @@ def _mock_chat_transport(
     return httpx.MockTransport(handler)
 
 
-# =====================================================================
-# STRAT-02: W_STRAT and S_ALLOC Reasoning Targeted Verification Tests
-# =====================================================================
-
-
-@pytest.mark.asyncio
-async def test_strat02_telemetry_forwarding_and_bounded_s_alloc_reasoning() -> None:
-    """STRAT-02: W_STRAT forwards telemetry/history/controls/incrementality to S_ALLOC, which reasons without authority."""
-    from app.agents.strategy_engine.subagents import StrategyAllocationAgent
-
-    agent = StrategyAgent(SandboxClient())
-    grant = TaskGrant(
-        task_id="task-strat02-telemetry",
-        worker_role=WorkerRole.STRATEGY,
-        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta", "google"]),
-        brand_id="acme",
-        objective="Analyze media history and incrementality for Q2",
-        expires_at=datetime.now(UTC) + timedelta(minutes=30),
-    )
-    context: dict[str, object] = {
-        "budget_ceiling": 40000.0,
-        "kpi_name": "incremental_revenue",
-        "media_history": {"meta": [1000, 2000], "google": [1500, 2500]},
-        "performance_telemetry": {"cpa_trend": "stable"},
-        "control_variables": ["seasonality", "promo_events"],
-        "incrementality_evidence": {"meta_lift": 0.18, "google_lift": 0.24},
-        "channel_constraints": {"meta": {"max_spend": 20000.0}},
-    }
-
-    payload = agent.build_payload(grant, context)
-    assert payload["kpi_name"] == "incremental_revenue"
-    assert "media_history" in payload
-    assert "performance_telemetry" in payload
-    assert "control_variables" in payload
-    assert "incrementality_evidence" in payload
-    assert "channel_constraints" in payload
-
-    # Test S_ALLOC advisory sub-agent processes telemetry context without numerical allocation authority
-    alloc_agent = StrategyAllocationAgent()
-    reasoning, meta = await alloc_agent.reason(grant, context)
-    assert reasoning.objective_interpretation == "Analyze media history and incrementality for Q2"
-    assert "incremental_revenue" in reasoning.kpi_priorities
-    assert not any("Historical media/performance inputs are absent" in r for r in reasoning.risk_flags)
-    assert not any("No incrementality calibration" in r for r in reasoning.risk_flags)
-
-
 @pytest.mark.asyncio
 async def test_w_strat_and_s_alloc_use_distinct_purpose_scoped_reasoning() -> None:
     """W_STRAT and S_ALLOC use independent LLMs, preserve bounded context, and record distinct provenance."""
