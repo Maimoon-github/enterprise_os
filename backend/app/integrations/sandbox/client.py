@@ -13,11 +13,12 @@ import asyncio
 import json
 import re
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from app.core.exceptions import SandboxInvocationError
 from app.core.settings import SandboxSettings
+from app.schemas.governance import WorkerRole
 from app.integrations.sandbox.capabilities import (
     validate_capability_access,
     validate_egress_target,
@@ -209,6 +210,9 @@ class SandboxClient:
             capability=mandate.capability,
             worker_role=mandate.worker_role,
             operation=mandate.operation,
+            specialist_id=mandate.specialist_id,
+            stage_attempt_id=getattr(mandate, "stage_attempt_id", None),
+            worker_id=mandate.worker_id,
             requested_network=mandate.network_policy,
             egress_grant=mandate.egress_grant,
         )
@@ -384,6 +388,8 @@ class SandboxClient:
             )
         finally:
             await self.teardown_session(session_id)
+            if mandate.egress_grant is not None:
+                mandate.egress_grant.expires_at = datetime.now(UTC) - timedelta(seconds=1)
 
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -514,6 +520,20 @@ class SandboxClient:
 
     def _execute_specialist(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
         """Dispatch mandate to the appropriate sandbox specialist runtime."""
+        is_creative = (
+            mandate.worker_role in (WorkerRole.CREATIVE_CONTENT, "W_CREAT", "creative_content")
+            or mandate.worker_id == "W_CREAT"
+            or (mandate.specialist_id and mandate.specialist_id.startswith("CREAT-"))
+        )
+
+        if is_creative and (
+            mandate.payload.get("simulate_aio_unavailable")
+            or mandate.payload.get("simulate_aio_failure")
+        ):
+            raise SandboxInvocationError(
+                "AIO sandbox is unavailable for Creative specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
+            )
+
         remote_configured = (self._settings is not None and bool(self._settings.endpoint)) or (self._sandbox is not None)
         remote_client = self._get_sandbox()
 
@@ -638,6 +658,11 @@ class SandboxClient:
         if remote_configured:
             raise SandboxInvocationError(
                 f"Configured remote sandbox failed to execute capability '{mandate.capability.value}'."
+            )
+
+        if is_creative and (remote_configured or mandate.payload.get("require_aio", False)):
+            raise SandboxInvocationError(
+                "AIO sandbox is unavailable for Creative specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
             )
 
         # Fall back to local specialist micro-tool execution ONLY when no endpoint is configured

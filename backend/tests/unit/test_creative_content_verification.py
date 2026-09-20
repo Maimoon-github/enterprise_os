@@ -1500,5 +1500,474 @@ async def test_t4_artifact_integrity_and_immutability_preserved() -> None:
     assert result.qa_report.evaluated_artifact_hash == result.adapted_pack.artifact_hash
 
 
+# ===========================================================================
+# T5 — Enforce Creative Specialist Sandbox Policies Verification Tests
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_t5_w_creat_sandbox_request_denied() -> None:
+    """T5: Prove W_CREAT has zero sandbox authority when specialist_id is missing or W_CREAT."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import SandboxCapability, SandboxInvocationMandate
+
+    # 1. Calling validate_capability_access with worker_id='W_CREAT' and no specialist fails closed
+    with pytest.raises(
+        SandboxInvocationError, match="W_CREAT coordinator has zero sandbox authority"
+    ):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            worker_id="W_CREAT",
+            specialist_id="",
+        )
+
+    with pytest.raises(
+        SandboxInvocationError, match="W_CREAT coordinator has zero sandbox authority"
+    ):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            worker_id="W_CREAT",
+            specialist_id="W_CREAT",
+        )
+
+    with pytest.raises(
+        SandboxInvocationError, match="W_CREAT coordinator has zero sandbox authority"
+    ):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role="W_CREAT",
+            specialist_id=None,
+            worker_id="W_CREAT",
+        )
+
+    # 2. Executing mandate from W_CREAT fails closed in SandboxClient
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        task_id="t5-deny-test",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        worker_id="W_CREAT",
+        specialist_id="W_CREAT",
+        capability=SandboxCapability.COPY,
+        operation="generate_variants",
+        payload={},
+    )
+    with pytest.raises(
+        SandboxInvocationError, match="W_CREAT coordinator has zero sandbox authority"
+    ):
+        await client.invoke(mandate)
+
+
+@pytest.mark.asyncio
+async def test_t5_missing_or_unknown_specialist_denied() -> None:
+    """T5: Prove unknown Creative specialist identity fails closed."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import SandboxCapability
+
+    with pytest.raises(SandboxInvocationError, match="Unauthorized or unknown Creative specialist"):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-UNKNOWN",
+            operation="generate_variants",
+        )
+
+    with pytest.raises(SandboxInvocationError, match="Unauthorized or unknown Creative specialist"):
+        validate_capability_access(
+            capability=SandboxCapability.SCRAPE,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-MALICIOUS",
+            operation="public_search",
+        )
+
+
+@pytest.mark.asyncio
+async def test_t5_known_specialist_receives_only_declared_operations_and_tools() -> None:
+    """T5: Prove known specialists execute only their declared operations and micro-tools."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import (
+        validate_capability_access,
+        validate_tool_access,
+    )
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import SandboxCapability
+
+    # CREAT-COPY: authorized ops succeed
+    for op in ("s_copy_variant_gen", "generate_variants", "score_hooks", "format_validation"):
+        p = validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-COPY",
+            operation=op,
+        )
+        assert p.capability == SandboxCapability.COPY
+
+    # CREAT-COPY: unauthorized ops fail closed
+    with pytest.raises(SandboxInvocationError, match="not permitted"):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-COPY",
+            operation="run_code_compiler",
+        )
+
+    # Tool checks for CREAT-COPY
+    validate_tool_access("variant_generator", SandboxCapability.COPY, specialist_id="CREAT-COPY")
+    validate_tool_access("hook_critic", SandboxCapability.COPY, specialist_id="CREAT-COPY")
+    with pytest.raises(SandboxInvocationError, match="not permitted"):
+        validate_tool_access("arbitrary_bash", SandboxCapability.COPY, specialist_id="CREAT-COPY")
+
+    # CREAT-RESEARCH: authorized ops succeed
+    for op in ("public_search", "fetch_platform_specs"):
+        p = validate_capability_access(
+            capability=SandboxCapability.SCRAPE,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-RESEARCH",
+            operation=op,
+        )
+        assert p.capability == SandboxCapability.SCRAPE
+
+    # CREAT-RESEARCH: unauthorized ops fail closed
+    with pytest.raises(SandboxInvocationError, match="not permitted"):
+        validate_capability_access(
+            capability=SandboxCapability.SCRAPE,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-RESEARCH",
+            operation="drop_tables",
+        )
+
+    # Tool checks for CREAT-RESEARCH
+    validate_tool_access("public_search", SandboxCapability.SCRAPE, specialist_id="CREAT-RESEARCH")
+    with pytest.raises(SandboxInvocationError, match="not permitted"):
+        validate_tool_access("sql_client", SandboxCapability.SCRAPE, specialist_id="CREAT-RESEARCH")
+
+
+@pytest.mark.asyncio
+async def test_t5_research_allowlisted_domain_and_anti_ssrf() -> None:
+    """T5: Prove Research allowlisted egress permits public domains and blocks SSRF targets."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import (
+        validate_capability_access,
+        validate_egress_target,
+    )
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxEgressGrant
+
+    grant = SandboxEgressGrant(
+        tenant_id="acme",
+        task_id="t5-ssrf-test",
+        specialist_id="CREAT-RESEARCH",
+        worker_id="W_CREAT",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["developers.facebook.com", "ads.tiktok.com", "*.google.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    # Public allowlisted domain succeeds
+    profile = validate_capability_access(
+        capability=SandboxCapability.SCRAPE,
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        specialist_id="CREAT-RESEARCH",
+        operation="public_search",
+        requested_network=NetworkPolicy.ALLOWLIST,
+        egress_grant=grant,
+    )
+    assert profile.network_policy == NetworkPolicy.ALLOWLIST
+
+    validate_egress_target("https://developers.facebook.com/docs/marketing-api", grant)
+    validate_egress_target("https://ads.tiktok.com/help/article", grant)
+    validate_egress_target("https://support.google.com/google-ads", grant)
+
+    # Anti-SSRF: Localhost blocked
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://localhost:8080", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://127.0.0.1:8000", grant)
+
+    # Anti-SSRF: Private RFC1918 IPs blocked
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://10.0.0.1:80", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://192.168.1.1:80", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://172.16.0.1:80", grant)
+
+    # Anti-SSRF: Cloud metadata endpoints blocked
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://169.254.169.254/latest/meta-data", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://metadata.google.internal", grant)
+
+    # Anti-SSRF: Internal services and database ports blocked
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://enterprise-db:5432", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://enterprise-redis:6379", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("http://enterprise-rag:8000", grant)
+
+    # Anti-SSRF: LLM provider endpoints blocked from sandbox egress
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("https://api.openai.com/v1/chat/completions", grant)
+    with pytest.raises(SandboxInvocationError, match="strictly blocked|policy violation"):
+        validate_egress_target("https://api.anthropic.com/v1/messages", grant)
+
+    # Unlisted public domain blocked
+    with pytest.raises(SandboxInvocationError, match="not in approved allowlist"):
+        validate_egress_target("https://unapproved-malicious-site.com", grant)
+
+
+@pytest.mark.asyncio
+async def test_t5_non_research_specialists_deny_all_network() -> None:
+    """T5: Prove non-Research specialists default to DENY_ALL and reject network grants."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxEgressGrant
+
+    grant = SandboxEgressGrant(
+        tenant_id="acme",
+        task_id="t5-non-res",
+        specialist_id="CREAT-COPY",
+        worker_id="W_CREAT",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        capability=SandboxCapability.COPY,
+        allowed_domains=["developers.facebook.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    # CREAT-COPY cannot request network
+    with pytest.raises(SandboxInvocationError, match="restricted to DENY_ALL"):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-COPY",
+            operation="generate_variants",
+            requested_network=NetworkPolicy.ALLOWLIST,
+            egress_grant=grant,
+        )
+
+    # Non-research specialists (CONCEPT, VISUAL, ADAPT, QA) cannot request network
+    for spec_id in ("CREAT-CONCEPT", "CREAT-VISUAL", "CREAT-ADAPT", "CREAT-QA"):
+        with pytest.raises(SandboxInvocationError, match="restricted to DENY_ALL"):
+            validate_capability_access(
+                capability=SandboxCapability.COPY,
+                worker_role=WorkerRole.CREATIVE_CONTENT,
+                specialist_id=spec_id,
+                operation="default",
+                requested_network=NetworkPolicy.ALLOWLIST,
+            )
+
+
+@pytest.mark.asyncio
+async def test_t5_research_egress_grant_cannot_be_reused_by_another_specialist() -> None:
+    """T5: Prove an egress grant issued to CREAT-RESEARCH cannot be reused by another specialist."""
+    from app.core.exceptions import SandboxInvocationError
+    from app.integrations.sandbox.capabilities import validate_capability_access
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxEgressGrant
+
+    research_grant = SandboxEgressGrant(
+        tenant_id="acme",
+        task_id="t5-reuse-test",
+        specialist_id="CREAT-RESEARCH",
+        worker_id="W_CREAT",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["developers.facebook.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+    # Attempting to use CREAT-RESEARCH grant with CREAT-COPY fails closed
+    with pytest.raises((SandboxInvocationError, ValueError)):
+        validate_capability_access(
+            capability=SandboxCapability.COPY,
+            worker_role=WorkerRole.CREATIVE_CONTENT,
+            specialist_id="CREAT-COPY",
+            operation="generate_variants",
+            requested_network=NetworkPolicy.ALLOWLIST,
+            egress_grant=research_grant,
+        )
+
+
+@pytest.mark.asyncio
+async def test_t5_attempts_do_not_share_sandbox_runtime_or_state() -> None:
+    """T5: Prove attempt isolation: each attempt has a distinct identity; reuse fails closed."""
+    from app.core.exceptions import SandboxIsolationError
+    from app.integrations.sandbox.sandbox_policy import SandboxControlPlane
+    from app.schemas.sandbox import SandboxCapability, SandboxCapabilityGrant, SandboxIdentity
+    from app.schemas.task_state import DevelopmentExecutionLease
+
+    control_plane = SandboxControlPlane()
+
+    identity_1 = SandboxIdentity.generate(
+        tenant_id="acme",
+        task_id="task-isolated-1",
+        step_id="step-1",
+        attempt_id="att-001",
+        specialist_id="CREAT-COPY",
+    )
+    identity_2 = SandboxIdentity.generate(
+        tenant_id="acme",
+        task_id="task-isolated-1",
+        step_id="step-1",
+        attempt_id="att-002",
+        specialist_id="CREAT-COPY",
+    )
+
+    assert identity_1.sandbox_id != identity_2.sandbox_id
+    assert identity_1.attempt_id != identity_2.attempt_id
+
+    lease_1 = DevelopmentExecutionLease(
+        workflow_id="wf-100",
+        task_id="task-isolated-1",
+        step_id="step-1",
+        attempt_id="att-001",
+        owner_id="CREAT-COPY",
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    grant_1 = SandboxCapabilityGrant(
+        lease_id=lease_1.lease_id,
+        subagent_id="CREAT-COPY",
+        capability=SandboxCapability.COPY,
+        allowed_tools=("variant_generator",),
+        allowed_operations=("s_copy_variant_gen",),
+    )
+
+    instance_1 = control_plane.provision(
+        identity=identity_1,
+        lease=lease_1,
+        grant=grant_1,
+    )
+    assert instance_1.identity.attempt_id == "att-001"
+
+    # Attempting to re-provision with identical sandbox_id fails closed
+    with pytest.raises(SandboxIsolationError, match="already exists"):
+        control_plane.provision(
+            identity=identity_1,
+            lease=lease_1,
+            grant=grant_1,
+        )
+
+    # Cleanup
+    control_plane.destroy(identity_1.sandbox_id)
+
+
+@pytest.mark.asyncio
+async def test_t5_credentials_absent_and_redacted() -> None:
+    """T5: Prove credentials are redacted and absent from sandbox execution results."""
+    from unittest.mock import patch
+
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        task_id="t5-cred-test",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        specialist_id="CREAT-COPY",
+        capability=SandboxCapability.COPY,
+        operation="generate_variants",
+        payload={
+            "objective": "conversions",
+        },
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    mock_raw = {
+        "stdout": "Loaded api_key=sk-proj-supersecret123 and Bearer auth_token=my_secret_token",
+        "debug": "password=mypassword456",
+        "safe_data": "public_info",
+    }
+    with patch.object(client, "_execute_in_isolated_runtime", return_value=mock_raw):
+        res = await client.invoke(mandate)
+        assert res.success is True
+        # Verify sensitive patterns are redacted
+        assert "supersecret123" not in res.stdout
+        assert "my_secret_token" not in res.stdout
+        assert "mypassword456" not in res.sanitized_output.get("debug", "")
+        assert "[REDACTED]" in res.stdout
+        assert len(res.warnings) >= 1
+        assert any("redacted" in w for w in res.warnings)
+
+
+@pytest.mark.asyncio
+async def test_t5_aio_failure_fails_closed_without_local_fallback() -> None:
+    """T5: Prove Creative production paths fail closed when AIO is unavailable/fails."""
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+
+    client = SandboxClient()
+    mandate = SandboxInvocationMandate(
+        task_id="t5-aio-fail",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        specialist_id="CREAT-COPY",
+        capability=SandboxCapability.COPY,
+        operation="generate_variants",
+        payload={"simulate_aio_unavailable": True},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    res = await client.invoke(mandate)
+    assert res.success is False
+    assert "AIO sandbox is unavailable for Creative specialist execution" in (res.error or "")
+    assert "Backend-process fallback is strictly prohibited" in (res.error or "")
+
+
+@pytest.mark.asyncio
+async def test_t5_runtime_destroyed_and_grant_revoked_after_completion() -> None:
+    """T5: Prove session state is scrubbed and egress grant is revoked on teardown."""
+    from app.integrations.sandbox.client import SandboxClient
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import (
+        NetworkPolicy,
+        SandboxCapability,
+        SandboxEgressGrant,
+        SandboxInvocationMandate,
+    )
+
+    client = SandboxClient()
+    grant = SandboxEgressGrant(
+        tenant_id="acme",
+        task_id="t5-teardown-test",
+        specialist_id="CREAT-RESEARCH",
+        worker_id="W_CREAT",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        capability=SandboxCapability.SCRAPE,
+        allowed_domains=["developers.facebook.com"],
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+
+    mandate = SandboxInvocationMandate(
+        tenant_id="acme",
+        task_id="t5-teardown-test",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        specialist_id="CREAT-RESEARCH",
+        capability=SandboxCapability.SCRAPE,
+        operation="public_search",
+        payload={"platform": "meta"},
+        network_policy=NetworkPolicy.ALLOWLIST,
+        egress_grant=grant,
+    )
+
+    res = await client.invoke(mandate)
+    assert res.success is True
+
+    # 1. Active sessions scrubbed
+    session_id = f"session-{mandate.execution_id}"
+    assert session_id not in client._active_sessions
+
+    # 2. Egress grant expired/revoked
+    assert grant.is_expired() is True
+
+
 
 

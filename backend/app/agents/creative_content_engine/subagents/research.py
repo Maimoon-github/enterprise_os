@@ -121,6 +121,7 @@ class CreativeResearchAgent:
         egress_grant = SandboxEgressGrant(
             tenant_id=tenant_id,
             task_id=task_id,
+            specialist_id=self.SPECIALIST_ID,
             worker_id="W_CREAT",
             worker_role=WorkerRole.CREATIVE_CONTENT,
             capability=SandboxCapability.SCRAPE,

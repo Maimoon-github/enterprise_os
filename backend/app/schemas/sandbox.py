@@ -63,6 +63,15 @@ _BLOCKED_HOSTNAMES = frozenset({
     "instance-data",
     "169.254.169.254",
     "host.docker.internal",
+    "metadata",
+    "enterprise-db",
+    "enterprise-redis",
+    "enterprise-rag",
+    "enterprise-mcp",
+    "enterprise-cms",
+    "api.openai.com",
+    "api.anthropic.com",
+    "generativelanguage.googleapis.com",
 })
 
 
@@ -72,6 +81,8 @@ class SandboxEgressGrant(BaseModel):
     grant_id: str = Field(default_factory=lambda: f"egress-{uuid.uuid4()}")
     tenant_id: str = Field(..., min_length=1)
     task_id: str = Field(..., min_length=1)
+    specialist_id: str = ""
+    stage_attempt_id: str = ""
     worker_id: str = "W_COMP"
     worker_role: WorkerRole = WorkerRole.COMPETITOR_INTEL
     capability: SandboxCapability = SandboxCapability.SCRAPE
@@ -89,7 +100,7 @@ class SandboxEgressGrant(BaseModel):
             d = domain.strip().lower()
             if d == "*" or d == "*.*":
                 raise ValueError("Universal wildcard '*' is not permitted in production egress allowlist.")
-            if d in _BLOCKED_HOSTNAMES:
+            if d in _BLOCKED_HOSTNAMES or any(d.startswith(p) for p in ("enterprise-", "169.254.", "127.", "10.", "192.168.")):
                 raise ValueError(f"Prohibited private/internal host in egress allowlist: '{d}'")
             try:
                 ip = ipaddress.ip_address(d)
@@ -142,8 +153,11 @@ class SandboxEgressGrant(BaseModel):
         host = host.strip().lower()
 
         # SSRF Checks
-        if host in _BLOCKED_HOSTNAMES:
+        if host in _BLOCKED_HOSTNAMES or any(host.startswith(p) for p in ("enterprise-", "169.254.", "127.", "10.", "192.168.")):
             return False, f"Access to private/metadata host '{host}' is strictly blocked."
+
+        if target_port in (5432, 6379, 27017, 9200):
+            return False, f"Port {target_port} is reserved for internal enterprise infrastructure and strictly forbidden."
 
         try:
             ip = ipaddress.ip_address(host)
@@ -174,6 +188,7 @@ class SandboxInvocationMandate(BaseModel):
 
     execution_id: str = Field(default_factory=lambda: f"exec-{uuid.uuid4()}")
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    stage_attempt_id: str = Field(default_factory=lambda: f"att-{uuid.uuid4().hex[:8]}")
     worker_role: WorkerRole | None = None
     worker_id: str = ""
     tenant_id: str = "default"
@@ -216,6 +231,14 @@ class SandboxInvocationMandate(BaseModel):
                 raise ValueError(
                     f"Egress grant worker '{self.egress_grant.worker_role}' does not match mandate worker '{self.worker_role}'."
                 )
+            if self.egress_grant.specialist_id and self.specialist_id and self.egress_grant.specialist_id != self.specialist_id:
+                raise ValueError(
+                    f"Egress grant specialist '{self.egress_grant.specialist_id}' does not match mandate specialist '{self.specialist_id}'."
+                )
+            if self.specialist_id and not self.egress_grant.specialist_id:
+                self.egress_grant.specialist_id = self.specialist_id
+            if self.stage_attempt_id and not self.egress_grant.stage_attempt_id:
+                self.egress_grant.stage_attempt_id = self.stage_attempt_id
         return self
 
 
@@ -273,6 +296,7 @@ class SandboxIdentity(BaseModel):
     tenant_id: str = Field(..., min_length=1)
     work_region: str = Field(default="primary")
     engine_id: str = Field(default="W_DEV")
+    specialist_id: str = ""
     task_id: str = Field(..., min_length=1)
     step_id: str = Field(..., min_length=1)
     attempt_id: str = Field(..., min_length=1)
@@ -287,12 +311,14 @@ class SandboxIdentity(BaseModel):
         attempt_id: str,
         work_region: str = "primary",
         engine_id: str = "W_DEV",
+        specialist_id: str = "",
     ) -> SandboxIdentity:
         sbx_id = f"sbx-{tenant_id}-{engine_id}-{task_id[:8]}-{step_id[:8]}-{attempt_id[:8]}-{uuid.uuid4().hex[:6]}"
         return cls(
             tenant_id=tenant_id,
             work_region=work_region,
             engine_id=engine_id,
+            specialist_id=specialist_id,
             task_id=task_id,
             step_id=step_id,
             attempt_id=attempt_id,

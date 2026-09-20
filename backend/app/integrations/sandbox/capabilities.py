@@ -222,6 +222,67 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
     ),
 }
 
+AUTHORIZED_CREATIVE_SPECIALISTS = frozenset({
+    "CREAT-RESEARCH",
+    "CREAT-CONCEPT",
+    "CREAT-COPY",
+    "CREAT-VISUAL",
+    "CREAT-ADAPT",
+    "CREAT-QA",
+})
+
+CREATIVE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
+    "CREAT-RESEARCH": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE, SandboxCapability.COPY),
+        "allowed_operations": (
+            "public_search",
+            "fetch_platform_specs",
+            "scrape_prices",
+            "parse_dom",
+            "track_ads",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("public_search", "fetch_platform_specs", "dom_parser", "browser_automation"),
+    },
+    "CREAT-COPY": {
+        "allowed_capabilities": (SandboxCapability.COPY,),
+        "allowed_operations": (
+            "s_copy_variant_gen",
+            "generate_variants",
+            "score_hooks",
+            "format_validation",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("variant_generator", "hook_critic", "s_copy_variant_gen"),
+    },
+    "CREAT-CONCEPT": {
+        "allowed_capabilities": (SandboxCapability.COPY,),
+        "allowed_operations": ("default",),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": (),
+    },
+    "CREAT-VISUAL": {
+        "allowed_capabilities": (SandboxCapability.COPY,),
+        "allowed_operations": ("default",),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": (),
+    },
+    "CREAT-ADAPT": {
+        "allowed_capabilities": (SandboxCapability.COPY,),
+        "allowed_operations": ("default",),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": (),
+    },
+    "CREAT-QA": {
+        "allowed_capabilities": (SandboxCapability.COPY,),
+        "allowed_operations": ("default",),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": (),
+    },
+}
+
 WORKER_CAPABILITY_MAP: dict[WorkerRole, SandboxCapability] = {
     profile.allowed_worker: profile.capability for profile in CAPABILITY_REGISTRY.values()
 }
@@ -239,6 +300,9 @@ def validate_capability_access(
     worker_role: WorkerRole | str | None = None,
     operation: str = "default",
     *,
+    specialist_id: str | None = None,
+    stage_attempt_id: str | None = None,
+    worker_id: str | None = None,
     requested_network: NetworkPolicy | str = NetworkPolicy.DISABLED,
     egress_grant: SandboxEgressGrant | None = None,
 ) -> CapabilityProfile:
@@ -246,10 +310,12 @@ def validate_capability_access(
 
     Enforces least privilege:
     1. Capability must be a registered SandboxCapability.
-    2. If worker_role is provided, it must match the capability's authorized worker.
-    3. Operation must be in the profile's allowed_operations.
-    4. Requested network access must not exceed the capability's allowed network policy.
-    5. If an egress grant is attached, its worker, capability, and expiry are strictly validated.
+    2. W_CREAT coordinator has zero sandbox authority (fails closed if specialist_id missing or W_CREAT).
+    3. Creative specialist executions require authorized specialist_id and adhere to per-specialist policy.
+    4. If worker_role is provided, it must match the capability's authorized worker.
+    5. Operation must be in the profile's allowed_operations.
+    6. Requested network access must not exceed the capability's allowed network policy.
+    7. If an egress grant is attached, its worker, specialist, capability, and expiry are strictly validated.
 
     Raises SandboxInvocationError on any policy breach (fail-closed).
     """
@@ -266,16 +332,100 @@ def validate_capability_access(
 
     profile = CAPABILITY_REGISTRY[capability]
 
+    # Convert string worker role if provided
+    parsed_role: WorkerRole | None = None
     if worker_role is not None:
         if isinstance(worker_role, str):
-            try:
-                worker_role = WorkerRole(worker_role)
-            except ValueError:
-                raise SandboxInvocationError(f"Unknown worker role: {worker_role}")
+            if worker_role == "W_CREAT":
+                parsed_role = WorkerRole.CREATIVE_CONTENT
+            else:
+                try:
+                    parsed_role = WorkerRole(worker_role)
+                except ValueError:
+                    raise SandboxInvocationError(f"Unknown worker role: {worker_role}")
+        else:
+            parsed_role = worker_role
 
-        if worker_role != profile.allowed_worker:
+    # 1. Creative Context Enforcement
+    is_creative = (
+        worker_id == "W_CREAT"
+        or parsed_role == WorkerRole.CREATIVE_CONTENT
+        or (specialist_id is not None and (specialist_id.startswith("CREAT-") or specialist_id in ("W_CREAT", "NONE")))
+    )
+
+    if is_creative:
+        # Zero-sandbox enforcement for W_CREAT coordinator
+        if specialist_id in ("W_CREAT", "NONE", "") or (worker_id == "W_CREAT" and not specialist_id):
             raise SandboxInvocationError(
-                f"Capability access denied: worker '{worker_role.value}' is not authorized to request "
+                "W_CREAT coordinator has zero sandbox authority; execution requires an authorized Creative specialist_id."
+            )
+
+        # If specialist_id is provided, evaluate Creative specialist policy
+        if specialist_id is not None and specialist_id != "S_COPY":
+            if specialist_id not in AUTHORIZED_CREATIVE_SPECIALISTS:
+                raise SandboxInvocationError(
+                    f"Unauthorized or unknown Creative specialist: '{specialist_id}'. Fail closed."
+                )
+
+            spec_policy = CREATIVE_SPECIALIST_POLICIES[specialist_id]
+            if capability not in spec_policy["allowed_capabilities"]:
+                raise SandboxInvocationError(
+                    f"Specialist '{specialist_id}' is not authorized for capability '{capability.value}'."
+                )
+
+            if operation not in spec_policy["allowed_operations"]:
+                raise SandboxInvocationError(
+                    f"Operation '{operation}' is not permitted for Creative specialist '{specialist_id}'. "
+                    f"Permitted operations: {spec_policy['allowed_operations']}"
+                )
+
+            req_net = NetworkPolicy(requested_network) if isinstance(requested_network, str) else requested_network
+
+            if req_net != NetworkPolicy.DISABLED:
+                if spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+                    raise SandboxInvocationError(
+                        f"Network access denied: Creative specialist '{specialist_id}' is restricted to DENY_ALL (disabled) network policy."
+                    )
+                if req_net != NetworkPolicy.ALLOWLIST:
+                    raise SandboxInvocationError(
+                        f"Creative specialist '{specialist_id}' only permits explicit allowlist egress (requested: '{req_net.value}')."
+                    )
+                if egress_grant is None:
+                    raise SandboxInvocationError(
+                        f"Network access denied: Creative specialist '{specialist_id}' requested network without an authorized SandboxEgressGrant."
+                    )
+                if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                    raise SandboxInvocationError(
+                        f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                    )
+            elif egress_grant is not None and spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+                raise SandboxInvocationError(
+                    f"Egress grant cannot be attached to Creative specialist '{specialist_id}' under DENY_ALL network policy."
+                )
+
+            if egress_grant is not None:
+                if egress_grant.is_expired():
+                    raise SandboxInvocationError(f"Egress grant '{egress_grant.grant_id}' has expired.")
+                if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                    raise SandboxInvocationError(
+                        f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                    )
+
+            return CapabilityProfile(
+                capability=capability,
+                specialist_name=f"{specialist_id} Specialist",
+                allowed_worker=WorkerRole.CREATIVE_CONTENT,
+                allowed_operations=spec_policy["allowed_operations"],
+                network_policy=spec_policy["network_policy"],
+                default_timeout_seconds=profile.default_timeout_seconds,
+                allowed_tools=spec_policy["allowed_tools"],
+            )
+
+    # 2. Standard worker role vs capability compatibility
+    if parsed_role is not None:
+        if parsed_role != profile.allowed_worker:
+            raise SandboxInvocationError(
+                f"Capability access denied: worker '{parsed_role.value}' is not authorized to request "
                 f"'{capability.value}' (authorized worker is '{profile.allowed_worker.value}')."
             )
 
@@ -301,10 +451,10 @@ def validate_capability_access(
     if egress_grant is not None:
         if egress_grant.is_expired():
             raise SandboxInvocationError(f"Egress grant '{egress_grant.grant_id}' has expired.")
-        if worker_role is not None and egress_grant.worker_role != worker_role:
+        if parsed_role is not None and egress_grant.worker_role != parsed_role:
             raise SandboxInvocationError(
                 f"Egress grant worker role mismatch: grant worker '{egress_grant.worker_role.value}' "
-                f"does not match executing worker '{worker_role.value}'."
+                f"does not match executing worker '{parsed_role.value}'."
             )
         if egress_grant.capability != capability:
             raise SandboxInvocationError(
@@ -338,12 +488,23 @@ def validate_tool_access(
     requested_tool: str,
     capability: SandboxCapability | str,
     capability_grant: Any | None = None,
+    specialist_id: str | None = None,
 ) -> None:
     """Enforce explicit per-attempt micro-tool allowlisting fail-closed.
 
-    1. If capability_grant is provided, requested_tool must be in grant.allowed_tools.
-    2. requested_tool must also be in the capability profile's authorized allowed_tools.
+    1. If specialist_id is a known Creative specialist, enforce its scoped tools.
+    2. If capability_grant is provided, requested_tool must be in grant.allowed_tools.
+    3. requested_tool must also be in the capability profile's authorized allowed_tools.
     """
+    if specialist_id and specialist_id in CREATIVE_SPECIALIST_POLICIES:
+        allowed_tools = CREATIVE_SPECIALIST_POLICIES[specialist_id]["allowed_tools"]
+        if requested_tool not in allowed_tools:
+            raise SandboxInvocationError(
+                f"Tool '{requested_tool}' is not permitted for Creative specialist '{specialist_id}'. "
+                f"Permitted tools: {allowed_tools}"
+            )
+        return
+
     if isinstance(capability, str):
         capability = SandboxCapability(capability)
     profile = CAPABILITY_REGISTRY.get(capability)
