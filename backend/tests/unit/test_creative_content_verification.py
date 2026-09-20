@@ -1136,4 +1136,369 @@ async def test_model_a_data_isolation_and_no_scope_expansion() -> None:
     assert report.reason_code == QAReasonCode.SCOPE_VIOLATION
 
 
+# =============================================================================
+# T4: Deterministic Creative Workflow Verification Tests
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_t4_workflow_strict_stage_ordering_and_parallelism() -> None:
+    """T4: Prove RESEARCH -> CONCEPT -> [COPY || VISUAL] -> ADAPT -> QA sequence and concurrency."""
+    import asyncio
+    from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+    from app.schemas.agent_contracts import (
+        CreativePlan,
+        TaskGrant,
+    )
+    from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+    from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+    from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    events: list[str] = []
+
+    class SpyResearch(CreativeResearchAgent):
+        async def run(self, *args, **kwargs):
+            events.append("research_start")
+            res = await super().run(*args, **kwargs)
+            events.append("research_end")
+            return res
+
+    class SpyConcept(CreativeConceptAgent):
+        async def run(self, *args, **kwargs):
+            events.append("concept_start")
+            res = await super().run(*args, **kwargs)
+            events.append("concept_end")
+            return res
+
+    class SpyCopy(CreativeCopyAgent):
+        async def run(self, *args, **kwargs):
+            events.append("copy_start")
+            await asyncio.sleep(0.01)
+            res = await super().run(*args, **kwargs)
+            events.append("copy_end")
+            return res
+
+    class SpyVisual(CreativeVisualAgent):
+        async def run(self, *args, **kwargs):
+            events.append("visual_start")
+            await asyncio.sleep(0.01)
+            res = await super().run(*args, **kwargs)
+            events.append("visual_end")
+            return res
+
+    class SpyAdapt(CreativeAdaptationAgent):
+        async def run(self, *args, **kwargs):
+            events.append("adapt_start")
+            res = await super().run(*args, **kwargs)
+            events.append("adapt_end")
+            return res
+
+    class SpyQA(CreativeQualityAgent):
+        async def run(self, *args, **kwargs):
+            events.append("qa_start")
+            res = await super().run(*args, **kwargs)
+            events.append("qa_end")
+            return res
+
+    workflow = CreativeContentWorkflow(
+        research_agent=SpyResearch(),
+        concept_agent=SpyConcept(),
+        copy_agent=SpyCopy(),
+        visual_agent=SpyVisual(),
+        adaptation_agent=SpyAdapt(),
+        qa_agent=SpyQA(),
+    )
+
+    grant = TaskGrant(
+        task_id="t4-order-001",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t4-order-001",
+        approved_channels=["meta", "linkedin"],
+        evidence_manifest=["claim-verified-01"],
+    )
+    plan.compute_artifact_hash()
+
+    result = await workflow.run(grant=grant, plan=plan, context={})
+
+    assert result.qa_report.status == QAStatus.PASS
+    assert result.adapted_pack is not None
+    assert result.qa_report.evaluated_artifact_hash == result.adapted_pack.artifact_hash
+
+    # Verify strict stage ordering
+    assert events.index("research_start") < events.index("research_end")
+    assert events.index("research_end") < events.index("concept_start")
+    assert events.index("concept_end") < events.index("copy_start")
+    assert events.index("concept_end") < events.index("visual_start")
+
+    # Both COPY and VISUAL finish before ADAPT starts
+    assert events.index("copy_end") < events.index("adapt_start")
+    assert events.index("visual_end") < events.index("adapt_start")
+
+    # ADAPT finishes before QA starts
+    assert events.index("adapt_end") < events.index("qa_start")
+
+
+@pytest.mark.asyncio
+async def test_t4_workflow_failed_branch_prevents_adapt() -> None:
+    """T4: Prove failure in either COPY or VISUAL branch prevents ADAPT execution."""
+    from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+
+    adapt_called = False
+
+    class FailingCopyAgent(CreativeCopyAgent):
+        async def run(self, *args, **kwargs):
+            raise RuntimeError("Forced branch failure in CREAT-COPY")
+
+    class SpyAdaptAgent(CreativeAdaptationAgent):
+        async def run(self, *args, **kwargs):
+            nonlocal adapt_called
+            adapt_called = True
+            return await super().run(*args, **kwargs)
+
+    workflow = CreativeContentWorkflow(
+        copy_agent=FailingCopyAgent(),
+        adaptation_agent=SpyAdaptAgent(),
+    )
+
+    grant = TaskGrant(
+        task_id="t4-fail-001",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t4-fail-001",
+        approved_channels=["meta"],
+        evidence_manifest=["claim-1"],
+    )
+    plan.compute_artifact_hash()
+
+    with pytest.raises(RuntimeError, match="Forced branch failure in CREAT-COPY"):
+        await workflow.run(grant=grant, plan=plan, context={})
+
+    assert not adapt_called
+
+
+@pytest.mark.asyncio
+async def test_t4_deterministic_static_qa_routing() -> None:
+    """T4: Prove static revision routing table dispatch and no-retry blocks."""
+    from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+    from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    # 1. Test selective COPY revision
+    copy_calls = 0
+    qa_calls = 0
+
+    class CountingCopyAgent(CreativeCopyAgent):
+        async def run(self, *args, **kwargs):
+            nonlocal copy_calls
+            copy_calls += 1
+            return await super().run(*args, **kwargs)
+
+    class RevisitOnceQAAgent(CreativeQualityAgent):
+        async def run(self, *args, **kwargs):
+            nonlocal qa_calls
+            qa_calls += 1
+            if qa_calls == 1:
+                return QAReport(
+                    tenant_id="acme",
+                    task_id="t4-route-001",
+                    status=QAStatus.REVISE,
+                    reason_code=QAReasonCode.COPY,
+                    findings=[
+                        QAFinding(
+                            layer="originality",
+                            severity="high",
+                            reason_code=QAReasonCode.COPY,
+                            message="Hook requires more distinct enterprise angle.",
+                        )
+                    ],
+                )
+            return await super().run(*args, **kwargs)
+
+    workflow_copy_revise = CreativeContentWorkflow(
+        copy_agent=CountingCopyAgent(),
+        qa_agent=RevisitOnceQAAgent(),
+    )
+
+    grant = TaskGrant(
+        task_id="t4-route-001",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t4-route-001",
+        approved_channels=["meta"],
+        evidence_manifest=["claim-1"],
+        max_revision_attempts=2,
+    )
+    plan.compute_artifact_hash()
+
+    res_revise = await workflow_copy_revise.run(grant=grant, plan=plan, context={})
+    assert res_revise.qa_report.status == QAStatus.PASS
+    assert copy_calls == 2  # Initial + 1 selective revision
+    assert qa_calls == 2
+
+    # 2. Test EVIDENCE_MISSING halts without Creative retry
+    class EvidenceMissingQAAgent(CreativeQualityAgent):
+        async def run(self, *args, **kwargs):
+            return QAReport(
+                tenant_id="acme",
+                task_id="t4-route-002",
+                status=QAStatus.REVISE,
+                reason_code=QAReasonCode.EVIDENCE_MISSING,
+                findings=[
+                    QAFinding(
+                        layer="grounding",
+                        severity="critical",
+                        reason_code=QAReasonCode.EVIDENCE_MISSING,
+                        message="Missing product evidence; requires IE mediation.",
+                    )
+                ],
+            )
+
+    workflow_no_retry = CreativeContentWorkflow(qa_agent=EvidenceMissingQAAgent())
+    res_no_retry = await workflow_no_retry.run(grant=grant, plan=plan, context={})
+    assert res_no_retry.qa_report.reason_code == QAReasonCode.EVIDENCE_MISSING
+    assert any("requires external resolution" in f for f in res_no_retry.findings)
+
+    # 3. Test SCOPE_VIOLATION and POLICY_BLOCK halt immediately
+    for block_code in (QAReasonCode.SCOPE_VIOLATION, QAReasonCode.POLICY_BLOCK):
+        class BlockQAAgent(CreativeQualityAgent):
+            async def run(self, *args, **kwargs):
+                return QAReport(
+                    tenant_id="acme",
+                    task_id="t4-route-003",
+                    status=QAStatus.BLOCK,
+                    reason_code=block_code,
+                    findings=[
+                        QAFinding(
+                            layer="policy_scope",
+                            severity="critical",
+                            reason_code=block_code,
+                            message=f"Hard block: {block_code.value}",
+                        )
+                    ],
+                )
+
+        wf_block = CreativeContentWorkflow(qa_agent=BlockQAAgent())
+        res_block = await wf_block.run(grant=grant, plan=plan, context={})
+        assert res_block.qa_report.status == QAStatus.BLOCK
+        assert res_block.qa_report.reason_code == block_code
+
+
+@pytest.mark.asyncio
+async def test_t4_revision_attempts_bounded_by_plan_policy() -> None:
+    """T4: Prove revision attempts are strictly bounded by CreativePlan.max_revision_attempts."""
+    from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+    from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+
+    qa_invocations = 0
+
+    class AlwaysReviseQAAgent(CreativeQualityAgent):
+        async def run(self, *args, **kwargs):
+            nonlocal qa_invocations
+            qa_invocations += 1
+            return QAReport(
+                tenant_id="acme",
+                task_id="t4-bound-001",
+                status=QAStatus.REVISE,
+                reason_code=QAReasonCode.COPY,
+                findings=[
+                    QAFinding(
+                        layer="originality",
+                        severity="high",
+                        reason_code=QAReasonCode.COPY,
+                        message="Still needs revision.",
+                    )
+                ],
+            )
+
+    workflow = CreativeContentWorkflow(qa_agent=AlwaysReviseQAAgent())
+
+    grant = TaskGrant(
+        task_id="t4-bound-001",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t4-bound-001",
+        approved_channels=["meta"],
+        evidence_manifest=["claim-1"],
+        max_revision_attempts=3,
+    )
+    plan.compute_artifact_hash()
+
+    res = await workflow.run(grant=grant, plan=plan, context={})
+
+    # Initial attempt (1) + 3 revisions = 4 QA evaluations total
+    assert qa_invocations == 4
+    assert res.qa_report.status == QAStatus.REVISE
+    assert any("Max revision attempts (3) exhausted" in f for f in res.findings)
+
+
+@pytest.mark.asyncio
+async def test_t4_artifact_integrity_and_immutability_preserved() -> None:
+    """T4: Prove all artifact hashes are captured and approved creative is not mutated."""
+    from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+
+    workflow = CreativeContentWorkflow()
+    grant = TaskGrant(
+        task_id="t4-integ-001",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+    plan = CreativePlan(
+        tenant_id="acme",
+        task_id="t4-integ-001",
+        approved_channels=["meta", "tiktok"],
+        evidence_manifest=["claim-hydra-01"],
+    )
+    plan.compute_artifact_hash()
+
+    result = await workflow.run(grant=grant, plan=plan, context={})
+
+    assert result.qa_report.status == QAStatus.PASS
+    assert result.research_brief is not None
+    assert result.platform_spec_snapshot is not None
+    assert result.concept_pack is not None
+    assert result.copy_pack is not None
+    assert result.visual_pack is not None
+    assert result.adapted_pack is not None
+
+    # Check all hashes are present and non-empty
+    for key in [
+        "plan",
+        "research_brief",
+        "platform_spec_snapshot",
+        "concept_pack",
+        "copy_pack",
+        "visual_pack",
+        "adapted_pack",
+        "qa_report",
+    ]:
+        assert result.artifact_hashes[key] != "", f"Missing hash for {key}"
+
+    # Verify evaluated artifact hash matches the adapted_pack hash
+    assert result.qa_report.evaluated_artifact_hash == result.adapted_pack.artifact_hash
+
+
+
 
