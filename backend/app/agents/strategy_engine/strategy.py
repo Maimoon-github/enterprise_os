@@ -12,12 +12,9 @@ from app.agents.strategy_engine.subagents import (
 )
 from app.integrations.sandbox.client import SandboxClient
 from app.schemas.agent_contracts import (
-    ChannelAllocation,
     ConfidenceInterval,
     EvidenceEnvelope,
-    FunnelStageAllocation,
     OmnichannelStrategyPlan,
-    StrategyScenario,
     TaskGrant,
 )
 from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
@@ -530,229 +527,6 @@ class StrategyAgent(BoundedWorkerAgent):
         except Exception:
             return None
 
-    def synthesize_strategy_plan(
-        self,
-        grant: TaskGrant,
-        context: dict[str, Any],
-        sanitized_output: dict[str, str],
-        alloc_reasoning: AllocationReasoningOutput | None = None,
-        reasoning_output: WorkerReasoningOutput | None = None,
-    ) -> OmnichannelStrategyPlan:
-        """Synthesize authorized IE evidence, W_STRAT reasoning, and S_ALLOC outputs into a holistic strategy plan.
-
-        W_STRAT owns strategic synthesis: channel roles, funnel architecture/objectives,
-        campaign/scenario framing, strategic assumptions/caveats, and final plan assembly.
-        S_ALLOC owns bounded numerical allocation, response curves, mROI, and model diagnostics.
-        """
-        (
-            budget_ceiling,
-            allowed_channels,
-            approved_claims,
-            objections,
-            competitor_signals,
-            time_horizon,
-            constraints,
-        ) = self._verify_and_normalize_dependencies(grant, context)
-
-        base_plan_dict: dict[str, Any] = {}
-        if "strategy_plan" in sanitized_output:
-            try:
-                base_plan_dict = json.loads(sanitized_output["strategy_plan"])
-            except Exception:
-                base_plan_dict = {}
-
-        allocations: dict[str, float] = {}
-        if "allocations" in sanitized_output:
-            try:
-                allocations = json.loads(sanitized_output["allocations"])
-            except Exception:
-                pass
-        if not allocations and base_plan_dict:
-            for ca in base_plan_dict.get("channel_allocations", []):
-                if isinstance(ca, dict) and "channel" in ca and "allocated_amount" in ca:
-                    allocations[ca["channel"]] = float(ca["allocated_amount"])
-
-        allocated_total = sum(allocations.values())
-        if "allocated_total" in sanitized_output:
-            try:
-                allocated_total = float(sanitized_output["allocated_total"])
-            except Exception:
-                pass
-        elif base_plan_dict.get("total_allocated") is not None:
-            allocated_total = float(base_plan_dict["total_allocated"])
-
-        # Enforce budget ceiling authority: total_allocated <= budget_ceiling
-        allocated_total = min(allocated_total, budget_ceiling)
-        unallocated_contingency = round(max(0.0, budget_ceiling - allocated_total), 2)
-
-        # 1. W_STRAT Channel Roles & Allocation Synthesis
-        roles_map = {
-            "meta": "Top-of-funnel acquisition, discovery, and dynamic retargeting",
-            "google": "High-intent search capture and competitor brand defense",
-            "tiktok": "Short-form video discovery and social proof",
-            "linkedin": "B2B consideration, authority, and partner outreach",
-            "youtube": "Mid-funnel video education and brand lift",
-            "email": "Retention, lifecycle re-engagement, and repeat subscriptions",
-        }
-        channel_objs: list[ChannelAllocation] = []
-        base_ca_map = {
-            ca.get("channel"): ca
-            for ca in base_plan_dict.get("channel_allocations", [])
-            if isinstance(ca, dict) and "channel" in ca
-        }
-        for ch in allowed_channels:
-            amt = allocations.get(ch, 0.0)
-            pct = round(amt / budget_ceiling * 100, 1) if budget_ceiling else 0.0
-            base_ca = base_ca_map.get(ch, {})
-            channel_objs.append(
-                ChannelAllocation(
-                    channel=ch,
-                    allocated_amount=amt,
-                    percentage_of_total=pct,
-                    role=base_ca.get("role") or roles_map.get(ch, f"Omnichannel activation on {ch}"),
-                    primary_kpi=base_ca.get("primary_kpi", "mROI / incremental KPI"),
-                    prior_roas=base_ca.get("prior_roas"),
-                    target_roas_range=base_ca.get("target_roas_range"),
-                    constraints=base_ca.get("constraints", []),
-                )
-            )
-
-        # 2. W_STRAT Funnel Architecture & Hypothesis Synthesis
-        funnel_objs: list[FunnelStageAllocation] = []
-        base_funnel = base_plan_dict.get("funnel_stages", [])
-        if not base_funnel and "funnel_model" in sanitized_output:
-            try:
-                base_funnel = json.loads(sanitized_output["funnel_model"])
-            except Exception:
-                base_funnel = []
-
-        for f in base_funnel:
-            if isinstance(f, dict):
-                funnel_objs.append(FunnelStageAllocation(**f))
-
-        # 3. W_STRAT Scenario Framing & Selection
-        rec_scenario = "scenario_balanced"
-        if alloc_reasoning and alloc_reasoning.scenario_emphasis:
-            rec_scenario = f"scenario_{alloc_reasoning.scenario_emphasis}"
-        elif base_plan_dict.get("recommended_scenario"):
-            rec_scenario = str(base_plan_dict["recommended_scenario"])
-
-        scenario_objs: list[StrategyScenario] = []
-        base_scenarios = base_plan_dict.get("scenarios", [])
-        if not base_scenarios and "scenarios" in sanitized_output:
-            try:
-                base_scenarios = json.loads(sanitized_output["scenarios"])
-            except Exception:
-                base_scenarios = []
-
-        for sc in base_scenarios:
-            if isinstance(sc, dict):
-                sc_copy = dict(sc)
-                sc_copy["is_recommended"] = (sc.get("scenario_id") == rec_scenario)
-                scenario_objs.append(StrategyScenario(**sc_copy))
-
-        # 4. Extract verified IE evidence
-        applied_claims: list[str] = []
-        for item in approved_claims:
-            if isinstance(item, dict):
-                text = item.get("claim_text") or item.get("text") or item.get("id")
-                if text:
-                    applied_claims.append(str(text))
-            elif item:
-                applied_claims.append(str(item))
-
-        addressed_objections: list[str] = []
-        for item in objections:
-            if isinstance(item, dict):
-                text = item.get("theme") or item.get("objection_type") or item.get("objection_id")
-                if text:
-                    addressed_objections.append(str(text))
-            elif item:
-                addressed_objections.append(str(item))
-
-        factored_competitor_signals: list[str] = []
-        if competitor_signals:
-            comp_name = competitor_signals.get("competitor", "Competitor")
-            threat = competitor_signals.get("threat_level", "medium")
-            price = competitor_signals.get("benchmark_price")
-            factored_competitor_signals.append(f"{comp_name} [Threat: {threat}{f', Price: ${price}' if price else ''}]")
-
-        # 5. Strategic Assumptions & Model Diagnostics / Caveats
-        assumptions: list[str] = [
-            "Response curves use a saturating planning proxy and must not be represented as causal MMM estimates.",
-            f"Total budget proposal strictly capped at authorized ceiling of ${budget_ceiling:.2f}.",
-            f"Channels restricted to: {', '.join(allowed_channels)}.",
-            "No automated outbound campaign publishing or spend modification without explicit HITL sign-off.",
-        ]
-        if alloc_reasoning:
-            assumptions.extend(alloc_reasoning.modeling_assumptions)
-        if reasoning_output:
-            assumptions.extend(reasoning_output.identified_risks)
-
-        caveats: list[str] = [
-            "Current implementation is a deterministic response-curve planning proxy, not a fitted causal MMM.",
-            "Projected ROI/mROI values are planning estimates, not guaranteed financial results.",
-        ]
-        if not context.get("performance_telemetry") and not context.get("media_history"):
-            caveats.append("Historical media/performance inputs are absent; proxy response curves uncalibrated.")
-        if not context.get("incrementality_evidence"):
-            caveats.append("No incrementality calibration evidence supplied; treat as non-causal planning proxy.")
-        if base_plan_dict.get("unsupported_estimates_or_caveats"):
-            for c in base_plan_dict["unsupported_estimates_or_caveats"]:
-                if c not in caveats:
-                    caveats.append(c)
-
-        # 6. Confidence Interval
-        conf = 0.70
-        if applied_claims:
-            conf += 0.05
-        if addressed_objections:
-            conf += 0.05
-        if factored_competitor_signals:
-            conf += 0.05
-        if context.get("performance_telemetry") or context.get("media_history"):
-            conf += 0.05
-        if context.get("incrementality_evidence"):
-            conf += 0.05
-        conf = min(0.88, conf)
-        confidence = ConfidenceInterval(
-            point_estimate=round(conf, 2),
-            lower_bound=round(max(0.0, conf - 0.15), 2),
-            upper_bound=round(min(1.0, conf + 0.10), 2),
-        )
-
-        provenance_data: dict[str, Any] = {
-            "synthesized_by": "W_STRAT",
-            "modeled_by": "S_ALLOC",
-            "task_id": grant.task_id,
-            "tenant_id": grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
-            "brand_id": grant.brand_id,
-        }
-        if base_plan_dict.get("provenance"):
-            provenance_data["s_alloc_provenance"] = base_plan_dict["provenance"]
-
-        return OmnichannelStrategyPlan(
-            plan_id=f"strat-{grant.task_id}",
-            tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
-            brand_id=grant.brand_id,
-            time_horizon=time_horizon,
-            budget_ceiling=budget_ceiling,
-            total_allocated=allocated_total,
-            unallocated_contingency=unallocated_contingency,
-            channel_allocations=channel_objs,
-            funnel_stages=funnel_objs,
-            scenarios=scenario_objs,
-            recommended_scenario=rec_scenario,
-            approved_claims_applied=applied_claims,
-            objections_addressed=addressed_objections,
-            competitor_signals_factored=factored_competitor_signals,
-            assumptions=sorted(list(set(assumptions))),
-            constraints=constraints,
-            unsupported_estimates_or_caveats=sorted(list(set(caveats))),
-            provenance=provenance_data,
-            confidence=confidence,
-        )
-
     async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
         """Execute W_STRAT strategy formulation with advisory S_ALLOC reasoning."""
         reasoning_output: WorkerReasoningOutput | None = None
@@ -804,19 +578,10 @@ class StrategyAgent(BoundedWorkerAgent):
             confidence = ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0)
             risks.append(result.error or "sandbox execution failed")
         else:
-            # W_STRAT holistic strategy synthesis: combines IE evidence + domain reasoning + S_ALLOC outputs
-            synthesized_plan = self.synthesize_strategy_plan(
-                grant=grant,
-                context=context,
-                sanitized_output=result.sanitized_output,
-                alloc_reasoning=alloc_reasoning,
-                reasoning_output=reasoning_output,
-            )
-            result.sanitized_output["strategy_plan"] = synthesized_plan.model_dump_json()
-
             evidence, confidence = self.interpret_result(result.sanitized_output)
             findings.extend([line for line in evidence if not line.startswith("error")])
-            artifacts.append(f"strategy:{grant.task_id}")
+            if "strategy_plan" in result.sanitized_output or "strategy_roadmap" in result.sanitized_output:
+                artifacts.append(f"strategy:{grant.task_id}")
             if result.generated_artifacts:
                 artifacts.extend(result.generated_artifacts)
 
