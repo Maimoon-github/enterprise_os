@@ -76,14 +76,6 @@ class SandboxSettings(BaseSettings):
     pids_limit: int = Field(default=1024, ge=32, le=4096)
     max_memory_mb: int = Field(default=4096, ge=128, le=8192)
     max_cpu_cores: float = Field(default=2.0, ge=0.1, le=4.0)
-    allow_local_fallback: bool = Field(
-        default=True,
-        description="Allow local micro-tool fallback execution only in test/development when no remote endpoint is configured.",
-    )
-    environment: str = Field(
-        default="development",
-        description="Runtime environment identifier ('development', 'test', 'staging', 'production').",
-    )
 
 
 class CmsSettings(BaseSettings):
