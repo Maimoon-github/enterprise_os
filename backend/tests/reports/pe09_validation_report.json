@@ -1,0 +1,61 @@
+{
+  "suite": "PE-09: Validate Boundaries, HITL and Release Readiness",
+  "version": "1.0.0",
+  "engine_id": "W_PROD",
+  "git_revision": "107b51227e789345dc750db34b8b94d90e327383",
+  "certified_at": "2026-09-21T17:45:00Z",
+  "certification_status": "CERTIFIED",
+  "verdict": "PASSED",
+  "digests": {
+    "docker_compose": "9d727327c2a6e17c9de6c00d5b8e3ef31fa35b2467daa901da1891093a478224",
+    "s_val_run_py": "a8d56153ed29f3e15f201a7399e1090ac6f7c8649f7e2d0f6ca2c9b1147693a4",
+    "s_val_skill_md": "3499863dba61fa7d8f63da22c8c34f4648ec959fd19fb5cc4ffb5c028654cbe4",
+    "profiles": {
+      "discovery": "818434a7bd190d87e1a5703b308214f537100846feff2d2cbd02df135bf390eb",
+      "appraisal": "1b9ed47b35de55c035840ad8a84ba3017705e628c5e7c19202f37eaac736fb6b",
+      "product_lab": "8aafed98a81edf45e8e96bd97209bac9785d4b2bd3334d6af74f1ea8a7e9fd10",
+      "safety": "f5e5990111464c32e3306c07dc9b445b45a44ee198e6efca37d03029b7d7b7b1",
+      "claims": "a8e5f41739b2501707e491aa7deca213eeab5bc0a3ef1e5b73d8387d108526be",
+      "regulatory": "2dd5e8388757e48220cc5db3611f06bdc7a947b6c9b6ca2d8cf6497ae6827f64"
+    }
+  },
+  "summary": {
+    "total_product_evidence_tests": 109,
+    "product_evidence_passed": 109,
+    "product_evidence_failed": 0,
+    "total_backend_suite_passed": 917,
+    "total_backend_suite_failed": 0
+  },
+  "validation_dimensions": [
+    {
+      "id": "PE09-01",
+      "dimension": "Contract & Domain Determinism",
+      "status": "PASS",
+      "details": "All 109 domain contract tests pass deterministic validation across discovery, lab, appraisal, safety, claims, regulatory, and provenance."
+    },
+    {
+      "id": "PE09-02",
+      "dimension": "HITL Outcomes & Cryptographic Binding",
+      "status": "PASS",
+      "details": "All 4 HITL outcomes (approve, reject, revise, hold) verified. Decisions are cryptographically bound to dossier hash, product/formula versions, claim/asset versions, locale, and territory. Mutation invalidates authority."
+    },
+    {
+      "id": "PE09-03",
+      "dimension": "Rejection of Autonomous Worker Approval",
+      "status": "PASS",
+      "details": "Worker agents (W_PROD, W_DEV, S_VAL) cannot self-approve; forged or mismatched Ed25519 signatures and expired approval periods fail closed."
+    },
+    {
+      "id": "PE09-04",
+      "dimension": "Hardened Sandbox Isolation & Containment",
+      "status": "PASS",
+      "details": "Offline specialists (appraisal, lab, safety, claims) are restricted to NetworkPolicy.DISABLED; metadata and private IPs are blocked fail-closed; discovery governed egress requires valid grant."
+    },
+    {
+      "id": "PE09-05",
+      "dimension": "Provenance Durability & Non-Fabrication",
+      "status": "PASS",
+      "details": "Storage failure prevents durable URI registration; trace bundle referential integrity and W3C PROV hash linkage verified."
+    }
+  ]
+}

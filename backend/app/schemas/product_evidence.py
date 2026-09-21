@@ -169,6 +169,7 @@ class ReviewStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     REVISIONS_REQUESTED = "revisions_requested"
+    HELD = "held"
 
 
 # ==============================================================================
@@ -304,6 +305,51 @@ class ProductReviewBinding(ProductEvidenceBaseModel):
     review_reasons: list[str] = Field(default_factory=list, max_length=100)
     approval_status: ReviewStatus = ReviewStatus.PENDING
     approval_ref: str | None = None
+    signature: str | None = None
+    valid_until: str | None = None
+    reviewer_id: str | None = None
+
+    def verify_authorization(
+        self,
+        *,
+        expected_dossier_hash: str,
+        expected_product_version: str,
+        expected_formula_version: str,
+        expected_target_territory: str,
+        expected_locale: str,
+        expected_claim_versions: list[str] | None = None,
+        expected_asset_versions: list[str] | None = None,
+        current_time_iso: str | None = None,
+    ) -> bool:
+        """Verify that approval binding strictly covers the exact target scope."""
+        if self.approval_status != ReviewStatus.APPROVED:
+            return False
+        if self.dossier_hash != expected_dossier_hash:
+            return False
+        if self.product_version != expected_product_version:
+            return False
+        if self.formula_version != expected_formula_version:
+            return False
+        if self.target_territory != expected_target_territory:
+            return False
+        if self.locale != expected_locale:
+            return False
+        if expected_claim_versions is not None:
+            if sorted(self.claim_versions) != sorted(expected_claim_versions):
+                return False
+        if expected_asset_versions is not None:
+            if sorted(self.asset_versions) != sorted(expected_asset_versions):
+                return False
+        if self.reviewer_id and (
+            self.reviewer_id.startswith("W_")
+            or self.reviewer_id.startswith("agent-")
+            or self.reviewer_id.startswith("S_")
+        ):
+            return False
+        if self.valid_until and current_time_iso:
+            if current_time_iso > self.valid_until:
+                return False
+        return True
 
 
 # ==============================================================================
