@@ -525,6 +525,14 @@ class SandboxClient:
             or mandate.worker_id == "W_CREAT"
             or (mandate.specialist_id and mandate.specialist_id.startswith("CREAT-"))
         )
+        is_prod_evidence = (
+            mandate.worker_role in (WorkerRole.PRODUCT_EVIDENCE, "W_PROD", "product_evidence")
+            or mandate.worker_id == "W_PROD"
+            or (mandate.specialist_id and (
+                mandate.specialist_id.startswith("w_prod.")
+                or mandate.specialist_id in ("DISCOVERY", "APPRAISAL", "PRODUCT_LAB", "SAFETY", "CLAIMS", "REGULATORY", "S_VAL")
+            ))
+        )
 
         if is_creative and (
             mandate.payload.get("simulate_aio_unavailable")
@@ -532,6 +540,14 @@ class SandboxClient:
         ):
             raise SandboxInvocationError(
                 "AIO sandbox is unavailable for Creative specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
+            )
+
+        if is_prod_evidence and (
+            mandate.payload.get("simulate_aio_unavailable")
+            or mandate.payload.get("simulate_aio_failure")
+        ):
+            raise SandboxInvocationError(
+                f"AIO sandbox is unavailable for {mandate.specialist_id or mandate.capability.value} specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
             )
 
         remote_configured = (self._settings is not None and bool(self._settings.endpoint)) or (self._sandbox is not None)
@@ -621,7 +637,81 @@ class SandboxClient:
 
                 return parsed
 
-            # 2. Code / AST execution via remote SDK code interface
+            # 2. S_VAL execution via mounted skill in remote AIO sandbox
+            elif mandate.capability == SandboxCapability.VAL:
+                if not (
+                    hasattr(remote_client, "file")
+                    and (hasattr(remote_client.file, "write_file") or hasattr(remote_client.file, "write"))
+                    and hasattr(remote_client, "shell")
+                    and hasattr(remote_client.shell, "exec_command")
+                ):
+                    raise SandboxInvocationError(
+                        "Configured AIO sandbox does not expose required file/shell interfaces for S_VAL."
+                    )
+
+                workspace_dir = f"/workspace/{mandate.execution_id}"
+                input_path = f"{workspace_dir}/input.json"
+                output_path = f"{workspace_dir}/output.json"
+
+                try:
+                    mkdir_res = remote_client.shell.exec_command(command=f"mkdir -p {workspace_dir}")
+                except TypeError:
+                    mkdir_res = remote_client.shell.exec_command(f"mkdir -p {workspace_dir}")
+                mkdir_code = getattr(mkdir_res, "exit_code", 0)
+                if mkdir_code not in (0, None):
+                    stderr = getattr(mkdir_res, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"Failed to create execution workspace directory {workspace_dir} (exit code {mkdir_code}): {stderr}"
+                    )
+
+                write_fn = getattr(remote_client.file, "write_file", None) or getattr(remote_client.file, "write", None)
+                if not callable(write_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable write_file method.")
+                payload_json = json.dumps(mandate.payload, ensure_ascii=False)
+                try:
+                    write_fn(file=input_path, content=payload_json)
+                except TypeError:
+                    write_fn(input_path, payload_json)
+
+                command = (
+                    "python /home/gem/skills/s-val/scripts/run.py "
+                    f"< {input_path} > {output_path}"
+                )
+                try:
+                    response = remote_client.shell.exec_command(command=command)
+                except TypeError:
+                    response = remote_client.shell.exec_command(command)
+                exit_code = getattr(response, "exit_code", 0)
+                if exit_code not in (0, None):
+                    stderr = getattr(response, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"S_VAL remote execution failed with exit code {exit_code}: {stderr}"
+                    )
+
+                read_fn = getattr(remote_client.file, "read_file", None) or getattr(remote_client.file, "read", None)
+                if not callable(read_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable read_file method.")
+                try:
+                    output = read_fn(file=output_path)
+                except TypeError:
+                    output = read_fn(output_path)
+                raw_content = getattr(getattr(output, "data", output), "content", output)
+                if not isinstance(raw_content, str):
+                    raw_content = str(raw_content)
+
+                try:
+                    parsed = json.loads(raw_content)
+                except Exception as parse_err:
+                    raise SandboxInvocationError(
+                        f"Failed to parse S_VAL structured output from {output_path}: {parse_err}"
+                    ) from parse_err
+
+                if not isinstance(parsed, dict):
+                    raise SandboxInvocationError("S_VAL returned a non-object payload.")
+
+                return parsed
+
+            # 3. Code / AST execution via remote SDK code interface
             elif mandate.capability == SandboxCapability.CODE and hasattr(remote_client, "code"):
                 code = mandate.payload.get("code", "")
                 if code:
@@ -629,7 +719,7 @@ class SandboxClient:
                     stdout = getattr(resp, "stdout", "")
                     return {"status": "success", "stdout": stdout, "diff": code, "ast_valid": "True"}
 
-            # 3. Browser / DOM extraction via remote SDK browser interface under governed egress
+            # 4. Browser / DOM extraction via remote SDK browser interface under governed egress
             elif mandate.capability == SandboxCapability.SCRAPE and hasattr(remote_client, "browser"):
                 url = (
                     mandate.payload.get("url")
@@ -663,6 +753,11 @@ class SandboxClient:
         if is_creative and (remote_configured or mandate.payload.get("require_aio", False)):
             raise SandboxInvocationError(
                 "AIO sandbox is unavailable for Creative specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
+            )
+
+        if is_prod_evidence and (remote_configured or mandate.payload.get("require_aio", False)):
+            raise SandboxInvocationError(
+                f"AIO sandbox is unavailable for {mandate.specialist_id or mandate.capability.value} execution. Backend-process fallback is strictly prohibited (fail-closed)."
             )
 
         # Fall back to local specialist micro-tool execution ONLY when no endpoint is configured

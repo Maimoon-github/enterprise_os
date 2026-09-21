@@ -2,10 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+import hashlib
 import json
 from typing import Any
 
 from app.agents.base import BoundedWorkerAgent
+from app.agents.product_evidence_engine.profiles import (
+    APPRAISAL_PROFILE,
+    CLAIMS_PROFILE,
+    DISCOVERY_PROFILE,
+    PRODUCT_LAB_PROFILE,
+    REGULATORY_PROFILE,
+    SAFETY_PROFILE,
+    SPECIALIST_PROFILES,
+    SpecialistModelProfile,
+    create_specialist_llm_client,
+    dispatch_specialist_s_val,
+    get_specialist_profile,
+    resolve_effective_model,
+    validate_delegated_scope,
+    validate_profile_binding,
+)
 from app.schemas.agent_contracts import (
     ClaimsDossier,
     ConfidenceInterval,
@@ -13,7 +32,12 @@ from app.schemas.agent_contracts import (
     ProductSpecification,
     TaskGrant,
 )
-from app.schemas.sandbox import SandboxCapability
+from app.schemas.product_evidence import (
+    ProductEvidenceTask,
+    SpecialistResult,
+    SpecialistTask,
+)
+from app.schemas.sandbox import SandboxCapability, SandboxEgressGrant
 
 
 class ProductEvidenceAgent(BoundedWorkerAgent):
@@ -26,6 +50,26 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
     """
 
     capability = SandboxCapability.VAL
+
+    @property
+    def sandbox_client(self) -> Any:
+        """Accessor for the underlying sandbox client."""
+        return self._sandbox_client
+
+    def dispatch_specialist(
+        self,
+        specialist_task: SpecialistTask,
+        parent_task: ProductEvidenceTask,
+        egress_grant: SandboxEgressGrant | None = None,
+    ) -> SpecialistResult:
+        """Dispatch a bounded sub-task to an isolated S_VAL specialist."""
+        return dispatch_specialist_s_val(
+            self._sandbox_client,
+            specialist_task=specialist_task,
+            parent_task=parent_task,
+            egress_grant=egress_grant,
+        )
+
 
     def _normalize_context(
         self, grant: TaskGrant, context: dict[str, object]

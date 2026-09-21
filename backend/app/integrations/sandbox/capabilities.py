@@ -181,11 +181,13 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
             "lint_compliance",
             "check_schema",
             "validate_product_dossier",
+            "assemble_dossier",
+            "validate_trace_bundle",
             "default",
         ),
         network_policy=NetworkPolicy.DISABLED,
         default_timeout_seconds=120,
-        allowed_tools=("compliance_linter", "claim_checker"),
+        allowed_tools=("compliance_linter", "claim_checker", "dossier_assembler", "schema_validator"),
     ),
     SandboxCapability.SCRAPE: CapabilityProfile(
         capability=SandboxCapability.SCRAPE,
@@ -282,6 +284,98 @@ CREATIVE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
         "allowed_tools": (),
     },
 }
+
+AUTHORIZED_PRODUCT_SPECIALISTS = frozenset({
+    "w_prod.discovery",
+    "w_prod.regulatory",
+    "w_prod.claims",
+    "w_prod.appraisal",
+    "w_prod.product_lab",
+    "w_prod.safety",
+    "DISCOVERY",
+    "REGULATORY",
+    "CLAIMS",
+    "APPRAISAL",
+    "PRODUCT_LAB",
+    "SAFETY",
+    "S_VAL",
+})
+
+PRODUCT_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
+    "w_prod.discovery": {
+        "allowed_capabilities": (SandboxCapability.VAL,),
+        "allowed_operations": (
+            "research_literature",
+            "fetch_official_rules",
+            "acquire_source",
+            "parse_metadata",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("literature_search", "source_fetcher", "metadata_parser", "public_search"),
+    },
+    "w_prod.regulatory": {
+        "allowed_capabilities": (SandboxCapability.VAL,),
+        "allowed_operations": (
+            "check_regulatory_rules",
+            "verify_statutory_requirements",
+            "parse_rule_context",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("rule_checker", "statutory_linter", "rule_parser", "compliance_linter"),
+    },
+    "w_prod.claims": {
+        "allowed_capabilities": (SandboxCapability.VAL,),
+        "allowed_operations": (
+            "extract_claims",
+            "classify_claim",
+            "map_claim_evidence",
+            "inspect_claim_imagery",
+            "validate_claim",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("claim_extractor", "claim_classifier", "evidence_mapper", "vision_inspector", "claim_checker"),
+    },
+    "w_prod.appraisal": {
+        "allowed_capabilities": (SandboxCapability.VAL,),
+        "allowed_operations": (
+            "appraise_evidence",
+            "assess_study_design",
+            "grade_certainty",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("bias_assessor", "methodology_appraiser", "certainty_grader"),
+    },
+    "w_prod.product_lab": {
+        "allowed_capabilities": (SandboxCapability.VAL,),
+        "allowed_operations": (
+            "validate_formulation",
+            "audit_lab_report",
+            "verify_test_methods",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("formulation_validator", "lab_report_auditor", "test_method_verifier"),
+    },
+    "w_prod.safety": {
+        "allowed_capabilities": (SandboxCapability.VAL,),
+        "allowed_operations": (
+            "assess_safety",
+            "evaluate_hazards",
+            "screen_adverse_signals",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("hazard_evaluator", "safety_screener", "toxicology_analyzer"),
+    },
+}
+
+for key, val in list(PRODUCT_SPECIALIST_POLICIES.items()):
+    short_key = key.replace("w_prod.", "").upper()
+    PRODUCT_SPECIALIST_POLICIES[short_key] = val
 
 WORKER_CAPABILITY_MAP: dict[WorkerRole, SandboxCapability] = {
     profile.allowed_worker: profile.capability for profile in CAPABILITY_REGISTRY.values()
@@ -421,7 +515,77 @@ def validate_capability_access(
                 allowed_tools=spec_policy["allowed_tools"],
             )
 
-    # 2. Standard worker role vs capability compatibility
+    # 2. Product Evidence Specialist Context Enforcement
+    is_prod_evidence = (
+        worker_id == "W_PROD"
+        or parsed_role == WorkerRole.PRODUCT_EVIDENCE
+        or (specialist_id is not None and (
+            specialist_id.startswith("w_prod.")
+            or specialist_id in AUTHORIZED_PRODUCT_SPECIALISTS
+        ))
+    )
+
+    if is_prod_evidence and specialist_id is not None and specialist_id != "S_VAL":
+        if specialist_id not in AUTHORIZED_PRODUCT_SPECIALISTS:
+            raise SandboxInvocationError(
+                f"Unauthorized or unknown Product Evidence specialist: '{specialist_id}'. Fail closed."
+            )
+
+        spec_policy = PRODUCT_SPECIALIST_POLICIES[specialist_id]
+        if capability not in spec_policy["allowed_capabilities"]:
+            raise SandboxInvocationError(
+                f"Specialist '{specialist_id}' is not authorized for capability '{capability.value}'."
+            )
+
+        if operation not in spec_policy["allowed_operations"]:
+            raise SandboxInvocationError(
+                f"Operation '{operation}' is not permitted for Product Evidence specialist '{specialist_id}'. "
+                f"Permitted operations: {spec_policy['allowed_operations']}"
+            )
+
+        req_net = NetworkPolicy(requested_network) if isinstance(requested_network, str) else requested_network
+
+        if req_net != NetworkPolicy.DISABLED:
+            if spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+                raise SandboxInvocationError(
+                    f"Network access denied: Product Evidence specialist '{specialist_id}' is restricted to DENY_ALL (disabled) network policy."
+                )
+            if req_net not in (NetworkPolicy.ALLOWLIST, NetworkPolicy.CONTROLLED):
+                raise SandboxInvocationError(
+                    f"Product Evidence specialist '{specialist_id}' only permits explicit allowlist/controlled egress (requested: '{req_net.value}')."
+                )
+            if egress_grant is None:
+                raise SandboxInvocationError(
+                    f"Network access denied: Product Evidence specialist '{specialist_id}' requested network without an authorized SandboxEgressGrant."
+                )
+            if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                raise SandboxInvocationError(
+                    f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                )
+        elif egress_grant is not None and spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+            raise SandboxInvocationError(
+                f"Egress grant cannot be attached to Product Evidence specialist '{specialist_id}' under DENY_ALL network policy."
+            )
+
+        if egress_grant is not None:
+            if egress_grant.is_expired():
+                raise SandboxInvocationError(f"Egress grant '{egress_grant.grant_id}' has expired.")
+            if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                raise SandboxInvocationError(
+                    f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                )
+
+        return CapabilityProfile(
+            capability=capability,
+            specialist_name=f"{specialist_id} Specialist",
+            allowed_worker=WorkerRole.PRODUCT_EVIDENCE,
+            allowed_operations=spec_policy["allowed_operations"],
+            network_policy=spec_policy["network_policy"],
+            default_timeout_seconds=profile.default_timeout_seconds,
+            allowed_tools=spec_policy["allowed_tools"],
+        )
+
+    # 3. Standard worker role vs capability compatibility
     if parsed_role is not None:
         if parsed_role != profile.allowed_worker:
             raise SandboxInvocationError(
@@ -501,6 +665,15 @@ def validate_tool_access(
         if requested_tool not in allowed_tools:
             raise SandboxInvocationError(
                 f"Tool '{requested_tool}' is not permitted for Creative specialist '{specialist_id}'. "
+                f"Permitted tools: {allowed_tools}"
+            )
+        return
+
+    if specialist_id and specialist_id in PRODUCT_SPECIALIST_POLICIES:
+        allowed_tools = PRODUCT_SPECIALIST_POLICIES[specialist_id]["allowed_tools"]
+        if requested_tool not in allowed_tools:
+            raise SandboxInvocationError(
+                f"Tool '{requested_tool}' is not permitted for Product Evidence specialist '{specialist_id}'. "
                 f"Permitted tools: {allowed_tools}"
             )
         return
