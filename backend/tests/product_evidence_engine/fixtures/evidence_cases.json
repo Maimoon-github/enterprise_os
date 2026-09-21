@@ -1,0 +1,216 @@
+{
+  "valid_trace_bundle": {
+    "schema_version": "1.0",
+    "tenant_id": "tenant-derma-01",
+    "run_id": "run-pe-20260921-001",
+    "product_version": "ederma-serum-v2",
+    "sources": [
+      {
+        "id": "src-study-001",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        "identifier": "doi:10.1016/j.jid.2025.01.002",
+        "issuer_or_authors": ["Smith A", "Patel R"],
+        "title": "Clinical evaluation of topical niacinamide on barrier recovery",
+        "jurisdiction": "US",
+        "evidence_type": "primary_study",
+        "retrieved_at": "2026-09-21T10:00:00Z",
+        "access": "full_text",
+        "language": "en",
+        "authenticity_status": "verified",
+        "freshness": "current_checked",
+        "provenance_ref": "prov-act-001",
+        "rights_or_limitations": ["open_access"]
+      },
+      {
+        "id": "src-reg-001",
+        "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32013R0655",
+        "identifier": "Commission Regulation (EU) No 655/2013",
+        "issuer_or_authors": ["European Commission"],
+        "title": "Common criteria for the justification of cosmetic claims",
+        "jurisdiction": "EU",
+        "evidence_type": "legal_text",
+        "retrieved_at": "2026-09-21T10:00:00Z",
+        "access": "full_text",
+        "language": "en",
+        "authenticity_status": "verified",
+        "freshness": "current_checked",
+        "provenance_ref": "prov-act-002",
+        "rights_or_limitations": ["public_domain"]
+      }
+    ],
+    "evidence": [
+      {
+        "id": "ev-001",
+        "source_id": "src-study-001",
+        "snapshot_ref": "snap-001",
+        "location": "Page 4, Table 2",
+        "subject": "ingredient",
+        "outcome": "40% increase in epidermal hydration over 14 days",
+        "assessment_ref": "assess-001",
+        "activity_ref": "act-extract-001",
+        "study_design": "Double-blind RCT (n=60)",
+        "normalized_value": "40% hydration increase"
+      }
+    ],
+    "rules": [
+      {
+        "id": "rule-eu-655-evidential-support",
+        "source_id": "src-reg-001",
+        "location": "Annex, Criterion 3",
+        "jurisdiction": "EU",
+        "product_class": "cosmetics",
+        "force": "regulation",
+        "status": "verified_applicable",
+        "activity_ref": "act-reg-001",
+        "rule_summary": "Claims must be supported by adequate and verifiable evidence."
+      }
+    ],
+    "claims": [
+      {
+        "id": "claim-001",
+        "version": "1.0",
+        "text": "Clinically tested to improve skin hydration by 40%. *Results may vary based on usage.",
+        "kind": "explicit",
+        "asset_ref": "asset-carton-front-v1",
+        "asset_location": "Front panel primary display",
+        "jurisdiction": "EU",
+        "locale": "en_EU",
+        "interpretation_reason": "Direct express claim supported by clinical trial with required disclaimer.",
+        "status": "supported_in_scope",
+        "activity_ref": "act-claim-001"
+      }
+    ],
+    "mappings": [
+      {
+        "id": "map-001",
+        "claim_id": "claim-001",
+        "evidence_id": "ev-001",
+        "rule_ids": ["rule-eu-655-evidential-support"],
+        "relation": "supports",
+        "relevance": "bridge_required",
+        "bridge_ref": "bridge-niacinamide-serum-01",
+        "limitations": ["Ingredient evidence bridged to finished serum formulation at 5% concentration."],
+        "activity_ref": "act-map-001"
+      }
+    ],
+    "gaps": [
+      {
+        "id": "gap-001",
+        "affected_ids": ["claim-001"],
+        "reason": "Long-term barrier persistence beyond 60 days not tested in primary study.",
+        "blocking": false,
+        "activity_ref": "act-gap-001",
+        "severity": "low"
+      }
+    ]
+  },
+  "invalid_missing_bridge_case": {
+    "schema_version": "1.0",
+    "tenant_id": "tenant-derma-01",
+    "run_id": "run-pe-20260921-002",
+    "product_version": "ederma-serum-v2",
+    "sources": [
+      {
+        "id": "src-study-002",
+        "identifier": "doi:10.1016/j.jid.2025.01.003",
+        "evidence_type": "primary_study",
+        "access": "full_text",
+        "provenance_ref": "prov-act-003"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "ev-002",
+        "source_id": "src-study-002",
+        "snapshot_ref": "snap-002",
+        "location": "Page 2",
+        "subject": "ingredient",
+        "outcome": "Ingredient test",
+        "assessment_ref": "assess-002",
+        "activity_ref": "act-extract-002"
+      }
+    ],
+    "rules": [],
+    "claims": [
+      {
+        "id": "claim-002",
+        "version": "1.0",
+        "text": "Finished product restores barrier completely",
+        "kind": "explicit",
+        "asset_ref": "asset-carton-v2",
+        "asset_location": "Back panel",
+        "interpretation_reason": "Express claim",
+        "status": "supported_in_scope",
+        "activity_ref": "act-claim-002"
+      }
+    ],
+    "mappings": [
+      {
+        "id": "map-002",
+        "claim_id": "claim-002",
+        "evidence_id": "ev-002",
+        "rule_ids": [],
+        "relation": "supports",
+        "relevance": "bridge_required",
+        "bridge_ref": null,
+        "limitations": [],
+        "activity_ref": "act-map-002"
+      }
+    ],
+    "gaps": []
+  },
+  "invalid_prohibited_claim_case": {
+    "schema_version": "1.0",
+    "tenant_id": "tenant-derma-01",
+    "run_id": "run-pe-20260921-003",
+    "product_version": "ederma-serum-v2",
+    "sources": [
+      {
+        "id": "src-study-003",
+        "identifier": "doi:10.1016/j.jid.2025.01.004",
+        "evidence_type": "primary_study",
+        "access": "full_text",
+        "provenance_ref": "prov-act-004"
+      }
+    ],
+    "evidence": [
+      {
+        "id": "ev-003",
+        "source_id": "src-study-003",
+        "snapshot_ref": "snap-003",
+        "location": "Page 1",
+        "subject": "finished_product",
+        "outcome": "Product test",
+        "assessment_ref": "assess-003",
+        "activity_ref": "act-extract-003"
+      }
+    ],
+    "rules": [],
+    "claims": [
+      {
+        "id": "claim-003",
+        "version": "1.0",
+        "text": "Permanently cures all eczema symptoms 100% guaranteed.",
+        "kind": "explicit",
+        "asset_ref": "asset-carton-v3",
+        "asset_location": "Front panel",
+        "interpretation_reason": "Prohibited medical absolute claim",
+        "status": "supported_in_scope",
+        "activity_ref": "act-claim-003"
+      }
+    ],
+    "mappings": [
+      {
+        "id": "map-003",
+        "claim_id": "claim-003",
+        "evidence_id": "ev-003",
+        "rule_ids": [],
+        "relation": "supports",
+        "relevance": "direct",
+        "limitations": [],
+        "activity_ref": "act-map-003"
+      }
+    ],
+    "gaps": []
+  }
+}
