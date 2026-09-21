@@ -437,6 +437,7 @@ class EvidenceAssessment(ProductEvidenceBaseModel):
     source_integrity: Literal["verified", "partial", "unresolved", "compromised"] = "verified"
     risk_of_bias: Literal["low", "some_concerns", "high", "not_assessed"] = "low"
     relevance: EvidenceRelevance = EvidenceRelevance.DIRECT
+    precision: Literal["precise", "serious_imprecision", "very_serious_imprecision", "not_assessed"] = "precise"
     consistency: Literal["consistent", "explainable_difference", "unresolved_conflict", "too_sparse", "not_assessed"] = "consistent"
     certainty: Literal["high", "moderate", "low", "very_low", "not_assessed"] = "high"
     justification: str = Field(default="", max_length=4000)
@@ -557,7 +558,11 @@ class SafetyAssessment(ProductEvidenceBaseModel):
     evidence_refs: list[str] = Field(default_factory=list, max_length=100)
     adverse_signals: list[str] = Field(default_factory=list, max_length=50)
     status: SafetyStatus = SafetyStatus.NOT_ASSESSED
+    relevant_endpoints: list[str] = Field(default_factory=list, max_length=50)
+    exposure_assumptions: dict[str, Any] = Field(default_factory=dict)
+    scoped_conditions: dict[str, Any] = Field(default_factory=dict)
     limitations_or_uncertainties: list[str] = Field(default_factory=list, max_length=100)
+    risk_characterization_limitations: list[str] = Field(default_factory=list, max_length=100)
     qualified_reviewer_required: bool = True
 
 
@@ -598,7 +603,10 @@ class ConflictRecord(ProductEvidenceBaseModel):
     affected_proposition_or_claim: str = Field(min_length=1, max_length=2000)
     conflicting_evidence_ids: list[str] = Field(default_factory=list, max_length=100)
     incompatibility_type: str = Field(min_length=1, max_length=500)
+    comparable_dimensions: list[str] = Field(default_factory=list, max_length=50)
+    noncomparable_dimensions: list[str] = Field(default_factory=list, max_length=50)
     reconciliation_attempt: str = Field(default="", max_length=2000)
+    reconciliation_or_sensitivity_method: str = Field(default="", max_length=1000)
     unresolved_impact: str = Field(min_length=1, max_length=2000)
     next_action_proposal: str = Field(min_length=1, max_length=2000)
 
@@ -613,6 +621,17 @@ class EvidenceGap(ProductEvidenceBaseModel):
     activity_ref: str = Field(min_length=1, max_length=200)
     severity: Literal["low", "medium", "high", "critical"] = "medium"
     proposed_remediation: str = Field(default="", max_length=2000)
+    gap_kind: Literal[
+        "no_study_found",
+        "no_suitable_study_found",
+        "inaccessible_evidence",
+        "missing_endpoint_coverage",
+        "missing_exposure_coverage",
+        "missing_population_coverage",
+        "insufficient_precision",
+        "supports_absence_of_effect",
+        "other",
+    ] = "other"
 
 
 class DossierValidation(ProductEvidenceBaseModel):

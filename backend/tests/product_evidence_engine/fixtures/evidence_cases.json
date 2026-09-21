@@ -482,5 +482,94 @@
       "raw_results": {"Active": 5.0},
       "units": "%"
     }
+  },
+  "appraisal_safety_case": {
+    "duplicate_cohort_evidence": [
+      {
+        "id": "ev-pub-01",
+        "study_family_id": "cohort-niacinamide-smith-2025",
+        "outcome": "40% increase in epidermal hydration over 14 days",
+        "sample_size": 60,
+        "p_value": 0.001
+      },
+      {
+        "id": "ev-pub-02-followup",
+        "study_family_id": "cohort-niacinamide-smith-2025",
+        "outcome": "Secondary analysis confirms barrier recovery sustained at 6 months",
+        "sample_size": 60,
+        "p_value": 0.005
+      },
+      {
+        "id": "ev-review-03",
+        "study_family_id": "cohort-niacinamide-smith-2025",
+        "outcome": "Systematic review cites Smith 2025 cohort demonstrating 40% hydration gain",
+        "sample_size": 60,
+        "p_value": 0.001
+      }
+    ],
+    "conflicting_trials_evidence": [
+      {
+        "id": "ev-trial-pos-01",
+        "study_family_id": "family-rct-pos-01",
+        "outcome": "Statistically significant 35% reduction in trans-epidermal water loss (p<0.01)",
+        "sample_size": 80,
+        "p_value": 0.005
+      },
+      {
+        "id": "ev-trial-neg-02",
+        "study_family_id": "family-rct-neg-02",
+        "outcome": "No statistically significant difference in trans-epidermal water loss compared to vehicle control (p=0.48)",
+        "sample_size": 75,
+        "p_value": 0.48
+      }
+    ],
+    "low_power_evidence": {
+      "id": "ev-low-power-01",
+      "study_family_id": "family-pilot-01",
+      "outcome": "Nonsignificant difference in erythema score (p=0.22)",
+      "sample_size": 12,
+      "p_value": 0.22
+    },
+    "paywalled_abstract_evidence": {
+      "id": "ev-paywall-01",
+      "study_family_id": "family-paywall-01",
+      "access": "abstract_only",
+      "outcome": "High efficacy reported in abstract",
+      "sample_size": 40
+    },
+    "valid_scoped_safety": {
+      "assessment_id": "safe-eval-001",
+      "product_version": "2.0",
+      "hazards_evaluated": ["Skin irritation", "Eye irritation", "Dermal sensitization", "Photo-toxicity"],
+      "exposure_scenario": "Topical leave-on facial serum, 0.5 mL applied twice daily to face and neck (approx 15 mg/kg/day)",
+      "vulnerable_populations_considered": ["Adults with normal or dry skin"],
+      "evidence_refs": ["ev-hript-001", "ev-tox-study-002"],
+      "adverse_signals": [],
+      "status": "no_concern_identified_in_scope",
+      "relevant_endpoints": ["Erythema index", "Sensitization index", "Dermal irritation score"],
+      "exposure_assumptions": {
+        "daily_amount_applied_g": 1.0,
+        "retention_factor": 1.0,
+        "body_weight_kg": 60.0
+      },
+      "scoped_conditions": {
+        "target_population": "Healthy adults aged 18-65 without open dermatological lesions",
+        "route": "Topical dermal application",
+        "max_daily_exposure": "1.5 g finished product / day",
+        "max_duration": "Continuous daily use up to 12 months"
+      },
+      "limitations_or_uncertainties": ["Pediatric and pregnant populations excluded from evaluation."],
+      "qualified_reviewer_required": true
+    },
+    "severe_adverse_signal_case": {
+      "assessment_id": "safe-eval-severe-002",
+      "product_version": "2.0",
+      "hazards_evaluated": ["Skin sensitization"],
+      "exposure_scenario": "Topical application",
+      "vulnerable_populations_considered": ["General population"],
+      "evidence_refs": ["ev-patch-fail-001"],
+      "adverse_signals": ["Severe contact sensitization confirmed; erythema grade 3 observed in 4 subjects"],
+      "status": "concern_identified"
+    }
   }
 }

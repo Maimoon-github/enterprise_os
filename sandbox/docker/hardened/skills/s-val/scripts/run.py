@@ -88,12 +88,31 @@ def run_s_val(payload: dict) -> dict:
         if ctx.get("method_unsupported"):
             violations.append("Unsupported test method: method is not recognized or lacks standard validation.")
 
+    # 5. Appraisal & Safety checks
+    if operation in ("appraise_evidence", "assess_study_design", "grade_certainty"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        if ctx.get("unresolved_conflicts_unflagged"):
+            violations.append("Unresolved scientific conflicts detected but not flagged in conflict records.")
+        if ctx.get("missing_evidence_treated_as_absence"):
+            violations.append("Methodological violation: absence of evidence cannot be treated as evidence of absence.")
+        if ctx.get("duplicate_cohort_inflation"):
+            violations.append("Methodological violation: duplicate publications from same cohort cannot inflate consistency.")
+
+    if operation in ("assess_safety", "evaluate_hazards", "screen_adverse_signals"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        if ctx.get("severe_adverse_signal"):
+            violations.append("Severe adverse signal detected: immediate escalation and review hold required.")
+        if ctx.get("vulnerable_population_unassessed"):
+            violations.append("Safety coverage gap: vulnerable population exposure not assessed.")
+        if ctx.get("unrestricted_safe_claim"):
+            violations.append("Prohibited safety claim: unrestricted 'safe' declaration is prohibited.")
+
     compliance_score = max(0.0, 1.0 - (len(violations) * 0.4))
     is_compliant = len(violations) == 0
 
     primary_claim = claims_to_check[0] if claims_to_check else ""
 
-    # 5. Role-scoped structured findings
+    # 6. Role-scoped structured findings
     typed_findings = {
         "operation": operation,
         "specialist_role": specialist_role,
@@ -117,12 +136,21 @@ def run_s_val(payload: dict) -> dict:
         ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
         typed_findings["method_status"] = "VERIFIED" if is_compliant else "UNVERIFIED"
         typed_findings["test_methods"] = ctx.get("test_methods", [])
-    elif operation == "assess_safety":
-        typed_findings["safety_status"] = "NO_CONCERN_IDENTIFIED_IN_SCOPE" if is_compliant else "CONCERN_IDENTIFIED"
+    elif operation in ("appraise_evidence", "assess_study_design", "grade_certainty"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        typed_findings["evidence_quality"] = ctx.get("evidence_quality", "HIGH" if is_compliant else "LOW")
+        typed_findings["consistency"] = ctx.get("consistency", "consistent")
+        typed_findings["evidence_assessments"] = ctx.get("evidence_assessments", [])
+        typed_findings["conflict_records"] = ctx.get("conflict_records", [])
+        typed_findings["evidence_gaps"] = ctx.get("evidence_gaps", [])
+    elif operation in ("assess_safety", "evaluate_hazards", "screen_adverse_signals"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        typed_findings["safety_status"] = ctx.get("safety_status", "NO_CONCERN_IDENTIFIED_IN_SCOPE" if is_compliant else "CONCERN_IDENTIFIED")
+        typed_findings["safety_assessments"] = ctx.get("safety_assessments", [])
+        typed_findings["adverse_signals"] = ctx.get("adverse_signals", [])
+        typed_findings["qualified_reviewer_required"] = ctx.get("qualified_reviewer_required", True)
     elif operation == "check_regulatory_rules":
         typed_findings["regulatory_status"] = "MEETS_CHECKED_REQUIREMENT" if is_compliant else "DOES_NOT_MEET_CHECKED_REQUIREMENT"
-    elif operation == "appraise_evidence":
-        typed_findings["evidence_quality"] = "HIGH" if is_compliant else "LOW"
     elif operation in ("research_literature", "fetch_official_rules", "acquire_source", "parse_metadata"):
         ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
         sources = ctx.get("sources", payload.get("sources", []))
