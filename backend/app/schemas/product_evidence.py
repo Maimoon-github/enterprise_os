@@ -454,11 +454,31 @@ class FormulationEvidenceBridge(ProductEvidenceBaseModel):
     vehicle_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
     route_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
     exposure_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
+    population_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
     duration_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
+    endpoint_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
+    manufacturing_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
+    packaging_comparability: Literal["match", "mismatch", "unknown", "not_applicable"] = "match"
     overall_relevance: EvidenceRelevance = EvidenceRelevance.DIRECT
     scientific_rationale: str = Field(min_length=1, max_length=4000)
     limits_and_conditions: list[str] = Field(default_factory=list, max_length=50)
     requires_expert_review: bool = False
+
+
+class NormalizedMeasurement(ProductEvidenceBaseModel):
+    """Deterministic normalized analytical measurement record."""
+
+    original_value: Any
+    original_unit: str = Field(min_length=1, max_length=50)
+    normalized_value: Any
+    normalized_unit: str = Field(min_length=1, max_length=50)
+    conversion_formula: str = Field(default="", max_length=500)
+    assumptions: list[str] = Field(default_factory=list, max_length=50)
+    precision: int | None = None
+    uncertainty: float | None = None
+    lod: float | None = None
+    loq: float | None = None
+    is_nondetect: bool = False
 
 
 class LabValidation(ProductEvidenceBaseModel):
@@ -469,17 +489,29 @@ class LabValidation(ProductEvidenceBaseModel):
     report_hash: str = Field(default="", max_length=128)
     issuer_lab_name: str = Field(min_length=1, max_length=500)
     lab_accreditation: str = Field(default="", max_length=500)
+    accreditation_verified: bool = False
+    accreditation_scope_covers_test: bool = False
+    accreditation_expiry_date: str | None = Field(default=None, max_length=50)
     test_method: str = Field(min_length=1, max_length=500)
+    method_version: str = Field(default="1.0", max_length=50)
     sample_or_batch_id: str = Field(min_length=1, max_length=200)
+    product_linkage_verified: bool = False
     sampling_date: str | None = Field(default=None, max_length=50)
+    receipt_date: str | None = Field(default=None, max_length=50)
     test_date: str | None = Field(default=None, max_length=50)
+    chain_of_custody_verified: bool = False
     analyte_or_endpoints: list[str] = Field(default_factory=list, max_length=100)
     raw_results: dict[str, Any] = Field(default_factory=dict)
     normalized_results: dict[str, Any] = Field(default_factory=dict)
     units: str = Field(default="", max_length=50)
+    lod_loq: dict[str, Any] = Field(default_factory=dict)
+    measurement_uncertainty: dict[str, Any] = Field(default_factory=dict)
+    specification_limit_source: str = Field(default="", max_length=1000)
     decision_rule: str = Field(default="", max_length=1000)
     deviations: list[str] = Field(default_factory=list, max_length=50)
+    reviewer_requirements: list[str] = Field(default_factory=list, max_length=50)
     validation_outcome: Literal["VALIDATED", "DEVIATIONS_NOTED", "REJECTED"] = "VALIDATED"
+    conformity_assessment: Literal["PASS", "FAIL", "UNKNOWN", "REVIEW_REQUIRED"] = "UNKNOWN"
 
 
 class ClaimRecord(ProductEvidenceBaseModel):

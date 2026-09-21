@@ -70,12 +70,30 @@ def run_s_val(payload: dict) -> dict:
                 if re.search(pattern, str(query), re.IGNORECASE):
                     violations.append(f"Disclosure-safety violation: Confidential pattern detected in search query '{query}': {pattern}")
 
+    # 4. Formulation, Lab Audit, and Method Verification checks
+    if operation in ("validate_formulation", "audit_lab_report", "verify_test_methods"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        if ctx.get("batch_mismatch"):
+            violations.append("Batch mismatch: formulation/sample batch does not match target product specification.")
+        if ctx.get("missing_density"):
+            violations.append("Density missing: volume-to-mass concentration conversion attempted without density.")
+        if ctx.get("unbridged_ingredient_claim"):
+            violations.append("Unbridged ingredient evidence: cannot transfer ingredient evidence to finished product without an explicit comparability bridge.")
+        if ctx.get("accreditation_out_of_scope"):
+            violations.append("Accreditation scope violation: test method is outside verified laboratory accreditation scope.")
+        if ctx.get("report_hash_missing") or ctx.get("report_hash_mismatch"):
+            violations.append("Report integrity violation: report hash is missing or fails verification.")
+        if ctx.get("unverified_visual_elements"):
+            violations.append("Report authenticity unverified: visual signatures or logos present without verified credentials.")
+        if ctx.get("method_unsupported"):
+            violations.append("Unsupported test method: method is not recognized or lacks standard validation.")
+
     compliance_score = max(0.0, 1.0 - (len(violations) * 0.4))
     is_compliant = len(violations) == 0
 
     primary_claim = claims_to_check[0] if claims_to_check else ""
 
-    # 4. Role-scoped structured findings
+    # 5. Role-scoped structured findings
     typed_findings = {
         "operation": operation,
         "specialist_role": specialist_role,
@@ -85,7 +103,20 @@ def run_s_val(payload: dict) -> dict:
     }
 
     if operation == "validate_formulation":
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
         typed_findings["formulation_status"] = "VALIDATED" if is_compliant else "FLAGGED"
+        typed_findings["formulation_bridge"] = ctx.get("formulation_bridge", {})
+        typed_findings["product_specification"] = ctx.get("product_specification", {})
+        typed_findings["normalized_measurements"] = ctx.get("normalized_measurements", [])
+    elif operation == "audit_lab_report":
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        typed_findings["audit_outcome"] = "VALIDATED" if is_compliant else "FLAGGED"
+        typed_findings["lab_validation"] = ctx.get("lab_validation", {})
+        typed_findings["conformity_assessment"] = ctx.get("conformity_assessment", "PASS" if is_compliant else "UNKNOWN")
+    elif operation == "verify_test_methods":
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        typed_findings["method_status"] = "VERIFIED" if is_compliant else "UNVERIFIED"
+        typed_findings["test_methods"] = ctx.get("test_methods", [])
     elif operation == "assess_safety":
         typed_findings["safety_status"] = "NO_CONCERN_IDENTIFIED_IN_SCOPE" if is_compliant else "CONCERN_IDENTIFIED"
     elif operation == "check_regulatory_rules":

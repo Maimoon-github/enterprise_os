@@ -231,7 +231,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_contracts.py
 │   │   ├── 🐍 test_discovery.py
-│   │   └── 🐍 test_llm_routing.py
+│   │   ├── 🐍 test_llm_routing.py
+│   │   └── 🐍 test_product_lab.py
 │   ├── 📁 reports/
 │   │   ├── ⚙️ de12_validation_report.json
 │   │   ├── ⚙️ de13_dev_plan_assurance_report.json

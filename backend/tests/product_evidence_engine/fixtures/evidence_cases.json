@@ -359,5 +359,128 @@
         "normalized_value": "null sebum effect"
       }
     ]
+  },
+  "product_lab_case": {
+    "product_specification": {
+      "product_id": "prod-derma-serum-v2",
+      "product_name": "eDerma Barrier Serum V2",
+      "tenant_id": "tenant-derma-01",
+      "formulation_id": "form-ederma-serum-v2",
+      "version": "2.0",
+      "process_context": "Homogenized micro-emulsion cold process under nitrogen blanketing",
+      "packaging_context": "Airless amber glass bottle with pump dispenser (50 mL)",
+      "intended_use_context": "Leave-on facial serum applied twice daily",
+      "ingredients": [
+        {
+          "material_identity": "Niacinamide (USP Grade)",
+          "concentration": 5.0,
+          "unit": "%",
+          "composition_basis": "w/w",
+          "supplier_reference": "sup-lonza-batch-88",
+          "specification_reference": "USP-Niacinamide-Monograph-v44",
+          "status": "supplied",
+          "provenance_ref": "prov-ing-001"
+        },
+        {
+          "material_identity": "Hyaluronic Acid (Low Molecular Weight)",
+          "concentration": 1.5,
+          "unit": "%",
+          "composition_basis": "w/w",
+          "supplier_reference": "sup-bloomage-ha-09",
+          "specification_reference": "FCC-HA-v12",
+          "status": "supplied",
+          "provenance_ref": "prov-ing-002"
+        },
+        {
+          "material_identity": "Purified Water",
+          "concentration": 93.5,
+          "unit": "%",
+          "composition_basis": "w/w",
+          "supplier_reference": "internal-ro-deionized",
+          "specification_reference": "USP-PurifiedWater-v44",
+          "status": "supplied",
+          "provenance_ref": "prov-ing-003"
+        }
+      ]
+    },
+    "valid_lab_report": {
+      "report_id": "rep-eurofins-2026-098",
+      "report_version": "1.0",
+      "report_hash": "a1b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef0",
+      "issuer_lab_name": "Eurofins Consumer Product Testing GmbH",
+      "lab_accreditation": "ISO/IEC 17025:2017 (DAkkS D-PL-14125-01-00)",
+      "accreditation_verified": true,
+      "accreditation_scope_covers_test": true,
+      "accreditation_expiry_date": "2027-12-31",
+      "test_method": "ICP-MS Heavy Metals Analysis (EN 15763)",
+      "method_version": "2019-11",
+      "sample_or_batch_id": "batch-2026-v2-001",
+      "product_linkage_verified": true,
+      "sampling_date": "2026-09-10",
+      "receipt_date": "2026-09-12",
+      "test_date": "2026-09-15",
+      "chain_of_custody_verified": true,
+      "analyte_or_endpoints": ["Lead (Pb)", "Arsenic (As)", "Cadmium (Cd)", "Mercury (Hg)"],
+      "raw_results": {
+        "Lead (Pb)": "< 0.05",
+        "Arsenic (As)": "< 0.05",
+        "Cadmium (Cd)": "< 0.01",
+        "Mercury (Hg)": "< 0.01"
+      },
+      "units": "mg/kg",
+      "lod_loq": {
+        "Lead (Pb)_lod": 0.05,
+        "Arsenic (As)_lod": 0.05,
+        "Cadmium (Cd)_lod": 0.01,
+        "Mercury (Hg)_lod": 0.01
+      },
+      "uncertainty": {
+        "Lead (Pb)": 0.01,
+        "Arsenic (As)": 0.01
+      },
+      "specification_limits": {
+        "Lead (Pb)": {"max": 10.0, "unit": "mg/kg"},
+        "Arsenic (As)": {"max": 3.0, "unit": "mg/kg"},
+        "Cadmium (Cd)": {"max": 1.0, "unit": "mg/kg"},
+        "Mercury (Hg)": {"max": 0.1, "unit": "mg/kg"}
+      },
+      "specification_limit_source": "Regulation (EC) No 1223/2009 Technical Guide on Heavy Metals Limits",
+      "decision_rule": "binary_guard_band",
+      "signatures": [{"signatory": "Dr. Weber, Lab Director", "verified": true}],
+      "signatures_verified": true,
+      "hash_verified": true
+    },
+    "batch_mismatch_report": {
+      "report_id": "rep-mismatch-001",
+      "report_version": "1.0",
+      "report_hash": "b2c3d4e5f67890123456789abcdef0123456789abcdef0123456789abcdef01",
+      "issuer_lab_name": "Eurofins Consumer Product Testing GmbH",
+      "lab_accreditation": "ISO/IEC 17025:2017",
+      "accreditation_verified": true,
+      "accreditation_scope_covers_test": true,
+      "test_method": "ICP-MS Heavy Metals Analysis",
+      "sample_or_batch_id": "batch-2023-legacy-999",
+      "raw_results": {"Lead (Pb)": 0.1},
+      "units": "mg/kg",
+      "specification_limits": {"Lead (Pb)": {"max": 10.0, "unit": "mg/kg"}},
+      "specification_limit_source": "Regulation (EC) No 1223/2009",
+      "decision_rule": "simple_acceptance"
+    },
+    "unverified_visual_report": {
+      "report_id": "rep-unverified-002",
+      "report_version": "1.0",
+      "report_hash": "",
+      "issuer_lab_name": "Acme Test Labs Inc",
+      "lab_accreditation": "ISO/IEC 17025",
+      "accreditation_verified": false,
+      "accreditation_scope_covers_test": false,
+      "test_method": "Spectrophotometry",
+      "sample_or_batch_id": "batch-2026-v2-001",
+      "has_logo_or_letterhead": true,
+      "signatures": [{"signatory": "Unverified Signer"}],
+      "signatures_verified": false,
+      "raw_results": {"Active": 5.0},
+      "units": "%"
+    }
   }
 }
