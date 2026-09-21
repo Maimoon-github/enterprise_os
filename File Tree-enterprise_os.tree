@@ -10,6 +10,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📁 Development Engine Research/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
+│   ├── 📁 Product-Evidence Engine/
+│   │   ├── 📝 Research Findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 Strategy Engine Research/
 │   │   ├── 📁 strategy_engine_validated_patch/
 │   │   │   ├── 📁 backend/
@@ -115,6 +118,14 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 learning_performance.py
 │   │   │   ├── 📁 product_evidence_engine/
+│   │   │   │   ├── 📁 subagents/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 appraisal.py
+│   │   │   │   │   ├── 🐍 claims.py
+│   │   │   │   │   ├── 🐍 discovery.py
+│   │   │   │   │   ├── 🐍 product_lab.py
+│   │   │   │   │   ├── 🐍 regulatory.py
+│   │   │   │   │   └── 🐍 safety.py
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 product_evidence.py
 │   │   │   ├── 📁 strategy_engine/
@@ -167,6 +178,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 micro_tools.py
 │   │   │   │   ├── 🐍 s_alloc_core.py
 │   │   │   │   ├── 🐍 s_copy_core.py
+│   │   │   │   ├── 🐍 s_val_core.py
 │   │   │   │   └── 🐍 sandbox_policy.py
 │   │   │   ├── 📁 social/
 │   │   │   │   ├── 🐍 __init__.py
