@@ -311,6 +311,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   └── ⚙️ evidence_cases.json
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_contracts.py
+│   │   │   ├── 🐍 test_discovery.py
 │   │   │   └── 🐍 test_llm_routing.py
 │   │   ├── 📁 reports/
 │   │   │   ├── ⚙️ de12_validation_report.json

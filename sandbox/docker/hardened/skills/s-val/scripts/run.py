@@ -61,12 +61,21 @@ def run_s_val(payload: dict) -> dict:
         if not vision_granted:
             violations.append("Vision capability was requested for inspect_claim_imagery but is not granted.")
 
+    # 3. Disclosure-safe search query check for discovery
+    if operation in ("research_literature", "acquire_source"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        query = payload.get("query") or ctx.get("query")
+        if query:
+            for pattern in (r"\b(secret|confidential|proprietary|unreleased|internal_batch)\b",):
+                if re.search(pattern, str(query), re.IGNORECASE):
+                    violations.append(f"Disclosure-safety violation: Confidential pattern detected in search query '{query}': {pattern}")
+
     compliance_score = max(0.0, 1.0 - (len(violations) * 0.4))
     is_compliant = len(violations) == 0
 
     primary_claim = claims_to_check[0] if claims_to_check else ""
 
-    # 3. Role-scoped structured findings
+    # 4. Role-scoped structured findings
     typed_findings = {
         "operation": operation,
         "specialist_role": specialist_role,
@@ -83,8 +92,22 @@ def run_s_val(payload: dict) -> dict:
         typed_findings["regulatory_status"] = "MEETS_CHECKED_REQUIREMENT" if is_compliant else "DOES_NOT_MEET_CHECKED_REQUIREMENT"
     elif operation == "appraise_evidence":
         typed_findings["evidence_quality"] = "HIGH" if is_compliant else "LOW"
-    elif operation in ("research_literature", "fetch_official_rules", "acquire_source"):
-        typed_findings["sources_acquired"] = len(payload.get("input_manifest", []))
+    elif operation in ("research_literature", "fetch_official_rules", "acquire_source", "parse_metadata"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        sources = ctx.get("sources", payload.get("sources", []))
+        search_runs = ctx.get("search_runs", payload.get("search_runs", []))
+        snapshots = ctx.get("snapshots", payload.get("snapshots", []))
+        extracted_ev = ctx.get("extracted_evidence", payload.get("extracted_evidence", []))
+        exclusions = ctx.get("exclusions", payload.get("exclusions", []))
+        stopping_reason = ctx.get("stopping_reason", payload.get("stopping_reason", "saturation"))
+
+        typed_findings["sources_acquired"] = len(sources) if sources else len(payload.get("input_manifest", []))
+        typed_findings["sources"] = sources
+        typed_findings["search_runs"] = search_runs
+        typed_findings["snapshots"] = snapshots
+        typed_findings["extracted_evidence"] = extracted_ev
+        typed_findings["exclusions"] = exclusions
+        typed_findings["stopping_reason"] = stopping_reason
 
     return {
         "status": "success" if is_compliant else "compliance_warning",

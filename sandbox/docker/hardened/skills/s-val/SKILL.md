@@ -10,7 +10,7 @@ Permitted Roles: `discovery`, `appraisal`, `product_lab`, `safety`, `claims`, `r
 Core Tools: Compliance / schema linter, claims evaluator, study methodology appraiser, formulation & lab auditor, toxicology evaluator, regulatory rule linter.
 
 ## Permitted Specialist Operations
-- **Discovery (`w_prod.discovery`)**: `research_literature`, `fetch_official_rules`, `acquire_source`, `parse_metadata`, `default`
+- **Discovery (`w_prod.discovery`)**: `research_literature`, `fetch_official_rules`, `acquire_source`, `parse_metadata`, `default`. Enforces protocol adherence, disclosure-safe queries, truthful access levels, immutable snapshots, and study-family deduplication without assigning evidence certainty.
 - **Regulatory (`w_prod.regulatory`)**: `check_regulatory_rules`, `verify_statutory_requirements`, `parse_rule_context`, `default`
 - **Claims (`w_prod.claims`)**: `extract_claims`, `classify_claim`, `map_claim_evidence`, `inspect_claim_imagery`, `validate_claim`, `default`
 - **Appraisal (`w_prod.appraisal`)**: `appraise_evidence`, `assess_study_design`, `grade_certainty`, `default`

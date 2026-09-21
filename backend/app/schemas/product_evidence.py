@@ -317,13 +317,21 @@ class ResearchProtocol(ProductEvidenceBaseModel):
     protocol_id: str = Field(min_length=1, max_length=200)
     question_framing: str = Field(min_length=1, max_length=4000)
     assessment_type: Literal["rapid", "systematic", "targeted", "update"] = "targeted"
+    product_scope: str = Field(default="", max_length=500)
+    populations: list[str] = Field(default_factory=list, max_length=50)
+    outcomes: list[str] = Field(default_factory=list, max_length=50)
+    exposure: str = Field(default="", max_length=500)
+    comparator: str = Field(default="", max_length=500)
     inclusion_criteria: list[str] = Field(default_factory=list, max_length=100)
     exclusion_criteria: list[str] = Field(default_factory=list, max_length=100)
     target_sources: list[str] = Field(default_factory=list, max_length=50)
+    source_classes: list[str] = Field(default_factory=list, max_length=50)
+    jurisdictions: list[str] = Field(default_factory=list, max_length=50)
     language_and_date_limits: dict[str, Any] = Field(default_factory=dict)
     search_syntax: str = Field(default="", max_length=4000)
     planned_methods: list[str] = Field(default_factory=list, max_length=50)
     stopping_rules: list[str] = Field(default_factory=list, max_length=50)
+    budgets: dict[str, Any] = Field(default_factory=dict)
     protocol_version: str = "1.0"
     amendments: list[str] = Field(default_factory=list, max_length=50)
 
@@ -342,7 +350,9 @@ class SearchRun(ProductEvidenceBaseModel):
     pagination_cursor: str | None = Field(default=None, max_length=500)
     results_count: int = Field(default=0, ge=0)
     screened_count: int = Field(default=0, ge=0)
+    screening_outcomes: dict[str, int] = Field(default_factory=dict)
     inaccessible_or_truncated_results: list[dict[str, str]] = Field(default_factory=list, max_length=100)
+    stopping_reason: str = Field(default="", max_length=500)
 
 
 class SourceRecord(ProductEvidenceBaseModel):
@@ -364,6 +374,10 @@ class SourceRecord(ProductEvidenceBaseModel):
     snapshot_ref: str | None = Field(default=None, max_length=200)
     provenance_ref: str = Field(min_length=1, max_length=200)
     rights_or_limitations: list[str] = Field(default_factory=list, max_length=50)
+    correction_or_retraction_status: Literal["none", "corrected", "expression_of_concern", "retracted"] = "none"
+    source_location: str = Field(default="", max_length=1000)
+    study_family_id: str = Field(default="", max_length=200)
+    is_secondary_lead: bool = False
 
     @model_validator(mode="after")
     def check_url_or_identifier(self) -> SourceRecord:

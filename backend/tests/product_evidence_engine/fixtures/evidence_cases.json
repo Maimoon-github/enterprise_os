@@ -212,5 +212,152 @@
       }
     ],
     "gaps": []
+  },
+  "discovery_research_case": {
+    "protocol": {
+      "protocol_id": "proto-niacinamide-001",
+      "question_framing": "What is the efficacy and safety of topical niacinamide on epidermal barrier recovery and hydration in adults?",
+      "assessment_type": "targeted",
+      "product_scope": "ederma-serum-v2",
+      "populations": ["healthy adults", "mild dry skin"],
+      "outcomes": ["hydration", "TEWL reduction", "erythema"],
+      "exposure": "topical application 2x daily for 14-28 days",
+      "comparator": "vehicle placebo",
+      "inclusion_criteria": ["randomized controlled trial", "adult human subjects", "peer-reviewed or registry"],
+      "exclusion_criteria": ["in vitro only without human data", "concomitant prescription steroids"],
+      "target_sources": ["PubMed", "ClinicalTrials.gov", "Crossref"],
+      "source_classes": ["primary_study", "official_guidance"],
+      "jurisdictions": ["US", "EU"],
+      "language_and_date_limits": {"languages": ["en"], "date_min": "2015-01-01", "date_max": "2026-09-01"},
+      "search_syntax": "(niacinamide OR 'nicotinamide') AND ('barrier function' OR 'hydration') AND clinical",
+      "stopping_rules": ["max_candidates_50", "saturation_3_consecutive_irrelevant", "budget_exhaustion"],
+      "budgets": {"token_limit": 5000, "max_search_queries": 5},
+      "protocol_version": "1.0",
+      "amendments": []
+    },
+    "search_run": {
+      "run_id": "srun-pubmed-001",
+      "protocol_id": "proto-niacinamide-001",
+      "source_system_id": "pubmed",
+      "query": "(niacinamide OR 'nicotinamide') AND ('barrier function' OR 'hydration') AND clinical",
+      "interface_version": "e-utilities-v2",
+      "started_at_utc": "2026-09-21T10:00:00Z",
+      "completed_at_utc": "2026-09-21T10:00:05Z",
+      "filters": {"publication_types": ["RCT", "Clinical Trial"], "humans_only": true},
+      "pagination_cursor": "cursor-page-1",
+      "results_count": 12,
+      "screened_count": 12,
+      "screening_outcomes": {"included": 3, "excluded": 9},
+      "inaccessible_or_truncated_results": [
+        {"identifier": "doi:10.1016/j.paywall.2024", "reason": "paywall_no_open_access"}
+      ],
+      "stopping_reason": "protocol_saturation"
+    },
+    "sources": [
+      {
+        "id": "src-study-001",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        "identifier": "doi:10.1016/j.jid.2025.01.002",
+        "issuer_or_authors": ["Smith A", "Patel R"],
+        "title": "Clinical evaluation of topical niacinamide on barrier recovery",
+        "jurisdiction": "US",
+        "evidence_type": "primary_study",
+        "retrieved_at": "2026-09-21T10:00:00Z",
+        "access": "full_text",
+        "language": "en",
+        "authenticity_status": "verified",
+        "freshness": "current_checked",
+        "provenance_ref": "prov-act-001",
+        "rights_or_limitations": ["open_access"],
+        "correction_or_retraction_status": "none",
+        "source_location": "Page 1-12",
+        "study_family_id": "family-rct-niacinamide-001",
+        "is_secondary_lead": false
+      },
+      {
+        "id": "src-study-001-followup",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/12345679/",
+        "identifier": "doi:10.1016/j.jid.2025.06.015",
+        "issuer_or_authors": ["Smith A", "Patel R"],
+        "title": "Long-term 6-month barrier recovery follow-up",
+        "jurisdiction": "US",
+        "evidence_type": "primary_study",
+        "retrieved_at": "2026-09-21T10:05:00Z",
+        "access": "full_text",
+        "language": "en",
+        "authenticity_status": "verified",
+        "freshness": "current_checked",
+        "provenance_ref": "prov-act-001-fu",
+        "rights_or_limitations": ["open_access"],
+        "correction_or_retraction_status": "none",
+        "source_location": "Page 1-6",
+        "study_family_id": "family-rct-niacinamide-001",
+        "is_secondary_lead": true
+      },
+      {
+        "id": "src-study-paywall",
+        "url": "https://doi.org/10.1016/j.paywall.2024",
+        "identifier": "doi:10.1016/j.paywall.2024",
+        "issuer_or_authors": ["Jones M"],
+        "title": "Proprietary barrier repair formulation study",
+        "jurisdiction": "US",
+        "evidence_type": "primary_study",
+        "retrieved_at": "2026-09-21T10:10:00Z",
+        "access": "abstract_only",
+        "language": "en",
+        "authenticity_status": "verified",
+        "freshness": "current_checked",
+        "provenance_ref": "prov-act-paywall",
+        "rights_or_limitations": ["subscription_required"],
+        "correction_or_retraction_status": "none",
+        "source_location": "Abstract only",
+        "study_family_id": "family-paywall-001",
+        "is_secondary_lead": false
+      }
+    ],
+    "snapshots": [
+      {
+        "snapshot_id": "snap-proto-001",
+        "source_id": "src-study-001",
+        "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "media_type": "text/html",
+        "byte_length": 45020,
+        "retrieval_activity_id": "act-retrieval-001",
+        "requested_url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        "final_url": "https://pubmed.ncbi.nlm.nih.gov/12345678/",
+        "redirect_trace": [],
+        "response_status": 200,
+        "capture_tool_version": "1.0",
+        "captured_at_utc": "2026-09-21T10:00:00Z"
+      }
+    ],
+    "extracted_evidence": [
+      {
+        "id": "ev-disc-001",
+        "source_id": "src-study-001",
+        "snapshot_ref": "snap-proto-001",
+        "location": "Page 4, Table 2",
+        "subject": "ingredient",
+        "outcome": "40% increase in epidermal hydration over 14 days",
+        "assessment_ref": "assess-pending-001",
+        "activity_ref": "act-extract-001",
+        "study_family_id": "family-rct-niacinamide-001",
+        "study_design": "Double-blind RCT (n=60)",
+        "normalized_value": "40% hydration increase"
+      },
+      {
+        "id": "ev-disc-002",
+        "source_id": "src-study-001",
+        "snapshot_ref": "snap-proto-001",
+        "location": "Page 6, Paragraph 3",
+        "subject": "ingredient",
+        "outcome": "No statistically significant difference in sebum secretion rate compared to placebo at day 14 (p=0.42)",
+        "assessment_ref": "assess-pending-002",
+        "activity_ref": "act-extract-001",
+        "study_family_id": "family-rct-niacinamide-001",
+        "study_design": "Double-blind RCT (n=60)",
+        "normalized_value": "null sebum effect"
+      }
+    ]
   }
 }
