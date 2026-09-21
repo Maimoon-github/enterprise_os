@@ -571,5 +571,109 @@
       "adverse_signals": ["Severe contact sensitization confirmed; erythema grade 3 observed in 4 subjects"],
       "status": "concern_identified"
     }
+  },
+  "claims_regulatory_case": {
+    "asset_sample": {
+      "wording": "Clinically proven to reduce wrinkles by 50% in 24 hours. *When used daily.",
+      "asset_ref": "asset-box-front-v1",
+      "asset_location": "Front packaging principal display panel",
+      "imagery_ref": "doctor_lab_coat_badge",
+      "layout": "Hero claim top, asterisk qualification at base",
+      "testimonial": "This serum cured my severe eczema in 3 days!",
+      "qualifiers": ["*When used daily as part of morning routine"],
+      "channel": "packaging",
+      "locale": "en_US",
+      "audience": "general_consumer",
+      "product_version": "ederma-serum-v2",
+      "jurisdiction": "US"
+    },
+    "asset_translation_fr": {
+      "wording": "Cliniquement prouvé pour réduire les rides de 50% en 24 heures.",
+      "asset_ref": "asset-box-front-fr",
+      "asset_location": "Front packaging PDP FR",
+      "locale": "fr_FR",
+      "jurisdiction": "FR"
+    },
+    "ingredient_only_evidence": {
+      "id": "ev-ing-peptide-01",
+      "subject": "ingredient",
+      "outcome": "In vitro matrix peptide stimulates 45% pro-collagen synthesis in fibroblasts",
+      "study_design": "In vitro cell culture"
+    },
+    "limited_study_evidence": {
+      "id": "ev-rct-hydration-02",
+      "subject": "finished_product",
+      "outcome": "Double-blind RCT demonstrates 20% surface hydration increase at 2 hours (p<0.01); wrinkle depth change nonsignificant",
+      "sample_size": 40,
+      "population": "Healthy adult women aged 25-45"
+    },
+    "rules": {
+      "eu_cosmetics_evidence_rule": {
+        "id": "rule-eu-655-2013-annex-c3",
+        "source_id": "src-reg-eu-655-2013",
+        "location": "Annex I, Criterion 3 (Evidential Support)",
+        "jurisdiction": "EU",
+        "product_class": "cosmetics",
+        "force": "regulation",
+        "authority": "European Commission",
+        "instrument": "Commission Regulation (EU) No 655/2013",
+        "section_or_annex": "Annex I, Criterion 3",
+        "effective_from": "2013-07-11",
+        "status": "verified_applicable",
+        "rule_summary": "Claims for cosmetic products, whether explicit or implicit, must be supported by adequate and verifiable evidence."
+      },
+      "eu_disease_claim_prohibition": {
+        "id": "rule-eu-1223-2009-art-20",
+        "source_id": "src-reg-eu-1223-2009",
+        "location": "Article 20 (Claims)",
+        "jurisdiction": "EU",
+        "product_class": "cosmetics",
+        "force": "law",
+        "authority": "European Parliament and Council",
+        "instrument": "Regulation (EC) No 1223/2009",
+        "section_or_annex": "Article 20(1)",
+        "effective_from": "2013-07-11",
+        "status": "verified_applicable",
+        "rule_summary": "In labeling and marketing cosmetic products, text and images shall not be used to imply that these products have a therapeutic property of treating or curing human disease."
+      },
+      "superseded_rule": {
+        "id": "rule-uk-cosmetics-old",
+        "source_id": "src-uk-si-1978",
+        "location": "Schedule 2",
+        "jurisdiction": "UK",
+        "product_class": "cosmetics",
+        "force": "regulation",
+        "status": "superseded",
+        "effective_from": "1978-01-01",
+        "effective_to": "2013-07-11",
+        "repeal_date": "2013-07-11",
+        "superseded_by": "UK Statutory Instrument 2013/1224",
+        "rule_summary": "Old repealed cosmetic safety regulations."
+      },
+      "future_commencement_rule": {
+        "id": "rule-us-future-mocr-2027",
+        "source_id": "src-fda-prop-2027",
+        "location": "Proposed Section 604",
+        "jurisdiction": "US",
+        "product_class": "cosmetics",
+        "force": "regulation",
+        "status": "pending",
+        "effective_from": "2027-01-01",
+        "rule_summary": "Proposed fragrance allergen disclosure requirement with commencement in 2027."
+      },
+      "guidance_rule": {
+        "id": "rule-fda-cosmetic-guidance-claims",
+        "source_id": "src-fda-guidance-claims",
+        "location": "Section IV",
+        "jurisdiction": "US",
+        "product_class": "cosmetics",
+        "force": "guidance",
+        "authority": "US FDA",
+        "instrument": "FDA Draft Guidance on Cosmetic Claims",
+        "status": "verified_applicable",
+        "effective_from": "2020-01-01",
+        "rule_summary": "Non-binding recommendations representing agency's current thinking on structure/function cosmetic claims."
+      }
+    }
   }
 }

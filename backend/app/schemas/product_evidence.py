@@ -531,6 +531,13 @@ class ClaimRecord(ProductEvidenceBaseModel):
     activity_ref: str = Field(min_length=1, max_length=200)
     propositions: list[str] = Field(default_factory=list, max_length=50)
     qualifiers: list[str] = Field(default_factory=list, max_length=50)
+    channel: str = Field(default="packaging", max_length=200)
+    audience: str = Field(default="general_consumer", max_length=200)
+    product_version: str = Field(default="1.0", max_length=100)
+    asset_hash: str = Field(default="", max_length=128)
+    proposed_narrower_wording: str = Field(default="", max_length=4000)
+    scope_limitations: list[str] = Field(default_factory=list, max_length=50)
+    human_review_required: bool = False
 
 
 class ClaimEvidenceEdge(ProductEvidenceBaseModel):
@@ -543,6 +550,8 @@ class ClaimEvidenceEdge(ProductEvidenceBaseModel):
     relation: MappingRelation
     relevance: EvidenceRelevance
     bridge_ref: str | None = Field(default=None, max_length=200)
+    assessment_ref: str | None = Field(default=None, max_length=200)
+    scope_dimensions: dict[str, Any] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list, max_length=100)
     activity_ref: str = Field(min_length=1, max_length=200)
 
@@ -575,8 +584,14 @@ class RegulatoryRule(ProductEvidenceBaseModel):
     jurisdiction: str = Field(min_length=1, max_length=200)
     product_class: str = Field(default="cosmetics", min_length=1, max_length=200)
     force: RuleForce
+    authority: str = Field(default="", max_length=200)
+    instrument: str = Field(default="", max_length=500)
+    section_or_annex: str = Field(default="", max_length=500)
     effective_from: str | None = Field(default=None, max_length=50)
     effective_to: str | None = Field(default=None, max_length=50)
+    transition_period_end: str | None = Field(default=None, max_length=50)
+    repeal_date: str | None = Field(default=None, max_length=50)
+    superseded_by: str | None = Field(default=None, max_length=200)
     status: RuleStatus = RuleStatus.VERIFIED_APPLICABLE
     activity_ref: str = Field(min_length=1, max_length=200)
     rule_summary: str = Field(default="", max_length=4000)
@@ -591,6 +606,9 @@ class RuleApplication(ProductEvidenceBaseModel):
     jurisdiction: str = Field(min_length=1, max_length=200)
     product_class: str = Field(min_length=1, max_length=200)
     outcome: RuleApplicationResult
+    assessment_date: str = Field(default="", max_length=50)
+    intended_use: str = Field(default="", max_length=500)
+    escalation_required: bool = False
     evidence_refs: list[str] = Field(default_factory=list, max_length=100)
     reason: str = Field(min_length=1, max_length=2000)
     severity_if_breached: Literal["low", "medium", "high", "critical"] = "medium"

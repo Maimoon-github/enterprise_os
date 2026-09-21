@@ -107,6 +107,26 @@ def run_s_val(payload: dict) -> dict:
         if ctx.get("unrestricted_safe_claim"):
             violations.append("Prohibited safety claim: unrestricted 'safe' declaration is prohibited.")
 
+    if operation in ("extract_claims", "map_claims", "map_claim_evidence", "evaluate_claim_evidence_edges", "interpret_claims"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        if ctx.get("ingredient_without_bridge"):
+            violations.append("Evidence bridging violation: finished-product claim relies on ingredient evidence without an applicable bridge.")
+        if ctx.get("scope_mismatch_unqualified"):
+            violations.append("Scope overreach violation: claim magnitude, duration, population, endpoint, or route exceeds evidence without qualification.")
+        if ctx.get("unsupported_claim_unflagged"):
+            violations.append("Unsupported claim violation: proposition lacks supporting evidence and was not flagged.")
+
+    if operation in ("check_regulatory_rules", "apply_rules", "verify_statutory_requirements"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        if ctx.get("rule_unverified_or_superseded"):
+            violations.append("Regulatory applicability violation: unverified, superseded, or non-commenced rule cannot yield compliance pass.")
+        if ctx.get("guidance_promoted_to_statute"):
+            violations.append("Legal force violation: non-binding guidance cannot be promoted to statutory mandate.")
+        if ctx.get("unsupported_jurisdiction"):
+            violations.append("Territory mismatch violation: rule jurisdiction does not match product target market.")
+        if ctx.get("disease_claim_on_cosmetic"):
+            violations.append("Statutory classification breach: therapeutic/medicinal claim prohibited on cosmetic product class.")
+
     compliance_score = max(0.0, 1.0 - (len(violations) * 0.4))
     is_compliant = len(violations) == 0
 
@@ -149,8 +169,18 @@ def run_s_val(payload: dict) -> dict:
         typed_findings["safety_assessments"] = ctx.get("safety_assessments", [])
         typed_findings["adverse_signals"] = ctx.get("adverse_signals", [])
         typed_findings["qualified_reviewer_required"] = ctx.get("qualified_reviewer_required", True)
-    elif operation == "check_regulatory_rules":
-        typed_findings["regulatory_status"] = "MEETS_CHECKED_REQUIREMENT" if is_compliant else "DOES_NOT_MEET_CHECKED_REQUIREMENT"
+    elif operation in ("extract_claims", "map_claims", "map_claim_evidence", "evaluate_claim_evidence_edges", "interpret_claims"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        typed_findings["claim_status"] = ctx.get("claim_status", "SUPPORTED_IN_SCOPE" if is_compliant else "INSUFFICIENT")
+        typed_findings["claims"] = ctx.get("claims", [])
+        typed_findings["claim_evidence_edges"] = ctx.get("claim_evidence_edges", [])
+        typed_findings["human_review_required"] = ctx.get("human_review_required", not is_compliant)
+    elif operation in ("check_regulatory_rules", "apply_rules", "verify_statutory_requirements"):
+        ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
+        typed_findings["regulatory_status"] = ctx.get("regulatory_status", "MEETS_CHECKED_REQUIREMENT" if is_compliant else "DOES_NOT_MEET_CHECKED_REQUIREMENT")
+        typed_findings["rule_applications"] = ctx.get("rule_applications", [])
+        typed_findings["regulatory_rules"] = ctx.get("regulatory_rules", [])
+        typed_findings["escalation_required"] = ctx.get("escalation_required", not is_compliant)
     elif operation in ("research_literature", "fetch_official_rules", "acquire_source", "parse_metadata"):
         ctx = payload.get("context_slice", {}) if isinstance(payload.get("context_slice"), dict) else {}
         sources = ctx.get("sources", payload.get("sources", []))
