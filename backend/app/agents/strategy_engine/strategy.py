@@ -10,6 +10,7 @@ from app.agents.strategy_engine.subagents import (
     AllocationReasoningOutput,
     StrategyAllocationAgent,
 )
+from app.core.exceptions import PolicyViolationError
 from app.integrations.sandbox.client import SandboxClient
 from app.schemas.agent_contracts import (
     ConfidenceInterval,
@@ -31,7 +32,7 @@ class StrategyAgent(BoundedWorkerAgent):
     funnel models, budget proposals, and scenario comparisons.
     """
 
-    capability = SandboxCapability.ALLOC
+    capability: SandboxCapability = SandboxCapability.ALLOC
 
     def __init__(
         self,
@@ -529,6 +530,17 @@ class StrategyAgent(BoundedWorkerAgent):
 
     async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
         """Execute W_STRAT strategy formulation with advisory S_ALLOC reasoning."""
+        if self.capability is None:
+            raise PolicyViolationError(
+                f"Worker {grant.worker_role.value if grant.worker_role else 'unknown'} has no authorized sandbox capability."
+            )
+        if self._sandbox_client is None:
+            raise PolicyViolationError(
+                f"Worker {grant.worker_role.value if grant.worker_role else 'unknown'} has no sandbox client configured."
+            )
+        capability = self.capability
+        sandbox_client = self._sandbox_client
+
         reasoning_output: WorkerReasoningOutput | None = None
         llm_metadata: dict[str, Any] = {}
 
@@ -548,14 +560,14 @@ class StrategyAgent(BoundedWorkerAgent):
             task_id=grant.task_id,
             worker_role=grant.worker_role,
             tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
-            capability=self.capability,
+            capability=capability,
             operation=operation,
             payload=payload,
             network_policy=NetworkPolicy.DISABLED,
             egress_grant=egress_grant,  # type: ignore[arg-type]
             timeout_seconds=grant.token_budget if grant.token_budget > 0 else 120,
         )
-        result = await self._sandbox_client.invoke(mandate)
+        result = await sandbox_client.invoke(mandate)
 
         findings: list[str] = []
         artifacts: list[str] = []
@@ -591,7 +603,7 @@ class StrategyAgent(BoundedWorkerAgent):
 
         provenance: dict[str, Any] = {
             "agent": grant.worker_role.value if grant.worker_role else "unknown",
-            "capability": self.capability.value,
+            "capability": capability.value,
             "task_id": grant.task_id,
             "execution_id": result.execution_id,
             "sandbox_execution_id": result.execution_id,
@@ -633,7 +645,7 @@ class StrategyAgent(BoundedWorkerAgent):
             provenance=provenance,
             proposed_state_changes={
                 "status": "completed" if result.success else "failed",
-                "capability": self.capability.value,
+                "capability": capability.value,
             },
             unresolved_risks_or_assumptions=risks,
         )
