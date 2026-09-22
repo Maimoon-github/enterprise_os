@@ -33,15 +33,15 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/sandbox
 │   │   │   │   ├── 📁 scripts/
 │   │   │   │   │   └── 🐍 run.py
 │   │   │   │   └── 📝 SKILL.md
+│   │   │   ├── 📁 s-comp/
+│   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   └── 🐍 run.py
+│   │   │   │   └── 📝 SKILL.md
 │   │   │   ├── 📁 s-copy/
 │   │   │   │   ├── 📁 scripts/
 │   │   │   │   │   └── 🐍 run.py
 │   │   │   │   └── 📝 SKILL.md
 │   │   │   ├── 📁 s-parse/
-│   │   │   │   ├── 📁 scripts/
-│   │   │   │   │   └── 🐍 run.py
-│   │   │   │   └── 📝 SKILL.md
-│   │   │   ├── 📁 s-scrape/
 │   │   │   │   ├── 📁 scripts/
 │   │   │   │   │   └── 🐍 run.py
 │   │   │   │   └── 📝 SKILL.md

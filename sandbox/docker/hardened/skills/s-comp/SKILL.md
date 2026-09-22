@@ -6,7 +6,7 @@ description: Governed competitor price, ad library, and DOM extraction micro-too
 # S_SCRAPE: Price & Ad Scraper
 
 Authorized Worker: `W_COMP` (Competitor Intel)
-Permitted Operations: `scrape_prices`, `parse_dom`, `track_ads`
+Permitted Operations: `gather_prices`, `parse_dom`, `track_ads`
 Core Tool: Browser / DOM extraction tool
 Network Policy: `controlled` (Strictly bounded by time-limited `SandboxEgressGrant` through Tinyproxy egress sidecar)
 
