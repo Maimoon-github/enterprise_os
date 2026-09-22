@@ -290,11 +290,15 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   └── 🐍 test_governed_end_to_end_flow.py
 │   │   ├── 📁 competitor_intel_engine/
 │   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 test_advertising.py
 │   │   │   ├── 🐍 test_contracts.py
 │   │   │   ├── 🐍 test_discovery.py
+│   │   │   ├── 🐍 test_positioning.py
+│   │   │   ├── 🐍 test_pricing.py
 │   │   │   ├── 🐍 test_profiles_and_llm_isolation.py
 │   │   │   ├── 🐍 test_runtime_recovery.py
-│   │   │   └── 🐍 test_sandbox_security.py
+│   │   │   ├── 🐍 test_sandbox_security.py
+│   │   │   └── 🐍 test_search_intel.py
 │   │   ├── 📁 development_engine/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_cms_agent.py

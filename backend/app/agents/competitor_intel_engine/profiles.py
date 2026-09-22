@@ -279,12 +279,16 @@ async def dispatch_competitor_specialist_attempt(
             )
         )
 
+    status = "failed"
+    if result.success:
+        status = "success" if observations else "no_observation"
+
     return SpecialistResult(
         step_id=attempt_input.step_id,
         attempt_id=attempt_input.attempt_id,
         profile_id=profile.profile_id,
         input_hash=attempt_input.input_hash,
-        status="success" if result.success else "failed",
+        status=status,
         observations=observations,
         structured_failures=(
             [] if result.success else [{"error": result.error or "sandbox execution failed"}]
