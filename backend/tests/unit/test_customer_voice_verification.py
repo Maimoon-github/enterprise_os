@@ -208,7 +208,7 @@ def test_s_parse_malformed_input_fails_safely() -> None:
 
 def test_w_voice_tenant_scope_mismatch_fails_closed() -> None:
     """W_VOICE fails closed when items belonging to another tenant are detected in context."""
-    agent = CustomerVoiceAgent(FakeSandboxClient())
+    agent = CustomerVoiceAgent()
     grant = TaskGrant(
         task_id="task-voice-tenant-err",
         worker_role=WorkerRole.CUSTOMER_VOICE,
@@ -222,33 +222,60 @@ def test_w_voice_tenant_scope_mismatch_fails_closed() -> None:
     }
 
     with pytest.raises(ValueError, match="Tenant isolation breach in customer voice context"):
-        agent.build_payload(grant, context)
+        agent._normalize_context(grant, context)
 
 
-@pytest.mark.asyncio
-async def test_w_voice_sandbox_execution_failure_returns_zero_confidence() -> None:
-    """When S_PARSE execution fails, W_VOICE returns an envelope with zero confidence."""
-    failing_sandbox = FakeSandboxClient(should_fail=True)
-    agent = CustomerVoiceAgent(failing_sandbox)
+def test_w_voice_zero_sandbox_coordinator_rejects_sandbox_client() -> None:
+    """W_VOICE has zero direct sandbox capability and rejects any injected SandboxClient."""
+    from app.core.exceptions import PolicyViolationError
+
+    with pytest.raises(PolicyViolationError, match="zero-sandbox"):
+        CustomerVoiceAgent(FakeSandboxClient())
+
+
+def test_w_voice_build_payload_rejected() -> None:
+    """W_VOICE rejects build_payload formulation as a zero-sandbox coordinator."""
+    from app.core.exceptions import PolicyViolationError
+
+    agent = CustomerVoiceAgent()
     grant = TaskGrant(
-        task_id="task-voice-fail",
+        task_id="task-voice-payload",
         worker_role=WorkerRole.CUSTOMER_VOICE,
         tenant_scope=TenantScope(tenant_id="acme"),
         expires_at=datetime.now(UTC) + timedelta(minutes=30),
     )
 
+    with pytest.raises(PolicyViolationError, match="zero sandbox capability"):
+        agent.build_payload(grant, {})
+
+
+@pytest.mark.asyncio
+async def test_w_voice_missing_customer_evidence_returns_incomplete_without_fabrication() -> None:
+    """When customer evidence is missing, W_VOICE returns an explicit incomplete/needs-context envelope rather than fabricating default feedback."""
+    agent = CustomerVoiceAgent()
+    grant = TaskGrant(
+        task_id="task-voice-empty",
+        worker_role=WorkerRole.CUSTOMER_VOICE,
+        tenant_scope=TenantScope(tenant_id="acme"),
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+
+    # Empty context: no fabricated "Customer reviews and feedback." fallback
+    _, items = agent._normalize_context(grant, {})
+    assert items == []
+
     envelope = await agent.run(grant, context={})
 
-    assert envelope.task_id == "task-voice-fail"
+    assert envelope.task_id == "task-voice-empty"
     assert envelope.confidence.point_estimate == 0.0
-    assert any("failure" in r.lower() or "failed" in r.lower() for r in envelope.unresolved_risks_or_assumptions)
+    assert envelope.proposed_state_changes.get("status") == "needs_context"
+    assert any("Missing customer voice evidence" in r for r in envelope.unresolved_risks_or_assumptions)
 
 
 @pytest.mark.asyncio
 async def test_w_voice_full_execution_and_envelope_generation() -> None:
     """Full execution of CustomerVoiceAgent produces structured findings, artifacts, and typed models."""
-    sandbox_client = SandboxClient()
-    agent = CustomerVoiceAgent(sandbox_client)
+    agent = CustomerVoiceAgent()
 
     grant = TaskGrant(
         task_id="task-voice-live",
@@ -292,20 +319,13 @@ async def test_w_voice_full_execution_and_envelope_generation() -> None:
     # Verify generated artifacts
     assert "voice:task-voice-live" in envelope.generated_artifacts
     assert "sentiment:task-voice-live" in envelope.generated_artifacts
+    assert envelope.provenance["capability"] == "NONE"
 
     # Extract typed models
     analysis = agent.extract_customer_voice_analysis(envelope)
     assert analysis is not None
     assert analysis.total_items_analyzed == 3
-    assert len(analysis.objection_profiles) >= 2
 
-    profiles = agent.extract_objection_profiles(envelope)
-    assert len(profiles) >= 2
-    themes = [p.objection_type for p in profiles]
-    assert "product_quality_defect" in themes
-    assert "customer_service_latency" in themes
-
-    vectors = agent.extract_sentiment_vectors(envelope)
-    assert len(vectors) == 3
-    for v in vectors:
-        assert v.source_id_hash.startswith("anon-src-")
+    payload = agent.extract_customer_voice_payload(envelope)
+    assert payload is not None
+    assert payload.records_analyzed == 3

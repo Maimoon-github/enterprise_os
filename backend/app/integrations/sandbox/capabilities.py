@@ -578,7 +578,9 @@ for key, val in list(PRODUCT_SPECIALIST_POLICIES.items()):
     PRODUCT_SPECIALIST_POLICIES[short_key] = val
 
 WORKER_CAPABILITY_MAP: dict[WorkerRole, SandboxCapability] = {
-    profile.allowed_worker: profile.capability for profile in CAPABILITY_REGISTRY.values()
+    profile.allowed_worker: profile.capability
+    for profile in CAPABILITY_REGISTRY.values()
+    if profile.allowed_worker not in (WorkerRole.CREATIVE_CONTENT, WorkerRole.CUSTOMER_VOICE)
 }
 
 
@@ -894,7 +896,25 @@ def validate_capability_access(
                 allowed_tools=spec_policy["allowed_tools"],
             )
 
-    # 4. Standard worker role vs capability compatibility
+    # 4. Customer Voice Specialist Context Enforcement & Zero-Sandbox Coordinator Boundary
+    is_voice = (
+        worker_id == "W_VOICE"
+        or (
+            specialist_id is not None
+            and (specialist_id.startswith("VOICE-") or specialist_id in ("W_VOICE", "NONE"))
+        )
+    )
+
+    if is_voice:
+        # Zero-sandbox enforcement for W_VOICE coordinator
+        if specialist_id in ("W_VOICE", "NONE", "") or (
+            worker_id == "W_VOICE" and not specialist_id
+        ):
+            raise SandboxInvocationError(
+                "W_VOICE coordinator has zero sandbox authority; execution requires an authorized Voice specialist_id."
+            )
+
+    # 5. Standard worker role vs capability compatibility
     if parsed_role is not None:
         if parsed_role != profile.allowed_worker:
             raise SandboxInvocationError(

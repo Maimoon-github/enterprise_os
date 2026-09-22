@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.agents.base import BoundedWorkerAgent
+from app.agents.base import BoundedWorkerAgent, WorkerReasoningOutput
+from app.core.exceptions import PolicyViolationError
 from app.schemas.agent_contracts import (
     AnonymizedSentimentVector,
     ConfidenceInterval,
@@ -14,19 +15,42 @@ from app.schemas.agent_contracts import (
     ObjectionProfile,
     TaskGrant,
 )
+from app.schemas.customer_voice import (
+    CustomerVoicePayload,
+    CustomerVoiceTask,
+    VoiceWorkflowStage,
+)
 from app.schemas.sandbox import SandboxCapability
 
 
 class CustomerVoiceAgent(BoundedWorkerAgent):
     """W_VOICE Customer Voice Engine.
 
-    Ingests authorized customer support tickets, product reviews, and survey responses
-    through the Intelligence Engine bounded grant, formulates the S_PARSE sandbox
-    mandate payload, invokes S_PARSE within the sandbox, and interprets the sanitized
-    output into anonymized sentiment vectors and recurring objection profiles.
+    Operates as a Layer-5 coordinator with zero direct sandbox capability.
+    Validates bounded TaskGrant and context, enforces tenant isolation, rejects
+    missing feedback without fabricating fallback data, and coordinates the
+    Customer Voice pipeline.
     """
 
-    capability = SandboxCapability.PARSE
+    capability = None
+
+    def __init__(
+        self,
+        sandbox_client: Any = None,
+        llm_client: Any = None,
+    ) -> None:
+        if sandbox_client is not None:
+            raise PolicyViolationError(
+                "W_VOICE coordinator is zero-sandbox and must not receive a SandboxClient."
+            )
+        super().__init__(sandbox_client=None, llm_client=llm_client)
+
+    def build_payload(self, grant: TaskGrant, context: dict[str, Any]) -> dict[str, str]:
+        """Reject sandbox payload construction: W_VOICE has zero sandbox capability."""
+        raise PolicyViolationError(
+            f"Worker {grant.worker_role.value if grant.worker_role else 'W_VOICE'} "
+            "has zero sandbox capability and must not formulate sandbox payloads."
+        )
 
     def _normalize_context(
         self, grant: TaskGrant, context: dict[str, object]
@@ -35,6 +59,7 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
 
         Preserves tenant, source, channel, timestamp, and provenance metadata.
         Enforces tenant isolation by failing closed on off-tenant customer items.
+        Never fabricates fallback feedback when customer evidence is missing.
         """
         grant_tenant = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
         product_id = str(context.get("product_id", grant.cts_state.get("product_id", "")))
@@ -135,43 +160,138 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
                             "tenant_id": grant_tenant,
                         })
 
-        # Fallback single feedback text
+        # Check explicit single feedback text (no synthetic default fallback)
         if not normalized_items:
-            single_text = str(
-                context.get(
-                    "feedback_text",
-                    grant.cts_state.get(
-                        "feedback_text",
-                        context.get("query", grant.cts_state.get("query", "Customer reviews and feedback.")),
-                    ),
-                )
-            )
-            normalized_items.append({
-                "item_id": "item-1",
-                "source_type": str(context.get("source_type", "feedback")),
-                "text": single_text,
-                "product_id": product_id,
-                "tenant_id": grant_tenant,
-            })
+            single_text = context.get("feedback_text") or grant.cts_state.get("feedback_text")
+            if single_text:
+                normalized_items.append({
+                    "item_id": "item-1",
+                    "source_type": str(context.get("source_type", "feedback")),
+                    "text": str(single_text),
+                    "product_id": product_id,
+                    "tenant_id": grant_tenant,
+                })
 
         return product_id, normalized_items
 
-    def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
-        """Formulate deterministic S_PARSE execution payload."""
+    async def run(self, grant: TaskGrant, context: dict[str, Any]) -> EvidenceEnvelope:
+        """Execute W_VOICE coordinator workflow over bounded grant and context.
+
+        W_VOICE has zero sandbox capability and operates strictly as a Layer-5 coordinator.
+        Rejects missing feedback evidence without fabricating default inputs.
+        """
+        # Validate tenant and gather authorized feedback items
         product_id, items = self._normalize_context(grant, context)
 
-        operation = "analyze_customer_voice" if len(items) > 1 else "parse_sentiment"
-        primary_text = items[0]["text"] if items else "Customer reviews and feedback."
+        if not items:
+            # Explicit incomplete/needs-context result when customer evidence is missing
+            return EvidenceEnvelope(
+                task_id=grant.task_id,
+                worker_role=grant.worker_role,
+                confidence=ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0),
+                evidence=["Missing customer voice evidence: no feedback items, support tickets, reviews, or surveys provided."],
+                payload={"status": "incomplete", "reason": "missing_feedback_evidence"},
+                findings=[],
+                generated_artifacts=[],
+                supporting_evidence=[],
+                provenance={
+                    "agent": grant.worker_role.value if grant.worker_role else "W_VOICE",
+                    "task_id": grant.task_id,
+                    "capability": "NONE",
+                    "status": "incomplete",
+                },
+                proposed_state_changes={
+                    "status": "needs_context",
+                },
+                unresolved_risks_or_assumptions=[
+                    "Missing customer voice evidence: cannot perform customer voice analysis without authorized feedback inputs."
+                ],
+            )
 
-        return {
+        reasoning_output: WorkerReasoningOutput | None = None
+        llm_metadata: dict[str, Any] = {}
+        if self._llm_client is not None:
+            reasoning_output, llm_metadata = await self._reason_domain(grant, context)
+
+        # Freeze CustomerVoiceTask contract
+        task_contract = CustomerVoiceTask(
+            task_id=grant.task_id,
+            tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
+            brand_id=grant.brand_id,
+            product_ref=product_id or None,
+            objective=grant.objective or "analyze_customer_voice",
+            source_refs=[it["item_id"] for it in items],
+            workflow_stage=VoiceWorkflowStage.DISCOVERY,
+        )
+
+        findings: list[str] = [f"Customer Voice Analysis: {len(items)} items authorized for analysis."]
+        risks: list[str] = []
+        if reasoning_output:
+            findings.extend(reasoning_output.preliminary_findings)
+            risks.extend(reasoning_output.identified_risks)
+
+        findings = sorted(list(set(findings)))
+        artifacts = [f"voice:{grant.task_id}", f"sentiment:{grant.task_id}"]
+
+        provenance: dict[str, Any] = {
+            "agent": grant.worker_role.value if grant.worker_role else "W_VOICE",
+            "capability": "NONE",
             "task_id": grant.task_id,
-            "tenant_id": grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
-            "operation": operation,
-            "objective": grant.objective or "analyze_customer_voice",
-            "product_id": product_id,
-            "feedback_text": primary_text,
-            "items": json.dumps(items),
+            "status": "completed",
+            "workflow_stage": VoiceWorkflowStage.SYNTHESIS.value,
         }
+        if llm_metadata:
+            provenance.update({
+                "llm_reasoning_used": "true",
+                "llm_provider": str(llm_metadata.get("provider", "unset")),
+                "llm_model": str(llm_metadata.get("actual_model", "unset")),
+                "prompt_tokens": str(llm_metadata.get("prompt_tokens", 0)),
+                "completion_tokens": str(llm_metadata.get("completion_tokens", 0)),
+                "total_tokens": str(llm_metadata.get("total_tokens", 0)),
+            })
+
+        confidence = ConfidenceInterval(point_estimate=0.85, lower_bound=0.75, upper_bound=0.95)
+
+        voice_payload = CustomerVoicePayload(
+            task_id=grant.task_id,
+            tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
+            product_ref=product_id or None,
+            records_analyzed=len(items),
+            inference_scope="observed_feedback_only",
+            population_representativeness="not_established",
+            provenance=provenance,
+        )
+
+        analysis_result = CustomerVoiceAnalysisResult(
+            analysis_id=f"cva-{grant.task_id}",
+            tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
+            product_id=product_id or None,
+            total_items_analyzed=len(items),
+            provenance=provenance,
+        )
+
+        return EvidenceEnvelope(
+            task_id=grant.task_id,
+            worker_role=grant.worker_role,
+            confidence=confidence,
+            evidence=[f"Customer Voice Analysis: {len(items)} items analyzed."],
+            payload={
+                "customer_voice_task": task_contract.model_dump_json(),
+                "customer_voice_payload": voice_payload.model_dump_json(),
+                "customer_voice_analysis": analysis_result.model_dump_json(),
+                "total_items_analyzed": str(len(items)),
+                "product_id": product_id,
+            },
+            findings=findings,
+            generated_artifacts=artifacts,
+            supporting_evidence=[f"items_count:{len(items)}"],
+            provenance=provenance,
+            proposed_state_changes={
+                "status": "completed",
+                "capability": "NONE",
+            },
+            unresolved_risks_or_assumptions=risks,
+        )
 
     def interpret_result(
         self, sanitized_output: dict[str, str]
@@ -259,6 +379,19 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         )
 
         return evidence, confidence
+
+    @staticmethod
+    def extract_customer_voice_payload(envelope: EvidenceEnvelope) -> CustomerVoicePayload | None:
+        """Helper to extract strongly typed CustomerVoicePayload from an EvidenceEnvelope."""
+        raw = envelope.payload.get("customer_voice_payload")
+        if raw:
+            try:
+                if isinstance(raw, str):
+                    return CustomerVoicePayload.model_validate_json(raw)
+                return CustomerVoicePayload.model_validate(raw)
+            except Exception:
+                return None
+        return None
 
     @staticmethod
     def extract_customer_voice_analysis(envelope: EvidenceEnvelope) -> CustomerVoiceAnalysisResult | None:

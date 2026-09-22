@@ -112,6 +112,11 @@ def _build_workers(
                 workflow=creative_workflow,
             )
             continue
+        if role == WorkerRole.CUSTOMER_VOICE:
+            workers[role] = CustomerVoiceAgent(
+                llm_client=llm_client,
+            )
+            continue
         assert get_capability_for_role(role) == agent_class.capability
         if role == WorkerRole.STRATEGY:
             allocation_agent = StrategyAllocationAgent(llm_client=s_alloc_llm_client)

@@ -90,9 +90,8 @@ def test_unauthorized_capability_rejected_for_w_voice() -> None:
 
 @pytest.mark.asyncio
 async def test_governed_ie_grant_to_w_voice_pipeline(sample_directive: Directive) -> None:
-    """Full governed execution: IE Grant -> W_VOICE -> S_PARSE in sandbox -> EvidenceEnvelope -> IE."""
-    sandbox_client = SandboxClient()
-    w_voice = CustomerVoiceAgent(sandbox_client)
+    """Full governed execution: IE Grant -> W_VOICE coordinator -> EvidenceEnvelope -> IE."""
+    w_voice = CustomerVoiceAgent()
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.CUSTOMER_VOICE: w_voice,
@@ -153,22 +152,22 @@ async def test_governed_ie_grant_to_w_voice_pipeline(sample_directive: Directive
     # Verify artifacts and findings
     assert "voice:task-voice-governed-1" in envelope.generated_artifacts
     assert len(envelope.findings) > 0
-    assert envelope.provenance["capability"] == "S_PARSE"
+    assert envelope.provenance["capability"] == "NONE"
 
     # Verify typed models
     analysis = w_voice.extract_customer_voice_analysis(envelope)
     assert analysis is not None
     assert analysis.total_items_analyzed >= 1
 
-    profiles = w_voice.extract_objection_profiles(envelope)
-    assert any(p.objection_type == "customer_service_latency" for p in profiles)
+    payload = w_voice.extract_customer_voice_payload(envelope)
+    assert payload is not None
+    assert payload.records_analyzed >= 1
 
 
 @pytest.mark.asyncio
 async def test_evidence_synthesizer_merges_w_voice_envelope() -> None:
     """Synthesizer successfully merges W_VOICE customer voice evidence into consolidated multi-worker synthesis."""
-    sandbox_client = SandboxClient()
-    w_voice = CustomerVoiceAgent(sandbox_client)
+    w_voice = CustomerVoiceAgent()
 
     grant = TaskGrant(
         task_id="task-voice-synth",

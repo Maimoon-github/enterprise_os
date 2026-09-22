@@ -728,7 +728,7 @@ def test_existing_workers_sandbox_capabilities_unaffected() -> None:
     assert StrategyAgent.capability == SandboxCapability.ALLOC
     assert ProductEvidenceAgent.capability == SandboxCapability.VAL
     assert CompetitorIntelAgent.capability == SandboxCapability.SCRAPE
-    assert CustomerVoiceAgent.capability == SandboxCapability.PARSE
+    assert CustomerVoiceAgent.capability is None
     assert LearningPerformanceAgent.capability == SandboxCapability.ATTR
 
 

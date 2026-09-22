@@ -417,10 +417,11 @@ async def test_all_seven_workers_bounded_llm_inference(
         context = {
             "claims_dossier": {"tenant_id": "tenant-alpha", "claims": [{"claim_id": "c1", "text": "Valid", "validation_status": "SUPPORTED"}]},
             "strategy_plan": {"tenant_id": "tenant-alpha", "channels": ["meta"]},
+            "items": [{"item_id": "item-1", "tenant_id": "tenant-alpha", "text": "Customer feedback text"}],
         }
         envelope = await agent.run(grant, context)
         assert envelope.worker_role == role
-        assert envelope.provenance["agent"] == "W_CREAT"
+        assert envelope.provenance["agent"] == role.value
         assert envelope.provenance["capability"] == "NONE"
         return
 
