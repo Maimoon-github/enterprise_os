@@ -203,3 +203,96 @@ def create_competitor_llm_client(
         agent_identity=f"{tenant_prefix}w_comp.{role_name}.{unique_instance_id}",
         model_identity=profile.model_id,
     )
+
+
+async def dispatch_competitor_specialist_attempt(
+    sandbox_client: Any,
+    attempt_input: Any,
+    egress_grant: Any | None = None,
+) -> Any:
+    """Dispatch an authorized specialist attempt through sandbox under least privilege."""
+    from app.core.exceptions import PolicyViolationError
+    from app.schemas.competitor_intel import CompetitorRole, Observation, SpecialistResult
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import ResourceLimits, SandboxCapability, SandboxInvocationMandate
+
+    if attempt_input.role == CompetitorRole.COORDINATOR:
+        raise PolicyViolationError(
+            "W_COMP coordinator has zero sandbox authority and cannot be dispatched to sandbox."
+        )
+
+    profile = get_competitor_profile(attempt_input.role)
+    operation = (
+        attempt_input.approved_operation_ids[0]
+        if attempt_input.approved_operation_ids
+        else "default"
+    )
+
+    mandate = SandboxInvocationMandate(
+        task_id=attempt_input.task_id,
+        tenant_id=attempt_input.tenant_id,
+        worker_role=WorkerRole.COMPETITOR_INTEL,
+        worker_id="W_COMP",
+        capability=SandboxCapability.SCRAPE,
+        specialist_id=attempt_input.role.value,
+        operation=operation,
+        payload={
+            "task_id": attempt_input.task_id,
+            "tenant_id": attempt_input.tenant_id,
+            "attempt_id": attempt_input.attempt_id,
+            "operation": operation,
+            "context_slice": attempt_input.context_slice,
+            "input_hash": attempt_input.input_hash,
+        },
+        allowed_tools=list(profile.allowed_tools),
+        network_policy=profile.network_policy,
+        egress_grant=egress_grant,
+        resource_limits=ResourceLimits(
+            timeout_seconds=max(1, profile.timeout_ms // 1000),
+            memory_mb=1024,
+            cpu_cores=1.0,
+        ),
+        provenance_context={
+            "profile_id": profile.profile_id,
+            "profile_digest": profile.compute_digest(),
+            "attempt_id": attempt_input.attempt_id,
+            "llm_instance_id": attempt_input.llm_instance_id,
+        },
+    )
+
+    result = await sandbox_client.invoke(mandate)
+
+    observations: list[Observation] = []
+    if (
+        result.success
+        and isinstance(result.sanitized_output, dict)
+        and "benchmark_price" in result.sanitized_output
+    ):
+        observations.append(
+            Observation(
+                observation_id=f"obs-{attempt_input.attempt_id}-price",
+                predicate="benchmark_price",
+                typed_value=result.sanitized_output["benchmark_price"],
+                subject_id=str(result.sanitized_output.get("competitor", "CompetitorCorp")),
+                supporting_evidence_id=f"ev-{attempt_input.attempt_id}",
+                locator="css=.price",
+            )
+        )
+
+    return SpecialistResult(
+        step_id=attempt_input.step_id,
+        attempt_id=attempt_input.attempt_id,
+        profile_id=profile.profile_id,
+        input_hash=attempt_input.input_hash,
+        status="success" if result.success else "failed",
+        observations=observations,
+        structured_failures=(
+            [] if result.success else [{"error": result.error or "sandbox execution failed"}]
+        ),
+        resource_usage={"execution_id": getattr(result, "execution_id", "")},
+        lineage={
+            "mandate_digest": profile.compute_digest(),
+            "attempt_id": attempt_input.attempt_id,
+        },
+        controller_result_ref=getattr(result, "execution_id", None),
+    )

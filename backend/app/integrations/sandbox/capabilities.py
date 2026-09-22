@@ -187,7 +187,12 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
         ),
         network_policy=NetworkPolicy.DISABLED,
         default_timeout_seconds=120,
-        allowed_tools=("compliance_linter", "claim_checker", "dossier_assembler", "schema_validator"),
+        allowed_tools=(
+            "compliance_linter",
+            "claim_checker",
+            "dossier_assembler",
+            "schema_validator",
+        ),
     ),
     SandboxCapability.SCRAPE: CapabilityProfile(
         capability=SandboxCapability.SCRAPE,
@@ -224,14 +229,16 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
     ),
 }
 
-AUTHORIZED_CREATIVE_SPECIALISTS = frozenset({
-    "CREAT-RESEARCH",
-    "CREAT-CONCEPT",
-    "CREAT-COPY",
-    "CREAT-VISUAL",
-    "CREAT-ADAPT",
-    "CREAT-QA",
-})
+AUTHORIZED_CREATIVE_SPECIALISTS = frozenset(
+    {
+        "CREAT-RESEARCH",
+        "CREAT-CONCEPT",
+        "CREAT-COPY",
+        "CREAT-VISUAL",
+        "CREAT-ADAPT",
+        "CREAT-QA",
+    }
+)
 
 CREATIVE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     "CREAT-RESEARCH": {
@@ -245,7 +252,12 @@ CREATIVE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
             "default",
         ),
         "network_policy": NetworkPolicy.ALLOWLIST,
-        "allowed_tools": ("public_search", "fetch_platform_specs", "dom_parser", "browser_automation"),
+        "allowed_tools": (
+            "public_search",
+            "fetch_platform_specs",
+            "dom_parser",
+            "browser_automation",
+        ),
     },
     "CREAT-COPY": {
         "allowed_capabilities": (SandboxCapability.COPY,),
@@ -285,21 +297,198 @@ CREATIVE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     },
 }
 
-AUTHORIZED_PRODUCT_SPECIALISTS = frozenset({
-    "w_prod.discovery",
-    "w_prod.regulatory",
-    "w_prod.claims",
-    "w_prod.appraisal",
-    "w_prod.product_lab",
-    "w_prod.safety",
-    "DISCOVERY",
-    "REGULATORY",
-    "CLAIMS",
-    "APPRAISAL",
-    "PRODUCT_LAB",
-    "SAFETY",
-    "S_VAL",
-})
+AUTHORIZED_PRODUCT_SPECIALISTS = frozenset(
+    {
+        "w_prod.discovery",
+        "w_prod.regulatory",
+        "w_prod.claims",
+        "w_prod.appraisal",
+        "w_prod.product_lab",
+        "w_prod.safety",
+        "DISCOVERY",
+        "REGULATORY",
+        "CLAIMS",
+        "APPRAISAL",
+        "PRODUCT_LAB",
+        "SAFETY",
+        "S_VAL",
+    }
+)
+
+AUTHORIZED_COMPETITOR_SPECIALISTS = frozenset(
+    {
+        "w_comp.discovery",
+        "w_comp.advertising",
+        "w_comp.ads",
+        "w_comp.pricing",
+        "w_comp.price",
+        "w_comp.search_intel",
+        "w_comp.search",
+        "w_comp.positioning",
+        "w_comp.position",
+        "w_comp.synthesis",
+        "w_comp.synth",
+        "COMP-DISCOVERY",
+        "COMP-ADS",
+        "COMP-PRICE",
+        "COMP-SEARCH",
+        "COMP-POSITION",
+        "COMP-SYNTH",
+    }
+)
+
+COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
+    # Discovery
+    "w_comp.discovery": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "public_page_capture",
+            "transparency_query",
+            "serp_query",
+            "entity_normalize",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("public_search", "official_transparency", "dom_parser"),
+    },
+    "COMP-DISCOVERY": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "public_page_capture",
+            "transparency_query",
+            "serp_query",
+            "entity_normalize",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("public_search", "official_transparency", "dom_parser"),
+    },
+    # Ads
+    "w_comp.ads": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "transparency_query",
+            "public_page_capture",
+            "ad_extract_compare",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("official_transparency", "dom_parser", "browser_automation"),
+    },
+    "w_comp.advertising": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "transparency_query",
+            "public_page_capture",
+            "ad_extract_compare",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("official_transparency", "dom_parser", "browser_automation"),
+    },
+    "COMP-ADS": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "transparency_query",
+            "public_page_capture",
+            "ad_extract_compare",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("official_transparency", "dom_parser", "browser_automation"),
+    },
+    # Price
+    "w_comp.price": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("public_page_capture", "price_extract_compare", "default"),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("dom_parser", "price_tracker", "browser_automation"),
+    },
+    "w_comp.pricing": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("public_page_capture", "price_extract_compare", "default"),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("dom_parser", "price_tracker", "browser_automation"),
+    },
+    "COMP-PRICE": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("public_page_capture", "price_extract_compare", "default"),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("dom_parser", "price_tracker", "browser_automation"),
+    },
+    # Search
+    "w_comp.search": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "serp_query",
+            "public_page_capture",
+            "serp_normalize_compare",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("public_search", "serp_extractor", "browser_automation"),
+    },
+    "w_comp.search_intel": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "serp_query",
+            "public_page_capture",
+            "serp_normalize_compare",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("public_search", "serp_extractor", "browser_automation"),
+    },
+    "COMP-SEARCH": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": (
+            "serp_query",
+            "public_page_capture",
+            "serp_normalize_compare",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("public_search", "serp_extractor", "browser_automation"),
+    },
+    # Position
+    "w_comp.position": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("public_page_capture", "position_extract_compare", "default"),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("dom_parser", "browser_automation"),
+    },
+    "w_comp.positioning": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("public_page_capture", "position_extract_compare", "default"),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("dom_parser", "browser_automation"),
+    },
+    "COMP-POSITION": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("public_page_capture", "position_extract_compare", "default"),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("dom_parser", "browser_automation"),
+    },
+    # Synthesis (OFFLINE ONLY - Zero Research-Network Egress)
+    "w_comp.synthesis": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("evidence_synthesize", "default"),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("evidence_synthesizer",),
+    },
+    "w_comp.synth": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("evidence_synthesize", "default"),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("evidence_synthesizer",),
+    },
+    "COMP-SYNTH": {
+        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_operations": ("evidence_synthesize", "default"),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("evidence_synthesizer",),
+    },
+}
 
 PRODUCT_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     "w_prod.discovery": {
@@ -312,7 +501,12 @@ PRODUCT_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
             "default",
         ),
         "network_policy": NetworkPolicy.ALLOWLIST,
-        "allowed_tools": ("literature_search", "source_fetcher", "metadata_parser", "public_search"),
+        "allowed_tools": (
+            "literature_search",
+            "source_fetcher",
+            "metadata_parser",
+            "public_search",
+        ),
     },
     "w_prod.regulatory": {
         "allowed_capabilities": (SandboxCapability.VAL,),
@@ -336,7 +530,13 @@ PRODUCT_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
             "default",
         ),
         "network_policy": NetworkPolicy.DISABLED,
-        "allowed_tools": ("claim_extractor", "claim_classifier", "evidence_mapper", "vision_inspector", "claim_checker"),
+        "allowed_tools": (
+            "claim_extractor",
+            "claim_classifier",
+            "evidence_mapper",
+            "vision_inspector",
+            "claim_checker",
+        ),
     },
     "w_prod.appraisal": {
         "allowed_capabilities": (SandboxCapability.VAL,),
@@ -444,12 +644,17 @@ def validate_capability_access(
     is_creative = (
         worker_id == "W_CREAT"
         or parsed_role == WorkerRole.CREATIVE_CONTENT
-        or (specialist_id is not None and (specialist_id.startswith("CREAT-") or specialist_id in ("W_CREAT", "NONE")))
+        or (
+            specialist_id is not None
+            and (specialist_id.startswith("CREAT-") or specialist_id in ("W_CREAT", "NONE"))
+        )
     )
 
     if is_creative:
         # Zero-sandbox enforcement for W_CREAT coordinator
-        if specialist_id in ("W_CREAT", "NONE", "") or (worker_id == "W_CREAT" and not specialist_id):
+        if specialist_id in ("W_CREAT", "NONE", "") or (
+            worker_id == "W_CREAT" and not specialist_id
+        ):
             raise SandboxInvocationError(
                 "W_CREAT coordinator has zero sandbox authority; execution requires an authorized Creative specialist_id."
             )
@@ -473,7 +678,11 @@ def validate_capability_access(
                     f"Permitted operations: {spec_policy['allowed_operations']}"
                 )
 
-            req_net = NetworkPolicy(requested_network) if isinstance(requested_network, str) else requested_network
+            req_net = (
+                NetworkPolicy(requested_network)
+                if isinstance(requested_network, str)
+                else requested_network
+            )
 
             if req_net != NetworkPolicy.DISABLED:
                 if spec_policy["network_policy"] == NetworkPolicy.DISABLED:
@@ -492,14 +701,18 @@ def validate_capability_access(
                     raise SandboxInvocationError(
                         f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
                     )
-            elif egress_grant is not None and spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+            elif (
+                egress_grant is not None and spec_policy["network_policy"] == NetworkPolicy.DISABLED
+            ):
                 raise SandboxInvocationError(
                     f"Egress grant cannot be attached to Creative specialist '{specialist_id}' under DENY_ALL network policy."
                 )
 
             if egress_grant is not None:
                 if egress_grant.is_expired():
-                    raise SandboxInvocationError(f"Egress grant '{egress_grant.grant_id}' has expired.")
+                    raise SandboxInvocationError(
+                        f"Egress grant '{egress_grant.grant_id}' has expired."
+                    )
                 if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
                     raise SandboxInvocationError(
                         f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
@@ -519,10 +732,13 @@ def validate_capability_access(
     is_prod_evidence = (
         worker_id == "W_PROD"
         or parsed_role == WorkerRole.PRODUCT_EVIDENCE
-        or (specialist_id is not None and (
-            specialist_id.startswith("w_prod.")
-            or specialist_id in AUTHORIZED_PRODUCT_SPECIALISTS
-        ))
+        or (
+            specialist_id is not None
+            and (
+                specialist_id.startswith("w_prod.")
+                or specialist_id in AUTHORIZED_PRODUCT_SPECIALISTS
+            )
+        )
     )
 
     if is_prod_evidence and specialist_id is not None and specialist_id != "S_VAL":
@@ -543,7 +759,11 @@ def validate_capability_access(
                 f"Permitted operations: {spec_policy['allowed_operations']}"
             )
 
-        req_net = NetworkPolicy(requested_network) if isinstance(requested_network, str) else requested_network
+        req_net = (
+            NetworkPolicy(requested_network)
+            if isinstance(requested_network, str)
+            else requested_network
+        )
 
         if req_net != NetworkPolicy.DISABLED:
             if spec_policy["network_policy"] == NetworkPolicy.DISABLED:
@@ -585,7 +805,96 @@ def validate_capability_access(
             allowed_tools=spec_policy["allowed_tools"],
         )
 
-    # 3. Standard worker role vs capability compatibility
+    # 3. Competitor Intel Specialist Context Enforcement
+    is_competitor = (
+        worker_id == "W_COMP"
+        or parsed_role == WorkerRole.COMPETITOR_INTEL
+        or (
+            specialist_id is not None
+            and (
+                specialist_id.startswith("w_comp.")
+                or specialist_id.startswith("COMP-")
+                or specialist_id in ("W_COMP", "NONE")
+            )
+        )
+    )
+
+    if is_competitor:
+        # Zero-sandbox enforcement for W_COMP coordinator
+        if specialist_id in ("W_COMP", "NONE", "") or (worker_id == "W_COMP" and not specialist_id):
+            raise SandboxInvocationError(
+                "W_COMP coordinator has zero sandbox authority; execution requires an authorized Competitor specialist_id."
+            )
+
+        if specialist_id is not None and specialist_id != "S_SCRAPE":
+            if specialist_id not in AUTHORIZED_COMPETITOR_SPECIALISTS:
+                raise SandboxInvocationError(
+                    f"Unauthorized or unknown Competitor specialist: '{specialist_id}'. Fail closed."
+                )
+
+            spec_policy = COMPETITOR_SPECIALIST_POLICIES[specialist_id]
+            if capability not in spec_policy["allowed_capabilities"]:
+                raise SandboxInvocationError(
+                    f"Specialist '{specialist_id}' is not authorized for capability '{capability.value}'."
+                )
+
+            if operation not in spec_policy["allowed_operations"]:
+                raise SandboxInvocationError(
+                    f"Operation '{operation}' is not permitted for Competitor specialist '{specialist_id}'. "
+                    f"Permitted operations: {spec_policy['allowed_operations']}"
+                )
+
+            req_net = (
+                NetworkPolicy(requested_network)
+                if isinstance(requested_network, str)
+                else requested_network
+            )
+
+            if req_net != NetworkPolicy.DISABLED:
+                if spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+                    raise SandboxInvocationError(
+                        f"Network access denied: Competitor specialist '{specialist_id}' is restricted to DENY_ALL (disabled) network policy."
+                    )
+                if req_net != NetworkPolicy.ALLOWLIST:
+                    raise SandboxInvocationError(
+                        f"Competitor specialist '{specialist_id}' only permits explicit allowlist egress (requested: '{req_net.value}')."
+                    )
+                if egress_grant is None:
+                    raise SandboxInvocationError(
+                        f"Network access denied: Competitor specialist '{specialist_id}' requested network without an authorized SandboxEgressGrant."
+                    )
+                if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                    raise SandboxInvocationError(
+                        f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                    )
+            elif (
+                egress_grant is not None and spec_policy["network_policy"] == NetworkPolicy.DISABLED
+            ):
+                raise SandboxInvocationError(
+                    f"Egress grant cannot be attached to Competitor specialist '{specialist_id}' under DENY_ALL network policy."
+                )
+
+            if egress_grant is not None:
+                if egress_grant.is_expired():
+                    raise SandboxInvocationError(
+                        f"Egress grant '{egress_grant.grant_id}' has expired."
+                    )
+                if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                    raise SandboxInvocationError(
+                        f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                    )
+
+            return CapabilityProfile(
+                capability=capability,
+                specialist_name=f"{specialist_id} Specialist",
+                allowed_worker=WorkerRole.COMPETITOR_INTEL,
+                allowed_operations=spec_policy["allowed_operations"],
+                network_policy=spec_policy["network_policy"],
+                default_timeout_seconds=profile.default_timeout_seconds,
+                allowed_tools=spec_policy["allowed_tools"],
+            )
+
+    # 4. Standard worker role vs capability compatibility
     if parsed_role is not None:
         if parsed_role != profile.allowed_worker:
             raise SandboxInvocationError(
@@ -657,8 +966,10 @@ def validate_tool_access(
     """Enforce explicit per-attempt micro-tool allowlisting fail-closed.
 
     1. If specialist_id is a known Creative specialist, enforce its scoped tools.
-    2. If capability_grant is provided, requested_tool must be in grant.allowed_tools.
-    3. requested_tool must also be in the capability profile's authorized allowed_tools.
+    2. If specialist_id is a known Product Evidence specialist, enforce its scoped tools.
+    3. If specialist_id is a known Competitor specialist, enforce its scoped tools.
+    4. If capability_grant is provided, requested_tool must be in grant.allowed_tools.
+    5. requested_tool must also be in the capability profile's authorized allowed_tools.
     """
     if specialist_id and specialist_id in CREATIVE_SPECIALIST_POLICIES:
         allowed_tools = CREATIVE_SPECIALIST_POLICIES[specialist_id]["allowed_tools"]
@@ -674,6 +985,15 @@ def validate_tool_access(
         if requested_tool not in allowed_tools:
             raise SandboxInvocationError(
                 f"Tool '{requested_tool}' is not permitted for Product Evidence specialist '{specialist_id}'. "
+                f"Permitted tools: {allowed_tools}"
+            )
+        return
+
+    if specialist_id and specialist_id in COMPETITOR_SPECIALIST_POLICIES:
+        allowed_tools = COMPETITOR_SPECIALIST_POLICIES[specialist_id]["allowed_tools"]
+        if requested_tool not in allowed_tools:
+            raise SandboxInvocationError(
+                f"Tool '{requested_tool}' is not permitted for Competitor specialist '{specialist_id}'. "
                 f"Permitted tools: {allowed_tools}"
             )
         return
