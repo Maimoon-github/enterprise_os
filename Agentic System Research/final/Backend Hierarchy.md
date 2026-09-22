@@ -232,13 +232,13 @@ agent_sandbox — Already implemented; internal implementation is excluded.
 Sandbox-facing backend modules:
 - pyproject.toml — Declares the existing agent_sandbox Python SDK as a backend dependency.
 - app/integrations/sandbox/client.py — Single backend wrapper for invoking the existing agent_sandbox SDK.
-- app/integrations/sandbox/capabilities.py — Maps each bounded worker to its existing S_CODE, S_ALLOC, S_COPY, S_VAL, S_SCRAPE, S_PARSE, or S_ATTR capability.
+- app/integrations/sandbox/capabilities.py — Maps bounded workers and IE-authorized specialists to S_CODE, S_ALLOC, S_COPY, S_VAL, S_SCRAPE, S_PARSE, or S_ATTR capabilities.
 - app/schemas/sandbox.py — Defines invocation mandates and sanitized sandbox-result contracts without exposing sandbox internals.
 - app/agents/development.py — Requests S_CODE execution through the sandbox wrapper.
 - app/agents/strategy.py — Requests S_ALLOC execution through the sandbox wrapper.
 - app/agents/creative_content.py — Requests S_COPY execution through the sandbox wrapper.
 - app/agents/product_evidence.py — Requests S_VAL execution through the sandbox wrapper.
-- app/agents/competitor_intel.py — Requests S_SCRAPE execution through the sandbox wrapper.
+- app/agents/competitor_intel.py — Reasons and proposes research (zero direct sandbox authority); execution is delegated to IE-authorized specialists.
 - app/agents/customer_voice.py — Requests S_PARSE execution through the sandbox wrapper.
 - app/agents/learning_performance.py — Requests S_ATTR execution through the sandbox wrapper.
 - tests/integration/test_worker_sandbox_boundary.py — Verifies workers use the wrapper and never depend on sandbox internals.
