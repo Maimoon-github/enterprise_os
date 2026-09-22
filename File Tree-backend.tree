@@ -6,8 +6,17 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 ├── 📁 app/
 │   ├── 📁 agents/
 │   │   ├── 📁 competitor_intel_engine/
+│   │   │   ├── 📁 subagents/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 advertising.py
+│   │   │   │   ├── 🐍 discovery.py
+│   │   │   │   ├── 🐍 positioning.py
+│   │   │   │   ├── 🐍 pricing.py
+│   │   │   │   ├── 🐍 search_intel.py
+│   │   │   │   └── 🐍 synthesis.py
 │   │   │   ├── 🐍 __init__.py
-│   │   │   └── 🐍 competitor_intel.py
+│   │   │   ├── 🐍 competitor_intel.py
+│   │   │   └── 🐍 profiles.py
 │   │   ├── 📁 creative_content_engine/
 │   │   │   ├── 📁 subagents/
 │   │   │   │   ├── 🐍 adaptation.py
@@ -152,6 +161,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 agent_contracts.py
 │   │   ├── 🐍 artifact.py
 │   │   ├── 🐍 cms.py
+│   │   ├── 🐍 competitor_intel.py
 │   │   ├── 🐍 dispatch.py
 │   │   ├── 🐍 governance.py
 │   │   ├── 🐍 product_evidence.py
@@ -194,6 +204,10 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   ├── 📁 acceptance/
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 test_governed_end_to_end_flow.py
+│   ├── 📁 competitor_intel_engine/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_contracts.py
+│   │   └── 🐍 test_profiles_and_llm_isolation.py
 │   ├── 📁 development_engine/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_cms_agent.py
