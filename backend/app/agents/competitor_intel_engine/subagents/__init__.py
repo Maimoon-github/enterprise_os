@@ -22,6 +22,10 @@ from app.agents.competitor_intel_engine.subagents.search_intel import (
     CompetitorSearchIntelAgent,
     parse_search_data,
 )
+from app.agents.competitor_intel_engine.subagents.synthesis import (
+    CompetitorSynthesisAgent,
+    synthesize_competitor_evidence,
+)
 
 __all__ = [
     "CompetitorAdvertisingAgent",
@@ -29,11 +33,13 @@ __all__ = [
     "CompetitorPositioningAgent",
     "CompetitorPricingAgent",
     "CompetitorSearchIntelAgent",
+    "CompetitorSynthesisAgent",
     "SourceAdmissibilityResult",
     "parse_ad_transparency_data",
     "parse_positioning_data",
     "parse_pricing_data",
     "parse_search_data",
     "resolve_entity",
+    "synthesize_competitor_evidence",
     "validate_source_policy",
 ]

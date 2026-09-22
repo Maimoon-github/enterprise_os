@@ -9,6 +9,7 @@ actuation -> telemetry -> learning flow described by the architecture.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from collections.abc import Mapping, Sequence
@@ -41,6 +42,7 @@ from app.schemas.development import (
     DevelopmentEngineResult,
     DevelopmentTaskGrant,
 )
+from app.schemas.artifact import ArtifactReference
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
@@ -467,6 +469,102 @@ class IntelligenceEngine:
         )
 
         return result
+
+    async def accept_competitive_evidence_brief(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        brief: Any,
+        validation_report: dict[str, Any],
+        *,
+        recheck_round_count: int = 0,
+        artifact_repo: Any | None = None,
+    ) -> dict[str, Any]:
+        """Authoritative IE acceptance, persistence, and state transition for CompetitiveEvidenceBrief.
+
+        Validates W_COMP schema validation, records W3C-PROV audit lineage,
+        routes to HITL if conflicts or market shift alerts exist, and commits
+        canonical artifact state.
+        """
+        if not validation_report.get("valid", False):
+            raise PolicyViolationError(
+                f"W_COMP brief validation failed: missing assumptions "
+                f"{validation_report.get('missing_assumptions')}."
+            )
+
+        # 1. Bounded recheck evaluation
+        if brief.follow_up_evidence_requests and recheck_round_count < 1:
+            return {
+                "accepted": False,
+                "status": "RECHECK_AUTHORIZED",
+                "brief_id": brief.brief_id,
+                "recheck_requests": brief.follow_up_evidence_requests,
+                "recheck_round": recheck_round_count + 1,
+            }
+
+        # 2. HITL policy gate: conflicts or market shift alerts require human review
+        requires_hitl = bool(brief.conflicts or brief.market_alerts)
+        new_status = TaskStatus.HELD if requires_hitl else TaskStatus.COMPLETED
+        note = (
+            "Competitive evidence brief flagged for human review (conflicts/market alerts)"
+            if requires_hitl
+            else "Competitive evidence brief accepted"
+        )
+        final_state = self._task_state_machine.transition(
+            task,
+            new_status,
+            checkpoint_id=str(uuid.uuid4()),
+            note=note,
+        )
+        task.status = final_state.status
+
+        # 3. Provenance recording (W3C-PROV compliant audit trail)
+        prov_meta: dict[str, Any] = {
+            "brief_id": brief.brief_id,
+            "run_id": brief.run_id,
+            "strategy_plan_ref": brief.strategy_plan_ref,
+            "total_observations": len(brief.observations),
+            "total_findings": len(brief.findings),
+            "conflicts_count": len(brief.conflicts),
+            "alerts_count": len(brief.market_alerts),
+            "assumption_verdicts": {k: str(v) for k, v in brief.assumption_verdicts.items()},
+            "requires_hitl": requires_hitl,
+        }
+        await self._provenance_recorder.record(
+            tenant_id=directive.tenant_id,
+            entity_id=brief.brief_id,
+            activity="competitor_evidence_synthesis",
+            agent="COMP-SYNTH",
+            metadata=prov_meta,
+        )
+
+        # 4. Canonical artifact persistence
+        if artifact_repo is not None:
+            brief_json = brief.model_dump_json()
+            artifact = ArtifactReference(
+                artifact_id=brief.brief_id,
+                tenant_id=directive.tenant_id,
+                uri=f"artifact://competitive_evidence/{brief.brief_id}",
+                media_type="application/json",
+                deliverable_type="competitive_evidence_brief",
+                content_hash=hashlib.sha256(brief_json.encode("utf-8")).hexdigest(),
+                created_at=brief.as_of,
+                metadata={
+                    "run_id": str(brief.run_id),
+                    "strategy_plan_ref": str(brief.strategy_plan_ref),
+                    "requires_hitl": str(requires_hitl),
+                },
+            )
+            await artifact_repo.register(directive.tenant_id, artifact)
+
+        return {
+            "accepted": True,
+            "status": "ACCEPTED",
+            "brief_id": brief.brief_id,
+            "cts_status": task.status.value,
+            "requires_hitl": requires_hitl,
+            "artifact_id": brief.brief_id,
+        }
 
     async def execute_dag(
         self,
