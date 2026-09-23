@@ -146,11 +146,18 @@ class FeedbackRecord(BaseModel):
     redaction_summary: dict[str, int] = Field(
         default_factory=dict, description="Count of redacted entities by PII type"
     )
+    injection_flagged: bool = Field(
+        default=False, description="True if prompt injection or system instructions were detected"
+    )
     dedupe_group: str | None = Field(default=None, description="Cluster ID if item was deduplicated")
+    duplicate_members: list[str] = Field(
+        default_factory=list, description="Source references or record IDs of duplicate records collapsed into this canonical record"
+    )
     survey_methodology_ref: str | None = Field(
         default=None, description="Reference to SurveyMethodology if source is a survey"
     )
     provenance_ref: str | None = Field(default=None, description="W3C PROV lineage reference")
+
 
 
 class CustomerVoiceTask(BaseModel):
@@ -238,9 +245,12 @@ class VoiceSpecialistResult(BaseModel):
     evidence_spans: list[EvidenceSpan] = Field(
         default_factory=list, description="Grounding evidence spans"
     )
+    records: list[FeedbackRecord] = Field(default_factory=list, description="Sanitized FeedbackRecords for discovery stage")
+    artifacts: list[str] = Field(default_factory=list, description="Generated artifact references")
     qa_report: VoiceQAReport | None = Field(default=None, description="QA evaluation if applicable")
     provenance: dict[str, Any] = Field(default_factory=dict, description="Execution provenance metadata")
     error: str | None = Field(default=None, description="Error message if execution failed")
+
 
 
 class TopicFinding(BaseModel):

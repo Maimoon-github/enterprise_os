@@ -18,6 +18,8 @@ from app.schemas.agent_contracts import (
 from app.schemas.customer_voice import (
     CustomerVoicePayload,
     CustomerVoiceTask,
+    EvidenceSpan,
+    FeedbackRecord,
     VoiceWorkflowStage,
 )
 from app.schemas.sandbox import SandboxCapability
@@ -258,11 +260,24 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             workflow_stage=VoiceWorkflowStage.DISCOVERY,
         )
 
-        findings: list[str] = [f"Customer Voice Analysis: {len(items)} items authorized for analysis."]
+        # Execute Discovery & Sanitization Pipeline before downstream processing
+        discovery_result = await self.discovery_agent.execute(
+            task=task_contract,
+            raw_items=items,
+        )
+        sanitized_records = discovery_result.records
+        evidence_spans = discovery_result.evidence_spans
+        corpus_hash = discovery_result.output_hash
+
+        findings: list[str] = [
+            f"Customer Voice Analysis: {len(sanitized_records)} records de-identified and analyzed.",
+            f"Corpus Integrity Hash: {corpus_hash}",
+        ]
         risks: list[str] = []
         if reasoning_output:
             findings.extend(reasoning_output.preliminary_findings)
             risks.extend(reasoning_output.identified_risks)
+
 
         findings = sorted(list(set(findings)))
         artifacts = [f"voice:{grant.task_id}", f"sentiment:{grant.task_id}"]
@@ -290,7 +305,7 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             task_id=grant.task_id,
             tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
             product_ref=product_id or None,
-            records_analyzed=len(items),
+            records_analyzed=len(sanitized_records),
             inference_scope="observed_feedback_only",
             population_representativeness="not_established",
             provenance=provenance,
@@ -300,7 +315,7 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             analysis_id=f"cva-{grant.task_id}",
             tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
             product_id=product_id or None,
-            total_items_analyzed=len(items),
+            total_items_analyzed=len(sanitized_records),
             provenance=provenance,
         )
 
@@ -308,23 +323,27 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             task_id=grant.task_id,
             worker_role=grant.worker_role,
             confidence=confidence,
-            evidence=[f"Customer Voice Analysis: {len(items)} items analyzed."],
+            evidence=[f"Customer Voice Analysis: {len(sanitized_records)} sanitized records analyzed."],
             payload={
                 "customer_voice_task": task_contract.model_dump_json(),
                 "customer_voice_payload": voice_payload.model_dump_json(),
                 "customer_voice_analysis": analysis_result.model_dump_json(),
-                "total_items_analyzed": str(len(items)),
+                "total_items_analyzed": str(len(sanitized_records)),
                 "product_id": product_id,
+                "immutable_corpus_hash": corpus_hash,
+                "sanitized_records": json.dumps([r.model_dump() for r in sanitized_records], default=str),
+                "evidence_spans": json.dumps([s.model_dump() for s in evidence_spans], default=str),
             },
             findings=findings,
             generated_artifacts=artifacts,
-            supporting_evidence=[f"items_count:{len(items)}"],
+            supporting_evidence=[f"items_count:{len(sanitized_records)}"],
             provenance=provenance,
             proposed_state_changes={
                 "status": "completed",
                 "capability": "NONE",
             },
             unresolved_risks_or_assumptions=risks,
+
         )
 
     def interpret_result(
@@ -458,6 +477,30 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             try:
                 parsed = json.loads(raw)
                 return [AnonymizedSentimentVector.model_validate(v) for v in parsed]
+            except Exception:
+                return []
+        return []
+
+    @staticmethod
+    def extract_sanitized_records(envelope: EvidenceEnvelope) -> list[FeedbackRecord]:
+        """Helper to extract strongly typed FeedbackRecord list from an EvidenceEnvelope."""
+        raw = envelope.payload.get("sanitized_records")
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                return [FeedbackRecord.model_validate(r) for r in parsed]
+            except Exception:
+                return []
+        return []
+
+    @staticmethod
+    def extract_evidence_spans(envelope: EvidenceEnvelope) -> list[EvidenceSpan]:
+        """Helper to extract strongly typed EvidenceSpan list from an EvidenceEnvelope."""
+        raw = envelope.payload.get("evidence_spans")
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                return [EvidenceSpan.model_validate(s) for s in parsed]
             except Exception:
                 return []
         return []
