@@ -269,18 +269,46 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         evidence_spans = discovery_result.evidence_spans
         corpus_hash = discovery_result.output_hash
 
+        # Execute CV-05 Analysis Specialists independently over frozen sanitized corpus
+        themes_result = await self.themes_agent.execute(
+            task=task_contract,
+            records=sanitized_records,
+            evidence_spans=evidence_spans,
+            corpus_hash=corpus_hash,
+        )
+        sentiment_result = await self.sentiment_agent.execute(
+            task=task_contract,
+            records=sanitized_records,
+            evidence_spans=evidence_spans,
+            corpus_hash=corpus_hash,
+        )
+        needs_result = await self.needs_agent.execute(
+            task=task_contract,
+            records=sanitized_records,
+            evidence_spans=evidence_spans,
+            corpus_hash=corpus_hash,
+        )
+
         findings: list[str] = [
             f"Customer Voice Analysis: {len(sanitized_records)} records de-identified and analyzed.",
             f"Corpus Integrity Hash: {corpus_hash}",
+            f"Themes Discovered: {len(themes_result.findings)} topic clusters.",
+            f"Aspect Sentiment: {len(sentiment_result.findings)} aspects evaluated.",
+            f"Needs & Objections: {len(needs_result.findings)} findings extracted.",
         ]
         risks: list[str] = []
         if reasoning_output:
             findings.extend(reasoning_output.preliminary_findings)
             risks.extend(reasoning_output.identified_risks)
 
-
         findings = sorted(list(set(findings)))
-        artifacts = [f"voice:{grant.task_id}", f"sentiment:{grant.task_id}"]
+        artifacts = [
+            f"voice:{grant.task_id}",
+            f"sentiment:{grant.task_id}",
+            *themes_result.artifacts,
+            *sentiment_result.artifacts,
+            *needs_result.artifacts,
+        ]
 
         provenance: dict[str, Any] = {
             "agent": grant.worker_role.value if grant.worker_role else "W_VOICE",
@@ -306,6 +334,9 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
             product_ref=product_id or None,
             records_analyzed=len(sanitized_records),
+            topics=themes_result.findings,
+            aspect_sentiment=sentiment_result.findings,
+            needs_and_objections=needs_result.findings,
             inference_scope="observed_feedback_only",
             population_representativeness="not_established",
             provenance=provenance,
@@ -328,6 +359,9 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
                 "customer_voice_task": task_contract.model_dump_json(),
                 "customer_voice_payload": voice_payload.model_dump_json(),
                 "customer_voice_analysis": analysis_result.model_dump_json(),
+                "themes_result": themes_result.model_dump_json(),
+                "sentiment_result": sentiment_result.model_dump_json(),
+                "needs_result": needs_result.model_dump_json(),
                 "total_items_analyzed": str(len(sanitized_records)),
                 "product_id": product_id,
                 "immutable_corpus_hash": corpus_hash,
@@ -343,7 +377,6 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
                 "capability": "NONE",
             },
             unresolved_risks_or_assumptions=risks,
-
         )
 
     def interpret_result(
