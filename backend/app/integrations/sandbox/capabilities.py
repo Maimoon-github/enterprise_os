@@ -266,6 +266,92 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
     ),
 }
 
+AUTHORIZED_LEARNING_SPECIALISTS = frozenset(
+    {
+        "LEARN-TELEMETRY",
+        "LEARN-ATTRIBUTION",
+        "LEARN-INCREMENTALITY",
+        "LEARN-FATIGUE",
+        "LEARN-DECAY",
+        "LEARN-QA",
+    }
+)
+
+LEARNING_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
+    "LEARN-TELEMETRY": {
+        "allowed_capabilities": (SandboxCapability.ATTR,),
+        "allowed_operations": (
+            "validate_telemetry",
+            "normalize_telemetry",
+            "summarize_quality",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("telemetry_validator", "dataset_normalizer"),
+    },
+    "LEARN-ATTRIBUTION": {
+        "allowed_capabilities": (SandboxCapability.ATTR,),
+        "allowed_operations": (
+            "estimate_attribution",
+            "fit_mmm",
+            "calculate_roas",
+            "calculate_attribution",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("attribution_engine", "mmm_fitter", "roas_calculator", "decay_scorer"),
+    },
+    "LEARN-INCREMENTALITY": {
+        "allowed_capabilities": (SandboxCapability.ATTR,),
+        "allowed_operations": (
+            "validate_experiment",
+            "estimate_lift",
+            "propose_calibration",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("experiment_validator", "itt_lift_estimator", "calibration_builder"),
+    },
+    "LEARN-FATIGUE": {
+        "allowed_capabilities": (SandboxCapability.ATTR,),
+        "allowed_operations": (
+            "analyze_wearout",
+            "analyze_saturation",
+            "fatigue_scoring",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("wearout_analyzer", "saturation_modeler", "decay_scorer"),
+    },
+    "LEARN-DECAY": {
+        "allowed_capabilities": (SandboxCapability.ATTR,),
+        "allowed_operations": (
+            "estimate_adstock",
+            "estimate_half_life",
+            "diagnose_decay",
+            "score_decay",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("adstock_kernel", "half_life_estimator", "decay_scorer"),
+    },
+    "LEARN-QA": {
+        "allowed_capabilities": (SandboxCapability.ATTR,),
+        "allowed_operations": (
+            "validate_learning_bundle",
+            "reconcile_estimates",
+            "verify_provenance",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("qa_bundle_verifier", "claim_reconciler"),
+    },
+}
+
+for key, val in list(LEARNING_SPECIALIST_POLICIES.items()):
+    short_key = key.replace("w_learn.", "").upper()
+    LEARNING_SPECIALIST_POLICIES[short_key] = val
+
 AUTHORIZED_VOICE_SPECIALISTS = frozenset(
     {
         "VOICE-DISCOVERY",
@@ -1113,7 +1199,70 @@ def validate_capability_access(
                 allowed_tools=spec_policy["allowed_tools"],
             )
 
-    # 5. Standard worker role vs capability compatibility
+    # 5. Learning Performance Specialist Context Enforcement & Zero-Sandbox Coordinator Boundary
+    is_learning = (
+        worker_id == "W_LEARN"
+        or (
+            specialist_id is not None
+            and (
+                specialist_id.startswith("LEARN-")
+                or specialist_id.startswith("w_learn.")
+                or specialist_id in ("W_LEARN", "NONE")
+                or specialist_id in AUTHORIZED_LEARNING_SPECIALISTS
+                or specialist_id in LEARNING_SPECIALIST_POLICIES
+            )
+        )
+    )
+
+    if is_learning:
+        # Zero-sandbox enforcement for W_LEARN coordinator
+        if specialist_id in ("W_LEARN", "NONE", "") or (
+            worker_id == "W_LEARN" and not specialist_id
+        ):
+            raise SandboxInvocationError(
+                "W_LEARN coordinator has zero sandbox authority; execution requires an authorized Learning specialist_id."
+            )
+
+        if specialist_id is not None and specialist_id != "S_ATTR":
+            if specialist_id not in AUTHORIZED_LEARNING_SPECIALISTS and specialist_id not in LEARNING_SPECIALIST_POLICIES:
+                raise SandboxInvocationError(
+                    f"Unauthorized or unknown Learning specialist: '{specialist_id}'. Fail closed."
+                )
+
+            spec_policy = LEARNING_SPECIALIST_POLICIES[specialist_id]
+            if capability not in spec_policy["allowed_capabilities"]:
+                raise SandboxInvocationError(
+                    f"Specialist '{specialist_id}' is not authorized for capability '{capability.value}'."
+                )
+
+            if operation not in spec_policy["allowed_operations"]:
+                raise SandboxInvocationError(
+                    f"Operation '{operation}' is not permitted for Learning specialist '{specialist_id}'. "
+                    f"Permitted operations: {spec_policy['allowed_operations']}"
+                )
+
+            req_net = (
+                NetworkPolicy(requested_network)
+                if isinstance(requested_network, str)
+                else requested_network
+            )
+
+            if req_net != NetworkPolicy.DISABLED or egress_grant is not None:
+                raise SandboxInvocationError(
+                    f"Network access denied: Learning specialist '{specialist_id}' is strictly restricted to DENY_ALL (disabled) network policy."
+                )
+
+            return CapabilityProfile(
+                capability=capability,
+                specialist_name=f"{specialist_id} Specialist",
+                allowed_worker=WorkerRole.LEARNING_PERFORMANCE,
+                allowed_operations=spec_policy["allowed_operations"],
+                network_policy=NetworkPolicy.DISABLED,
+                default_timeout_seconds=profile.default_timeout_seconds,
+                allowed_tools=spec_policy["allowed_tools"],
+            )
+
+    # 6. Standard worker role vs capability compatibility
     if parsed_role is not None:
         if parsed_role != profile.allowed_worker:
             raise SandboxInvocationError(
