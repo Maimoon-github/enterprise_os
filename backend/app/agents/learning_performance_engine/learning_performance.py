@@ -26,9 +26,11 @@ from app.schemas.learning_performance import (
     LearningQAResult,
     LearningUncertainty,
     QADecision,
+    SpecialistStatus,
     UncertaintyKind,
 )
 from app.schemas.sandbox import SandboxCapability
+from app.agents.learning_performance_engine.subagents.quality import compute_canonical_digest
 
 
 class LearningPerformanceAgent(BoundedWorkerAgent):
@@ -40,6 +42,34 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
     """
 
     capability = SandboxCapability.ATTR
+
+    def __init__(
+        self,
+        sandbox_client: Any = None,
+        llm_client: Any = None,
+        *,
+        telemetry_agent: Any = None,
+        attribution_agent: Any = None,
+        incrementality_agent: Any = None,
+        fatigue_agent: Any = None,
+        decay_agent: Any = None,
+        qa_agent: Any = None,
+    ) -> None:
+        super().__init__(sandbox_client, llm_client)
+        from app.agents.learning_performance_engine.subagents import (
+            LearningAttributionAgent,
+            LearningDecayAgent,
+            LearningFatigueAgent,
+            LearningIncrementalityAgent,
+            LearningQualityAgent,
+            LearningTelemetryAgent,
+        )
+        self._telemetry_agent = telemetry_agent or LearningTelemetryAgent(sandbox_client)
+        self._attribution_agent = attribution_agent or LearningAttributionAgent(sandbox_client)
+        self._incrementality_agent = incrementality_agent or LearningIncrementalityAgent(sandbox_client)
+        self._fatigue_agent = fatigue_agent or LearningFatigueAgent(sandbox_client)
+        self._decay_agent = decay_agent or LearningDecayAgent(sandbox_client)
+        self._qa_agent = qa_agent or LearningQualityAgent(sandbox_client)
 
     def _normalize_context(
         self, grant: TaskGrant, context: dict[str, object]
@@ -266,8 +296,121 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
 
         return evidence, confidence
 
+    async def execute_learning_pipeline(
+        self,
+        grant: TaskGrant,
+        context: dict[str, Any],
+        *,
+        attempt_prefix: str | None = None,
+    ) -> tuple[LearningQAResult, LearningDeltaCandidate | None, EvidenceEnvelope]:
+        """Execute the fixed 4-stage Learning & Performance DAG under Model A governance:
+
+        LEARN-TELEMETRY -> [ATTRIBUTION || INCREMENTALITY || FATIGUE || DECAY] -> LEARN-QA -> W_LEARN -> IE
+        """
+        task_id = grant.task_id
+        grant_tenant = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
+        prefix = attempt_prefix or f"att-{task_id[:8]}"
+
+        # --- Stage 1: LEARN-TELEMETRY Barrier ---
+        tel_manifest, tel_result = await self._telemetry_agent.run(
+            grant, context, attempt_id=f"{prefix}-tel"
+        )
+        if tel_result.status == SpecialistStatus.FAILED or tel_manifest is None:
+            # Unsafe telemetry prevents fan-out
+            qa_res = LearningQAResult(
+                decision=QADecision.BLOCK,
+                input_bundle_digest=compute_canonical_digest({"task_id": task_id, "status": "telemetry_failed"}),
+                qa_profile_id="learn.quality.v1",
+                qa_attempt_id=f"{prefix}-qa",
+                deterministic_gate_results={"gate_telemetry_readiness": False},
+                issue_codes=["UNSAFE_TELEMETRY_BLOCKED_FANOUT"],
+                accepted_claim_ids=[],
+                rejected_claim_ids=[],
+                evidence_bundle_digest=compute_canonical_digest({"status": "blocked_at_telemetry"}),
+                provenance_refs=[f"task:{task_id}", f"telemetry_attempt:{prefix}-tel"],
+            )
+            envelope = EvidenceEnvelope(
+                task_id=task_id,
+                worker_role=grant.worker_role,
+                evidence=[f"Telemetry normalization failed: {tel_result.findings}"],
+                confidence=ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0),
+                proposed_state_changes={},
+                unresolved_risks_or_assumptions=["Unsafe telemetry data stopped downstream measurement analysis."],
+            )
+            return qa_res, None, envelope
+
+        dataset_version = tel_manifest.version
+        branch_context = dict(context)
+        branch_context["dataset_version"] = dataset_version
+        branch_context["dataset_manifest"] = tel_manifest
+
+        # --- Stage 2: Parallel Measurement Branches ---
+        att_res = await self._attribution_agent.run(grant, branch_context, attempt_id=f"{prefix}-attr")
+        inc_prop, inc_res = await self._incrementality_agent.run(grant, branch_context, attempt_id=f"{prefix}-inc")
+        fat_res = await self._fatigue_agent.run(grant, branch_context, attempt_id=f"{prefix}-fat")
+        dec_res = await self._decay_agent.run(grant, branch_context, attempt_id=f"{prefix}-dec")
+
+        specialist_results = [tel_result, att_res, inc_res, fat_res, dec_res]
+        calibration_proposals = [inc_prop] if inc_prop else []
+
+        # --- Stage 3: LEARN-QA Barrier ---
+        qa_bundle = {
+            "tenant_id": grant_tenant,
+            "dataset_manifest": tel_manifest,
+            "dataset_version": dataset_version,
+            "specialist_results": specialist_results,
+            "calibration_proposals": calibration_proposals,
+            "task_input": {"task_id": task_id, "tenant_id": grant_tenant, "version": dataset_version},
+        }
+        qa_result = await self._qa_agent.run(grant, qa_bundle, attempt_id=f"{prefix}-qa")
+
+        # --- Stage 4: W_LEARN Synthesis Barrier ---
+        candidate: LearningDeltaCandidate | None = None
+        if qa_result.decision == QADecision.PASS:
+            scoped_metrics: dict[str, float] = {}
+            for s in specialist_results:
+                for est in getattr(s, "estimates", []):
+                    if est.estimate_id in qa_result.accepted_claim_ids and est.point_estimate is not None:
+                        scoped_metrics[est.metric] = est.point_estimate
+
+            candidate = self.synthesize_learning_delta_candidate(
+                qa_result,
+                tenant_id=grant_tenant,
+                brand_id=grant.brand_id,
+                scoped_metrics=scoped_metrics,
+            )
+
+        evidence_lines = []
+        for s in specialist_results:
+            evidence_lines.extend(s.findings)
+        evidence_lines.append(f"QA Decision: {qa_result.decision.value} (Digest: {qa_result.evidence_bundle_digest[:12]})")
+
+        proposed_state: dict[str, str] = {}
+        if candidate is not None:
+            proposed_state["learning_delta_candidate"] = candidate.model_dump_json()
+            proposed_state["learning_delta"] = f"QA approved {len(candidate.accepted_claim_ids)} claims."
+
+        envelope = EvidenceEnvelope(
+            task_id=task_id,
+            worker_role=grant.worker_role,
+            evidence=evidence_lines,
+            confidence=ConfidenceInterval(
+                point_estimate=0.85 if qa_result.decision == QADecision.PASS else 0.4,
+                lower_bound=0.75 if qa_result.decision == QADecision.PASS else 0.2,
+                upper_bound=0.95 if qa_result.decision == QADecision.PASS else 0.6,
+            ),
+            proposed_state_changes=proposed_state,
+            unresolved_risks_or_assumptions=list(qa_result.issue_codes),
+        )
+
+        return qa_result, candidate, envelope
+
     async def run(self, grant: TaskGrant, context: dict[str, object]) -> EvidenceEnvelope:
         """Execute W_LEARN grant, format deliverables, and attach candidate state deltas."""
+        if context.get("use_learning_pipeline") or "events" in context or "raw_events" in context:
+            _qa_res, _cand, envelope = await self.execute_learning_pipeline(grant, dict(context))
+            return envelope
+
         envelope = await super().run(grant, context)
 
         # Attach candidate learning delta proposed for IE/T32 adoption

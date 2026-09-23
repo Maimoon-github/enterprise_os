@@ -32,7 +32,12 @@ from app.schemas.agent_contracts import (
     EvidenceEnvelope,
     TaskGrant,
 )
-from app.schemas.governance import RiskLevel, TenantScope, WorkerRole
+from app.schemas.governance import TenantScope, WorkerRole
+from app.schemas.learning_performance import (
+    LearningDeltaCandidate,
+    LearningQAResult,
+    QADecision,
+)
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 from app.schemas.telemetry import TelemetryEventType
 from app.services.provenance import ProvenanceRecorder
@@ -312,3 +317,73 @@ class AttributionCoordinator:
                 logger.warning("Failed to record provenance for %s: %s", governing_task_id, exc)
 
         return envelope, deliverable
+
+    async def execute_learning_loop(
+        self,
+        tenant_id: str,
+        task_states: dict[str, CanonicalTaskState],
+        *,
+        governing_task_id: str = "task-t31",
+        directive_id: str = "dir-t31",
+    ) -> tuple[LearningQAResult, LearningDeltaCandidate | None, EvidenceEnvelope]:
+        """Execute the end-to-end Learning & Performance DAG loop:
+        LEARN-TELEMETRY -> [ATTRIBUTION || INCREMENTALITY || FATIGUE || DECAY] -> LEARN-QA -> W_LEARN -> IE.
+        """
+        # 1. Authoritative T30 Verification
+        self.verify_t30_dependency(tenant_id, task_states)
+
+        # 2. Governed Telemetry Retrieval
+        telemetry_events = await self.retrieve_governed_telemetry(tenant_id)
+
+        # 3. Formulate TaskGrant
+        grant = TaskGrant(
+            task_id=governing_task_id,
+            worker_role=WorkerRole.LEARNING_PERFORMANCE,
+            tenant_scope=TenantScope(tenant_id=tenant_id),
+            objective="Execute full 4-stage learning pipeline with QA gating",
+            task_scope=f"T31 learning loop for tenant {tenant_id}",
+            expires_at=datetime.now(UTC) + timedelta(minutes=30),
+            cts_state={
+                "telemetry_count": len(telemetry_events),
+            },
+        )
+
+        context: dict[str, Any] = {
+            "use_learning_pipeline": True,
+            "events": telemetry_events,
+        }
+
+        # 4. Execute Learning Pipeline
+        qa_result, candidate, envelope = await self._agent.execute_learning_pipeline(grant, context)
+
+        # 5. Update CTS
+        if self._task_state_service and governing_task_id in task_states:
+            try:
+                t31_task = task_states[governing_task_id]
+                t31_task.status = TaskStatus.COMPLETED
+                t31_task.cts_state["qa_result"] = qa_result.model_dump(mode="json")
+                t31_task.cts_state["t32_eligible"] = (qa_result.decision == QADecision.PASS and candidate is not None)
+                if candidate is not None:
+                    t31_task.cts_state["candidate_learning_delta"] = candidate.model_dump(mode="json")
+                await self._task_state_service.save_state(tenant_id, t31_task)
+            except Exception as exc:
+                logger.warning("Failed to save CTS state for %s: %s", governing_task_id, exc)
+
+        # 6. Provenance
+        if self._provenance_recorder:
+            try:
+                await self._provenance_recorder.record(
+                    tenant_id=tenant_id,
+                    entity_id=governing_task_id,
+                    activity="learning_loop_executed",
+                    agent="W_LEARN",
+                    metadata={
+                        "qa_decision": qa_result.decision.value,
+                        "evidence_digest": qa_result.evidence_bundle_digest,
+                        "accepted_claims": qa_result.accepted_claim_ids,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to record provenance for %s: %s", governing_task_id, exc)
+
+        return qa_result, candidate, envelope

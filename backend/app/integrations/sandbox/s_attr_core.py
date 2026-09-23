@@ -27,6 +27,19 @@ def _parse_datetime(val: Any) -> datetime | None:
         return None
 
 
+def _safe_float(val: Any, default: float = 0.0) -> float:
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+    return default
+
+
 def validate_and_normalize_telemetry(payload: dict[str, Any]) -> dict[str, Any]:
     """Validate raw telemetry snapshots and produce immutable normalized datasets and manifests."""
     task_id = str(payload.get("task_id", "unknown"))
@@ -279,12 +292,12 @@ def compute_attribution_and_roas(payload: dict[str, Any]) -> dict[str, Any]:
 
     spend_map: dict[str, float] = {}
     if isinstance(raw_spend, dict):
-        spend_map = {str(k).lower(): float(v) for k, v in raw_spend.items() if not (math.isnan(float(v)) or math.isinf(float(v)))}
+        spend_map = {str(k).lower(): _safe_float(v) for k, v in raw_spend.items() if not (math.isnan(_safe_float(v)) or math.isinf(_safe_float(v)))}
     elif isinstance(raw_spend, list):
         for item in raw_spend:
             if isinstance(item, dict) and "channel" in item:
                 ch = str(item["channel"]).lower()
-                sp = float(item.get("spend", 0.0))
+                sp = _safe_float(item.get("spend", 0.0), 0.0)
                 if not (math.isnan(sp) or math.isinf(sp)):
                     spend_map[ch] = spend_map.get(ch, 0.0) + sp
 
@@ -304,7 +317,7 @@ def compute_attribution_and_roas(payload: dict[str, Any]) -> dict[str, Any]:
     unattributed_conv = 0.0
 
     for path in raw_paths:
-        rev = float(path.get("revenue", 0.0))
+        rev = _safe_float(path.get("revenue", 0.0), 0.0) if isinstance(path, dict) else 0.0
         total_rev += rev
         touchpoints = path.get("touchpoints", [])
         n_touches = len(touchpoints)
@@ -503,23 +516,32 @@ def compute_creative_fatigue(payload: dict[str, Any]) -> dict[str, Any]:
     """Analyze longitudinal creative exposure trajectories and distinguish wearout from audience saturation."""
     task_id = str(payload.get("task_id", "unknown"))
     tenant_id = str(payload.get("tenant_id", "default"))
-    creatives = payload.get("creatives") or []
+    raw_creatives: Any = payload.get("creatives")
 
-    if isinstance(creatives, str):
+    creatives: list[dict[str, Any]] = []
+    if isinstance(raw_creatives, list):
+        for item in raw_creatives:
+            if isinstance(item, dict):
+                creatives.append(item)
+    elif isinstance(raw_creatives, str):
         try:
-            creatives = json.loads(creatives)
+            parsed = json.loads(raw_creatives)
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, dict):
+                        creatives.append(item)
         except Exception:
-            creatives = []
+            pass
 
     # Fallback to single creative parameter
-    if not creatives and "creative_id" in payload:
-        creatives = [{
-            "creative_id": payload.get("creative_id", "creative-1"),
-            "days_active": float(payload.get("days_active", 14.0)),
-            "reported_roas": float(payload.get("roas", 3.0)),
-            "frequency_trajectory": payload.get("frequency_trajectory", [1.0, 1.5, 2.2, 3.1]),
-            "ctr_trajectory": payload.get("ctr_trajectory", [0.035, 0.030, 0.022, 0.015]),
-        }]
+    if not creatives and payload.get("creative_id"):
+        creatives.append({
+            "creative_id": str(payload.get("creative_id", "creative-1")),
+            "days_active": _safe_float(payload.get("days_active"), 14.0),
+            "reported_roas": _safe_float(payload.get("roas"), 3.0),
+            "frequency_trajectory": payload.get("frequency_trajectory") or [1.0, 1.5, 2.2, 3.1],
+            "ctr_trajectory": payload.get("ctr_trajectory") or [0.035, 0.030, 0.022, 0.015],
+        })
 
     if not creatives:
         return {
@@ -532,14 +554,14 @@ def compute_creative_fatigue(payload: dict[str, Any]) -> dict[str, Any]:
     evaluations: list[dict[str, Any]] = []
     for c in creatives:
         cid = str(c.get("creative_id", "unknown"))
-        days_active = max(0.0, float(c.get("days_active", 0.0)))
-        roas = float(c.get("reported_roas", c.get("roas", 3.0)))
+        days_active = max(0.0, _safe_float(c.get("days_active"), 0.0))
+        roas = _safe_float(c.get("reported_roas", c.get("roas")), 3.0)
 
         # Trajectory checking
         raw_ctr = c.get("ctr_trajectory")
-        ctr_series: list[float] = [float(x) for x in raw_ctr] if isinstance(raw_ctr, list) else []
+        ctr_series: list[float] = [_safe_float(x) for x in raw_ctr] if isinstance(raw_ctr, list) else []
         raw_freq = c.get("frequency_trajectory")
-        freq_series: list[float] = [float(x) for x in raw_freq] if isinstance(raw_freq, list) else []
+        freq_series: list[float] = [_safe_float(x) for x in raw_freq] if isinstance(raw_freq, list) else []
 
         # Exponential decay multiplier lambda=0.05
         decay_mult = math.exp(-0.05 * days_active)
@@ -586,10 +608,10 @@ def compute_lag_and_decay(payload: dict[str, Any]) -> dict[str, Any]:
     task_id = str(payload.get("task_id", "unknown"))
     tenant_id = str(payload.get("tenant_id", "default"))
 
-    alpha = float(payload.get("alpha", payload.get("retention_rate", 0.5)))
+    alpha = _safe_float(payload.get("alpha", payload.get("retention_rate", 0.5)), 0.5)
     series = payload.get("series") or [100.0, 50.0, 25.0, 10.0, 0.0, 0.0]
-    hill_k = float(payload.get("hill_half_saturation", 50.0))
-    hill_s = float(payload.get("hill_slope", 1.5))
+    hill_k = _safe_float(payload.get("hill_half_saturation", 50.0), 50.0)
+    hill_s = _safe_float(payload.get("hill_slope", 1.5), 1.5)
 
     # Weight half-life calculation
     if 0.0 < alpha < 1.0:
@@ -612,7 +634,7 @@ def compute_lag_and_decay(payload: dict[str, Any]) -> dict[str, Any]:
     for t in range(len(series)):
         conv_val = 0.0
         for l in range(min(t + 1, max_lag + 1)):
-            conv_val += kernel_weights[l] * float(series[t - l])
+            conv_val += kernel_weights[l] * _safe_float(series[t - l])
         adstocked_series.append(round(conv_val / kernel_norm, 2))
 
     # Hill response: h(a) = a^s / (k^s + a^s)

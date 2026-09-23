@@ -372,6 +372,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_analytics.py
 │   │   │   ├── 🐍 test_contracts.py
+│   │   │   ├── 🐍 test_integration_loop.py
 │   │   │   ├── 🐍 test_llm_isolation.py
 │   │   │   ├── 🐍 test_quality.py
 │   │   │   ├── 🐍 test_sandbox_security.py
