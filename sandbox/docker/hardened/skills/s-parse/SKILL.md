@@ -5,8 +5,8 @@ description: Sentiment, review, and customer objection parser micro-tool for W_V
 
 # S_PARSE: Sentiment & Review Parser
 
-Authorized Worker: `W_VOICE` (Customer Voice)
-Permitted Operations: `parse_sentiment`, `cluster_objections`, `extract_feedback`
+Authorized Worker / Specialists: `VOICE-DISCOVERY`, `VOICE-THEMES`, `VOICE-SENTIMENT`, `VOICE-NEEDS`, `VOICE-JOURNEY`, `VOICE-QA` (Zero-sandbox coordinator `W_VOICE` is prohibited)
+Permitted Operations: `parse_sentiment`, `cluster_objections`, `extract_feedback`, `discover_feedback`, `extract_themes`, `extract_needs`, `map_journey`, `qa_audit`
 Core Tool: NLP classifier / sentiment & objection parser
 
 ## Execution Contract

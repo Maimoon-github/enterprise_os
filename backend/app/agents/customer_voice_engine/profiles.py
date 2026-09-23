@@ -215,3 +215,76 @@ def create_voice_llm_client(
         agent_identity=f"{tenant_prefix}w_voice.{role_name}.{unique_instance_id}",
         model_identity=profile.model_id,
     )
+
+
+async def dispatch_voice_specialist_attempt(
+    sandbox_client: Any,
+    specialist_id: str,
+    tenant_id: str,
+    task_id: str,
+    step_id: str,
+    operation: str,
+    payload: dict[str, Any],
+    *,
+    egress_grant: Any = None,
+    attempt_id: str | None = None,
+) -> Any:
+    """Execute a specialist attempt with fresh SandboxIdentity and ephemeral lifecycle.
+
+    Enforces:
+    1. Zero-sandbox coordinator: W_VOICE cannot invoke sandbox.
+    2. Specialist authorization: Only the 6 authorized VOICE-* specialists.
+    3. Ephemeral fresh runtime per attempt: SandboxIdentity -> Mandate -> Invoke -> Teardown.
+    """
+    from app.core.exceptions import SandboxInvocationError
+    from app.schemas.governance import WorkerRole
+    from app.schemas.sandbox import (
+        NetworkPolicy as SandboxNetPolicy,
+        ResourceLimits,
+        SandboxCapability,
+        SandboxIdentity,
+        SandboxInvocationMandate,
+    )
+
+    if specialist_id in ("W_VOICE", "NONE", ""):
+        raise SandboxInvocationError(
+            "W_VOICE coordinator has zero sandbox authority; execution requires an authorized Voice specialist_id."
+        )
+
+    profile = get_voice_profile(specialist_id)
+    attempt = attempt_id or f"att-{uuid.uuid4().hex[:8]}"
+
+    identity = SandboxIdentity.generate(
+        tenant_id=tenant_id,
+        task_id=task_id,
+        step_id=step_id,
+        attempt_id=attempt,
+        engine_id="W_VOICE",
+        specialist_id=specialist_id,
+    )
+
+    req_network = (
+        SandboxNetPolicy.ALLOWLIST
+        if profile.network_policy == NetworkPolicy.ALLOWLIST
+        else SandboxNetPolicy.DISABLED
+    )
+
+    mandate = SandboxInvocationMandate(
+        task_id=task_id,
+        stage_attempt_id=attempt,
+        worker_role=WorkerRole.CUSTOMER_VOICE,
+        worker_id=specialist_id,
+        tenant_id=tenant_id,
+        capability=SandboxCapability.PARSE,
+        specialist_id=specialist_id,
+        specialist_agent=specialist_id,
+        operation=operation,
+        payload=payload,
+        allowed_tools=list(profile.allowed_tools),
+        network_policy=req_network,
+        egress_grant=egress_grant,
+        resource_limits=ResourceLimits(timeout_seconds=max(1, profile.timeout_ms // 1000)),
+    )
+
+    return await sandbox_client.invoke(mandate)
+

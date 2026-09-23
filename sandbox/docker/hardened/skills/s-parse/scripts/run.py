@@ -6,7 +6,16 @@ import sys
 
 def run_s_parse(payload: dict) -> dict:
     task_id = payload.get("task_id", "unknown")
-    text = payload.get("feedback_text", payload.get("query", "Love the product quality but shipping took 10 days and support was slow."))
+    text = payload.get("feedback_text") or payload.get("query") or ""
+    if not text.strip():
+        return {
+            "status": "incomplete",
+            "task_id": task_id,
+            "sentiment_polarity": "0.00",
+            "primary_sentiment": "neutral",
+            "objections": json.dumps(["none_detected"]),
+            "feedback_summary": "Missing customer feedback evidence: cannot analyze empty input.",
+        }
 
     positive_words = {"love", "great", "excellent", "fast", "effective", "good", "best", "satisfied"}
     negative_words = {"slow", "expensive", "shipping", "broke", "delayed", "poor", "difficult", "bad"}

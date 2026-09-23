@@ -212,11 +212,48 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
             "cluster_objections",
             "extract_feedback",
             "analyze_customer_voice",
+            "acquire_source",
+            "normalize_records",
+            "de_identify",
+            "deduplicate",
+            "cluster_embeddings",
+            "extract_topics",
+            "compute_observed_share",
+            "score_aspect_polarity",
+            "detect_emotion",
+            "ground_spans",
+            "extract_needs",
+            "classify_objections",
+            "extract_vocabulary",
+            "compare_touchpoints",
+            "compare_segments",
+            "aggregate_metrics",
+            "evaluate_privacy",
+            "verify_grounding",
+            "check_bias",
+            "validate_schema",
             "default",
         ),
         network_policy=NetworkPolicy.DISABLED,
         default_timeout_seconds=120,
-        allowed_tools=("nlp_classifier", "sentiment_analyzer"),
+        allowed_tools=(
+            "nlp_classifier",
+            "sentiment_analyzer",
+            "source_fetcher",
+            "pii_redactor",
+            "dedupe_normalizer",
+            "embedding_clustering",
+            "frequency_analyzer",
+            "absa_classifier",
+            "span_grounder",
+            "objection_extractor",
+            "vocabulary_parser",
+            "journey_comparator",
+            "descriptive_aggregator",
+            "qa_validator",
+            "privacy_auditor",
+            "hash_verifier",
+        ),
     ),
     SandboxCapability.ATTR: CapabilityProfile(
         capability=SandboxCapability.ATTR,
@@ -228,6 +265,93 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
         allowed_tools=("attribution_engine", "decay_scorer"),
     ),
 }
+
+AUTHORIZED_VOICE_SPECIALISTS = frozenset(
+    {
+        "VOICE-DISCOVERY",
+        "VOICE-THEMES",
+        "VOICE-SENTIMENT",
+        "VOICE-NEEDS",
+        "VOICE-JOURNEY",
+        "VOICE-QA",
+    }
+)
+
+VOICE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
+    "VOICE-DISCOVERY": {
+        "allowed_capabilities": (SandboxCapability.PARSE,),
+        "allowed_operations": (
+            "acquire_source",
+            "normalize_records",
+            "de_identify",
+            "deduplicate",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.ALLOWLIST,
+        "allowed_tools": ("source_fetcher", "pii_redactor", "dedupe_normalizer"),
+    },
+    "VOICE-THEMES": {
+        "allowed_capabilities": (SandboxCapability.PARSE,),
+        "allowed_operations": (
+            "cluster_embeddings",
+            "extract_topics",
+            "compute_observed_share",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("embedding_clustering", "frequency_analyzer"),
+    },
+    "VOICE-SENTIMENT": {
+        "allowed_capabilities": (SandboxCapability.PARSE,),
+        "allowed_operations": (
+            "score_aspect_polarity",
+            "detect_emotion",
+            "ground_spans",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("absa_classifier", "span_grounder"),
+    },
+    "VOICE-NEEDS": {
+        "allowed_capabilities": (SandboxCapability.PARSE,),
+        "allowed_operations": (
+            "extract_needs",
+            "classify_objections",
+            "extract_vocabulary",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("objection_extractor", "vocabulary_parser"),
+    },
+    "VOICE-JOURNEY": {
+        "allowed_capabilities": (SandboxCapability.PARSE,),
+        "allowed_operations": (
+            "compare_touchpoints",
+            "compare_segments",
+            "aggregate_metrics",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("journey_comparator", "descriptive_aggregator"),
+    },
+    "VOICE-QA": {
+        "allowed_capabilities": (SandboxCapability.PARSE,),
+        "allowed_operations": (
+            "evaluate_privacy",
+            "verify_grounding",
+            "check_bias",
+            "validate_schema",
+            "default",
+        ),
+        "network_policy": NetworkPolicy.DISABLED,
+        "allowed_tools": ("qa_validator", "privacy_auditor", "hash_verifier"),
+    },
+}
+
+for key, val in list(VOICE_SPECIALIST_POLICIES.items()):
+    short_key = key.replace("VOICE-", "").lower()
+    VOICE_SPECIALIST_POLICIES[short_key] = val
+    VOICE_SPECIALIST_POLICIES[f"w_voice.{short_key}"] = val
 
 AUTHORIZED_CREATIVE_SPECIALISTS = frozenset(
     {
@@ -899,9 +1023,16 @@ def validate_capability_access(
     # 4. Customer Voice Specialist Context Enforcement & Zero-Sandbox Coordinator Boundary
     is_voice = (
         worker_id == "W_VOICE"
+        or parsed_role == WorkerRole.CUSTOMER_VOICE
         or (
             specialist_id is not None
-            and (specialist_id.startswith("VOICE-") or specialist_id in ("W_VOICE", "NONE"))
+            and (
+                specialist_id.startswith("VOICE-")
+                or specialist_id.startswith("w_voice.")
+                or specialist_id in ("W_VOICE", "NONE")
+                or specialist_id in AUTHORIZED_VOICE_SPECIALISTS
+                or specialist_id in VOICE_SPECIALIST_POLICIES
+            )
         )
     )
 
@@ -912,6 +1043,74 @@ def validate_capability_access(
         ):
             raise SandboxInvocationError(
                 "W_VOICE coordinator has zero sandbox authority; execution requires an authorized Voice specialist_id."
+            )
+
+        if specialist_id is not None and specialist_id != "S_PARSE":
+            if specialist_id not in AUTHORIZED_VOICE_SPECIALISTS and specialist_id not in VOICE_SPECIALIST_POLICIES:
+                raise SandboxInvocationError(
+                    f"Unauthorized or unknown Customer Voice specialist: '{specialist_id}'. Fail closed."
+                )
+
+            spec_policy = VOICE_SPECIALIST_POLICIES[specialist_id]
+            if capability not in spec_policy["allowed_capabilities"]:
+                raise SandboxInvocationError(
+                    f"Specialist '{specialist_id}' is not authorized for capability '{capability.value}'."
+                )
+
+            if operation not in spec_policy["allowed_operations"]:
+                raise SandboxInvocationError(
+                    f"Operation '{operation}' is not permitted for Customer Voice specialist '{specialist_id}'. "
+                    f"Permitted operations: {spec_policy['allowed_operations']}"
+                )
+
+            req_net = (
+                NetworkPolicy(requested_network)
+                if isinstance(requested_network, str)
+                else requested_network
+            )
+
+            if req_net != NetworkPolicy.DISABLED:
+                if spec_policy["network_policy"] == NetworkPolicy.DISABLED:
+                    raise SandboxInvocationError(
+                        f"Network access denied: Customer Voice specialist '{specialist_id}' is restricted to DENY_ALL (disabled) network policy."
+                    )
+                if req_net != NetworkPolicy.ALLOWLIST:
+                    raise SandboxInvocationError(
+                        f"Customer Voice specialist '{specialist_id}' only permits explicit allowlist egress (requested: '{req_net.value}')."
+                    )
+                if egress_grant is None:
+                    raise SandboxInvocationError(
+                        f"Network access denied: Customer Voice specialist '{specialist_id}' requested network without an authorized SandboxEgressGrant."
+                    )
+                if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                    raise SandboxInvocationError(
+                        f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                    )
+            elif (
+                egress_grant is not None and spec_policy["network_policy"] == NetworkPolicy.DISABLED
+            ):
+                raise SandboxInvocationError(
+                    f"Egress grant cannot be attached to Customer Voice specialist '{specialist_id}' under DENY_ALL network policy."
+                )
+
+            if egress_grant is not None:
+                if egress_grant.is_expired():
+                    raise SandboxInvocationError(
+                        f"Egress grant '{egress_grant.grant_id}' has expired."
+                    )
+                if egress_grant.specialist_id and egress_grant.specialist_id != specialist_id:
+                    raise SandboxInvocationError(
+                        f"Egress grant specialist mismatch: grant issued for '{egress_grant.specialist_id}' cannot be used by '{specialist_id}'."
+                    )
+
+            return CapabilityProfile(
+                capability=capability,
+                specialist_name=f"{specialist_id} Specialist",
+                allowed_worker=WorkerRole.CUSTOMER_VOICE,
+                allowed_operations=spec_policy["allowed_operations"],
+                network_policy=spec_policy["network_policy"],
+                default_timeout_seconds=profile.default_timeout_seconds,
+                allowed_tools=spec_policy["allowed_tools"],
             )
 
     # 5. Standard worker role vs capability compatibility
@@ -1014,6 +1213,15 @@ def validate_tool_access(
         if requested_tool not in allowed_tools:
             raise SandboxInvocationError(
                 f"Tool '{requested_tool}' is not permitted for Competitor specialist '{specialist_id}'. "
+                f"Permitted tools: {allowed_tools}"
+            )
+        return
+
+    if specialist_id and specialist_id in VOICE_SPECIALIST_POLICIES:
+        allowed_tools = VOICE_SPECIALIST_POLICIES[specialist_id]["allowed_tools"]
+        if requested_tool not in allowed_tools:
+            raise SandboxInvocationError(
+                f"Tool '{requested_tool}' is not permitted for Customer Voice specialist '{specialist_id}'. "
                 f"Permitted tools: {allowed_tools}"
             )
         return

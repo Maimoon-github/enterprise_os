@@ -533,6 +533,15 @@ class SandboxClient:
                 or mandate.specialist_id in ("DISCOVERY", "APPRAISAL", "PRODUCT_LAB", "SAFETY", "CLAIMS", "REGULATORY", "S_VAL")
             ))
         )
+        is_voice = (
+            mandate.worker_role in (WorkerRole.CUSTOMER_VOICE, "W_VOICE", "customer_voice")
+            or mandate.worker_id == "W_VOICE"
+            or (mandate.specialist_id and (
+                mandate.specialist_id.startswith("VOICE-")
+                or mandate.specialist_id.startswith("w_voice.")
+                or mandate.specialist_id in ("W_VOICE", "S_PARSE")
+            ))
+        )
 
         if is_creative and (
             mandate.payload.get("simulate_aio_unavailable")
@@ -543,6 +552,14 @@ class SandboxClient:
             )
 
         if is_prod_evidence and (
+            mandate.payload.get("simulate_aio_unavailable")
+            or mandate.payload.get("simulate_aio_failure")
+        ):
+            raise SandboxInvocationError(
+                f"AIO sandbox is unavailable for {mandate.specialist_id or mandate.capability.value} specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
+            )
+
+        if is_voice and (
             mandate.payload.get("simulate_aio_unavailable")
             or mandate.payload.get("simulate_aio_failure")
         ):
@@ -740,6 +757,80 @@ class SandboxClient:
                         "threat_level": "medium",
                     }
 
+            # 5. S_PARSE execution via mounted skill in remote AIO sandbox
+            elif mandate.capability == SandboxCapability.PARSE:
+                if not (
+                    hasattr(remote_client, "file")
+                    and (hasattr(remote_client.file, "write_file") or hasattr(remote_client.file, "write"))
+                    and hasattr(remote_client, "shell")
+                    and hasattr(remote_client.shell, "exec_command")
+                ):
+                    raise SandboxInvocationError(
+                        "Configured AIO sandbox does not expose required file/shell interfaces for S_PARSE."
+                    )
+
+                workspace_dir = f"/workspace/{mandate.execution_id}"
+                input_path = f"{workspace_dir}/input.json"
+                output_path = f"{workspace_dir}/output.json"
+
+                try:
+                    mkdir_res = remote_client.shell.exec_command(command=f"mkdir -p {workspace_dir}")
+                except TypeError:
+                    mkdir_res = remote_client.shell.exec_command(f"mkdir -p {workspace_dir}")
+                mkdir_code = getattr(mkdir_res, "exit_code", 0)
+                if mkdir_code not in (0, None):
+                    stderr = getattr(mkdir_res, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"Failed to create execution workspace directory {workspace_dir} (exit code {mkdir_code}): {stderr}"
+                    )
+
+                write_fn = getattr(remote_client.file, "write_file", None) or getattr(remote_client.file, "write", None)
+                if not callable(write_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable write_file method.")
+                payload_json = json.dumps(mandate.payload, ensure_ascii=False)
+                try:
+                    write_fn(file=input_path, content=payload_json)
+                except TypeError:
+                    write_fn(input_path, payload_json)
+
+                command = (
+                    "python /home/gem/skills/s-parse/scripts/run.py "
+                    f"< {input_path} > {output_path}"
+                )
+                try:
+                    response = remote_client.shell.exec_command(command=command)
+                except TypeError:
+                    response = remote_client.shell.exec_command(command)
+                exit_code = getattr(response, "exit_code", 0)
+                if exit_code not in (0, None):
+                    stderr = getattr(response, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"S_PARSE remote execution failed with exit code {exit_code}: {stderr}"
+                    )
+
+                read_fn = getattr(remote_client.file, "read_file", None) or getattr(remote_client.file, "read", None)
+                if not callable(read_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable read_file method.")
+                try:
+                    output = read_fn(file=output_path)
+                except TypeError:
+                    output = read_fn(output_path)
+                raw_content = getattr(getattr(output, "data", output), "content", output)
+                if not isinstance(raw_content, str):
+                    raw_content = str(raw_content)
+
+                try:
+                    parsed = json.loads(raw_content)
+                except Exception as parse_err:
+                    raise SandboxInvocationError(
+                        f"Failed to parse S_PARSE structured output from {output_path}: {parse_err}"
+                    ) from parse_err
+
+                if not isinstance(parsed, dict):
+                    raise SandboxInvocationError("S_PARSE returned a non-object payload.")
+
+                return parsed
+
             elif remote_configured:
                 raise SandboxInvocationError(
                     f"Remote sandbox does not support execution for capability '{mandate.capability.value}'."
@@ -756,6 +847,15 @@ class SandboxClient:
             )
 
         if is_prod_evidence and (remote_configured or mandate.payload.get("require_aio", False)):
+            raise SandboxInvocationError(
+                f"AIO sandbox is unavailable for {mandate.specialist_id or mandate.capability.value} execution. Backend-process fallback is strictly prohibited (fail-closed)."
+            )
+
+        if is_voice and (
+            remote_configured
+            or mandate.payload.get("require_aio", False)
+            or (self._settings and getattr(self._settings, "environment", "") == "production")
+        ):
             raise SandboxInvocationError(
                 f"AIO sandbox is unavailable for {mandate.specialist_id or mandate.capability.value} execution. Backend-process fallback is strictly prohibited (fail-closed)."
             )
