@@ -143,6 +143,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   └── 🐍 development.py
 │   │   │   ├── 📁 learning_performance_engine/
 │   │   │   │   ├── 📁 subagents/
+│   │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   │   ├── 🐍 attribution.py
 │   │   │   │   │   ├── 🐍 decay.py
 │   │   │   │   │   ├── 🐍 fatigue.py
@@ -213,6 +214,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 client.py
 │   │   │   │   ├── 🐍 micro_tools.py
 │   │   │   │   ├── 🐍 s_alloc_core.py
+│   │   │   │   ├── 🐍 s_attr_core.py
 │   │   │   │   ├── 🐍 s_copy_core.py
 │   │   │   │   ├── 🐍 s_parse_core.py
 │   │   │   │   ├── 🐍 s_val_core.py
@@ -370,7 +372,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_contracts.py
 │   │   │   ├── 🐍 test_llm_isolation.py
-│   │   │   └── 🐍 test_sandbox_security.py
+│   │   │   ├── 🐍 test_sandbox_security.py
+│   │   │   └── 🐍 test_telemetry.py
 │   │   ├── 📁 product_evidence_engine/
 │   │   │   ├── 📁 fixtures/
 │   │   │   │   └── ⚙️ evidence_cases.json

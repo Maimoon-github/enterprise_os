@@ -3064,6 +3064,24 @@ def execute_s_attr(payload: dict[str, Any]) -> dict[str, str]:
     """
     task_id = str(payload.get("task_id", "unknown"))
     tenant_id = str(payload.get("tenant_id", "default"))
+
+    operation = str(payload.get("operation", "default"))
+    if operation in ("validate_telemetry", "normalize_telemetry", "summarize_quality"):
+        from app.integrations.sandbox.s_attr_core import validate_and_normalize_telemetry
+        res = validate_and_normalize_telemetry(payload)
+        return {
+            "status": str(res.get("status", "complete")),
+            "task_id": str(res.get("task_id", task_id)),
+            "tenant_id": str(res.get("tenant_id", tenant_id)),
+            "artifact_id": str(res.get("artifact_id", "")),
+            "dataset_hash": str(res.get("dataset_hash", "")),
+            "manifest": json.dumps(res.get("manifest", {})),
+            "quarantined_count": str(res.get("quarantined_count", 0)),
+            "row_count": str(res.get("row_count", 0)),
+            "error": str(res.get("error", "")),
+            "error_category": str(res.get("error_category", "")),
+        }
+
     model_type = str(payload.get("model_type", "linear")).lower()
 
     # Valid supported attribution models
