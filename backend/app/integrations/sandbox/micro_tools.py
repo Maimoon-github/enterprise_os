@@ -3082,6 +3082,22 @@ def execute_s_attr(payload: dict[str, Any]) -> dict[str, str]:
             "error_category": str(res.get("error_category", "")),
         }
 
+    if operation in ("estimate_attribution", "calculate_roas"):
+        from app.integrations.sandbox.s_attr_core import compute_attribution_and_roas
+        return compute_attribution_and_roas(payload)
+
+    if operation in ("validate_experiment", "estimate_lift", "propose_calibration"):
+        from app.integrations.sandbox.s_attr_core import compute_incrementality_lift
+        return compute_incrementality_lift(payload)
+
+    if operation in ("analyze_wearout", "analyze_saturation", "compute_creative_fatigue"):
+        from app.integrations.sandbox.s_attr_core import compute_creative_fatigue
+        return compute_creative_fatigue(payload)
+
+    if operation in ("estimate_adstock", "estimate_half_life", "diagnose_decay", "compute_lag_and_decay"):
+        from app.integrations.sandbox.s_attr_core import compute_lag_and_decay
+        return compute_lag_and_decay(payload)
+
     model_type = str(payload.get("model_type", "linear")).lower()
 
     # Valid supported attribution models
