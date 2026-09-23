@@ -56,6 +56,7 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         needs_agent: Any = None,
         journey_agent: Any = None,
         qa_agent: Any = None,
+        provenance_recorder: Any = None,
     ) -> None:
         if sandbox_client is not None:
             raise PolicyViolationError(
@@ -68,6 +69,7 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         self.needs_agent = needs_agent or VoiceNeedsAgent()
         self.journey_agent = journey_agent or VoiceJourneyAgent()
         self.qa_agent = qa_agent or VoiceQualityAgent()
+        self.provenance_recorder = provenance_recorder
 
     @property
     def specialists(self) -> dict[str, Any]:
@@ -289,12 +291,87 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             corpus_hash=corpus_hash,
         )
 
+        # Step 3: Execute VOICE-JOURNEY descriptive comparisons
+        journey_result = await self.journey_agent.execute(
+            task=task_contract,
+            records=sanitized_records,
+            evidence_spans=evidence_spans,
+            themes_findings=themes_result.findings,
+            sentiment_findings=sentiment_result.findings,
+            needs_findings=needs_result.findings,
+            corpus_hash=corpus_hash,
+            segments=context.get("segments"),
+            time_interval=context.get("time_interval"),
+        )
+
+        # Step 4: Execute VOICE-QA independent evaluation
+        qa_result = await self.qa_agent.execute(
+            task=task_contract,
+            records=sanitized_records,
+            evidence_spans=evidence_spans,
+            topics=themes_result.findings,
+            aspect_sentiment=sentiment_result.findings,
+            needs_and_objections=needs_result.findings,
+            journey_comparisons=journey_result.findings,
+            corpus_hash=corpus_hash,
+        )
+
+        qa_report = qa_result.qa_report
+
+        # Synthesis-only-after-PASS Gate: reject candidate outputs if QA failed or blocked
+        if not qa_report or qa_report.status != "PASS":
+            verdict = qa_report.status if qa_report else "BLOCK"
+            block_reasons = qa_report.block_reasons if qa_report else ["QA evaluation failed or missing report."]
+            return EvidenceEnvelope(
+                task_id=grant.task_id,
+                worker_role=grant.worker_role,
+                confidence=ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0),
+                evidence=[f"Customer Voice QA evaluation returned {verdict}: {'; '.join(block_reasons)}"],
+                payload={
+                    "status": verdict.lower(),
+                    "qa_verdict": verdict,
+                    "reasons": json.dumps(block_reasons),
+                    "qa_report": qa_report.model_dump_json() if qa_report else "{}",
+                },
+                findings=qa_report.findings if qa_report else ["QA evaluation rejected candidate."],
+                generated_artifacts=[],
+                supporting_evidence=[],
+                provenance={
+                    "agent": grant.worker_role.value if grant.worker_role else "W_VOICE",
+                    "capability": "NONE",
+                    "task_id": grant.task_id,
+                    "status": verdict.lower(),
+                    "qa_status": verdict,
+                },
+                proposed_state_changes={
+                    "status": "blocked" if verdict == "BLOCK" else "needs_revision",
+                },
+                unresolved_risks_or_assumptions=block_reasons,
+            )
+
+        # Step 5: Final Synthesis by W_VOICE
+        from app.integrations.sandbox.s_parse_core import build_customer_voice_w3c_prov
+
+        w3c_prov = build_customer_voice_w3c_prov(
+            task_id=grant.task_id,
+            tenant_id=task_contract.tenant_id,
+            corpus_hash=corpus_hash,
+            topics_hash=themes_result.output_hash,
+            sentiment_hash=sentiment_result.output_hash,
+            needs_hash=needs_result.output_hash,
+            journey_hash=journey_result.output_hash,
+            qa_hash=qa_result.output_hash,
+            payload_hash=f"prov-{grant.task_id[:8]}",
+        )
+
         findings: list[str] = [
             f"Customer Voice Analysis: {len(sanitized_records)} records de-identified and analyzed.",
             f"Corpus Integrity Hash: {corpus_hash}",
             f"Themes Discovered: {len(themes_result.findings)} topic clusters.",
             f"Aspect Sentiment: {len(sentiment_result.findings)} aspects evaluated.",
             f"Needs & Objections: {len(needs_result.findings)} findings extracted.",
+            f"Journey Comparisons: {len(journey_result.findings)} descriptive comparisons.",
+            f"QA Verdict: {qa_report.status} (PII Check: {qa_report.residual_pii_check}, Evidence Traceability: {qa_report.evidence_traceability_check}).",
         ]
         risks: list[str] = []
         if reasoning_output:
@@ -308,6 +385,8 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             *themes_result.artifacts,
             *sentiment_result.artifacts,
             *needs_result.artifacts,
+            *journey_result.artifacts,
+            *qa_result.artifacts,
         ]
 
         provenance: dict[str, Any] = {
@@ -316,6 +395,8 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             "task_id": grant.task_id,
             "status": "completed",
             "workflow_stage": VoiceWorkflowStage.SYNTHESIS.value,
+            "qa_status": qa_report.status,
+            "w3c_prov": w3c_prov,
         }
         if llm_metadata:
             provenance.update({
@@ -327,6 +408,16 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
                 "total_tokens": str(llm_metadata.get("total_tokens", 0)),
             })
 
+        if self.provenance_recorder is not None:
+            await self.provenance_recorder.record(
+                tenant_id=task_contract.tenant_id,
+                entity_id=f"payload:{grant.task_id}",
+                activity=f"activity:{grant.task_id}:synthesis",
+                agent=grant.worker_role.value if grant.worker_role else "W_VOICE",
+                metadata=provenance,
+                w3c_prov=w3c_prov,
+            )
+
         confidence = ConfidenceInterval(point_estimate=0.85, lower_bound=0.75, upper_bound=0.95)
 
         voice_payload = CustomerVoicePayload(
@@ -337,6 +428,8 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             topics=themes_result.findings,
             aspect_sentiment=sentiment_result.findings,
             needs_and_objections=needs_result.findings,
+            journey_comparisons=journey_result.findings,
+            qa_report=qa_report,
             inference_scope="observed_feedback_only",
             population_representativeness="not_established",
             provenance=provenance,
@@ -350,6 +443,11 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             provenance=provenance,
         )
 
+        envelope_provenance = {
+            k: (json.dumps(v, default=str) if isinstance(v, (dict, list)) else str(v))
+            for k, v in provenance.items()
+        }
+
         return EvidenceEnvelope(
             task_id=grant.task_id,
             worker_role=grant.worker_role,
@@ -362,16 +460,20 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
                 "themes_result": themes_result.model_dump_json(),
                 "sentiment_result": sentiment_result.model_dump_json(),
                 "needs_result": needs_result.model_dump_json(),
+                "journey_result": journey_result.model_dump_json(),
+                "qa_result": qa_result.model_dump_json(),
+                "qa_report": qa_report.model_dump_json(),
                 "total_items_analyzed": str(len(sanitized_records)),
                 "product_id": product_id,
                 "immutable_corpus_hash": corpus_hash,
                 "sanitized_records": json.dumps([r.model_dump() for r in sanitized_records], default=str),
                 "evidence_spans": json.dumps([s.model_dump() for s in evidence_spans], default=str),
+                "w3c_prov": json.dumps(w3c_prov, default=str),
             },
             findings=findings,
             generated_artifacts=artifacts,
             supporting_evidence=[f"items_count:{len(sanitized_records)}"],
-            provenance=provenance,
+            provenance=envelope_provenance,
             proposed_state_changes={
                 "status": "completed",
                 "capability": "NONE",

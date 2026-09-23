@@ -233,6 +233,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_analysis_specialists.py
 │   │   ├── 🐍 test_contracts.py
 │   │   ├── 🐍 test_discovery_sanitization.py
+│   │   ├── 🐍 test_journey_qa_synthesis.py
 │   │   ├── 🐍 test_profiles_and_llm_isolation.py
 │   │   └── 🐍 test_sandbox_security.py
 │   ├── 📁 development_engine/
