@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.agents.base import BoundedWorkerAgent
@@ -20,6 +20,13 @@ from app.schemas.agent_contracts import (
     LearningPromotionProposal,
     RoasMetric,
     TaskGrant,
+)
+from app.schemas.learning_performance import (
+    LearningDeltaCandidate,
+    LearningQAResult,
+    LearningUncertainty,
+    QADecision,
+    UncertaintyKind,
 )
 from app.schemas.sandbox import SandboxCapability
 
@@ -388,4 +395,52 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
             confidence=conf,
             data_quality_metadata=deliverable.data_quality.model_dump(mode="json"),
             proposing_agent="W_LEARN",
+        )
+
+    @staticmethod
+    def synthesize_learning_delta_candidate(
+        qa_result: LearningQAResult,
+        *,
+        tenant_id: str,
+        base_memory_version: str = "mem-base-v1",
+        brand_id: str | None = None,
+        scoped_metrics: dict[str, float] | None = None,
+        limitations: list[str] | None = None,
+        uncertainty: LearningUncertainty | None = None,
+        applicable_window_start: datetime | None = None,
+        applicable_window_end: datetime | None = None,
+    ) -> LearningDeltaCandidate | None:
+        """Synthesize candidate learning delta strictly bound to QA output.
+        
+        Rejects synthesis if QA did not emit PASS or if zero claims were approved.
+        """
+        if qa_result.decision != QADecision.PASS or not qa_result.accepted_claim_ids:
+            return None
+
+        now = datetime.now(UTC)
+        start = applicable_window_start or now
+        end = applicable_window_end or (now + timedelta(days=14))
+        unc = uncertainty or LearningUncertainty(
+            kind=UncertaintyKind.CONFIDENCE_INTERVAL,
+            lower_bound=0.7,
+            upper_bound=0.9,
+            level=0.95,
+        )
+
+        return LearningDeltaCandidate(
+            candidate_id=f"cand-{uuid.uuid4().hex[:8]}",
+            idempotency_key=f"idem-{qa_result.evidence_bundle_digest[:16]}",
+            tenant_id=tenant_id,
+            brand_id=brand_id,
+            base_memory_version=base_memory_version,
+            accepted_claim_ids=list(qa_result.accepted_claim_ids),
+            scoped_metrics=scoped_metrics or {},
+            limitations=limitations or [],
+            uncertainty=unc,
+            qa_digest=qa_result.evidence_bundle_digest,
+            evidence_refs=qa_result.provenance_refs,
+            provenance_refs=[f"qa_attempt:{qa_result.qa_attempt_id}"],
+            applicable_window_start=start,
+            applicable_window_end=end,
+            status="candidate",
         )
