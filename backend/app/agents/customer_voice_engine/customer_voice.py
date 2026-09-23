@@ -23,13 +23,23 @@ from app.schemas.customer_voice import (
 from app.schemas.sandbox import SandboxCapability
 
 
+from app.agents.customer_voice_engine.subagents import (
+    VoiceDiscoveryAgent,
+    VoiceJourneyAgent,
+    VoiceNeedsAgent,
+    VoiceQualityAgent,
+    VoiceSentimentAgent,
+    VoiceThemesAgent,
+)
+
+
 class CustomerVoiceAgent(BoundedWorkerAgent):
     """W_VOICE Customer Voice Engine.
 
     Operates as a Layer-5 coordinator with zero direct sandbox capability.
     Validates bounded TaskGrant and context, enforces tenant isolation, rejects
     missing feedback without fabricating fallback data, and coordinates the
-    Customer Voice pipeline.
+    Customer Voice pipeline across six independent specialists.
     """
 
     capability = None
@@ -38,12 +48,36 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         self,
         sandbox_client: Any = None,
         llm_client: Any = None,
+        discovery_agent: Any = None,
+        themes_agent: Any = None,
+        sentiment_agent: Any = None,
+        needs_agent: Any = None,
+        journey_agent: Any = None,
+        qa_agent: Any = None,
     ) -> None:
         if sandbox_client is not None:
             raise PolicyViolationError(
                 "W_VOICE coordinator is zero-sandbox and must not receive a SandboxClient."
             )
         super().__init__(sandbox_client=None, llm_client=llm_client)
+        self.discovery_agent = discovery_agent or VoiceDiscoveryAgent()
+        self.themes_agent = themes_agent or VoiceThemesAgent()
+        self.sentiment_agent = sentiment_agent or VoiceSentimentAgent()
+        self.needs_agent = needs_agent or VoiceNeedsAgent()
+        self.journey_agent = journey_agent or VoiceJourneyAgent()
+        self.qa_agent = qa_agent or VoiceQualityAgent()
+
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Voice specialist sub-agents."""
+        return {
+            "VOICE-DISCOVERY": self.discovery_agent,
+            "VOICE-THEMES": self.themes_agent,
+            "VOICE-SENTIMENT": self.sentiment_agent,
+            "VOICE-NEEDS": self.needs_agent,
+            "VOICE-JOURNEY": self.journey_agent,
+            "VOICE-QA": self.qa_agent,
+        }
 
     def build_payload(self, grant: TaskGrant, context: dict[str, Any]) -> dict[str, str]:
         """Reject sandbox payload construction: W_VOICE has zero sandbox capability."""

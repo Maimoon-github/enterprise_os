@@ -28,8 +28,17 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 creative_content.py
 │   │   ├── 📁 customer_voice_engine/
+│   │   │   ├── 📁 subagents/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 discovery.py
+│   │   │   │   ├── 🐍 journey.py
+│   │   │   │   ├── 🐍 needs_objections.py
+│   │   │   │   ├── 🐍 quality.py
+│   │   │   │   ├── 🐍 sentiment.py
+│   │   │   │   └── 🐍 themes.py
 │   │   │   ├── 🐍 __init__.py
-│   │   │   └── 🐍 customer_voice.py
+│   │   │   ├── 🐍 customer_voice.py
+│   │   │   └── 🐍 profiles.py
 │   │   ├── 📁 development_engine/
 │   │   │   ├── 📁 subagents/
 │   │   │   │   ├── 🐍 __init__.py
@@ -107,6 +116,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   │   ├── 🐍 micro_tools.py
 │   │   │   ├── 🐍 s_alloc_core.py
 │   │   │   ├── 🐍 s_copy_core.py
+│   │   │   ├── 🐍 s_parse_core.py
 │   │   │   ├── 🐍 s_val_core.py
 │   │   │   └── 🐍 sandbox_policy.py
 │   │   ├── 📁 social/
@@ -162,6 +172,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 artifact.py
 │   │   ├── 🐍 cms.py
 │   │   ├── 🐍 competitor_intel.py
+│   │   ├── 🐍 customer_voice.py
 │   │   ├── 🐍 dispatch.py
 │   │   ├── 🐍 governance.py
 │   │   ├── 🐍 product_evidence.py
@@ -217,6 +228,10 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_sandbox_security.py
 │   │   ├── 🐍 test_search_intel.py
 │   │   └── 🐍 test_synthesis.py
+│   ├── 📁 customer_voice_engine/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_contracts.py
+│   │   └── 🐍 test_profiles_and_llm_isolation.py
 │   ├── 📁 development_engine/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_cms_agent.py

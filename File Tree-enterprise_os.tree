@@ -10,6 +10,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📁 Creative & Content Engine Research/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
+│   ├── 📁 Customer Voice Engine/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 Development Engine Research/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
@@ -112,8 +115,17 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 creative_content.py
 │   │   │   ├── 📁 customer_voice_engine/
+│   │   │   │   ├── 📁 subagents/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 discovery.py
+│   │   │   │   │   ├── 🐍 journey.py
+│   │   │   │   │   ├── 🐍 needs_objections.py
+│   │   │   │   │   ├── 🐍 quality.py
+│   │   │   │   │   ├── 🐍 sentiment.py
+│   │   │   │   │   └── 🐍 themes.py
 │   │   │   │   ├── 🐍 __init__.py
-│   │   │   │   └── 🐍 customer_voice.py
+│   │   │   │   ├── 🐍 customer_voice.py
+│   │   │   │   └── 🐍 profiles.py
 │   │   │   ├── 📁 development_engine/
 │   │   │   │   ├── 📁 subagents/
 │   │   │   │   │   ├── 🐍 __init__.py
@@ -191,6 +203,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 micro_tools.py
 │   │   │   │   ├── 🐍 s_alloc_core.py
 │   │   │   │   ├── 🐍 s_copy_core.py
+│   │   │   │   ├── 🐍 s_parse_core.py
 │   │   │   │   ├── 🐍 s_val_core.py
 │   │   │   │   └── 🐍 sandbox_policy.py
 │   │   │   ├── 📁 social/
@@ -246,6 +259,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 artifact.py
 │   │   │   ├── 🐍 cms.py
 │   │   │   ├── 🐍 competitor_intel.py
+│   │   │   ├── 🐍 customer_voice.py
 │   │   │   ├── 🐍 dispatch.py
 │   │   │   ├── 🐍 governance.py
 │   │   │   ├── 🐍 product_evidence.py
@@ -301,6 +315,10 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_sandbox_security.py
 │   │   │   ├── 🐍 test_search_intel.py
 │   │   │   └── 🐍 test_synthesis.py
+│   │   ├── 📁 customer_voice_engine/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 test_contracts.py
+│   │   │   └── 🐍 test_profiles_and_llm_isolation.py
 │   │   ├── 📁 development_engine/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_cms_agent.py
@@ -422,15 +440,15 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   │   ├── 📁 scripts/
 │   │   │   │   │   │   └── 🐍 run.py
 │   │   │   │   │   └── 📝 SKILL.md
+│   │   │   │   ├── 📁 s-comp/
+│   │   │   │   │   ├── 📁 scripts/
+│   │   │   │   │   │   └── 🐍 run.py
+│   │   │   │   │   └── 📝 SKILL.md
 │   │   │   │   ├── 📁 s-copy/
 │   │   │   │   │   ├── 📁 scripts/
 │   │   │   │   │   │   └── 🐍 run.py
 │   │   │   │   │   └── 📝 SKILL.md
 │   │   │   │   ├── 📁 s-parse/
-│   │   │   │   │   ├── 📁 scripts/
-│   │   │   │   │   │   └── 🐍 run.py
-│   │   │   │   │   └── 📝 SKILL.md
-│   │   │   │   ├── 📁 s-scrape/
 │   │   │   │   │   ├── 📁 scripts/
 │   │   │   │   │   │   └── 🐍 run.py
 │   │   │   │   │   └── 📝 SKILL.md

@@ -143,13 +143,15 @@ def test_evidence_span_strict_validation() -> None:
     assert span.end_offset == 35
 
     with pytest.raises(ValidationError):
-        EvidenceSpan(
-            record_id="rec-001",
-            sanitized_text_hash="hash",
-            start_offset=-1,  # Invalid
-            end_offset=10,
-            span_hash="hash",
-            source_ref="src",
+        EvidenceSpan.model_validate(
+            {
+                "record_id": "rec-001",
+                "sanitized_text_hash": "hash",
+                "start_offset": -1,  # Invalid
+                "end_offset": 10,
+                "span_hash": "hash",
+                "source_ref": "src",
+            }
         )
 
 

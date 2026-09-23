@@ -101,6 +101,8 @@ def _build_workers(
     llm_client: LlmClient | None = None,
     s_alloc_llm_client: LlmClient | None = None,
     creative_workflow: Any = None,
+    voice_specialists: dict[str, Any] | None = None,
+    voice_llm_client: LlmClient | None = None,
 ) -> dict[WorkerRole, BoundedWorkerAgent]:
     """Instantiate all seven bounded worker agents with sandbox adapter and optional LLM client."""
 
@@ -114,7 +116,13 @@ def _build_workers(
             continue
         if role == WorkerRole.CUSTOMER_VOICE:
             workers[role] = CustomerVoiceAgent(
-                llm_client=llm_client,
+                llm_client=voice_llm_client or llm_client,
+                discovery_agent=voice_specialists.get("discovery") if voice_specialists else None,
+                themes_agent=voice_specialists.get("themes") if voice_specialists else None,
+                sentiment_agent=voice_specialists.get("sentiment") if voice_specialists else None,
+                needs_agent=voice_specialists.get("needs") if voice_specialists else None,
+                journey_agent=voice_specialists.get("journey") if voice_specialists else None,
+                qa_agent=voice_specialists.get("qa") if voice_specialists else None,
             )
             continue
         assert get_capability_for_role(role) == agent_class.capability
@@ -170,6 +178,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     w_creat_llm = None
     sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=provenance_recorder)
 
+    # Wire 7 independent Customer Voice LLM identities: W_VOICE + 6 specialists
+    voice_llm_clients: list[LlmClient] = []
+    voice_specialists: dict[str, Any] = {}
+    w_voice_llm = None
+
     if settings.llm.provider != "unset":
         from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
         from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
@@ -207,11 +220,59 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             qa_agent=CreativeQualityAgent(llm_client=qa_llm),
         )
 
+        from app.agents.customer_voice_engine.profiles import (
+            COORDINATOR_PROFILE,
+            DISCOVERY_PROFILE,
+            JOURNEY_PROFILE,
+            NEEDS_PROFILE,
+            QA_PROFILE,
+            SENTIMENT_PROFILE,
+            THEMES_PROFILE,
+            create_voice_llm_client,
+        )
+        from app.agents.customer_voice_engine.subagents import (
+            VoiceDiscoveryAgent,
+            VoiceJourneyAgent,
+            VoiceNeedsAgent,
+            VoiceQualityAgent,
+            VoiceSentimentAgent,
+            VoiceThemesAgent,
+        )
+
+        w_voice_llm = create_voice_llm_client(COORDINATOR_PROFILE, base_settings=settings.llm)
+        disc_llm = create_voice_llm_client(DISCOVERY_PROFILE, base_settings=settings.llm)
+        themes_llm = create_voice_llm_client(THEMES_PROFILE, base_settings=settings.llm)
+        sent_llm = create_voice_llm_client(SENTIMENT_PROFILE, base_settings=settings.llm)
+        needs_llm = create_voice_llm_client(NEEDS_PROFILE, base_settings=settings.llm)
+        journey_llm = create_voice_llm_client(JOURNEY_PROFILE, base_settings=settings.llm)
+        qa_llm = create_voice_llm_client(QA_PROFILE, base_settings=settings.llm)
+
+        voice_llm_clients = [
+            w_voice_llm,
+            disc_llm,
+            themes_llm,
+            sent_llm,
+            needs_llm,
+            journey_llm,
+            qa_llm,
+        ]
+
+        voice_specialists = {
+            "discovery": VoiceDiscoveryAgent(llm_client=disc_llm, profile=DISCOVERY_PROFILE),
+            "themes": VoiceThemesAgent(llm_client=themes_llm, profile=THEMES_PROFILE),
+            "sentiment": VoiceSentimentAgent(llm_client=sent_llm, profile=SENTIMENT_PROFILE),
+            "needs": VoiceNeedsAgent(llm_client=needs_llm, profile=NEEDS_PROFILE),
+            "journey": VoiceJourneyAgent(llm_client=journey_llm, profile=JOURNEY_PROFILE),
+            "qa": VoiceQualityAgent(llm_client=qa_llm, profile=QA_PROFILE),
+        }
+
     workers = _build_workers(
         sandbox_client,
         llm_client=w_creat_llm or llm_client,
         s_alloc_llm_client=s_alloc_llm_client,
         creative_workflow=creative_workflow,
+        voice_specialists=voice_specialists,
+        voice_llm_client=w_voice_llm,
     )
 
     hitl_coordinator = HitlCoordinator()
@@ -305,6 +366,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.llm_client = llm_client
     app.state.creative_workflow = creative_workflow
     app.state.creative_llm_clients = creative_llm_clients
+    app.state.voice_llm_clients = voice_llm_clients
 
     try:
         yield
@@ -313,6 +375,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await llm_client.aclose()
         for c_client in creative_llm_clients:
             await c_client.aclose()
+        for v_client in voice_llm_clients:
+            await v_client.aclose()
         for ads_adapter in ads_adapters.values():
             await ads_adapter.aclose()
         for social_adapter in social_adapters.values():
