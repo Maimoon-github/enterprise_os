@@ -276,6 +276,10 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_strategy_integration.py
 │   │   ├── 🐍 test_telemetry_learning_loop.py
 │   │   └── 🐍 test_worker_sandbox_boundary.py
+│   ├── 📁 learning_performance_engine/
+│   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_contracts.py
+│   │   └── 🐍 test_llm_isolation.py
 │   ├── 📁 product_evidence_engine/
 │   │   ├── 📁 fixtures/
 │   │   │   └── ⚙️ evidence_cases.json
