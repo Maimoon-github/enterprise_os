@@ -52,8 +52,16 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 development.py
 │   │   ├── 📁 learning_performance_engine/
+│   │   │   ├── 📁 subagents/
+│   │   │   │   ├── 🐍 attribution.py
+│   │   │   │   ├── 🐍 decay.py
+│   │   │   │   ├── 🐍 fatigue.py
+│   │   │   │   ├── 🐍 incrementality.py
+│   │   │   │   ├── 🐍 quality.py
+│   │   │   │   └── 🐍 telemetry.py
 │   │   │   ├── 🐍 __init__.py
-│   │   │   └── 🐍 learning_performance.py
+│   │   │   ├── 🐍 learning_performance.py
+│   │   │   └── 🐍 profiles.py
 │   │   ├── 📁 product_evidence_engine/
 │   │   │   ├── 📁 subagents/
 │   │   │   │   ├── 🐍 __init__.py
@@ -175,6 +183,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 customer_voice.py
 │   │   ├── 🐍 dispatch.py
 │   │   ├── 🐍 governance.py
+│   │   ├── 🐍 learning_performance.py
 │   │   ├── 🐍 product_evidence.py
 │   │   ├── 🐍 provenance.py
 │   │   ├── 🐍 sandbox.py
