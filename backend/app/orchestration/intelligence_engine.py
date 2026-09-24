@@ -1011,6 +1011,17 @@ Boundaries:
         - The model output cannot authorize actions, mint tokens, or bypass CTS/PAB.
         - Execution requires explicit CTS task creation and bounded assemble_task_grant screening.
         """
+        # PAB enforcement before IE directive processing
+        if not directive.validate_tenant_consistency():
+            raise PolicyViolationError(
+                f"Directive tenant '{directive.tenant_id}' does not match scope tenant '{directive.scope.tenant_id}'."
+            )
+        decision = self._policy_evaluator.evaluate_delegation(
+            directive, directive.scope, directive.risk_ceiling
+        )
+        if not decision.allowed:
+            raise PolicyViolationError(decision.reason)
+
         workers = list(available_workers) if available_workers is not None else list(self._workers.keys())
         brand_id = (
             directive.scope.brand_ids[0]

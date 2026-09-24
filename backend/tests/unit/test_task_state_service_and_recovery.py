@@ -103,3 +103,44 @@ async def test_failure_handling_and_retry_exhaustion(fake_cts_service: TaskState
     resumed = await fake_cts_service.resume_task("tenant-1", "task-retry-1", target_status=TaskStatus.IN_PROGRESS)
     failed = await fake_cts_service.handle_task_failure("tenant-1", "task-retry-1", "Fatal memory error")
     assert failed.status == TaskStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_task_state_service_concurrency_conflict_rejected() -> None:
+    class _CasTaskRepo:
+        def __init__(self) -> None:
+            self.states: dict[str, CanonicalTaskState] = {}
+
+        async def compare_and_swap_state(
+            self, tenant_id: str, expected_version: int, state: CanonicalTaskState
+        ) -> bool:
+            current = self.states.get(state.task_id)
+            if current is not None and current.version != expected_version:
+                return False
+            self.states[state.task_id] = state
+            return True
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.states[task_id]
+
+    repo = _CasTaskRepo()
+    service = TaskStateService(repository=repo, state_machine=TaskStateMachine())
+
+    initial = CanonicalTaskState(
+        task_id="task-cas-1",
+        directive_id="dir-1",
+        worker_role=WorkerRole.STRATEGY,
+        status=TaskStatus.PENDING,
+        version=0,
+    )
+    repo.states[initial.task_id] = initial
+
+    # First transition advances version to 1
+    t1 = await service.transition("tenant-1", initial, TaskStatus.GRANTED)
+    assert t1.status == TaskStatus.GRANTED
+    assert t1.version == 1
+
+    # Stale transition using initial (version 0) fails closed with InvalidTransitionError
+    with pytest.raises(InvalidTransitionError, match="Concurrency conflict"):
+        await service.transition("tenant-1", initial, TaskStatus.HELD)
+

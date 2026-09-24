@@ -348,6 +348,35 @@ async def test_intelligence_engine_rejects_unlisted_worker() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_intelligence_engine_plan_directive_pab_rejection() -> None:
+    """Verify PAB precedes IE directive processing and fails closed before LLM invocation."""
+    ie = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=ContextAssembler(RagQueryDispatcher(None)),  # type: ignore[arg-type]
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=HitlCoordinator(),
+        mcp_host=None,  # type: ignore[arg-type]
+        provenance_recorder=None,  # type: ignore[arg-type]
+        workers={},
+        llm_client=None,  # Not even configured - PAB fails closed before LLM is reached
+    )
+
+    # Inconsistent tenant scope fails closed
+    inconsistent_directive = Directive(
+        directive_id="dir-bad-01",
+        tenant_id="tenant-alpha",
+        objective="Bad directive",
+        budget_cap=100.0,
+        scope=TenantScope(tenant_id="tenant-beta"),
+    )
+    with pytest.raises(PolicyViolationError, match="does not match"):
+        await ie.plan_directive(inconsistent_directive)
+
+
 # =============================================================================
 # 3. All Seven Worker Agents Bounded Domain Reasoning Tests
 # =============================================================================

@@ -78,7 +78,17 @@ class TaskStateService:
         updated = self._state_machine.transition(
             current_state, new_status, checkpoint_id=checkpoint_id, note=note
         )
-        await self._repository.save_state(tenant_id, updated)
+        if hasattr(self._repository, "compare_and_swap_state"):
+            success = await self._repository.compare_and_swap_state(
+                tenant_id, expected_version=current_state.version, state=updated
+            )
+            if not success:
+                raise InvalidTransitionError(
+                    f"Concurrency conflict: task '{current_state.task_id}' state was modified concurrently "
+                    f"(expected version {current_state.version})."
+                )
+        else:
+            await self._repository.save_state(tenant_id, updated)
         if self._provenance_recorder:
             await self._provenance_recorder.record(
                 tenant_id=tenant_id,
