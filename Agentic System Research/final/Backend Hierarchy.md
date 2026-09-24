@@ -123,7 +123,7 @@ backend/                                        — Python backend development r
 │   │   └── routes/                             — Human and external-event API endpoints
 │   │       ├── directives.py                   — Accepts owner objectives, scopes, budgets, and risk directives
 │   │       ├── tasks.py                        — Exposes canonical task-state and workflow status operations
-│   │       ├── approvals.py                    — Receives HITL approvals, rejections, and revisions
+│   │       ├── approvals.py                    — Receives HITL decisions (approve, reject, revise, hold)
 │   │       └── telemetry.py                    — Receives webhook, conversion, pixel, and event telemetry
 │   ├── core/                                   — Shared backend runtime concerns
 │   │   ├── settings.py                         — Runtime settings and external credential/reference configuration
@@ -158,7 +158,7 @@ backend/                                        — Python backend development r
 │   │   └── learning_performance.py             — W_LEARN: attribution, fatigue, decay, ROAS, and validated learning deltas
 │   ├── services/                               — Application services supporting orchestration
 │   │   ├── policy_engine.py                    — Produces and validates machine-readable policy and compliance envelopes
-│   │   ├── hitl.py                             — Coordinates mandatory human approval and revision decisions
+│   │   ├── hitl.py                             — Coordinates mandatory human decisions (approve, reject, revise, hold) and clearance revocation
 │   │   ├── task_state.py                       — Coordinates CTS persistence, checkpoints, locks, and exceptions
 │   │   ├── rag/                                — Governed Agentic RAG service
 │   │   │   ├── controller.py                   — Coordinates authorized retrieval and ingestion requests
@@ -175,7 +175,7 @@ backend/                                        — Python backend development r
 │   ├── mcp/                                    — MCP boundaries defined by the architecture
 │   │   ├── host.py                             — MCP host surface owned by the Intelligence Engine
 │   │   ├── data_gateway.py                     — Governed CRUD facade between Agentic RAG and systems of record
-│   │   └── outbound_gateway.py                 — Post-HITL signed, rate-limited actuation boundary
+│   │   └── outbound_gateway.py                 — Post-HITL signed, rate-limited actuation boundary with final TOCTOU screening
 │   ├── integrations/                           — Adapters for dependencies outside core domain logic
 │   │   ├── llm/                                — Provider-neutral AI model boundary
 │   │   │   └── client.py                       — Invokes the configured model/provider without coupling agents to a vendor
