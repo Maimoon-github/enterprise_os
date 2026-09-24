@@ -7,6 +7,7 @@ risk levels, and tenant scope are defined exactly once.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -87,6 +88,14 @@ class AutonomyTier(StrEnum):
         return self.rank > ceiling.rank
 
 
+class DecisionOutcome(StrEnum):
+    """Authoritative decision outcome for policy evaluation."""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    REVIEW = "review"
+
+
 class Directive(BaseModel):
     """An owner-issued objective, scope, budget, and risk directive."""
 
@@ -102,6 +111,10 @@ class Directive(BaseModel):
     prohibited_actions: list[str] = Field(default_factory=list)
     is_approved: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def validate_tenant_consistency(self) -> bool:
+        """Verify that directive scope belongs to directive tenant."""
+        return self.scope.tenant_id == self.tenant_id
 
 
 class VersionedPolicyEnvelope(BaseModel):
@@ -127,8 +140,21 @@ class VersionedPolicyEnvelope(BaseModel):
 class PolicyDecision(BaseModel):
     """The outcome of evaluating a requested action against policy."""
 
-    allowed: bool
-    reason: str
-    risk_level: RiskLevel
+    decision_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    decision: str = "allow"
+    allowed: bool = True
+    reason: str = ""
+    reason_code: str = "ALLOW"
+    risk_level: RiskLevel = RiskLevel.LOW
     autonomy_tier: AutonomyTier | None = None
+    tenant_id: str | None = None
+    policy_id: str | None = None
+    policy_version: str | None = None
+    policy_hash: str | None = None
+    action_hash: str | None = None
+    scope: TenantScope | None = None
+    spending_limit: float | None = None
+    obligations: list[str] = Field(default_factory=list)
     constraints: dict[str, str] = Field(default_factory=dict)
+    evaluated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None

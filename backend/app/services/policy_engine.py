@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
 import uuid
+from typing import Any, TypedDict
 
+from app.core.exceptions import PolicyViolationError
 from app.schemas.governance import (
     AutonomyTier,
     Directive,
@@ -112,7 +113,16 @@ class PolicyEngine:
     def register_envelope(self, envelope: VersionedPolicyEnvelope) -> None:
         """Register a versioned policy envelope into the policy engine."""
 
-        self._envelopes[(envelope.tenant_id, envelope.version)] = envelope
+        key = (envelope.tenant_id, envelope.version)
+        if key in self._envelopes:
+            existing = self._envelopes[key]
+            if existing.model_dump() != envelope.model_dump():
+                raise PolicyViolationError(
+                    f"Policy envelope for tenant '{envelope.tenant_id}' version '{envelope.version}' "
+                    "already exists and is immutable. Publish a new version instead."
+                )
+            return
+        self._envelopes[key] = envelope
 
     def get_envelope(self, tenant_id: str, version: str = "1.0.0") -> VersionedPolicyEnvelope | None:
         """Retrieve a registered versioned policy envelope."""

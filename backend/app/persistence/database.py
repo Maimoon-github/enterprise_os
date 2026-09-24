@@ -8,7 +8,7 @@ one schema-creation entrypoint instead of each opening its own connection.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from sqlalchemy import MetaData
@@ -61,7 +61,7 @@ class Database:
         await self._engine.dispose()
 
     @asynccontextmanager
-    async def session(self) -> AsyncIterator[AsyncSession]:
+    async def session(self) -> AsyncGenerator[AsyncSession, None]:
         """Yield a transactional session, committing on success and rolling back on error."""
 
         async with self._session_factory() as session:

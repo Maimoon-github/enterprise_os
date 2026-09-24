@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.exceptions import PolicyViolationError
 from app.persistence.database import metadata
 from app.persistence.repositories.base import BaseJsonRepository, standard_table
 from app.schemas.governance import Directive
@@ -23,4 +24,12 @@ class OperationalRepository(BaseJsonRepository[Directive]):
         )
 
     async def save_directive(self, directive: Directive) -> None:
+        """Persist a directive, enforcing that existing directive revisions cannot be modified."""
+        existing = await self.get(directive.directive_id)
+        if existing is not None:
+            if existing.model_dump(mode="json") != directive.model_dump(mode="json"):
+                raise PolicyViolationError(
+                    f"Directive '{directive.directive_id}' already exists and is immutable."
+                )
+            return
         await self.save(directive.directive_id, directive.tenant_id, directive)
