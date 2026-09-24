@@ -156,6 +156,10 @@ class OutboundGateway:
         # 2. Verify T24 Authoritative Human Clearance
         decision = self._hitl.require_approved(dispatch.action_preview_id)
         clearance = decision.clearance
+        if clearance is None:
+            raise PolicyViolationError(
+                f"Approved decision for '{dispatch.action_preview_id}' lacks signed clearance record."
+            )
         if clearance is not None:
             if not clearance.is_valid:
                 raise PolicyViolationError(f"Clearance for '{dispatch.action_preview_id}' is marked invalid or revoked.")
@@ -513,7 +517,20 @@ class OutboundGateway:
                     f"Dispatch '{dispatch.dispatch_id}' failed signature verification."
                 )
 
-        # 7. Rate Limit Enforcement
+        # 7. Task State Screening: Fail closed if task is non-executable
+        if self._task_state_service is not None and dispatch.task_id:
+            try:
+                task_state = await self._task_state_service.get_state(dispatch.task_id)
+                if task_state is not None and task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED):
+                    raise PolicyViolationError(
+                        f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
+                    )
+            except PolicyViolationError:
+                raise
+            except Exception:
+                pass
+
+        # 8. Rate Limit Enforcement
         limiter = self._target_rate_limiters.get(dispatch.channel, self._rate_limiter)
         if not limiter.allow():
             raise RateLimitExceededError(
@@ -568,13 +585,20 @@ class OutboundGateway:
         if self._task_state_service and dispatch.task_id:
             try:
                 task_state = await self._task_state_service.get_state(dispatch.task_id)
-                if task_state.status == TaskStatus.APPROVED:
-                    task_state = await self._task_state_service.transition(
-                        dispatch.tenant_id,
-                        task_state,
-                        TaskStatus.DISPATCHED,
-                        note=f"Dispatched directive {dispatch.dispatch_id} to channel {dispatch.channel} via MCP_ACT",
-                    )
+                if task_state is not None:
+                    if task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED):
+                        raise PolicyViolationError(
+                            f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
+                        )
+                    if task_state.status == TaskStatus.APPROVED:
+                        task_state = await self._task_state_service.transition(
+                            dispatch.tenant_id,
+                            task_state,
+                            TaskStatus.DISPATCHED,
+                            note=f"Dispatched directive {dispatch.dispatch_id} to channel {dispatch.channel} via MCP_ACT",
+                        )
+            except PolicyViolationError:
+                raise
             except Exception:
                 pass
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from app.core.exceptions import ApprovalRequiredError
@@ -10,7 +12,7 @@ from app.schemas.governance import RiskLevel
 from app.services.hitl import HitlCoordinator
 
 
-def _preview(kind: ActionPreviewKind, **kwargs: object) -> ActionPreview:
+def _preview(kind: ActionPreviewKind, **kwargs: Any) -> ActionPreview:
     return ActionPreview(
         preview_id="preview-1",
         task_id="task-1",
@@ -70,3 +72,28 @@ def test_deciding_on_unknown_preview_raises() -> None:
 
     with pytest.raises(ApprovalRequiredError):
         coordinator.decide("does-not-exist", approved=True, approver="[email protected]")
+
+
+def test_hitl_coordinator_blocks_dispatch_on_hold() -> None:
+    coordinator = HitlCoordinator()
+    coordinator.submit_for_approval(_preview(ActionPreviewKind.SPEND, spend_amount=250.0))
+
+    decision = coordinator.decide("preview-1", decision="HOLD", approver="[email protected]", approver_role="finance")
+    assert decision.approved is False
+    assert decision.clearance is not None
+    assert decision.clearance.is_valid is False
+
+    with pytest.raises(ApprovalRequiredError, match="strictly blocked"):
+        coordinator.require_approved("preview-1")
+
+
+def test_hitl_coordinator_invalidate_approval_blocks_dispatch() -> None:
+    coordinator = HitlCoordinator()
+    coordinator.submit_for_approval(_preview(ActionPreviewKind.CLAIM))
+
+    coordinator.decide("preview-1", decision="APPROVE", approver="[email protected]", approver_role="legal")
+    assert coordinator.require_approved("preview-1").approved is True
+
+    coordinator.invalidate_approval("preview-1", reason="Underlying strategy revised")
+    with pytest.raises(ApprovalRequiredError, match="strictly blocked"):
+        coordinator.require_approved("preview-1")

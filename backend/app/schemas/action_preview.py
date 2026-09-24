@@ -29,6 +29,7 @@ class ReviewStatus(StrEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     REVISION_REQUESTED = "REVISION_REQUESTED"
+    HELD = "HELD"
 
 
 class HumanDecisionType(StrEnum):
@@ -37,6 +38,7 @@ class HumanDecisionType(StrEnum):
     APPROVE = "APPROVE"
     REJECT = "REJECT"
     REQUEST_REVISION = "REQUEST_REVISION"
+    HOLD = "HOLD"
 
 
 class ReviewerRole(StrEnum):

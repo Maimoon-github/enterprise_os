@@ -738,6 +738,10 @@ class IntelligenceEngine:
                 updated_task = self._task_state_machine.transition(
                     task, TaskStatus.HELD, checkpoint_id=checkpoint_id, note=f"Revision requested by {approver}: {revision_notes or 'changes requested'}"
                 )
+            elif dec_str == "HOLD":
+                updated_task = self._task_state_machine.transition(
+                    task, TaskStatus.HELD, checkpoint_id=checkpoint_id, note=f"Hold requested by {approver}: {revision_notes or 'held by human review'}"
+                )
             decision_record.updated_task = updated_task
 
         # Provenance audit recording

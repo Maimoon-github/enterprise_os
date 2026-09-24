@@ -564,3 +564,61 @@ async def test_intelligence_engine_create_authorized_dispatch_handoff() -> None:
     gateway = OutboundGateway(hitl, val, ads_adapters={"meta": FakeAdsAdapter()})
     readiness = await gateway.validate_readiness(directive)
     assert readiness.is_ready is True
+
+
+@pytest.mark.asyncio
+async def test_gateway_blocks_non_executable_task_state() -> None:
+    """OutboundGateway strictly denies readiness and execution if CTS task is in HELD or REJECTED status."""
+    from app.schemas.task_state import CanonicalTaskState, TaskStatus, WorkerRole
+    from app.services.task_state import TaskStateService
+
+    gateway, hitl, preview, priv_key, pub_pem, fake_ads, val = _setup_approved_preview_and_gateway()
+
+    decision = hitl.get_decision(preview.preview_id)
+    assert decision is not None and decision.clearance is not None
+
+    class MockTaskStateRepo:
+        def __init__(self, state: CanonicalTaskState) -> None:
+            self.state = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def get_state(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.state = state
+
+    task_state = CanonicalTaskState(
+        task_id=preview.task_id,
+        directive_id="dir-test",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant-alpha",
+        status=TaskStatus.HELD,
+    )
+    repo = MockTaskStateRepo(task_state)
+    state_service = TaskStateService(repo)
+    gateway._task_state_service = state_service
+
+    dispatch = DispatchDirective(
+        dispatch_id="disp-task-held",
+        action_preview_id=preview.preview_id,
+        task_id=preview.task_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-1", "spend_amount": 25000.0},
+    )
+    sig = sign_payload(canonical_dispatch_bytes(dispatch), priv_key)
+    dispatch = dispatch.model_copy(update={"signature": sig})
+
+    with pytest.raises(PolicyViolationError, match="in non-executable state 'held'"):
+        await gateway.validate_readiness(dispatch)
+
+    with pytest.raises(PolicyViolationError, match="in non-executable state 'held'"):
+        await gateway.execute(dispatch)
+

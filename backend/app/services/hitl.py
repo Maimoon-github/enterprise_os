@@ -152,7 +152,7 @@ class HitlCoordinator:
                 try:
                     decision_type = HumanDecisionType(decision_str)
                 except ValueError:
-                    raise PolicyViolationError(f"Unsupported human decision type '{decision}'. Must be APPROVE, REJECT, or REQUEST_REVISION.")
+                    raise PolicyViolationError(f"Unsupported human decision type '{decision}'. Must be APPROVE, REJECT, REQUEST_REVISION, or HOLD.")
         elif approved is not None:
             decision_type = HumanDecisionType.APPROVE if approved else HumanDecisionType.REJECT
         else:
@@ -214,6 +214,8 @@ class HitlCoordinator:
             preview.review_status = ReviewStatus.REJECTED
         elif decision_type == HumanDecisionType.REQUEST_REVISION:
             preview.review_status = ReviewStatus.REVISION_REQUESTED
+        elif decision_type == HumanDecisionType.HOLD:
+            preview.review_status = ReviewStatus.HELD
 
         # 7. Construct Signed Clearance Record
         clearance = SignedApprovalClearance(
@@ -253,6 +255,19 @@ class HitlCoordinator:
 
     def get_decision(self, preview_id: str) -> ApprovalDecision | None:
         return self._decisions.get(preview_id)
+
+    def invalidate_approval(self, preview_id: str, reason: str = "") -> None:
+        """Revoke and invalidate an approved clearance due to mutation, expiry, or revocation."""
+        decision = self._decisions.get(preview_id)
+        if decision is not None:
+            decision.approved = False
+            if decision.clearance is not None:
+                decision.clearance.is_valid = False
+            rev_note = f"Revoked: {reason}" if reason else "Revoked"
+            if decision.revision_notes:
+                decision.revision_notes = f"{decision.revision_notes}; {rev_note}"
+            else:
+                decision.revision_notes = rev_note
 
     def require_approved(self, preview_id: str) -> ApprovalDecision:
         """Return the decision for ``preview_id``, failing closed if it was not approved."""
