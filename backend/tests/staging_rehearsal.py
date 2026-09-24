@@ -133,7 +133,7 @@ async def run_staging_rehearsal() -> dict[str, object]:
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
         WorkerRole.DEVELOPMENT: DevelopmentAgent(sandbox_client),
         WorkerRole.STRATEGY: StrategyAgent(sandbox_client),
-        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(sandbox_client),
+        WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(),
     }
 
     engine = IntelligenceEngine(
@@ -160,9 +160,9 @@ async def run_staging_rehearsal() -> dict[str, object]:
     )
 
     task_a = CanonicalTaskState(
-        task_id="task-rehearsal-creative",
+        task_id="task-rehearsal-dev",
         directive_id=directive_a.directive_id,
-        worker_role=WorkerRole.CREATIVE_CONTENT,
+        worker_role=WorkerRole.DEVELOPMENT,
         status=TaskStatus.PENDING,
         cts_state={"tenant_id": tenant_a},
         governance_approved=True,
