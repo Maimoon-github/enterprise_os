@@ -24,6 +24,7 @@ from app.orchestration.task_state_machine import TaskStateMachine
 from app.schemas.action_preview import ActionPreviewKind
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
+from app.schemas.task_state import CanonicalTaskState, TaskStatus
 from app.schemas.telemetry import TelemetryEventType
 from app.security.authorization_boundary import AuthorizationBoundary
 from app.security.cryptographic_validator import CryptographicValidator, sign_payload
@@ -313,3 +314,208 @@ async def test_governed_multi_worker_dag_pipeline(
     assert hitl_coordinator.is_pending(preview.preview_id)
     assert preview.diff is not None
     assert "LandingHeader" in preview.diff
+
+
+class _InMemoryTaskStateRepo:
+    def __init__(self) -> None:
+        self.states: dict[str, CanonicalTaskState] = {}
+
+    async def require(self, task_id: str) -> CanonicalTaskState:
+        return self.states[task_id]
+
+    async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+        self.states[state.task_id] = state
+
+    async def compare_and_swap_state(
+        self, tenant_id: str, expected_version: int, state: CanonicalTaskState
+    ) -> bool:
+        current = self.states.get(state.task_id)
+        if current is not None and current.version != expected_version:
+            return False
+        self.states[state.task_id] = state
+        return True
+
+
+@pytest.mark.asyncio
+async def test_governed_e2e_hold_checkpoint_recovery_flow(
+    sample_directive: Directive, ed25519_keypair
+) -> None:
+    """Executes full governed acceptance flow with hold -> checkpoint -> recovery.
+
+    Verifies that:
+    1. Active hold blocks grant assembly fail-closed.
+    2. Checkpoint recovery restores task state with incremented version and audit lineage.
+    3. Recovered worker evidence flows into ActionPreview and signed HITL approval.
+    4. Outbound dispatch actuates through MCP_ACT with sole authority.
+    5. Resulting CTS (COMPLETED), dispatch receipt, and hash-chained provenance agree.
+    """
+    from app.agents.creative_content import CreativeContentAgent
+    from app.core.exceptions import PolicyViolationError
+    from app.services.task_state import TaskStateService
+
+    private_key, public_pem = ed25519_keypair
+    tenant_id = sample_directive.tenant_id
+
+    # 1. Wire governance repositories and services
+    prov_repo = FakeProvenanceRepository()
+    provenance_recorder = ProvenanceRecorder(prov_repo)
+    task_repo = _InMemoryTaskStateRepo()
+    task_state_machine = TaskStateMachine()
+    task_state_service = TaskStateService(
+        repository=task_repo,
+        state_machine=task_state_machine,
+        provenance_recorder=provenance_recorder,
+    )
+
+    vector_repository = FakeVectorRepository()
+    vector_repository.seed(tenant_id=tenant_id, text="Verified brand copy guidelines")
+    rag_controller = RagController(
+        HybridRetriever(vector_repository), FreshnessPolicy(), SchemaValidator()
+    )
+    rag_dispatcher = RagQueryDispatcher(rag_controller)
+
+    hitl_coordinator = HitlCoordinator()
+    crypto_validator = CryptographicValidator(public_pem)
+    ads_adapter = _RecordingAdsAdapter()
+    outbound_gateway = OutboundGateway(
+        hitl_coordinator,
+        crypto_validator,
+        ads_adapters={"meta": ads_adapter},
+        task_state_service=task_state_service,
+        provenance_recorder=provenance_recorder,
+    )
+    data_gateway = DataGateway(vector_repository, AuthorizationBoundary(ScopeEvaluator()))
+    mcp_host = McpHost(data_gateway, outbound_gateway)
+
+    worker_role = WorkerRole.CREATIVE_CONTENT
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {worker_role: CreativeContentAgent()}
+
+    engine = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=task_state_machine,
+        context_assembler=ContextAssembler(rag_dispatcher, BrandPersonaResolver()),
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=hitl_coordinator,
+        mcp_host=mcp_host,
+        provenance_recorder=provenance_recorder,
+        workers=workers,
+    )
+
+    # 2. Initialize CanonicalTaskState
+    task_id = "task-e2e-recovery-1"
+    task = CanonicalTaskState(
+        task_id=task_id,
+        directive_id=sample_directive.directive_id,
+        worker_role=worker_role,
+        status=TaskStatus.PENDING,
+        cts_state={
+            "claims_dossier": {
+                "tenant_id": tenant_id,
+                "claims": [
+                    {
+                        "claim_id": "c-101",
+                        "text": "Clinically proven results",
+                        "validation_status": "SUPPORTED",
+                    }
+                ],
+            },
+            "strategy_plan": {
+                "tenant_id": tenant_id,
+                "channels": ["meta"],
+                "target_audience": "enterprise growth audience",
+            },
+        },
+    )
+    await task_state_service.save_state(tenant_id, task)
+
+    # Advance to GRANTED then IN_PROGRESS (creating checkpoints)
+    granted = await task_state_service.transition(
+        tenant_id, task, TaskStatus.GRANTED, note="Grant issued"
+    )
+    in_prog = await task_state_service.transition(
+        tenant_id, granted, TaskStatus.IN_PROGRESS, note="Execution started"
+    )
+    assert in_prog.status == TaskStatus.IN_PROGRESS
+    checkpoint_to_recover = in_prog.checkpoints[-1].checkpoint_id
+
+    # 3. Enter HELD state (e.g. governance/compliance review)
+    held = await task_state_service.hold_task(
+        tenant_id, task_id, reason="Compliance audit hold"
+    )
+    assert held.status == TaskStatus.HELD
+    assert held.hold_reason == "Compliance audit hold"
+
+    # Verify active hold fails closed against task delegation
+    with pytest.raises(PolicyViolationError, match="active hold in place"):
+        await engine.assemble_task_grant(sample_directive, held, query="brand copy")
+
+    # 4. Checkpoint Recovery: Authoritatively restore task state from checkpoint
+    recovered = await task_state_service.recover_task_checkpoint(
+        tenant_id, task_id, checkpoint_to_recover
+    )
+    assert recovered.status == TaskStatus.IN_PROGRESS
+    assert recovered.hold_reason is None
+    assert recovered.version > held.version
+
+    # 5. Worker execution after recovery generates evidence envelope
+    envelope = await engine.delegate_task(
+        sample_directive, recovered, query="brand copy"
+    )
+    assert envelope.task_id == task_id
+    assert envelope.confidence.point_estimate > 0.0
+    assert len(envelope.generated_artifacts) > 0
+
+    # 6. Advance task to AWAITING_APPROVAL and build ActionPreview
+    awaiting = await task_state_service.transition(
+        tenant_id, recovered, TaskStatus.AWAITING_APPROVAL, note="Evidence ready for HITL"
+    )
+    preview = await engine.build_preview(
+        [envelope], kind=ActionPreviewKind.COPY, risk_level=RiskLevel.LOW
+    )
+    assert preview.requires_approval is True
+    assert hitl_coordinator.is_pending(preview.preview_id)
+
+    # 7. HITL Decision & Signed Clearance
+    hitl_coordinator.decide(preview.preview_id, approved=True, approver="[email protected]")
+    approved_task = await task_state_service.transition(
+        tenant_id, awaiting, TaskStatus.APPROVED, note="Approved by human reviewer"
+    )
+    assert approved_task.status == TaskStatus.APPROVED
+
+    # 8. Outbound Dispatch: Signed actuation via OutboundGateway
+    dispatch = DispatchDirective(
+        dispatch_id="dispatch-rec-e2e-1",
+        task_id=task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by="[email protected]",
+        approved_at=datetime.now(UTC),
+        channel="meta",
+        tenant_id=tenant_id,
+        payload={"campaign_id": "meta-recovery-campaign-99"},
+    )
+    sig = sign_payload(canonical_dispatch_bytes(dispatch), private_key)
+    signed_dispatch = dispatch.model_copy(update={"signature": sig})
+
+    result = await outbound_gateway.execute(signed_dispatch)
+    assert result == {"status_code": "200", "channel": "meta"}
+    assert ads_adapter.applied == [{"campaign_id": "meta-recovery-campaign-99"}]
+
+    # 9. Verify resulting CTS, dispatch receipt, and provenance agree
+    final_task = await task_state_service.get_state(task_id)
+    assert final_task.status == TaskStatus.COMPLETED
+    assert final_task.cts_state.get("deployment") == result
+    assert final_task.task_id == signed_dispatch.task_id
+
+    # Provenance chain verification
+    assert await provenance_recorder.verify_chain(tenant_id) is True
+    audit_chain = await provenance_recorder.audit_chain(tenant_id)
+    activities = [r.activity for r in audit_chain]
+
+    assert "task_checkpoint_recovery" in activities
+    assert "worker_execution" in activities
+    assert "mcp_act_readiness_validation" in activities
+    assert "outbound_dispatch_intent_persisted" in activities
+    assert "outbound_meta_deployment_executed" in activities

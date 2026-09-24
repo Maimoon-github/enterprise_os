@@ -330,12 +330,19 @@ class IntelligenceEngine:
             completed_upstream_task_ids=completed_upstream_task_ids,
         )
 
-        granted_state = self._task_state_machine.transition(
-            task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
-        )
-        in_prog_state = self._task_state_machine.transition(
-            granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
-        )
+        if task.status == TaskStatus.PENDING:
+            granted_state = self._task_state_machine.transition(
+                task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
+            )
+            in_prog_state = self._task_state_machine.transition(
+                granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            )
+        elif task.status == TaskStatus.GRANTED:
+            in_prog_state = self._task_state_machine.transition(
+                task, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            )
+        else:
+            in_prog_state = task
 
         worker = self._workers[task.worker_role]
         envelope = await worker.run(grant, context)
@@ -434,12 +441,19 @@ class IntelligenceEngine:
             context=context,
         )
 
-        granted_state = self._task_state_machine.transition(
-            task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
-        )
-        in_prog_state = self._task_state_machine.transition(
-            granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
-        )
+        if task.status == TaskStatus.PENDING:
+            granted_state = self._task_state_machine.transition(
+                task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
+            )
+            in_prog_state = self._task_state_machine.transition(
+                granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            )
+        elif task.status == TaskStatus.GRANTED:
+            in_prog_state = self._task_state_machine.transition(
+                task, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            )
+        else:
+            in_prog_state = task
 
         worker = self._workers.get(WorkerRole.DEVELOPMENT)
         if worker is None:
