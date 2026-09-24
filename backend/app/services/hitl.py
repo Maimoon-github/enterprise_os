@@ -386,16 +386,26 @@ class HitlCoordinator:
         effective_val = validator or self._validator
 
         if signing_private_key is None and private_key_pem is not None:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
             from cryptography.hazmat.primitives.serialization import load_pem_private_key
-            signing_private_key = load_pem_private_key(private_key_pem.encode("ascii"), password=None)
+
+            loaded_key = load_pem_private_key(private_key_pem.encode("ascii"), password=None)
+            if not isinstance(loaded_key, Ed25519PrivateKey):
+                raise SignatureVerificationError("Signing private key must be Ed25519.")
+            signing_private_key = loaded_key
 
         if signing_private_key is None and signature is None:
             if not hasattr(self, "_server_signing_key"):
                 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
                 self._server_signing_key = Ed25519PrivateKey.generate()
             signing_private_key = self._server_signing_key
 
         if signing_private_key is not None:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+            if not isinstance(signing_private_key, Ed25519PrivateKey):
+                raise SignatureVerificationError("Signing private key must be Ed25519.")
             sig = sign_payload(canon_bytes, signing_private_key)
             token = token.model_copy(update={"signature": sig})
         elif signature is not None:

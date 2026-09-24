@@ -700,7 +700,16 @@ class OutboundGateway:
                         dispatch.payload, tenant_id=dispatch.tenant_id
                     )
 
-                applied_items = cms_raw.get("applied_items", [cms_raw])
+                raw_items = cms_raw.get("applied_items")
+                if isinstance(raw_items, list):
+                    applied_items: list[dict[str, Any]] = [
+                        item if isinstance(item, dict) else {"item": str(item)} for item in raw_items
+                    ]
+                elif isinstance(raw_items, dict):
+                    applied_items = [raw_items]
+                else:
+                    applied_items = [cms_raw]
+
                 applied_hashes = cms_raw.get("applied_hashes", [])
                 if not applied_hashes:
                     h = hashlib.sha256(json.dumps(dispatch.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
