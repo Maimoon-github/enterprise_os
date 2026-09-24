@@ -95,8 +95,51 @@ class TaskStateService:
                 entity_id=updated.task_id,
                 activity=f"task_transition_{new_status.value}",
                 agent="cts_state_machine",
+                metadata={
+                    "task_id": updated.task_id,
+                    "directive_id": updated.directive_id,
+                    "worker_role": updated.worker_role.value,
+                    "prior_status": current_state.status.value,
+                    "new_status": new_status.value,
+                    "prior_version": current_state.version,
+                    "new_version": updated.version,
+                    "checkpoint_id": checkpoint_id,
+                    "note": note,
+                },
             )
         return updated
+
+    async def recover_task_checkpoint(
+        self, tenant_id: str, task_id: str, checkpoint_id: str
+    ) -> CanonicalTaskState:
+        """Authoritatively restore task state from a historical checkpoint with CAS protection."""
+        state = await self.get_state(task_id)
+        restored = self._state_machine.restore_checkpoint(state, checkpoint_id)
+        if hasattr(self._repository, "compare_and_swap_state"):
+            success = await self._repository.compare_and_swap_state(
+                tenant_id, expected_version=state.version, state=restored
+            )
+            if not success:
+                raise InvalidTransitionError(
+                    f"Concurrency conflict during recovery: task '{task_id}' state was modified concurrently "
+                    f"(expected version {state.version})."
+                )
+        else:
+            await self._repository.save_state(tenant_id, restored)
+        if self._provenance_recorder:
+            await self._provenance_recorder.record(
+                tenant_id=tenant_id,
+                entity_id=task_id,
+                activity="task_checkpoint_recovery",
+                agent="cts_state_machine",
+                metadata={
+                    "checkpoint_id": checkpoint_id,
+                    "restored_status": restored.status.value,
+                    "prior_version": state.version,
+                    "new_version": restored.version,
+                },
+            )
+        return restored
 
     async def reserve_budget(
         self,

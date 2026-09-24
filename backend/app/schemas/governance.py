@@ -94,6 +94,7 @@ class DecisionOutcome(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     REVIEW = "review"
+    ESCALATE = "escalate"
 
 
 class Directive(BaseModel):

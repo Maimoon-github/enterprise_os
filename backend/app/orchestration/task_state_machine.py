@@ -186,3 +186,32 @@ class TaskStateMachine:
                 "failure_reason": note if new_status is TaskStatus.FAILED else state.failure_reason,
             }
         )
+
+    def restore_checkpoint(
+        self, state: CanonicalTaskState, checkpoint_id: str, new_checkpoint_id: str | None = None
+    ) -> CanonicalTaskState:
+        """Restore task status to a previously validated historical checkpoint."""
+        for cp in reversed(state.checkpoints):
+            if cp.checkpoint_id == checkpoint_id:
+                if cp.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                    raise InvalidTransitionError(
+                        f"Cannot restore task {state.task_id} to terminal checkpoint status '{cp.status.value}'."
+                    )
+                recovery_cp = TaskCheckpoint(
+                    checkpoint_id=new_checkpoint_id or f"recovery-{checkpoint_id}",
+                    task_id=state.task_id,
+                    status=cp.status,
+                    note=f"Authoritative recovery to checkpoint '{checkpoint_id}' (status='{cp.status.value}')",
+                )
+                return state.model_copy(
+                    update={
+                        "status": cp.status,
+                        "checkpoints": [*state.checkpoints, recovery_cp],
+                        "version": state.version + 1,
+                        "hold_reason": None,
+                        "failure_reason": None,
+                    }
+                )
+        raise InvalidTransitionError(
+            f"Checkpoint '{checkpoint_id}' not found in task '{state.task_id}' history."
+        )

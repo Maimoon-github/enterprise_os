@@ -402,3 +402,72 @@ async def test_atomic_budget_reservation_and_commitment(sample_task: CanonicalTa
     assert await service.commit_budget("acme", sample_task.task_id, 200.0) is True
     assert repo.task.cts_state["reserved_budget"] == 100.0
     assert repo.task.cts_state["committed_budget"] == 200.0
+
+
+def test_authorization_boundary_evaluate_outcomes_and_escalation(sample_tenant_scope: TenantScope) -> None:
+    from app.schemas.governance import DecisionOutcome
+
+    boundary = AuthorizationBoundary()
+    caller = CallerIdentity(
+        subject="caller-1",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.HIGH,
+    )
+
+    # Allow
+    dec_allow = boundary.evaluate(caller, requested_scope=sample_tenant_scope, requested_risk=RiskLevel.LOW)
+    assert dec_allow.outcome == DecisionOutcome.ALLOW
+    assert dec_allow.allowed is True
+
+    # Deny (risk exceeded)
+    dec_deny = boundary.evaluate(caller, requested_scope=sample_tenant_scope, requested_risk=RiskLevel.CRITICAL)
+    assert dec_deny.outcome == DecisionOutcome.DENY
+    assert dec_deny.allowed is False
+
+    # Escalate (never grants execution)
+    dec_esc = boundary.evaluate(
+        caller, requested_scope=sample_tenant_scope, requested_risk=RiskLevel.LOW, requires_escalation=True
+    )
+    assert dec_esc.outcome == DecisionOutcome.ESCALATE
+    assert dec_esc.allowed is False
+
+
+def test_authorization_boundary_enforces_lifetime_and_budget_bounds(sample_tenant_scope: TenantScope) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    boundary = AuthorizationBoundary()
+
+    # Expired caller fails closed
+    expired_caller = CallerIdentity(
+        subject="expired-caller",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.HIGH,
+        expires_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    with pytest.raises(AuthorizationError, match="expired"):
+        boundary.authorize(expired_caller, requested_scope=sample_tenant_scope, requested_risk=RiskLevel.LOW)
+
+    # Budget ceiling exceeded fails closed
+    budget_capped_caller = CallerIdentity(
+        subject="budget-caller",
+        tenant_scope=sample_tenant_scope,
+        risk_ceiling=RiskLevel.HIGH,
+        max_budget=500.0,
+    )
+    with pytest.raises(AuthorizationError, match="budget ceiling"):
+        boundary.authorize(
+            budget_capped_caller,
+            requested_scope=sample_tenant_scope,
+            requested_risk=RiskLevel.LOW,
+            requested_budget=1000.0,
+        )
+
+
+def test_policy_evaluator_escalate_decision(sample_directive: Directive) -> None:
+    evaluator = PolicyEvaluator()
+    decision = evaluator.evaluate_delegation(
+        sample_directive, sample_directive.scope, RiskLevel.LOW, requires_escalation=True
+    )
+    assert decision.allowed is False
+    assert decision.decision == "escalate"
+    assert decision.reason_code == "ESCALATE_REQUIRED"

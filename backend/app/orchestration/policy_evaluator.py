@@ -34,6 +34,7 @@ class PolicyEvaluator:
         requested_claim: str | None = None,
         requested_action: str | None = None,
         requires_review: bool = False,
+        requires_escalation: bool = False,
     ) -> PolicyDecision:
         """Return whether a worker delegation is permitted under ``directive``."""
 
@@ -126,6 +127,23 @@ class PolicyEvaluator:
             if requested_action
             else None
         )
+
+        if requires_escalation:
+            return PolicyDecision(
+                decision="escalate",
+                allowed=False,
+                reason="Delegation escalated to higher authority; execution held.",
+                reason_code="ESCALATE_REQUIRED",
+                risk_level=requested_risk,
+                autonomy_tier=requested_autonomy,
+                tenant_id=requested_scope.tenant_id,
+                policy_id=envelope.get("policy_id"),
+                policy_version=envelope.get("version"),
+                policy_hash=envelope_hash,
+                action_hash=action_hash,
+                scope=requested_scope,
+                spending_limit=directive.budget_cap,
+            )
 
         if requires_review:
             return PolicyDecision(

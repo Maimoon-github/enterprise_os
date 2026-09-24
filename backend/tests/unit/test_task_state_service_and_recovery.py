@@ -144,3 +144,92 @@ async def test_task_state_service_concurrency_conflict_rejected() -> None:
     with pytest.raises(InvalidTransitionError, match="Concurrency conflict"):
         await service.transition("tenant-1", initial, TaskStatus.HELD)
 
+
+@pytest.mark.asyncio
+async def test_task_state_service_recover_task_checkpoint() -> None:
+    from tests.conftest import FakeProvenanceRepository
+
+    class _CasTaskRepo:
+        def __init__(self) -> None:
+            self.states: dict[str, CanonicalTaskState] = {}
+
+        async def compare_and_swap_state(
+            self, tenant_id: str, expected_version: int, state: CanonicalTaskState
+        ) -> bool:
+            current = self.states.get(state.task_id)
+            if current is not None and current.version != expected_version:
+                return False
+            self.states[state.task_id] = state
+            return True
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.states[task_id]
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.states[state.task_id] = state
+
+    prov_repo = FakeProvenanceRepository()
+    recorder = ProvenanceRecorder(prov_repo)
+    repo = _CasTaskRepo()
+    service = TaskStateService(repository=repo, state_machine=TaskStateMachine(), provenance_recorder=recorder)
+
+    initial = CanonicalTaskState(
+        task_id="task-rec-1",
+        directive_id="dir-1",
+        worker_role=WorkerRole.CREATIVE_CONTENT,
+        status=TaskStatus.PENDING,
+        version=0,
+    )
+    repo.states[initial.task_id] = initial
+
+    granted = await service.transition("tenant-1", initial, TaskStatus.GRANTED, note="cp-1")
+    in_prog = await service.transition("tenant-1", granted, TaskStatus.IN_PROGRESS, note="cp-2")
+    held = await service.transition("tenant-1", in_prog, TaskStatus.HELD, note="cp-3")
+    assert held.status == TaskStatus.HELD
+    assert held.version == 3
+
+    # Recover to cp-2 (IN_PROGRESS)
+    target_cp_id = in_prog.checkpoints[-1].checkpoint_id
+    restored = await service.recover_task_checkpoint("tenant-1", "task-rec-1", target_cp_id)
+    assert restored.status == TaskStatus.IN_PROGRESS
+    assert restored.version == 4
+
+    # Verify provenance recorded
+    chain = await recorder.audit_chain("tenant-1")
+    assert any(r.activity == "task_checkpoint_recovery" for r in chain)
+
+
+@pytest.mark.asyncio
+async def test_task_state_service_audit_write_failure_blocks_transition() -> None:
+    class _FailingProvenanceRecorder:
+        async def record(self, *args, **kwargs) -> None:
+            raise RuntimeError("Audit ledger unavailable; storage disconnected")
+
+    class _SimpleRepo:
+        def __init__(self) -> None:
+            self.states: dict[str, CanonicalTaskState] = {}
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.states[state.task_id] = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.states[task_id]
+
+    service = TaskStateService(
+        repository=_SimpleRepo(),
+        state_machine=TaskStateMachine(),
+        provenance_recorder=_FailingProvenanceRecorder(),  # type: ignore[arg-type]
+    )
+
+    initial = CanonicalTaskState(
+        task_id="task-audit-fail",
+        directive_id="dir-1",
+        worker_role=WorkerRole.DEVELOPMENT,
+        status=TaskStatus.PENDING,
+    )
+
+    # Transition fails closed when audit writing fails
+    with pytest.raises(RuntimeError, match="Audit ledger unavailable"):
+        await service.transition("tenant-1", initial, TaskStatus.GRANTED)
+
+

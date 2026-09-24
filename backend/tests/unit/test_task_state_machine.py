@@ -170,3 +170,29 @@ def test_dag_scheduler_blocks_locked_and_unapproved_tasks() -> None:
 
     reasons_unapproved = scheduler.unresolved_reasons(task_unapproved, [task_normal, task_unapproved])
     assert any("governance authorization" in r.lower() for r in reasons_unapproved)
+
+
+def test_task_state_machine_restore_checkpoint(sample_task: CanonicalTaskState) -> None:
+    machine = TaskStateMachine()
+
+    # PENDING -> GRANTED -> IN_PROGRESS -> HELD
+    t_granted = machine.transition(sample_task, TaskStatus.GRANTED, checkpoint_id="cp-1")
+    t_in_prog = machine.transition(t_granted, TaskStatus.IN_PROGRESS, checkpoint_id="cp-2")
+    t_held = machine.transition(t_in_prog, TaskStatus.HELD, checkpoint_id="cp-3", note="Hold for audit")
+    assert t_held.status is TaskStatus.HELD
+    assert t_held.version == 3
+
+    # Restore to cp-2 (IN_PROGRESS)
+    restored = machine.restore_checkpoint(t_held, checkpoint_id="cp-2")
+    assert restored.status is TaskStatus.IN_PROGRESS
+    assert restored.version == 4
+    assert restored.hold_reason is None
+
+    # Rejection for non-existent checkpoint
+    with pytest.raises(InvalidTransitionError, match="not found"):
+        machine.restore_checkpoint(restored, checkpoint_id="cp-nonexistent")
+
+    # Rejection when restoring to terminal checkpoint status
+    t_failed = machine.transition(restored, TaskStatus.FAILED, checkpoint_id="cp-fail")
+    with pytest.raises(InvalidTransitionError, match="terminal checkpoint status"):
+        machine.restore_checkpoint(t_failed, checkpoint_id="cp-fail")
