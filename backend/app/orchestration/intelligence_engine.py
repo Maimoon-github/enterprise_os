@@ -19,9 +19,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agents.base import BoundedWorkerAgent
-from app.core.exceptions import PolicyViolationError
+from app.core.exceptions import ApprovalRequiredError, AuthorizationError, PolicyViolationError
 from app.integrations.llm.client import LlmClient, LlmResponseError
 from app.mcp.host import McpHost
+from app.security.authorization_boundary import AuthorizationBoundary, CallerIdentity
 from app.orchestration.context_assembly import ContextAssembler
 from app.orchestration.dag_scheduler import DagScheduler
 from app.orchestration.evidence_synthesis import EvidenceSynthesizer, SynthesizedEvidence
@@ -139,6 +140,7 @@ class IntelligenceEngine:
         provenance_recorder: ProvenanceRecorder,
         workers: dict[WorkerRole, BoundedWorkerAgent],
         llm_client: LlmClient | None = None,
+        authorization_boundary: AuthorizationBoundary | None = None,
     ) -> None:
         self._policy_evaluator = policy_evaluator
         self._dag_scheduler = dag_scheduler
@@ -151,6 +153,7 @@ class IntelligenceEngine:
         self._provenance_recorder = provenance_recorder
         self._workers = workers
         self._llm_client = llm_client
+        self._authorization_boundary = authorization_boundary or AuthorizationBoundary()
 
     def register_worker(self, role: WorkerRole, worker: BoundedWorkerAgent) -> None:
         """Register or replace a bounded domain worker in the Intelligence Engine."""
@@ -173,6 +176,7 @@ class IntelligenceEngine:
         token_budget: int = 10000,
         purpose: str = "",
         completed_upstream_task_ids: set[str] | None = None,
+        caller: CallerIdentity | None = None,
     ) -> tuple[TaskGrant, dict[str, Any]]:
         """Assemble a bounded, policy-screened, tenant/brand-scoped TaskGrant and context.
 
@@ -214,6 +218,18 @@ class IntelligenceEngine:
                 )
 
         # 2. Authority & Policy Validation
+        if caller is not None:
+            auth_dec = self._authorization_boundary.evaluate(
+                caller,
+                requested_scope=directive.scope,
+                requested_risk=directive.risk_ceiling,
+                requested_budget=directive.budget_cap,
+            )
+            if not auth_dec.allowed:
+                raise AuthorizationError(
+                    auth_dec.reason or "PAB authorization rejected task grant delegation."
+                )
+
         if directive.tenant_id != directive.scope.tenant_id:
             raise PolicyViolationError(
                 f"Directive tenant '{directive.tenant_id}' does not match scope tenant '{directive.scope.tenant_id}'."
@@ -783,6 +799,7 @@ class IntelligenceEngine:
         payload_data = payload or {}
         preview_hash = clearance.preview_content_hash if clearance else None
         clearance_id = clearance.clearance_id if clearance else None
+        policy_version = getattr(clearance, "policy_version", "1.0.0") if clearance else "1.0.0"
 
         directive = DispatchDirective(
             dispatch_id=dispatch_id,
@@ -798,6 +815,7 @@ class IntelligenceEngine:
             preview_content_hash=preview_hash,
             clearance_id=clearance_id,
             idempotency_key=idempotency_key or dispatch_id,
+            policy_version=policy_version,
             payload=payload_data,
         )
 
@@ -818,6 +836,7 @@ class IntelligenceEngine:
                 "channel": channel,
                 "preview_id": preview_id,
                 "clearance_id": clearance_id,
+                "policy_version": policy_version,
             },
         )
 
@@ -831,6 +850,15 @@ class IntelligenceEngine:
         task_state_service: Any | None = None,
     ) -> dict[str, Any]:
         """Execute an authorized post-HITL dispatch directive through the Outbound Actuation MCP Boundary."""
+        decision = self._hitl_coordinator.get_decision(dispatch.action_preview_id)
+        if decision is None or not decision.approved or (decision.clearance and not decision.clearance.is_valid):
+            raise ApprovalRequiredError(
+                f"Dispatch '{dispatch.dispatch_id}' blocked: approval for preview '{dispatch.action_preview_id}' is missing or invalid."
+            )
+        if decision.clearance and decision.clearance.expires_at and decision.clearance.expires_at < datetime.now(UTC):
+            raise ApprovalRequiredError(
+                f"Dispatch '{dispatch.dispatch_id}' blocked: approval clearance for preview '{dispatch.action_preview_id}' has expired."
+            )
         return await outbound_gateway.execute(dispatch)
 
 

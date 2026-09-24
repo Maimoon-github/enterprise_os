@@ -421,6 +421,162 @@ class ProvenanceRecorder:
             w3c_prov=w3c_bundle,
         )
 
+    def build_governed_execution_w3c_prov(
+        self,
+        *,
+        tenant_id: str,
+        activity_id: str,
+        activity_type: str,
+        agent_id: str,
+        agent_role: str,
+        entity_id: str,
+        entity_type: str,
+        used_entity_ids: list[str] | None = None,
+        generated_entity_ids: list[str] | None = None,
+        derived_from_entity_ids: list[str] | None = None,
+        delegated_from_agent_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> W3CProvBundle:
+        """Construct full W3C PROV bundle mapping Entity, Activity, Agent, and relations for governed control-plane flow."""
+        act = W3CProvActivity(
+            id=activity_id,
+            label=f"Governed Activity: {activity_type}",
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
+            attributes={"activity_type": activity_type, **(attributes or {})},
+        )
+        ag = W3CProvAgent(
+            id=agent_id,
+            label=f"Governed Agent ({agent_role})",
+            role=agent_role,
+        )
+        primary_entity = W3CProvEntity(
+            id=entity_id,
+            label=f"Governed Entity ({entity_type})",
+            attributes={"entity_type": entity_type, "tenant_id": tenant_id},
+        )
+
+        activities = [act]
+        agents = [ag]
+        entities = [primary_entity]
+        relations = [
+            W3CProvRelation(
+                relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                source_id=activity_id,
+                target_id=agent_id,
+            )
+        ]
+
+        if delegated_from_agent_id:
+            delegator_agent = W3CProvAgent(
+                id=delegated_from_agent_id,
+                label=f"Delegating Authority ({delegated_from_agent_id})",
+                role="delegator",
+            )
+            agents.append(delegator_agent)
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.ACTED_ON_BEHALF_OF,
+                    source_id=agent_id,
+                    target_id=delegated_from_agent_id,
+                )
+            )
+
+        for u_id in used_entity_ids or []:
+            entities.append(
+                W3CProvEntity(
+                    id=u_id,
+                    label=f"Used Entity ({u_id})",
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.USED,
+                    source_id=activity_id,
+                    target_id=u_id,
+                )
+            )
+
+        for g_id in generated_entity_ids or []:
+            if g_id != entity_id:
+                entities.append(
+                    W3CProvEntity(
+                        id=g_id,
+                        label=f"Generated Entity ({g_id})",
+                    )
+                )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_GENERATED_BY,
+                    source_id=g_id,
+                    target_id=activity_id,
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_ATTRIBUTED_TO,
+                    source_id=g_id,
+                    target_id=agent_id,
+                )
+            )
+
+        for d_id in derived_from_entity_ids or []:
+            for g_id in (generated_entity_ids or [entity_id]):
+                relations.append(
+                    W3CProvRelation(
+                        relation_type=ProvRelationType.WAS_DERIVED_FROM,
+                        source_id=g_id,
+                        target_id=d_id,
+                    )
+                )
+
+        return W3CProvBundle(
+            activities=activities,
+            agents=agents,
+            entities=entities,
+            relations=relations,
+        )
+
+    async def record_governed_event(
+        self,
+        *,
+        tenant_id: str,
+        activity_type: str,
+        agent_id: str,
+        agent_role: str,
+        entity_id: str,
+        entity_type: str,
+        used_entity_ids: list[str] | None = None,
+        generated_entity_ids: list[str] | None = None,
+        derived_from_entity_ids: list[str] | None = None,
+        delegated_from_agent_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> ProvenanceRecord:
+        """Capture and record a governed control-plane activity with full W3C PROV lineage bundle."""
+        act_id = f"urn:enterprise_os:activity:{activity_type}:{entity_id}"
+        w3c_bundle = self.build_governed_execution_w3c_prov(
+            tenant_id=tenant_id,
+            activity_id=act_id,
+            activity_type=activity_type,
+            agent_id=agent_id,
+            agent_role=agent_role,
+            entity_id=entity_id,
+            entity_type=entity_type,
+            used_entity_ids=used_entity_ids,
+            generated_entity_ids=generated_entity_ids,
+            derived_from_entity_ids=derived_from_entity_ids,
+            delegated_from_agent_id=delegated_from_agent_id,
+            attributes=metadata,
+        )
+        return await self._repository.append(
+            tenant_id=tenant_id,
+            entity_id=entity_id,
+            activity=activity_type,
+            agent=agent_id,
+            metadata=metadata or {},
+            w3c_prov=w3c_bundle.model_dump(mode="json"),
+        )
+
     async def audit_chain(self, tenant_id: str) -> list[ProvenanceRecord]:
         """Return the full provenance chain for ``tenant_id``."""
         return await self._repository.chain(tenant_id)

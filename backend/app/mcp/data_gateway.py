@@ -81,6 +81,10 @@ class DataGateway:
     ) -> list[dict[str, Any]]:
         """Authorize and execute a similarity-search read."""
         self._authorize_tenant(caller, tenant_id)
+        if caller.subject.startswith(("W_", "S_")):
+            raise PolicyViolationError(
+                f"Direct worker enterprise-store access forbidden for '{caller.subject}'; data access must be mediated through Intelligence Engine (Model A)"
+            )
         results = await self._vector_repository.similarity_search(
             tenant_id=tenant_id, query=query, top_k=top_k
         )
@@ -103,6 +107,10 @@ class DataGateway:
     ) -> None:
         """Authorize and execute a document ingestion write."""
         self._authorize_tenant(caller, tenant_id)
+        if caller.subject.startswith(("W_", "S_")):
+            raise PolicyViolationError(
+                f"Direct worker enterprise-store access forbidden for '{caller.subject}'; data access must be mediated through Intelligence Engine (Model A)"
+            )
         await self._vector_repository.index_document(
             doc_id=doc_id, tenant_id=tenant_id, text=text, source=source
         )

@@ -89,6 +89,8 @@ def canonical_dispatch_bytes(dispatch: DispatchDirective) -> bytes:
         canonical["clearance_id"] = dispatch.clearance_id
     if dispatch.idempotency_key:
         canonical["idempotency_key"] = dispatch.idempotency_key
+    if getattr(dispatch, "policy_version", None):
+        canonical["policy_version"] = dispatch.policy_version
     return json.dumps(canonical, sort_keys=True).encode("utf-8")
 
 
@@ -173,6 +175,11 @@ class OutboundGateway:
                 raise PolicyViolationError(
                     f"Preview content hash mismatch for dispatch '{dispatch.dispatch_id}'."
                 )
+            if dispatch.policy_version and getattr(clearance, "policy_version", None):
+                if dispatch.policy_version != clearance.policy_version:
+                    raise PolicyViolationError(
+                        f"Policy version mismatch: dispatch '{dispatch.policy_version}' != clearance '{clearance.policy_version}'."
+                    )
 
             # 3. Scope & Budget Escalation Enforcement
             approved_spend = (
@@ -521,10 +528,16 @@ class OutboundGateway:
         if self._task_state_service is not None and dispatch.task_id:
             try:
                 task_state = await self._task_state_service.get_state(dispatch.task_id)
-                if task_state is not None and task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED):
-                    raise PolicyViolationError(
-                        f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
-                    )
+                if task_state is not None:
+                    if task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED) or task_state.hold_reason:
+                        raise PolicyViolationError(
+                            f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
+                        )
+                    task_tenant = getattr(task_state, "tenant_id", None)
+                    if task_tenant is not None and task_tenant not in ("default", "global", dispatch.tenant_id):
+                        raise PolicyViolationError(
+                            f"Tenant authority mismatch: task tenant '{task_tenant}' cannot authorize dispatch for '{dispatch.tenant_id}'."
+                        )
             except PolicyViolationError:
                 raise
             except Exception:
@@ -583,24 +596,49 @@ class OutboundGateway:
         # Transition CTS task to DISPATCHED if state service is wired
         task_state = None
         if self._task_state_service and dispatch.task_id:
-            try:
-                task_state = await self._task_state_service.get_state(dispatch.task_id)
-                if task_state is not None:
-                    if task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED):
-                        raise PolicyViolationError(
-                            f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
-                        )
-                    if task_state.status == TaskStatus.APPROVED:
-                        task_state = await self._task_state_service.transition(
-                            dispatch.tenant_id,
-                            task_state,
-                            TaskStatus.DISPATCHED,
-                            note=f"Dispatched directive {dispatch.dispatch_id} to channel {dispatch.channel} via MCP_ACT",
-                        )
-            except PolicyViolationError:
-                raise
-            except Exception:
-                pass
+            task_state = await self._task_state_service.get_state(dispatch.task_id)
+            if task_state is not None:
+                if task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED) or task_state.hold_reason:
+                    raise PolicyViolationError(
+                        f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
+                    )
+                task_tenant = getattr(task_state, "tenant_id", None)
+                if task_tenant is not None and task_tenant not in ("default", "global", dispatch.tenant_id):
+                    raise PolicyViolationError(
+                        f"Tenant authority mismatch: task tenant '{task_tenant}' cannot authorize dispatch for '{dispatch.tenant_id}'."
+                    )
+                if task_state.status == TaskStatus.APPROVED:
+                    task_state = await self._task_state_service.transition(
+                        dispatch.tenant_id,
+                        task_state,
+                        TaskStatus.DISPATCHED,
+                        note=f"Dispatched directive {dispatch.dispatch_id} to channel {dispatch.channel} via MCP_ACT",
+                    )
+
+        # Persist dispatch intent and idempotency identity BEFORE external execution
+        payload_hash = hashlib.sha256(json.dumps(dispatch.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        self._execution_records[idempotency_key] = {
+            "status": "DISPATCH_INTENT",
+            "dispatch_id": dispatch.dispatch_id,
+            "idempotency_key": idempotency_key,
+            "channel": dispatch.channel,
+            "payload_hash": payload_hash,
+            "tenant_id": dispatch.tenant_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        if self._provenance_recorder:
+            await self._provenance_recorder.record(
+                tenant_id=dispatch.tenant_id,
+                entity_id=dispatch.dispatch_id,
+                activity="outbound_dispatch_intent_persisted",
+                agent="mcp_act_boundary",
+                metadata={
+                    "channel": dispatch.channel,
+                    "idempotency_key": idempotency_key,
+                    "action_preview_id": dispatch.action_preview_id,
+                    "task_id": dispatch.task_id,
+                },
+            )
 
         social_res: SocialPostDeploymentResult | None = None
         try:
@@ -768,24 +806,21 @@ class OutboundGateway:
 
             # Update CTS state to COMPLETED
             if self._task_state_service and dispatch.task_id and task_state:
-                try:
-                    if dispatch.channel in self._ads_adapters:
-                        task_state.cts_state["paid_campaign"] = res
-                    elif dispatch.channel in self._social_adapters:
-                        task_state.cts_state["social_post"] = (
-                            social_res.model_dump() if social_res else res
-                        )
-                    task_state.cts_state["deployment"] = res
-                    await self._task_state_service.save_state(dispatch.tenant_id, task_state)
-                    if task_state.status == TaskStatus.DISPATCHED:
-                        await self._task_state_service.transition(
-                            dispatch.tenant_id,
-                            task_state,
-                            TaskStatus.COMPLETED,
-                            note=f"Successfully actuated {dispatch.channel} directive {dispatch.dispatch_id}",
-                        )
-                except Exception:
-                    pass
+                if dispatch.channel in self._ads_adapters:
+                    task_state.cts_state["paid_campaign"] = res
+                elif dispatch.channel in self._social_adapters:
+                    task_state.cts_state["social_post"] = (
+                        social_res.model_dump() if social_res else res
+                    )
+                task_state.cts_state["deployment"] = res
+                await self._task_state_service.save_state(dispatch.tenant_id, task_state)
+                if task_state.status == TaskStatus.DISPATCHED:
+                    await self._task_state_service.transition(
+                        dispatch.tenant_id,
+                        task_state,
+                        TaskStatus.COMPLETED,
+                        note=f"Successfully actuated {dispatch.channel} directive {dispatch.dispatch_id}",
+                    )
 
             # Record deployment execution provenance with sensitive data scrubbed
             if self._provenance_recorder:
@@ -801,6 +836,67 @@ class OutboundGateway:
             return res
 
         except Exception as exc:
+            # Check for ambiguous timeout: attempt reconciliation before retrying or failing
+            import httpx
+            if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+                adapter = (
+                    self._ads_adapters.get(dispatch.channel)
+                    or self._social_adapters.get(dispatch.channel)
+                    or (self._cms_client if dispatch.channel in ("cms", "website", "web_store") else None)
+                )
+                reconciled = None
+                if adapter is not None and hasattr(adapter, "reconcile"):
+                    try:
+                        reconciled = await adapter.reconcile(dispatch.payload, idempotency_key=idempotency_key)
+                    except TypeError:
+                        try:
+                            reconciled = await adapter.reconcile(idempotency_key)
+                        except Exception:
+                            reconciled = None
+                    except Exception:
+                        reconciled = None
+
+                if reconciled is not None:
+                    self._execution_records[idempotency_key] = reconciled
+                    if self._task_state_service and dispatch.task_id and task_state:
+                        try:
+                            await self._task_state_service.transition(
+                                dispatch.tenant_id,
+                                task_state,
+                                TaskStatus.COMPLETED,
+                                note=f"Reconciled timeout on channel {dispatch.channel} via provider lookup",
+                            )
+                        except Exception:
+                            pass
+                    return reconciled
+
+                # Ambiguous outcome unreconciled: mark task HELD to prevent blind duplicate actuation
+                if self._task_state_service and dispatch.task_id and task_state:
+                    try:
+                        await self._task_state_service.transition(
+                            dispatch.tenant_id,
+                            task_state,
+                            TaskStatus.HELD,
+                            note=f"Actuation timeout on channel {dispatch.channel}; held for reconciliation: {exc}",
+                        )
+                    except Exception:
+                        pass
+                self._execution_records[idempotency_key] = {
+                    "status": "AMBIGUOUS_TIMEOUT",
+                    "error": str(exc),
+                    "idempotency_key": idempotency_key,
+                    "requires_reconciliation": True,
+                }
+                if self._provenance_recorder:
+                    await self._provenance_recorder.record(
+                        tenant_id=dispatch.tenant_id,
+                        entity_id=dispatch.dispatch_id,
+                        activity=f"outbound_{dispatch.channel}_timeout_reconciliation_held",
+                        agent="mcp_act_boundary",
+                        metadata={"error": str(exc), "idempotency_key": idempotency_key},
+                    )
+                raise
+
             # Mark task FAILED if state service is wired
             if self._task_state_service and dispatch.task_id and task_state:
                 try:

@@ -71,6 +71,8 @@ class ApprovalDecision:
     tenant_id: str = "default"
     preview_content_hash: str = ""
     signature: str | None = None
+    policy_version: str = "1.0.0"
+    expires_at: datetime | None = None
     clearance: SignedApprovalClearance | None = None
     updated_task: Any | None = None
 
@@ -130,6 +132,9 @@ class HitlCoordinator:
         validator: CryptographicValidator | None = None,
         preview_content_hash: str | None = None,
         revision_notes: str | None = None,
+        policy_version: str = "1.0.0",
+        expires_at: datetime | None = None,
+        expires_in_seconds: int | None = None,
         decided_at: datetime | None = None,
     ) -> ApprovalDecision:
         """Record an authenticated human decision for a pending preview with role & signature checks."""
@@ -218,6 +223,10 @@ class HitlCoordinator:
             preview.review_status = ReviewStatus.HELD
 
         # 7. Construct Signed Clearance Record
+        eff_expires_at = expires_at
+        if eff_expires_at is None and expires_in_seconds is not None:
+            eff_expires_at = decision_time + timedelta(seconds=expires_in_seconds)
+
         clearance = SignedApprovalClearance(
             clearance_id=str(uuid.uuid4()),
             preview_id=preview_id,
@@ -230,6 +239,8 @@ class HitlCoordinator:
             signature=signature,
             public_key_pem=public_key_pem,
             decided_at=decision_time,
+            expires_at=eff_expires_at,
+            policy_version=policy_version,
             approved_scope={"kind": preview.kind.value, "spend_amount": preview.spend_amount},
             revision_notes=revision_notes,
             is_valid=is_approved_bool,
@@ -246,6 +257,8 @@ class HitlCoordinator:
             tenant_id=target_tenant,
             preview_content_hash=effective_hash,
             signature=signature,
+            policy_version=policy_version,
+            expires_at=eff_expires_at,
             clearance=clearance,
         )
 
@@ -255,6 +268,25 @@ class HitlCoordinator:
 
     def get_decision(self, preview_id: str) -> ApprovalDecision | None:
         return self._decisions.get(preview_id)
+
+    def verify_approval_integrity(
+        self, preview_id: str, current_preview: ActionPreview | None = None
+    ) -> bool:
+        """Verify that an approved decision has not expired, revoked, or had its underlying content mutated."""
+        decision = self._decisions.get(preview_id)
+        if decision is None or not decision.approved:
+            return False
+        if decision.clearance is None or not decision.clearance.is_valid:
+            return False
+        if decision.clearance.expires_at is not None and decision.clearance.expires_at < datetime.now(UTC):
+            self.invalidate_approval(preview_id, reason="Approval clearance expired")
+            return False
+        if current_preview is not None:
+            curr_hash = compute_preview_hash(current_preview)
+            if curr_hash != decision.clearance.preview_content_hash:
+                self.invalidate_approval(preview_id, reason="Preview content mutated post-approval")
+                return False
+        return True
 
     def invalidate_approval(self, preview_id: str, reason: str = "") -> None:
         """Revoke and invalidate an approved clearance due to mutation, expiry, or revocation."""

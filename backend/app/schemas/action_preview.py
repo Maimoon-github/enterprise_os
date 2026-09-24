@@ -164,6 +164,7 @@ class SignedApprovalClearance(BaseModel):
     expires_at: datetime | None = None
     approved_scope: dict[str, Any] = Field(default_factory=dict)
     revision_notes: str | None = None
+    policy_version: str = "1.0.0"
     is_valid: bool = True
 
 

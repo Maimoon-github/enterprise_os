@@ -50,6 +50,7 @@ class CanonicalTaskState(BaseModel):
     task_id: str
     directive_id: str
     worker_role: WorkerRole
+    tenant_id: str | None = None
     status: TaskStatus = TaskStatus.PENDING
     dependencies: list[TaskDependency] = Field(default_factory=list)
     checkpoints: list[TaskCheckpoint] = Field(default_factory=list)
