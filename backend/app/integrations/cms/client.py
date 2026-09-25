@@ -28,6 +28,7 @@ class CmsClient:
         self._staged_store: dict[str, dict[str, dict[str, Any]]] = {}
         self._published_store: dict[str, dict[str, dict[str, Any]]] = {}
         self._version_history: dict[str, list[dict[str, Any]]] = {}
+        self._idempotency_store: dict[str, dict[str, Any]] = {}
 
     def _require_configured(self) -> str:
         if not self._base_url:
@@ -35,9 +36,19 @@ class CmsClient:
         return self._base_url
 
     async def stage_entry(
-        self, content_type: str, entry_id: str, data: dict[str, Any], tenant_id: str | None = None
-    ) -> None:
+        self,
+        content_type: str,
+        entry_id: str,
+        data: dict[str, Any],
+        tenant_id: str | None = None,
+        *,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         """Register a staged content entry in the CMS."""
+        if idempotency_key:
+            scoped_key = f"{tenant_id or 'default'}:{idempotency_key}"
+            if scoped_key in self._idempotency_store:
+                return dict(self._idempotency_store[scoped_key])
 
         bucket = self._staged_store.setdefault(content_type, {})
         entry = dict(data)
@@ -46,6 +57,17 @@ class CmsClient:
         if tenant_id:
             entry["tenant_id"] = tenant_id
         bucket[entry_id] = entry
+
+        result = {
+            "status_code": "200",
+            "entry_id": entry_id,
+            "content_type": content_type,
+            "status": "staged",
+            "version_reference": f"{content_type}:{entry_id}:staged",
+        }
+        if idempotency_key:
+            self._idempotency_store[scoped_key] = result
+        return result
 
     async def read_staged(self, content_type: str, tenant_id: str | None = None) -> list[dict[str, Any]]:
         """Return staged (unpublished) entries of ``content_type``."""
@@ -112,9 +134,19 @@ class CmsClient:
         return {"status_code": str(response.status_code), "entry_id": entry_id, "status": "created"}
 
     async def apply_changes(
-        self, content_type: str, entry_id: str, diff: dict[str, Any], tenant_id: str | None = None
+        self,
+        content_type: str,
+        entry_id: str,
+        diff: dict[str, Any],
+        tenant_id: str | None = None,
+        *,
+        idempotency_key: str | None = None,
     ) -> dict[str, str]:
         """Apply an approved content/schema change to a staged or published entry."""
+        if idempotency_key:
+            scoped_key = f"{tenant_id or 'default'}:{idempotency_key}"
+            if scoped_key in self._idempotency_store:
+                return dict(self._idempotency_store[scoped_key])
 
         if not self._base_url:
             bucket = self._staged_store.setdefault(content_type, {})
@@ -128,7 +160,15 @@ class CmsClient:
             if content_type in self._published_store and entry_id in self._published_store[content_type]:
                 self._published_store[content_type][entry_id].update(diff)
 
-            return {"status_code": "200", "entry_id": entry_id, "status": "updated"}
+            result = {
+                "status_code": "200",
+                "entry_id": entry_id,
+                "status": "updated",
+                "version_reference": f"{content_type}:{entry_id}:updated",
+            }
+            if idempotency_key:
+                self._idempotency_store[scoped_key] = result
+            return result
 
         base_url = self._require_configured()
         response = await self._client.patch(
@@ -137,7 +177,15 @@ class CmsClient:
             headers={"Authorization": f"Bearer {self._api_key}"},
         )
         response.raise_for_status()
-        return {"status_code": str(response.status_code), "entry_id": entry_id}
+        result = {
+            "status_code": str(response.status_code),
+            "entry_id": entry_id,
+            "status": "updated",
+            "version_reference": f"{content_type}:{entry_id}:updated",
+        }
+        if idempotency_key:
+            self._idempotency_store[scoped_key] = result
+        return result
 
     async def publish_entry(
         self,
@@ -147,8 +195,13 @@ class CmsClient:
         *,
         version: str = "v1.0",
         payload: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Promote an approved staged entry to the live published state with version tracking."""
+        if idempotency_key:
+            scoped_key = f"{tenant_id or 'default'}:{idempotency_key}"
+            if scoped_key in self._idempotency_store:
+                return dict(self._idempotency_store[scoped_key])
 
         now_str = datetime.now(UTC).isoformat()
         if not self._base_url:
@@ -171,14 +224,18 @@ class CmsClient:
             base_entry["published_at"] = now_str
             self._published_store.setdefault(content_type, {})[entry_id] = base_entry
 
-            return {
+            res = {
                 "status_code": "200",
                 "entry_id": entry_id,
                 "content_type": content_type,
                 "status": "published",
                 "version": version,
+                "version_reference": f"{content_type}:{entry_id}:{version}",
                 "published_at": now_str,
             }
+            if idempotency_key:
+                self._idempotency_store[scoped_key] = res
+            return res
 
         base_url = self._require_configured()
         response = await self._client.post(
@@ -187,14 +244,18 @@ class CmsClient:
             headers={"Authorization": f"Bearer {self._api_key}"},
         )
         response.raise_for_status()
-        return {
+        res = {
             "status_code": str(response.status_code),
             "entry_id": entry_id,
             "content_type": content_type,
             "status": "published",
             "version": version,
+            "version_reference": f"{content_type}:{entry_id}:{version}",
             "published_at": now_str,
         }
+        if idempotency_key:
+            self._idempotency_store[scoped_key] = res
+        return res
 
     async def rollback_entry(
         self, content_type: str, entry_id: str, tenant_id: str | None = None
@@ -219,6 +280,7 @@ class CmsClient:
                 "content_type": content_type,
                 "status": "rolled_back",
                 "version": previous.get("version", "previous"),
+                "version_reference": f"{content_type}:{entry_id}:{previous.get('version', 'previous')}",
                 "rolled_back_at": datetime.now(UTC).isoformat(),
             }
 

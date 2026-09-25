@@ -23,13 +23,13 @@ class OperationalRepository(BaseJsonRepository[Directive]):
             deserialize=lambda doc: Directive.model_validate(doc),
         )
 
-    async def save_directive(self, directive: Directive) -> None:
+    async def save_directive(self, directive: Directive, session: AsyncSession | None = None) -> None:
         """Persist a directive, enforcing that existing directive revisions cannot be modified."""
-        existing = await self.get(directive.directive_id)
+        existing = await self.get(directive.directive_id, session=session)
         if existing is not None:
             if existing.model_dump(mode="json") != directive.model_dump(mode="json"):
                 raise PolicyViolationError(
                     f"Directive '{directive.directive_id}' already exists and is immutable."
                 )
             return
-        await self.save(directive.directive_id, directive.tenant_id, directive)
+        await self.save(directive.directive_id, directive.tenant_id, directive, session=session)

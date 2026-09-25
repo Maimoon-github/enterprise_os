@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.core.exceptions import PolicyViolationError
+from app.core.exceptions import AuthorizationError, PolicyViolationError
 from app.integrations.artifact_store.client import ArtifactStoreClient
 from app.integrations.cms.client import CmsClient
 from app.persistence.repositories.artifact import ArtifactReference, ArtifactRepository
@@ -58,16 +58,31 @@ class DataGateway:
         self._provenance_recorder = provenance_recorder
 
     def _authorize_tenant(
-        self, caller: CallerIdentity, tenant_id: str, risk: RiskLevel = RiskLevel.LOW
+        self,
+        caller: CallerIdentity,
+        tenant_id: str,
+        risk: RiskLevel = RiskLevel.LOW,
+        requested_capability: str | None = None,
+        delegation_parent: str | None = None,
     ) -> None:
+        if not tenant_id or not tenant_id.strip():
+            raise AuthorizationError("Tenant ID is required for Layer-4 access.")
         self._authorization_boundary.authorize(
             caller,
             requested_scope=TenantScope(tenant_id=tenant_id),
             requested_risk=risk,
+            requested_capability=requested_capability,
+            delegation_parent=delegation_parent,
         )
 
     async def _record_audit(
-        self, tenant_id: str, entity_id: str, activity: str, agent: str
+        self,
+        tenant_id: str,
+        entity_id: str,
+        activity: str,
+        agent: str,
+        metadata: dict[str, Any] | None = None,
+        session: Any = None,
     ) -> None:
         if self._provenance_recorder is not None:
             try:
@@ -76,15 +91,26 @@ class DataGateway:
                     entity_id=entity_id,
                     activity=activity,
                     agent=agent,
+                    metadata=metadata,
+                    session=session,
                 )
             except Exception:
                 pass
 
     def _assert_no_worker_access(self, caller: CallerIdentity) -> None:
-        if caller.subject.startswith(("W_", "S_")):
+        subj_lower = caller.subject.lower()
+        if (
+            caller.subject.startswith(("W_", "S_"))
+            or "worker" in subj_lower
+            or "specialist" in subj_lower
+            or "subagent" in subj_lower
+            or "sub_agent" in subj_lower
+            or "sandbox" in subj_lower
+        ):
             raise PolicyViolationError(
                 f"Direct worker enterprise-store access forbidden for '{caller.subject}'; data access must be mediated through Intelligence Engine (Model A)"
             )
+        self._authorization_boundary.authorize_sandbox_action(caller, target_resource="persistence")
 
     # -- Vector / Knowledge Retrieval & Ingestion --
     async def query(
@@ -96,15 +122,24 @@ class DataGateway:
         top_k: int = 10,
         namespace: str | None = None,
         search_type: str = "exact",
+        metric: str = "cosine",
+        filter_metadata: dict[str, Any] | None = None,
+        session: Any = None,
     ) -> list[dict[str, Any]]:
         """Authorize and execute a similarity-search read."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, requested_capability="mcp_data_read")
         self._assert_no_worker_access(caller)
         kwargs: dict[str, Any] = {"tenant_id": tenant_id, "query": query, "top_k": top_k}
         if namespace is not None:
             kwargs["namespace"] = namespace
         if search_type != "exact":
             kwargs["search_type"] = search_type
+        if metric != "cosine":
+            kwargs["metric"] = metric
+        if filter_metadata is not None:
+            kwargs["filter_metadata"] = filter_metadata
+        if session is not None:
+            kwargs["session"] = session
 
         try:
             results = await self._vector_repository.similarity_search(**kwargs)
@@ -119,6 +154,7 @@ class DataGateway:
             entity_id=f"query:{query[:32]}",
             activity="mcp_data_vector_read",
             agent=caller.subject,
+            session=session,
         )
         return results
 
@@ -131,23 +167,37 @@ class DataGateway:
         text: str,
         source: str,
         namespace: str = "default",
+        session: Any = None,
     ) -> None:
         """Authorize and execute a document ingestion write."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
         self._assert_no_worker_access(caller)
+        kwargs: dict[str, Any] = {
+            "doc_id": doc_id,
+            "tenant_id": tenant_id,
+            "text": text,
+            "source": source,
+            "namespace": namespace,
+        }
+        if session is not None:
+            kwargs["session"] = session
         try:
-            await self._vector_repository.index_document(
-                doc_id=doc_id, tenant_id=tenant_id, text=text, source=source, namespace=namespace
-            )
+            await self._vector_repository.index_document(**kwargs)
         except TypeError:
-            await self._vector_repository.index_document(
-                doc_id=doc_id, tenant_id=tenant_id, text=text, source=source
-            )
+            try:
+                await self._vector_repository.index_document(
+                    doc_id=doc_id, tenant_id=tenant_id, text=text, source=source, namespace=namespace
+                )
+            except TypeError:
+                await self._vector_repository.index_document(
+                    doc_id=doc_id, tenant_id=tenant_id, text=text, source=source
+                )
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=doc_id,
             activity="mcp_data_vector_write",
             agent=caller.subject,
+            session=session,
         )
 
     # -- Institutional Memory Store (MEM) --
@@ -343,16 +393,16 @@ class DataGateway:
         )
         return payload
 
-    # -- Headless CMS Staging (CMS) --
+    # -- Headless CMS Staging & Publishing (CMS) --
     async def read_cms_staged(
         self, caller: CallerIdentity, *, tenant_id: str, content_type: str
     ) -> list[dict[str, Any]]:
         """Authorize and read staged CMS models."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, requested_capability="mcp_data_read")
         self._assert_no_worker_access(caller)
         if self._cms_client is None:
             return []
-        items = await self._cms_client.read_staged(content_type)
+        items = await self._cms_client.read_staged(content_type, tenant_id=tenant_id)
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=f"cms:{content_type}",
@@ -369,18 +419,33 @@ class DataGateway:
         content_type: str,
         entry_id: str,
         data: dict[str, Any],
-    ) -> None:
+        idempotency_key: str | None = None,
+        provenance_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         """Authorize and register a staged CMS entry."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
         self._assert_no_worker_access(caller)
-        if self._cms_client is not None and hasattr(self._cms_client, "stage_entry"):
-            await self._cms_client.stage_entry(content_type, entry_id, data, tenant_id=tenant_id)
-            await self._record_audit(
-                tenant_id=tenant_id,
-                entity_id=f"cms:{content_type}:{entry_id}",
-                activity="mcp_data_cms_stage",
-                agent=caller.subject,
-            )
+        if self._cms_client is None:
+            return None
+        res = None
+        if hasattr(self._cms_client, "stage_entry"):
+            try:
+                res = await self._cms_client.stage_entry(
+                    content_type, entry_id, data, tenant_id=tenant_id, idempotency_key=idempotency_key
+                )
+            except TypeError:
+                res = await self._cms_client.stage_entry(content_type, entry_id, data, tenant_id=tenant_id)
+        meta = dict(provenance_context or {})
+        if idempotency_key:
+            meta["idempotency_key"] = idempotency_key
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms:{content_type}:{entry_id}",
+            activity="mcp_data_cms_stage",
+            agent=caller.subject,
+            metadata=meta,
+        )
+        return res
 
     async def apply_cms_changes(
         self,
@@ -390,67 +455,230 @@ class DataGateway:
         content_type: str,
         entry_id: str,
         diff: dict[str, Any],
+        idempotency_key: str | None = None,
+        provenance_context: dict[str, Any] | None = None,
     ) -> dict[str, str]:
         """Authorize and apply schema/content diffs to staged CMS entries."""
-        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM)
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
         self._assert_no_worker_access(caller)
         if self._cms_client is None:
             return {"status": "cms_unconfigured"}
-        res = await self._cms_client.apply_changes(content_type, entry_id, diff)
+        try:
+            res = await self._cms_client.apply_changes(
+                content_type, entry_id, diff, tenant_id=tenant_id, idempotency_key=idempotency_key
+            )
+        except TypeError:
+            res = await self._cms_client.apply_changes(content_type, entry_id, diff, tenant_id=tenant_id)
+        meta = dict(provenance_context or {})
+        if idempotency_key:
+            meta["idempotency_key"] = idempotency_key
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=f"cms:{content_type}:{entry_id}",
             activity="mcp_data_cms_write",
             agent=caller.subject,
+            metadata=meta,
+        )
+        return res
+
+    async def publish_cms_entry(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        content_type: str,
+        entry_id: str,
+        version: str = "v1.0",
+        payload: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
+        provenance_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Authorize and promote an approved staged entry to the live published state with version tracking."""
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
+        self._assert_no_worker_access(caller)
+        if self._cms_client is None:
+            return {"status": "cms_unconfigured"}
+        try:
+            res = await self._cms_client.publish_entry(
+                content_type,
+                entry_id,
+                tenant_id=tenant_id,
+                version=version,
+                payload=payload,
+                idempotency_key=idempotency_key,
+            )
+        except TypeError:
+            res = await self._cms_client.publish_entry(
+                content_type, entry_id, tenant_id=tenant_id, version=version, payload=payload
+            )
+        meta = dict(provenance_context or {})
+        meta.update({"version": version, "idempotency_key": idempotency_key or ""})
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms:{content_type}:{entry_id}:{version}",
+            activity="mcp_data_cms_publish",
+            agent=caller.subject,
+            metadata=meta,
+        )
+        return res
+
+    async def rollback_cms_entry(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        content_type: str,
+        entry_id: str,
+        provenance_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Authorize and roll back a published entry to its previous version."""
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
+        self._assert_no_worker_access(caller)
+        if self._cms_client is None:
+            return {"status": "cms_unconfigured"}
+        res = await self._cms_client.rollback_entry(content_type, entry_id, tenant_id=tenant_id)
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms:{content_type}:{entry_id}:rollback",
+            activity="mcp_data_cms_rollback",
+            agent=caller.subject,
+            metadata=provenance_context,
+        )
+        return res
+
+    async def read_cms_published(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        content_type: str,
+        entry_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Authorize and read published CMS models."""
+        self._authorize_tenant(caller, tenant_id, requested_capability="mcp_data_read")
+        self._assert_no_worker_access(caller)
+        if self._cms_client is None:
+            return []
+        items = await self._cms_client.read_published(content_type, tenant_id=tenant_id, entry_id=entry_id)
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms_published:{content_type}:{entry_id or 'all'}",
+            activity="mcp_data_cms_published_read",
+            agent=caller.subject,
+        )
+        return items
+
+    async def deploy_cms_payload(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        payload: dict[str, Any],
+        version: str = "v1.0",
+        idempotency_key: str | None = None,
+        provenance_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Authorize and deploy a structured bundle of approved CMS models."""
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.HIGH, requested_capability="mcp_data_write")
+        self._assert_no_worker_access(caller)
+        if self._cms_client is None:
+            return {"status": "cms_unconfigured"}
+        payload_with_version = dict(payload)
+        payload_with_version.setdefault("version", version)
+        res = await self._cms_client.deploy_payload(payload_with_version, tenant_id=tenant_id)
+        meta = dict(provenance_context or {})
+        meta.update({"version": version, "idempotency_key": idempotency_key or ""})
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms_deploy:{version}",
+            activity="mcp_data_cms_deploy",
+            agent=caller.subject,
+            metadata=meta,
         )
         return res
 
     # -- Central Operational & Telemetry DB (CDB) --
     async def save_directive(
-        self, caller: CallerIdentity, *, tenant_id: str, directive: Directive
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        directive: Directive,
+        session: Any = None,
     ) -> None:
         """Authorize and persist an operational directive."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
         self._assert_no_worker_access(caller)
         if self._operational_repository is not None:
-            await self._operational_repository.save_directive(directive)
+            if session is not None:
+                try:
+                    await self._operational_repository.save_directive(directive, session=session)
+                except TypeError:
+                    await self._operational_repository.save_directive(directive)
+            else:
+                await self._operational_repository.save_directive(directive)
             await self._record_audit(
                 tenant_id=tenant_id,
                 entity_id=directive.directive_id,
                 activity="mcp_data_directive_write",
                 agent=caller.subject,
+                session=session,
             )
 
     async def get_directive(
-        self, caller: CallerIdentity, *, tenant_id: str, directive_id: str
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        directive_id: str,
+        session: Any = None,
     ) -> Directive | None:
         """Authorize and load an operational directive."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, requested_capability="mcp_data_read")
         self._assert_no_worker_access(caller)
         if self._operational_repository is not None:
-            d = await self._operational_repository.require(directive_id)
+            if session is not None:
+                try:
+                    d = await self._operational_repository.require(directive_id, session=session)
+                except TypeError:
+                    d = await self._operational_repository.require(directive_id)
+            else:
+                d = await self._operational_repository.require(directive_id)
             await self._record_audit(
                 tenant_id=tenant_id,
                 entity_id=directive_id,
                 activity="mcp_data_directive_read",
                 agent=caller.subject,
+                session=session,
             )
             return d
         return None
 
     async def record_telemetry(
-        self, caller: CallerIdentity, *, tenant_id: str, event: TelemetryEvent
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        event: TelemetryEvent,
+        session: Any = None,
     ) -> None:
         """Authorize and persist an omnichannel telemetry event."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, requested_capability="mcp_data_write")
         self._assert_no_worker_access(caller)
         if self._telemetry_repository is not None:
-            await self._telemetry_repository.record(event)
+            if session is not None:
+                try:
+                    await self._telemetry_repository.record(event, session=session)
+                except TypeError:
+                    await self._telemetry_repository.record(event)
+            else:
+                await self._telemetry_repository.record(event)
             await self._record_audit(
                 tenant_id=tenant_id,
                 entity_id=event.event_id,
                 activity="mcp_data_telemetry_write",
                 agent=caller.subject,
+                session=session,
             )
 
     async def list_telemetry(
@@ -462,28 +690,49 @@ class DataGateway:
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         limit: int = 100,
+        session: Any = None,
     ) -> list[TelemetryEvent]:
         """Authorize and query omnichannel performance telemetry through the governed gateway."""
-        self._authorize_tenant(caller, tenant_id)
+        self._authorize_tenant(caller, tenant_id, requested_capability="mcp_data_read")
         self._assert_no_worker_access(caller)
         if self._telemetry_repository is None:
             return []
+        kwargs: dict[str, Any] = {}
+        if session is not None:
+            kwargs["session"] = session
         if (start_time is not None or end_time is not None) and hasattr(self._telemetry_repository, "query_range"):
-            events = await self._telemetry_repository.query_range(
-                tenant_id,
-                start_time=start_time,
-                end_time=end_time,
-                event_type=event_type,
-                limit=limit,
-            )
+            try:
+                events = await self._telemetry_repository.query_range(
+                    tenant_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    event_type=event_type,
+                    limit=limit,
+                    **kwargs,
+                )
+            except TypeError:
+                events = await self._telemetry_repository.query_range(
+                    tenant_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    event_type=event_type,
+                    limit=limit,
+                )
         elif event_type:
-            events = await self._telemetry_repository.list_by_type(tenant_id, event_type)
+            try:
+                events = await self._telemetry_repository.list_by_type(tenant_id, event_type, **kwargs)
+            except TypeError:
+                events = await self._telemetry_repository.list_by_type(tenant_id, event_type)
         else:
-            events = await self._telemetry_repository.list_all(tenant_id)
+            try:
+                events = await self._telemetry_repository.list_all(tenant_id, **kwargs)
+            except TypeError:
+                events = await self._telemetry_repository.list_all(tenant_id)
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=f"telemetry:{event_type or 'all'}",
             activity="mcp_data_telemetry_read",
             agent=caller.subject,
+            session=session,
         )
         return events

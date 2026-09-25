@@ -165,8 +165,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     memory_promotion_service = MemoryPromotionService(memory_repository)
 
-    hybrid_retriever = HybridRetriever(vector_repository)
-    rag_controller = RagController(hybrid_retriever, FreshnessPolicy(), SchemaValidator())
+    cms_client = CmsClient(settings.cms.base_url, settings.cms.api_key)
+    data_gateway = DataGateway(
+        vector_repository,
+        AuthorizationBoundary(ScopeEvaluator()),
+        operational_repository=operational_repository,
+        memory_repository=memory_repository,
+        artifact_repository=artifact_repository,
+        cms_client=cms_client,
+        telemetry_repository=telemetry_repository,
+        provenance_recorder=provenance_recorder,
+    )
+
+    hybrid_retriever = HybridRetriever(data_gateway=data_gateway)
+    rag_controller = RagController(
+        hybrid_retriever, FreshnessPolicy(), SchemaValidator(), data_gateway=data_gateway
+    )
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
     llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
@@ -290,8 +304,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "tiktok_social": TikTokSocialAdapter(settings.social.tiktok_access_token),
         "youtube": YouTubeAdapter(settings.social.youtube_access_token),
     }
-    cms_client = CmsClient(settings.cms.base_url, settings.cms.api_key)
-
     outbound_gateway = OutboundGateway(
         hitl_coordinator,
         crypto_validator,
@@ -299,16 +311,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         social_adapters=social_adapters,
         cms_client=cms_client,
         require_signature=settings.security.require_signed_dispatch,
-    )
-    data_gateway = DataGateway(
-        vector_repository,
-        AuthorizationBoundary(ScopeEvaluator()),
-        operational_repository=operational_repository,
-        memory_repository=memory_repository,
-        artifact_repository=artifact_repository,
-        cms_client=cms_client,
-        telemetry_repository=telemetry_repository,
-        provenance_recorder=provenance_recorder,
     )
     mcp_host = McpHost(data_gateway, outbound_gateway)
 
