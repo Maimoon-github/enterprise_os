@@ -38,16 +38,55 @@ class BaseJsonRepository(Generic[ModelT]):
         self._serialize = serialize
         self._deserialize = deserialize
 
-    async def save(self, record_id: str, tenant_id: str, model: ModelT) -> None:
-        """Upsert ``model`` under ``record_id``, scoped to ``tenant_id``."""
+    async def _apply_tenant_context(self, session: AsyncSession, tenant_id: str) -> None:
+        """Best-effort local tenant variable setup for PostgreSQL RLS."""
+        if not tenant_id or not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise RepositoryError("Tenant ID cannot be empty.")
+        try:
+            from sqlalchemy import text
+
+            await session.execute(
+                text("SET LOCAL app.current_tenant = :tenant_id"),
+                {"tenant_id": tenant_id},
+            )
+        except Exception:
+            # Fall back safely on non-PostgreSQL dialects or unit-test mocks
+            pass
+
+    async def save(
+        self,
+        record_id: str,
+        tenant_id: str,
+        model: ModelT,
+        *,
+        session: AsyncSession | None = None,
+    ) -> None:
+        """Upsert ``model`` under ``record_id``, scoped to ``tenant_id``.
+
+        If ``session`` is provided, participates in the caller's transaction without
+        committing. Fails closed on cross-tenant writes or empty tenant_id.
+        """
+        if not record_id or not isinstance(record_id, str) or not record_id.strip():
+            raise RepositoryError("Record ID cannot be empty.")
+        if not tenant_id or not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise RepositoryError("Tenant ID cannot be empty.")
 
         payload = self._serialize(model)
-        async with self._session_factory() as session:
-            existing = await session.scalar(
-                select(self._table.c.id).where(self._table.c.id == record_id)
+
+        async def _execute_save(sess: AsyncSession) -> None:
+            await self._apply_tenant_context(sess, tenant_id)
+            existing_row = await sess.execute(
+                select(self._table.c.tenant_id).where(self._table.c.id == record_id)
             )
-            if existing is None:
-                await session.execute(
+            existing_tenant = existing_row.scalar_one_or_none()
+
+            if existing_tenant is not None and existing_tenant != tenant_id:
+                raise RepositoryError(
+                    f"Cross-tenant access violation: record '{record_id}' does not belong to tenant '{tenant_id}'."
+                )
+
+            if existing_tenant is None:
+                await sess.execute(
                     self._table.insert().values(
                         id=record_id,
                         tenant_id=tenant_id,
@@ -56,38 +95,87 @@ class BaseJsonRepository(Generic[ModelT]):
                     )
                 )
             else:
-                await session.execute(
+                await sess.execute(
                     self._table.update()
-                    .where(self._table.c.id == record_id)
+                    .where((self._table.c.id == record_id) & (self._table.c.tenant_id == tenant_id))
                     .values(document=payload, updated_at=datetime.now(UTC))
                 )
-            await session.commit()
 
-    async def get(self, record_id: str) -> ModelT | None:
-        """Return the model stored under ``record_id``, or None if absent."""
+        if session is not None:
+            await _execute_save(session)
+        else:
+            async with self._session_factory() as local_session:
+                await _execute_save(local_session)
+                await local_session.commit()
 
-        async with self._session_factory() as session:
-            row = await session.execute(
-                select(self._table.c.document).where(self._table.c.id == record_id)
-            )
+    async def get(
+        self,
+        record_id: str,
+        *,
+        tenant_id: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> ModelT | None:
+        """Return the model stored under ``record_id``, or None if absent.
+
+        If ``tenant_id`` is supplied, bounds the read strictly to that tenant.
+        If ``session`` is supplied, executes within the caller's transaction.
+        """
+        if not record_id or not isinstance(record_id, str) or not record_id.strip():
+            raise RepositoryError("Record ID cannot be empty.")
+        if tenant_id is not None and (not isinstance(tenant_id, str) or not tenant_id.strip()):
+            raise RepositoryError("Tenant ID cannot be empty.")
+
+        stmt = select(self._table.c.document).where(self._table.c.id == record_id)
+        if tenant_id is not None:
+            stmt = stmt.where(self._table.c.tenant_id == tenant_id)
+
+        if session is not None:
+            row = await session.execute(stmt)
             document = row.scalar_one_or_none()
             return self._deserialize(document) if document is not None else None
 
-    async def list_by_tenant(self, tenant_id: str) -> list[ModelT]:
-        """Return all models stored for ``tenant_id``."""
+        async with self._session_factory() as local_session:
+            row = await local_session.execute(stmt)
+            document = row.scalar_one_or_none()
+            return self._deserialize(document) if document is not None else None
 
-        async with self._session_factory() as session:
-            rows = await session.execute(
-                select(self._table.c.document).where(self._table.c.tenant_id == tenant_id)
-            )
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        *,
+        session: AsyncSession | None = None,
+    ) -> list[ModelT]:
+        """Return all models stored for ``tenant_id``.
+
+        Fails closed if ``tenant_id`` is missing or empty.
+        If ``session`` is supplied, participates in caller's transaction.
+        """
+        if not tenant_id or not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise RepositoryError("Tenant ID cannot be empty.")
+
+        stmt = select(self._table.c.document).where(self._table.c.tenant_id == tenant_id)
+        if session is not None:
+            rows = await session.execute(stmt)
             return [self._deserialize(doc) for (doc,) in rows.all()]
 
-    async def require(self, record_id: str) -> ModelT:
-        """Return the model stored under ``record_id``, raising if absent."""
+        async with self._session_factory() as local_session:
+            rows = await local_session.execute(stmt)
+            return [self._deserialize(doc) for (doc,) in rows.all()]
 
-        model = await self.get(record_id)
+    async def require(
+        self,
+        record_id: str,
+        *,
+        tenant_id: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> ModelT:
+        """Return the model stored under ``record_id``, raising if absent."""
+        model = await self.get(record_id, tenant_id=tenant_id, session=session)
         if model is None:
-            raise RepositoryError(f"No record found with id '{record_id}'.")
+            msg = f"No record found with id '{record_id}'"
+            if tenant_id:
+                msg += f" for tenant '{tenant_id}'"
+            raise RepositoryError(f"{msg}.")
         return model
 
 

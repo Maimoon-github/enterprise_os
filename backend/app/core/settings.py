@@ -24,9 +24,21 @@ class DatabaseSettings(BaseSettings):
         default="postgresql+asyncpg://localhost:5432/governed_backend",
         description="SQLAlchemy async connection string for the system of record.",
     )
+    migration_dsn: str | None = Field(
+        default=None,
+        description="Separate migration/admin connection string for DDL execution.",
+    )
     pool_min_size: int = Field(default=1, ge=0)
     pool_max_size: int = Field(default=10, ge=1)
     statement_timeout_seconds: int = Field(default=30, ge=1)
+    enforce_rls: bool = Field(
+        default=True,
+        description="Whether to enforce tenant RLS context on sessions.",
+    )
+    require_non_privileged_role: bool = Field(
+        default=False,
+        description="Fail closed if runtime role is superuser, table owner, or BYPASSRLS.",
+    )
 
 
 class LlmSettings(BaseSettings):

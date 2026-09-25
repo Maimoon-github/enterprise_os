@@ -22,6 +22,12 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📁 Layer 2 — Central Control Plane/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
+│   ├── 📁 Layer 3 - Governed Knowledge & Data Access/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
+│   ├── 📁 Layer 4: Central Enterprise Storage & System of Record/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 Learning & Performance Engine/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
@@ -312,6 +318,15 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 main.py
 │   ├── 📁 ephemeral_workspaces/
+│   ├── 📁 migrations/
+│   │   ├── 📁 sql/
+│   │   │   ├── 📄 0001_layer4_extensions.sql
+│   │   │   ├── 📄 0002_layer4_core.sql
+│   │   │   ├── 📄 0003_memory_artifact_provenance.sql
+│   │   │   ├── 📄 0004_telemetry_hypertable.sql
+│   │   │   ├── 📄 0005_tenant_rls_privileges.sql
+│   │   │   └── 📄 0006_layer4_indexes.sql
+│   │   └── 📝 README.md
 │   ├── 📁 scripts/
 │   │   ├── 📄 bootstrap.sh
 │   │   ├── 📄 lint.sh
@@ -415,6 +430,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_governed_mcp_data_gateway.py
 │   │   │   ├── 🐍 test_hitl_gate.py
 │   │   │   ├── 🐍 test_hitl_signoff_verification.py
+│   │   │   ├── 🐍 test_l2_03_governed_orchestration.py
+│   │   │   ├── 🐍 test_layer4_database_foundation.py
 │   │   │   ├── 🐍 test_live_telemetry_ingestion_t30.py
 │   │   │   ├── 🐍 test_llm_wiring_verification.py
 │   │   │   ├── 🐍 test_memory_promotion_t32.py
