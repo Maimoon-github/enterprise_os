@@ -13,6 +13,7 @@ Enforces tenant authorization on every call before delegating to a repository.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from app.core.exceptions import PolicyViolationError
@@ -83,14 +84,32 @@ class DataGateway:
 
     # -- Vector / Knowledge Retrieval & Ingestion --
     async def query(
-        self, caller: CallerIdentity, *, tenant_id: str, query: str, top_k: int = 10
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        query: str,
+        top_k: int = 10,
+        namespace: str | None = None,
+        search_type: str = "exact",
     ) -> list[dict[str, Any]]:
         """Authorize and execute a similarity-search read."""
         self._authorize_tenant(caller, tenant_id)
         self._assert_no_worker_access(caller)
-        results = await self._vector_repository.similarity_search(
-            tenant_id=tenant_id, query=query, top_k=top_k
-        )
+        kwargs: dict[str, Any] = {"tenant_id": tenant_id, "query": query, "top_k": top_k}
+        if namespace is not None:
+            kwargs["namespace"] = namespace
+        if search_type != "exact":
+            kwargs["search_type"] = search_type
+
+        try:
+            results = await self._vector_repository.similarity_search(**kwargs)
+        except TypeError:
+            # Fall back safely on stand-ins with legacy 3-parameter signature
+            results = await self._vector_repository.similarity_search(
+                tenant_id=tenant_id, query=query, top_k=top_k
+            )
+
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=f"query:{query[:32]}",
@@ -107,13 +126,19 @@ class DataGateway:
         doc_id: str,
         text: str,
         source: str,
+        namespace: str = "default",
     ) -> None:
         """Authorize and execute a document ingestion write."""
         self._authorize_tenant(caller, tenant_id)
         self._assert_no_worker_access(caller)
-        await self._vector_repository.index_document(
-            doc_id=doc_id, tenant_id=tenant_id, text=text, source=source
-        )
+        try:
+            await self._vector_repository.index_document(
+                doc_id=doc_id, tenant_id=tenant_id, text=text, source=source, namespace=namespace
+            )
+        except TypeError:
+            await self._vector_repository.index_document(
+                doc_id=doc_id, tenant_id=tenant_id, text=text, source=source
+            )
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=doc_id,
@@ -337,13 +362,24 @@ class DataGateway:
         *,
         tenant_id: str,
         event_type: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        limit: int = 100,
     ) -> list[TelemetryEvent]:
         """Authorize and query omnichannel performance telemetry through the governed gateway."""
         self._authorize_tenant(caller, tenant_id)
         self._assert_no_worker_access(caller)
         if self._telemetry_repository is None:
             return []
-        if event_type:
+        if (start_time is not None or end_time is not None) and hasattr(self._telemetry_repository, "query_range"):
+            events = await self._telemetry_repository.query_range(
+                tenant_id,
+                start_time=start_time,
+                end_time=end_time,
+                event_type=event_type,
+                limit=limit,
+            )
+        elif event_type:
             events = await self._telemetry_repository.list_by_type(tenant_id, event_type)
         else:
             events = await self._telemetry_repository.list_all(tenant_id)
