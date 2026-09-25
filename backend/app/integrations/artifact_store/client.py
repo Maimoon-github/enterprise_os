@@ -83,6 +83,10 @@ class ArtifactStoreClient:
             return False
         return compute_sha256(self._store[content_hash]) == content_hash
 
+    async def list_hashes(self) -> list[str]:
+        """Return all content-addressed hashes currently held in store."""
+        return list(self._store.keys())
+
     async def health(self) -> dict[str, Any]:
         """Return store operational capability without leaking payloads or tenant identities."""
         return {

@@ -167,3 +167,10 @@ class ProvenanceRepository:
                 return False
             prev_hash = record.record_hash
         return True
+
+    async def verify_chain(self, tenant_id: str) -> bool:
+        """Fetch and verify the unbroken hash chain for ``tenant_id``."""
+        records = await self.chain(tenant_id)
+        if not records:
+            return True
+        return self.verify(records)

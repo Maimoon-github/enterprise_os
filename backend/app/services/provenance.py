@@ -134,6 +134,15 @@ class ProvenanceRecorder:
             w3c_prov=w3c_prov,
         )
 
+    async def verify_chain(self, tenant_id: str) -> bool:
+        """Verify unbroken hash chain for ``tenant_id``."""
+        if hasattr(self._repository, "verify_chain"):
+            return await self._repository.verify_chain(tenant_id)
+        records = await self._repository.chain(tenant_id)
+        if not records:
+            return True
+        return self._repository.verify(records)
+
     def build_sandbox_w3c_prov(
         self,
         *,

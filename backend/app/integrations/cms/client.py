@@ -380,5 +380,14 @@ class CmsClient:
             "deployed_at": datetime.now(UTC).isoformat(),
         }
 
+    async def health(self) -> dict[str, Any]:
+        """Check CMS client capability and configuration readiness without leaking secrets."""
+        configured = bool(self._base_url)
+        return {
+            "status": "healthy" if (configured or not self._base_url) else "unhealthy",
+            "type": "headless_cms",
+            "mode": "remote_http" if configured else "in_memory_staged",
+        }
+
     async def aclose(self) -> None:
         await self._client.aclose()

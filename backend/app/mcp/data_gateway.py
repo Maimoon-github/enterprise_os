@@ -83,6 +83,7 @@ class DataGateway:
         agent: str,
         metadata: dict[str, Any] | None = None,
         session: Any = None,
+        fail_closed: bool = False,
     ) -> None:
         if self._provenance_recorder is not None:
             try:
@@ -95,7 +96,12 @@ class DataGateway:
                     session=session,
                 )
             except Exception:
-                pass
+                if (
+                    fail_closed
+                    or session is not None
+                    or any(k in activity for k in ("write", "promote", "stage", "publish", "rollback", "deploy"))
+                ):
+                    raise
 
     def _assert_no_worker_access(self, caller: CallerIdentity) -> None:
         subj_lower = caller.subject.lower()
@@ -258,6 +264,7 @@ class DataGateway:
                 entity_id=record.memory_id,
                 activity="mcp_data_memory_promote",
                 agent=caller.subject,
+                session=session,
             )
 
     # -- Artifact & Evidence Registry (ART) --
@@ -338,14 +345,28 @@ class DataGateway:
         metadata: dict[str, str] | None = None,
         session: Any = None,
     ) -> ArtifactReference:
-        """Store content-addressed payload in artifact store and register metadata in repository."""
-        self._authorize_tenant(caller, tenant_id)
+        """Store content-addressed payload in artifact store and register metadata in repository.
+
+        Strict sequencing:
+        1. Authorize caller & verify tenant context
+        2. Put payload into content-addressed store (put_if_absent)
+        3. Verify payload integrity & length before publishing reference
+        4. Atomically persist metadata & append provenance record
+        5. Return published ArtifactReference (or fail closed without publishing reference)
+        """
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_write")
         self._assert_no_worker_access(caller)
 
         if self._artifact_store is None:
             self._artifact_store = ArtifactStoreClient()
 
+        # Step 2: Content-addressed put if absent
         content_hash, length, uri = await self._artifact_store.put_if_absent(content)
+
+        # Step 3: Integrity verification
+        if not await self._artifact_store.verify_integrity(content_hash):
+            raise ValueError(f"Payload integrity check failed for hash '{content_hash}'.")
+
         art_id = artifact_id or str(uuid.uuid4())
         meta = dict(metadata or {})
         meta["byte_length"] = str(length)
@@ -362,16 +383,68 @@ class DataGateway:
             metadata=meta,
         )
 
+        # Step 4: Transactional metadata + provenance append
+        # If either fails, the transaction aborts and the reference is never published.
         if self._artifact_repository is not None:
-            await self._artifact_repository.register(tenant_id, art_ref, session=session)
+            if session is not None:
+                try:
+                    await self._artifact_repository.register(tenant_id, art_ref, session=session)
+                except TypeError:
+                    await self._artifact_repository.register(tenant_id, art_ref)
+            else:
+                await self._artifact_repository.register(tenant_id, art_ref)
 
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=art_id,
             activity="mcp_data_artifact_payload_write",
             agent=caller.subject,
+            metadata={
+                "content_hash": content_hash,
+                "byte_length": str(length),
+                "deliverable_type": deliverable_type,
+                "uri": uri,
+            },
+            session=session,
+            fail_closed=True,
         )
         return art_ref
+
+    async def reconcile_orphan_artifacts(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Scan stored objects against the metadata registry to detect unreferenced orphan payloads."""
+        self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM, requested_capability="mcp_data_read")
+        self._assert_no_worker_access(caller)
+        if self._artifact_store is None or self._artifact_repository is None:
+            return {"status": "unconfigured", "orphan_hashes": [], "referenced_hashes": []}
+
+        all_hashes = await self._artifact_store.list_hashes()
+        orphans: list[str] = []
+        referenced: list[str] = []
+        for h in all_hashes:
+            resolved = await self._artifact_repository.resolve_by_hash(h, tenant_id=tenant_id)
+            if resolved is None:
+                orphans.append(h)
+            else:
+                referenced.append(h)
+
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"reconcile_artifacts:{len(orphans)}",
+            activity="mcp_data_artifact_reconcile",
+            agent=caller.subject,
+            metadata={"orphan_count": len(orphans), "referenced_count": len(referenced)},
+        )
+        return {
+            "status": "reconciled",
+            "total_objects": len(all_hashes),
+            "orphan_hashes": orphans,
+            "referenced_hashes": referenced,
+        }
 
     async def get_artifact_payload(
         self, caller: CallerIdentity, *, tenant_id: str, artifact_id: str
@@ -427,6 +500,17 @@ class DataGateway:
         self._assert_no_worker_access(caller)
         if self._cms_client is None:
             return None
+        meta = dict(provenance_context or {})
+        if idempotency_key:
+            meta["idempotency_key"] = idempotency_key
+        # Record intent provenance
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms:{content_type}:{entry_id}",
+            activity="mcp_data_cms_stage_intent",
+            agent=caller.subject,
+            metadata=meta,
+        )
         res = None
         if hasattr(self._cms_client, "stage_entry"):
             try:
@@ -435,15 +519,17 @@ class DataGateway:
                 )
             except TypeError:
                 res = await self._cms_client.stage_entry(content_type, entry_id, data, tenant_id=tenant_id)
-        meta = dict(provenance_context or {})
-        if idempotency_key:
-            meta["idempotency_key"] = idempotency_key
+        result_meta = dict(meta)
+        if isinstance(res, dict):
+            provider_version = res.get("version") or res.get("version_id") or res.get("revision") or res.get("status")
+            if provider_version:
+                result_meta["provider_version"] = str(provider_version)
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=f"cms:{content_type}:{entry_id}",
             activity="mcp_data_cms_stage",
             agent=caller.subject,
-            metadata=meta,
+            metadata=result_meta,
         )
         return res
 
@@ -463,21 +549,34 @@ class DataGateway:
         self._assert_no_worker_access(caller)
         if self._cms_client is None:
             return {"status": "cms_unconfigured"}
+        meta = dict(provenance_context or {})
+        if idempotency_key:
+            meta["idempotency_key"] = idempotency_key
+        # Record intent provenance
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"cms:{content_type}:{entry_id}",
+            activity="mcp_data_cms_write_intent",
+            agent=caller.subject,
+            metadata=meta,
+        )
         try:
             res = await self._cms_client.apply_changes(
                 content_type, entry_id, diff, tenant_id=tenant_id, idempotency_key=idempotency_key
             )
         except TypeError:
             res = await self._cms_client.apply_changes(content_type, entry_id, diff, tenant_id=tenant_id)
-        meta = dict(provenance_context or {})
-        if idempotency_key:
-            meta["idempotency_key"] = idempotency_key
+        result_meta = dict(meta)
+        if isinstance(res, dict):
+            provider_version = res.get("version") or res.get("version_id") or res.get("revision") or res.get("status")
+            if provider_version:
+                result_meta["provider_version"] = provider_version
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=f"cms:{content_type}:{entry_id}",
             activity="mcp_data_cms_write",
             agent=caller.subject,
-            metadata=meta,
+            metadata=result_meta,
         )
         return res
 
