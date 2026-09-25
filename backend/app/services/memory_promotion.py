@@ -59,6 +59,10 @@ class MemoryPromotionService:
         brand_id: str | None = None,
         namespace: str = "brand_rules",
         justification: str = "",
+        logical_id: str | None = None,
+        version: int = 1,
+        supersedes: str | None = None,
+        session: Any = None,
     ) -> MemoryRecord | None:
         """Promote and persist a learning delta, or return None if not validated."""
         if confidence < self._min_confidence:
@@ -72,6 +76,9 @@ class MemoryPromotionService:
             namespace=namespace,
             statement=statement,
             confidence=confidence,
+            logical_id=logical_id,
+            version=version,
+            supersedes=supersedes,
             promotion_justification=justification,
             source_task_ids=source_task_ids,
         )
@@ -83,7 +90,13 @@ class MemoryPromotionService:
             )
             await self._data_gateway.promote_memory(caller, tenant_id=tenant_id, record=record)
         elif self._repository is not None:
-            await self._repository.promote(record)
+            if session is not None:
+                try:
+                    await self._repository.promote(record, session=session)
+                except TypeError:
+                    await self._repository.promote(record)
+            else:
+                await self._repository.promote(record)
         return record
 
     async def validate_and_promote(

@@ -214,6 +214,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   ├── 🐍 linkedin.py
 │   │   │   │   ├── 🐍 meta.py
 │   │   │   │   └── 🐍 tiktok.py
+│   │   │   ├── 📁 artifact_store/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   └── 🐍 client.py
 │   │   │   ├── 📁 cms/
 │   │   │   │   ├── 🐍 __init__.py
 │   │   │   │   └── 🐍 client.py
@@ -288,6 +291,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 dispatch.py
 │   │   │   ├── 🐍 governance.py
 │   │   │   ├── 🐍 learning_performance.py
+│   │   │   ├── 🐍 memory.py
 │   │   │   ├── 🐍 product_evidence.py
 │   │   │   ├── 🐍 provenance.py
 │   │   │   ├── 🐍 sandbox.py
@@ -433,6 +437,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_l2_03_governed_orchestration.py
 │   │   │   ├── 🐍 test_layer4_cdb_domains.py
 │   │   │   ├── 🐍 test_layer4_database_foundation.py
+│   │   │   ├── 🐍 test_layer4_mem_art_storage.py
 │   │   │   ├── 🐍 test_live_telemetry_ingestion_t30.py
 │   │   │   ├── 🐍 test_llm_wiring_verification.py
 │   │   │   ├── 🐍 test_memory_promotion_t32.py

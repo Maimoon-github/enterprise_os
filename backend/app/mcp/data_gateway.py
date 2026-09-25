@@ -13,10 +13,12 @@ Enforces tenant authorization on every call before delegating to a repository.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
 from app.core.exceptions import PolicyViolationError
+from app.integrations.artifact_store.client import ArtifactStoreClient
 from app.integrations.cms.client import CmsClient
 from app.persistence.repositories.artifact import ArtifactReference, ArtifactRepository
 from app.persistence.repositories.memory import MemoryRecord, MemoryRepository
@@ -40,6 +42,7 @@ class DataGateway:
         operational_repository: OperationalRepository | None = None,
         memory_repository: MemoryRepository | None = None,
         artifact_repository: ArtifactRepository | None = None,
+        artifact_store: ArtifactStoreClient | None = None,
         cms_client: CmsClient | None = None,
         telemetry_repository: TelemetryRepository | None = None,
         provenance_recorder: ProvenanceRecorder | None = None,
@@ -49,6 +52,7 @@ class DataGateway:
         self._operational_repository = operational_repository
         self._memory_repository = memory_repository
         self._artifact_repository = artifact_repository
+        self._artifact_store = artifact_store
         self._cms_client = cms_client
         self._telemetry_repository = telemetry_repository
         self._provenance_recorder = provenance_recorder
@@ -172,7 +176,12 @@ class DataGateway:
         return recs
 
     async def promote_memory(
-        self, caller: CallerIdentity, *, tenant_id: str, record: MemoryRecord
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        record: MemoryRecord,
+        session: Any = None,
     ) -> None:
         """Authorize and promote a validated learning delta into institutional memory."""
         subj_lower = caller.subject.lower()
@@ -187,7 +196,13 @@ class DataGateway:
             )
         self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM)
         if self._memory_repository is not None:
-            await self._memory_repository.promote(record)
+            if session is not None:
+                try:
+                    await self._memory_repository.promote(record, session=session)
+                except TypeError:
+                    await self._memory_repository.promote(record)
+            else:
+                await self._memory_repository.promote(record)
             await self._record_audit(
                 tenant_id=tenant_id,
                 entity_id=record.memory_id,
@@ -204,7 +219,10 @@ class DataGateway:
         self._assert_no_worker_access(caller)
         if self._artifact_repository is None:
             return None
-        art = await self._artifact_repository.resolve(artifact_id)
+        try:
+            art = await self._artifact_repository.resolve(artifact_id, tenant_id=tenant_id)
+        except TypeError:
+            art = await self._artifact_repository.resolve(artifact_id)
         await self._record_audit(
             tenant_id=tenant_id,
             entity_id=artifact_id,
@@ -232,19 +250,98 @@ class DataGateway:
         return art
 
     async def register_artifact(
-        self, caller: CallerIdentity, *, tenant_id: str, artifact: ArtifactReference
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        artifact: ArtifactReference,
+        session: Any = None,
     ) -> None:
         """Authorize and register an immutable deliverable in the artifact registry."""
         self._authorize_tenant(caller, tenant_id)
         self._assert_no_worker_access(caller)
         if self._artifact_repository is not None:
-            await self._artifact_repository.register(tenant_id, artifact)
+            if session is not None:
+                try:
+                    await self._artifact_repository.register(tenant_id, artifact, session=session)
+                except TypeError:
+                    await self._artifact_repository.register(tenant_id, artifact)
+            else:
+                await self._artifact_repository.register(tenant_id, artifact)
             await self._record_audit(
                 tenant_id=tenant_id,
                 entity_id=artifact.artifact_id,
                 activity="mcp_data_artifact_write",
                 agent=caller.subject,
             )
+
+    async def store_and_register_artifact(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        content: bytes | str,
+        deliverable_type: str = "generic",
+        media_type: str = "application/octet-stream",
+        name: str = "",
+        artifact_id: str | None = None,
+        metadata: dict[str, str] | None = None,
+        session: Any = None,
+    ) -> ArtifactReference:
+        """Store content-addressed payload in artifact store and register metadata in repository."""
+        self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
+
+        if self._artifact_store is None:
+            self._artifact_store = ArtifactStoreClient()
+
+        content_hash, length, uri = await self._artifact_store.put_if_absent(content)
+        art_id = artifact_id or str(uuid.uuid4())
+        meta = dict(metadata or {})
+        meta["byte_length"] = str(length)
+
+        art_ref = ArtifactReference(
+            artifact_id=art_id,
+            content_hash=content_hash,
+            uri=uri,
+            media_type=media_type,
+            deliverable_type=deliverable_type,
+            tenant_id=tenant_id,
+            name=name,
+            creator_agent=caller.subject,
+            metadata=meta,
+        )
+
+        if self._artifact_repository is not None:
+            await self._artifact_repository.register(tenant_id, art_ref, session=session)
+
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=art_id,
+            activity="mcp_data_artifact_payload_write",
+            agent=caller.subject,
+        )
+        return art_ref
+
+    async def get_artifact_payload(
+        self, caller: CallerIdentity, *, tenant_id: str, artifact_id: str
+    ) -> bytes:
+        """Authorize and retrieve the payload of an artifact, verifying integrity."""
+        self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
+        if self._artifact_repository is None or self._artifact_store is None:
+            raise ValueError("Artifact repository or artifact store not configured.")
+        art = await self._artifact_repository.resolve(artifact_id, tenant_id=tenant_id)
+        payload = await self._artifact_store.get(art.content_hash)
+        if not art.verify_integrity(payload):
+            raise ValueError(f"Integrity verification failed for artifact '{artifact_id}'.")
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=artifact_id,
+            activity="mcp_data_artifact_payload_read",
+            agent=caller.subject,
+        )
+        return payload
 
     # -- Headless CMS Staging (CMS) --
     async def read_cms_staged(

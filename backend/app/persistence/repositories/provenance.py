@@ -59,12 +59,17 @@ class ProvenanceRepository:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
-    async def _latest(self, tenant_id: str) -> ProvenanceRecord | None:
-        async with self._session_factory() as session:
-            rows = await session.execute(
-                select(_table.c.document).where(_table.c.tenant_id == tenant_id)
-            )
+    async def _latest(
+        self, tenant_id: str, *, session: AsyncSession | None = None
+    ) -> ProvenanceRecord | None:
+        stmt = select(_table.c.document).where(_table.c.tenant_id == tenant_id)
+        if session is not None:
+            rows = await session.execute(stmt)
             documents = [doc for (doc,) in rows.all()]
+        else:
+            async with self._session_factory() as local_session:
+                rows = await local_session.execute(stmt)
+                documents = [doc for (doc,) in rows.all()]
         if not documents:
             return None
         records = [ProvenanceRecord.model_validate(doc) for doc in documents]
@@ -80,26 +85,31 @@ class ProvenanceRepository:
         record_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         w3c_prov: dict[str, Any] | None = None,
+        session: AsyncSession | None = None,
     ) -> ProvenanceRecord:
         """Append a new hash-chained provenance record and return it.
 
-        Supports idempotent append: if record_id is supplied and already exists
-        for the given tenant, the existing record is returned unchanged.
+        Supports idempotent append and caller transaction participation.
         """
         # Idempotency check
         if record_id is not None:
-            async with self._session_factory() as session:
-                row = await session.execute(
-                    select(_table.c.document).where(
-                        _table.c.id == record_id, _table.c.tenant_id == tenant_id
-                    )
-                )
+            stmt = select(_table.c.document).where(
+                _table.c.id == record_id, _table.c.tenant_id == tenant_id
+            )
+            if session is not None:
+                row = await session.execute(stmt)
                 existing_doc = row.scalar_one_or_none()
                 if existing_doc:
                     return ProvenanceRecord.model_validate(existing_doc)
+            else:
+                async with self._session_factory() as local_session:
+                    row = await local_session.execute(stmt)
+                    existing_doc = row.scalar_one_or_none()
+                    if existing_doc:
+                        return ProvenanceRecord.model_validate(existing_doc)
 
         occurred_at = datetime.now(UTC)
-        latest = await self._latest(tenant_id)
+        latest = await self._latest(tenant_id, session=session)
         prev_hash = latest.record_hash if latest else None
         meta_hash = _compute_metadata_hash(metadata, w3c_prov)
         record_hash = _compute_hash(prev_hash, entity_id, activity, agent, occurred_at, meta_hash)
@@ -117,16 +127,18 @@ class ProvenanceRepository:
             metadata=metadata or {},
             w3c_prov=w3c_prov or {},
         )
-        async with self._session_factory() as session:
-            await session.execute(
-                _table.insert().values(
-                    id=record.record_id,
-                    tenant_id=tenant_id,
-                    document=record.model_dump(mode="json"),
-                    updated_at=occurred_at,
-                )
-            )
-            await session.commit()
+        insert_stmt = _table.insert().values(
+            id=record.record_id,
+            tenant_id=tenant_id,
+            document=record.model_dump(mode="json"),
+            updated_at=occurred_at,
+        )
+        if session is not None:
+            await session.execute(insert_stmt)
+        else:
+            async with self._session_factory() as local_session:
+                await local_session.execute(insert_stmt)
+                await local_session.commit()
         return record
 
     async def chain(self, tenant_id: str) -> list[ProvenanceRecord]:

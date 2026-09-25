@@ -107,8 +107,23 @@ class ProvenanceRecorder:
         metadata: dict[str, Any] | None = None,
         w3c_prov: dict[str, Any] | None = None,
         record_id: str | None = None,
+        session: Any = None,
     ) -> ProvenanceRecord:
         """Append and return a new hash-chained provenance record."""
+        if session is not None:
+            try:
+                return await self._repository.append(
+                    tenant_id=tenant_id,
+                    entity_id=entity_id,
+                    activity=activity,
+                    agent=agent,
+                    record_id=record_id,
+                    metadata=metadata,
+                    w3c_prov=w3c_prov,
+                    session=session,
+                )
+            except TypeError:
+                pass
         return await self._repository.append(
             tenant_id=tenant_id,
             entity_id=entity_id,
