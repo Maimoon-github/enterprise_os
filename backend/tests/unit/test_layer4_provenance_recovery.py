@@ -378,3 +378,37 @@ async def test_storage_health_aggregation_and_sanitization(test_setup: dict[str,
     assert degraded_report["status"] == "degraded"
     assert degraded_report["components"]["database"]["status"] == "unhealthy"
     assert degraded_report["components"]["database"]["error"] == "ConnectionRefusedError"
+
+
+@pytest.mark.asyncio
+async def test_l4_07_failure_and_tamper_fail_closed(test_setup: dict[str, Any]) -> None:
+    """Verify that CMS outages and corrupted artifact payloads fail closed without leaking state."""
+    gateway: DataGateway = test_setup["gateway"]
+    caller: CallerIdentity = test_setup["caller"]
+    art_store: ArtifactStoreClient = test_setup["art_store"]
+    art_repo: _MockArtifactRepository = test_setup["art_repo"]
+    cms_client: CmsClient = test_setup["cms_client"]
+    tenant_id = "tenant-l406"
+
+    # 1. Corrupted artifact payload retrieval fails closed
+    content = b"ORIGINAL_VALID_DELIVERABLE_123"
+    ref = await gateway.store_and_register_artifact(
+        caller, tenant_id=tenant_id, content=content, artifact_id="art-valid-1"
+    )
+    assert ref.content_hash == hashlib.sha256(content).hexdigest()
+
+    # Tamper with the raw payload in store to simulate bit rot / storage corruption
+    art_store._store[ref.content_hash] = b"CORRUPTED_DELIVERABLE_BIT_ROT"
+    with pytest.raises(ValueError, match="Integrity verification failed"):
+        await gateway.get_artifact_payload(caller, tenant_id=tenant_id, artifact_id="art-valid-1")
+
+    # 2. CMS outage / timeout fails closed
+    cms_client.stage_entry = AsyncMock(side_effect=TimeoutError("Headless CMS connection timeout"))
+    with pytest.raises(TimeoutError, match="Headless CMS connection timeout"):
+        await gateway.stage_cms_entry(
+            caller,
+            tenant_id=tenant_id,
+            content_type="blog",
+            entry_id="b1",
+            data={"title": "test"},
+        )
