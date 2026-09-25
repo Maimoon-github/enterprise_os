@@ -75,16 +75,19 @@ class DataGateway:
             except Exception:
                 pass
 
+    def _assert_no_worker_access(self, caller: CallerIdentity) -> None:
+        if caller.subject.startswith(("W_", "S_")):
+            raise PolicyViolationError(
+                f"Direct worker enterprise-store access forbidden for '{caller.subject}'; data access must be mediated through Intelligence Engine (Model A)"
+            )
+
     # -- Vector / Knowledge Retrieval & Ingestion --
     async def query(
         self, caller: CallerIdentity, *, tenant_id: str, query: str, top_k: int = 10
     ) -> list[dict[str, Any]]:
         """Authorize and execute a similarity-search read."""
         self._authorize_tenant(caller, tenant_id)
-        if caller.subject.startswith(("W_", "S_")):
-            raise PolicyViolationError(
-                f"Direct worker enterprise-store access forbidden for '{caller.subject}'; data access must be mediated through Intelligence Engine (Model A)"
-            )
+        self._assert_no_worker_access(caller)
         results = await self._vector_repository.similarity_search(
             tenant_id=tenant_id, query=query, top_k=top_k
         )
@@ -107,10 +110,7 @@ class DataGateway:
     ) -> None:
         """Authorize and execute a document ingestion write."""
         self._authorize_tenant(caller, tenant_id)
-        if caller.subject.startswith(("W_", "S_")):
-            raise PolicyViolationError(
-                f"Direct worker enterprise-store access forbidden for '{caller.subject}'; data access must be mediated through Intelligence Engine (Model A)"
-            )
+        self._assert_no_worker_access(caller)
         await self._vector_repository.index_document(
             doc_id=doc_id, tenant_id=tenant_id, text=text, source=source
         )
@@ -132,6 +132,7 @@ class DataGateway:
     ) -> list[MemoryRecord]:
         """Authorize and query institutional memory records."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         recs: list[MemoryRecord] = []
         if self._memory_repository is not None and hasattr(self._memory_repository, "list_by_tenant"):
             recs = await self._memory_repository.list_by_tenant(
@@ -175,6 +176,7 @@ class DataGateway:
     ) -> ArtifactReference | None:
         """Authorize and resolve a deliverable/evidence artifact by UUID/hash."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._artifact_repository is None:
             return None
         art = await self._artifact_repository.resolve(artifact_id)
@@ -191,6 +193,7 @@ class DataGateway:
     ) -> ArtifactReference | None:
         """Authorize and resolve an artifact by cryptographic content hash."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._artifact_repository is None or not hasattr(self._artifact_repository, "resolve_by_hash"):
             return None
         art = await self._artifact_repository.resolve_by_hash(content_hash, tenant_id=tenant_id)
@@ -208,6 +211,7 @@ class DataGateway:
     ) -> None:
         """Authorize and register an immutable deliverable in the artifact registry."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._artifact_repository is not None:
             await self._artifact_repository.register(tenant_id, artifact)
             await self._record_audit(
@@ -223,6 +227,7 @@ class DataGateway:
     ) -> list[dict[str, Any]]:
         """Authorize and read staged CMS models."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._cms_client is None:
             return []
         items = await self._cms_client.read_staged(content_type)
@@ -245,6 +250,7 @@ class DataGateway:
     ) -> None:
         """Authorize and register a staged CMS entry."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._cms_client is not None and hasattr(self._cms_client, "stage_entry"):
             await self._cms_client.stage_entry(content_type, entry_id, data, tenant_id=tenant_id)
             await self._record_audit(
@@ -265,6 +271,7 @@ class DataGateway:
     ) -> dict[str, str]:
         """Authorize and apply schema/content diffs to staged CMS entries."""
         self._authorize_tenant(caller, tenant_id, risk=RiskLevel.MEDIUM)
+        self._assert_no_worker_access(caller)
         if self._cms_client is None:
             return {"status": "cms_unconfigured"}
         res = await self._cms_client.apply_changes(content_type, entry_id, diff)
@@ -282,6 +289,7 @@ class DataGateway:
     ) -> None:
         """Authorize and persist an operational directive."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._operational_repository is not None:
             await self._operational_repository.save_directive(directive)
             await self._record_audit(
@@ -296,6 +304,7 @@ class DataGateway:
     ) -> Directive | None:
         """Authorize and load an operational directive."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._operational_repository is not None:
             d = await self._operational_repository.require(directive_id)
             await self._record_audit(
@@ -312,6 +321,7 @@ class DataGateway:
     ) -> None:
         """Authorize and persist an omnichannel telemetry event."""
         self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
         if self._telemetry_repository is not None:
             await self._telemetry_repository.record(event)
             await self._record_audit(
@@ -320,3 +330,27 @@ class DataGateway:
                 activity="mcp_data_telemetry_write",
                 agent=caller.subject,
             )
+
+    async def list_telemetry(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        event_type: str | None = None,
+    ) -> list[TelemetryEvent]:
+        """Authorize and query omnichannel performance telemetry through the governed gateway."""
+        self._authorize_tenant(caller, tenant_id)
+        self._assert_no_worker_access(caller)
+        if self._telemetry_repository is None:
+            return []
+        if event_type:
+            events = await self._telemetry_repository.list_by_type(tenant_id, event_type)
+        else:
+            events = await self._telemetry_repository.list_all(tenant_id)
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=f"telemetry:{event_type or 'all'}",
+            activity="mcp_data_telemetry_read",
+            agent=caller.subject,
+        )
+        return events

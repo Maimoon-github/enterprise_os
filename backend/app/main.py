@@ -325,7 +325,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         data_gateway=data_gateway,
     )
 
-    brand_persona_resolver = BrandPersonaResolver(memory_repository=memory_repository)
+    brand_persona_resolver = BrandPersonaResolver(
+        memory_repository=memory_repository,
+        data_gateway=data_gateway,
+    )
 
     intelligence_engine = IntelligenceEngine(
         policy_evaluator=PolicyEvaluator(PolicyEngine()),

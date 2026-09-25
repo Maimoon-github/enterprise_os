@@ -101,4 +101,16 @@ class TelemetryNormalizer:
     async def for_learning_loop(self, tenant_id: str) -> list[TelemetryEvent]:
         """Return ROAS events feeding W_LEARN's attribution and decay analysis."""
 
+        if self._data_gateway is not None and hasattr(self._data_gateway, "list_telemetry"):
+            from app.schemas.governance import RiskLevel, TenantScope
+            from app.security.authorization_boundary import CallerIdentity
+
+            caller = CallerIdentity(
+                subject="telemetry_engine",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+            )
+            return await self._data_gateway.list_telemetry(
+                caller, tenant_id=tenant_id, event_type=TelemetryEventType.ROAS.value
+            )
         return await self._repository.list_by_type(tenant_id, TelemetryEventType.ROAS.value)

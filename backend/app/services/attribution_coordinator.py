@@ -98,7 +98,18 @@ class AttributionCoordinator:
 
         Under Model A, workers never query CDB directly; this service brokers the read.
         """
-        raw_events = await self._telemetry_repository.list_all(tenant_id)
+        if self._data_gateway is not None and hasattr(self._data_gateway, "list_telemetry"):
+            from app.schemas.governance import RiskLevel, TenantScope
+            from app.security.authorization_boundary import CallerIdentity
+
+            caller = CallerIdentity(
+                subject="intelligence_engine",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+            )
+            raw_events = await self._data_gateway.list_telemetry(caller, tenant_id=tenant_id)
+        else:
+            raw_events = await self._telemetry_repository.list_all(tenant_id)
         cutoff = datetime.now(UTC) - timedelta(days=window_days)
 
         dedup_events: dict[str, dict[str, Any]] = {}

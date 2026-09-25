@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.persistence.repositories.memory import MemoryRepository
 
@@ -36,6 +37,8 @@ class BrandPersonaResolver:
         self,
         personas: dict[str, BrandPersona] | dict[tuple[str, str], BrandPersona] | None = None,
         memory_repository: MemoryRepository | None = None,
+        *,
+        data_gateway: Any | None = None,
     ) -> None:
         self._personas: dict[tuple[str, str], BrandPersona] = {}
         if personas:
@@ -45,6 +48,7 @@ class BrandPersonaResolver:
                 else:
                     self._personas[(k, p.brand_id)] = p
         self._memory_repository = memory_repository
+        self._data_gateway = data_gateway
 
     def register(self, persona: BrandPersona) -> None:
         """Register or replace the persona for a tenant and brand."""
@@ -55,10 +59,23 @@ class BrandPersonaResolver:
     ) -> BrandPersona:
         """Return the persona for ``(tenant_id, brand_id)`` enriched with institutional memory records."""
         base = self.resolve(tenant_id=tenant_id, brand_id=brand_id)
-        if self._memory_repository is None or not hasattr(self._memory_repository, "list_by_tenant"):
+
+        records: list[Any] = []
+        if self._data_gateway is not None and hasattr(self._data_gateway, "query_memory"):
+            from app.schemas.governance import RiskLevel, TenantScope
+            from app.security.authorization_boundary import CallerIdentity
+
+            caller = CallerIdentity(
+                subject="intelligence_engine",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+            )
+            records = await self._data_gateway.query_memory(caller, tenant_id=tenant_id)
+        elif self._memory_repository is not None and hasattr(self._memory_repository, "list_by_tenant"):
+            records = await self._memory_repository.list_by_tenant(tenant_id)
+        else:
             return base
 
-        records = await self._memory_repository.list_by_tenant(tenant_id)
         if not records:
             return base
 

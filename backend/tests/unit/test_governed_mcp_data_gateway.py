@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.exceptions import AuthorizationError
+from app.core.exceptions import AuthorizationError, PolicyViolationError
 from app.mcp.data_gateway import DataGateway
 from app.persistence.repositories.artifact import ArtifactReference
 from app.persistence.repositories.memory import MemoryRecord
 from app.schemas.governance import Directive, RiskLevel, TenantScope
+from app.schemas.telemetry import TelemetryEvent, TelemetryEventType
 from app.security.authorization_boundary import AuthorizationBoundary, CallerIdentity
 from tests.conftest import FakeVectorRepository
 
@@ -200,3 +201,142 @@ async def test_data_gateway_cms_and_artifact_hash_and_memory_namespaces() -> Non
     heuristics = await gateway.query_memory(caller, tenant_id="tenant-alpha", namespace="attribution_heuristics")
     assert len(heuristics) == 1
     assert heuristics[0].memory_id == "mem-heur-1"
+
+
+class _FakeOperationalRepository:
+    def __init__(self) -> None:
+        self._directives: dict[str, Directive] = {}
+
+    async def save_directive(self, directive: Directive) -> None:
+        self._directives[directive.directive_id] = directive
+
+    async def require(self, directive_id: str) -> Directive:
+        if directive_id not in self._directives:
+            raise KeyError(directive_id)
+        return self._directives[directive_id]
+
+
+class _FakeTelemetryRepository:
+    def __init__(self) -> None:
+        self._events: list[TelemetryEvent] = []
+
+    async def record(self, event: TelemetryEvent) -> None:
+        self._events.append(event)
+
+    async def list_by_type(self, tenant_id: str, event_type: str) -> list[TelemetryEvent]:
+        return [e for e in self._events if e.tenant_id == tenant_id and e.event_type.value == event_type]
+
+    async def list_all(self, tenant_id: str) -> list[TelemetryEvent]:
+        return [e for e in self._events if e.tenant_id == tenant_id]
+
+
+@pytest.mark.asyncio
+async def test_data_gateway_rejects_direct_worker_access_across_all_endpoints() -> None:
+    from app.integrations.cms.client import CmsClient
+    from datetime import UTC, datetime
+
+    scope = TenantScope(tenant_id="tenant-alpha")
+    worker_caller = CallerIdentity(subject="W_DEV", tenant_scope=scope, risk_ceiling=RiskLevel.MEDIUM)
+    specialist_caller = CallerIdentity(subject="S_ATTR", tenant_scope=scope, risk_ceiling=RiskLevel.MEDIUM)
+
+    gateway = DataGateway(
+        vector_repository=FakeVectorRepository(),
+        authorization_boundary=AuthorizationBoundary(),
+        memory_repository=_FakeMemoryRepository(),  # type: ignore[arg-type]
+        artifact_repository=_FakeArtifactRepository(),  # type: ignore[arg-type]
+        cms_client=CmsClient(),
+        operational_repository=_FakeOperationalRepository(),  # type: ignore[arg-type]
+        telemetry_repository=_FakeTelemetryRepository(),  # type: ignore[arg-type]
+    )
+
+    for caller in (worker_caller, specialist_caller):
+        # 1. query / ingest
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.query(caller, tenant_id="tenant-alpha", query="test")
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.ingest(caller, tenant_id="tenant-alpha", doc_id="d1", text="t", source="s")
+
+        # 2. memory query
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.query_memory(caller, tenant_id="tenant-alpha")
+
+        # 3. artifact read / write
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.resolve_artifact(caller, tenant_id="tenant-alpha", artifact_id="art-1")
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.resolve_artifact_by_hash(caller, tenant_id="tenant-alpha", content_hash="hash1")
+        art = ArtifactReference(
+            artifact_id="art-2",
+            content_hash="hash2",
+            uri="enterprise://artifacts/art-2",
+            media_type="application/json",
+            deliverable_type="evidence_dossier",
+        )
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.register_artifact(caller, tenant_id="tenant-alpha", artifact=art)
+
+        # 4. CMS read / stage / apply
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.read_cms_staged(caller, tenant_id="tenant-alpha", content_type="pages")
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.stage_cms_entry(caller, tenant_id="tenant-alpha", content_type="pages", entry_id="e1", data={})
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.apply_cms_changes(caller, tenant_id="tenant-alpha", content_type="pages", entry_id="e1", diff={})
+
+        # 5. Directives save / get
+        dir_obj = Directive(
+            directive_id="dir-1",
+            tenant_id="tenant-alpha",
+            title="test",
+            objective="test",
+            budget_cap=100.0,
+            scope=scope,
+        )
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.save_directive(caller, tenant_id="tenant-alpha", directive=dir_obj)
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.get_directive(caller, tenant_id="tenant-alpha", directive_id="dir-1")
+
+        # 6. Telemetry write / read
+        tel_ev = TelemetryEvent(
+            event_id="evt-1",
+            tenant_id="tenant-alpha",
+            event_type=TelemetryEventType.ROAS,
+            channel="meta",
+            occurred_at=datetime.now(UTC),
+            metrics={"roas": 2.5},
+        )
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.record_telemetry(caller, tenant_id="tenant-alpha", event=tel_ev)
+        with pytest.raises(PolicyViolationError, match="Direct worker enterprise-store access forbidden"):
+            await gateway.list_telemetry(caller, tenant_id="tenant-alpha")
+
+
+@pytest.mark.asyncio
+async def test_data_gateway_list_telemetry_governed_read() -> None:
+    from datetime import UTC, datetime
+
+    scope = TenantScope(tenant_id="tenant-alpha")
+    caller = CallerIdentity(subject="intelligence_engine", tenant_scope=scope, risk_ceiling=RiskLevel.LOW)
+
+    tel_repo = _FakeTelemetryRepository()
+    gateway = DataGateway(
+        vector_repository=FakeVectorRepository(),
+        authorization_boundary=AuthorizationBoundary(),
+        telemetry_repository=tel_repo,  # type: ignore[arg-type]
+    )
+
+    ev = TelemetryEvent(
+        event_id="evt-100",
+        tenant_id="tenant-alpha",
+        event_type=TelemetryEventType.ROAS,
+        channel="meta",
+        occurred_at=datetime.now(UTC),
+        metrics={"roas": 4.1},
+    )
+    await gateway.record_telemetry(caller, tenant_id="tenant-alpha", event=ev)
+
+    results = await gateway.list_telemetry(caller, tenant_id="tenant-alpha", event_type=TelemetryEventType.ROAS.value)
+    assert len(results) == 1
+    assert results[0].metrics["roas"] == 4.1
+

@@ -29,6 +29,8 @@ _FORBIDDEN_PREFIXES = (
     "app.services.rag",
     "app.persistence",
     "app.orchestration.rag_query_dispatch",
+    "app.mcp.data_gateway",
+    "app.integrations.cms",
 )
 
 
