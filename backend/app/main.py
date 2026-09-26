@@ -17,6 +17,7 @@ from app.agents.development import DevelopmentAgent
 from app.agents.learning_performance import LearningPerformanceAgent
 from app.agents.product_evidence import ProductEvidenceAgent
 from app.agents.strategy import StrategyAgent
+from app.agents.strategy_engine.profiles import S_ALLOC_PROFILE, create_s_alloc_llm_client
 from app.agents.strategy_engine.subagents import StrategyAllocationAgent
 from app.api.router import api_router
 from app.core.exceptions import (
@@ -127,7 +128,10 @@ def _build_workers(
             continue
         assert get_capability_for_role(role) == agent_class.capability
         if role == WorkerRole.STRATEGY:
-            allocation_agent = StrategyAllocationAgent(llm_client=s_alloc_llm_client)
+            allocation_agent = StrategyAllocationAgent(
+                llm_client=s_alloc_llm_client,
+                profile=S_ALLOC_PROFILE,
+            )
             workers[role] = StrategyAgent(
                 sandbox_client,
                 llm_client=llm_client,
@@ -184,7 +188,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
     llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
-    s_alloc_llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
+    s_alloc_llm_client = (
+        create_s_alloc_llm_client(S_ALLOC_PROFILE, base_settings=settings.llm)[0]
+        if settings.llm.provider != "unset"
+        else None
+    )
 
     # Wire 7 independent Creative LLM identities: W_CREAT + 6 specialists
     creative_llm_clients: list[LlmClient] = []

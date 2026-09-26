@@ -18,7 +18,6 @@ from pydantic import BaseModel, ValidationError
 from app.core.exceptions import ConfigurationError
 from app.core.settings import LlmSettings
 
-
 ResponseModelT = TypeVar("ResponseModelT", bound=BaseModel)
 
 
@@ -36,11 +35,15 @@ class LlmClient:
         client: httpx.AsyncClient | None = None,
         agent_identity: str | None = None,
         model_identity: str | None = None,
+        default_temperature: float | None = None,
+        default_max_output_tokens: int | None = None,
     ) -> None:
         self._settings = settings
         self._client = client or httpx.AsyncClient(timeout=settings.request_timeout_seconds)
         self._agent_identity = agent_identity
         self._model_identity = model_identity or settings.model_name
+        self._default_temperature = default_temperature
+        self._default_max_output_tokens = default_max_output_tokens
         self._last_metadata: dict[str, Any] = {}
 
     @property
@@ -54,6 +57,14 @@ class LlmClient:
     @property
     def model_identity(self) -> str:
         return self._model_identity
+
+    @property
+    def default_temperature(self) -> float | None:
+        return self._default_temperature
+
+    @property
+    def default_max_output_tokens(self) -> int | None:
+        return self._default_max_output_tokens
 
     @property
     def last_metadata(self) -> dict[str, Any]:
@@ -75,11 +86,18 @@ class LlmClient:
         if self._settings.is_local:
             return 0.0
         input_cost = (prompt_tokens / 1_000_000.0) * self._settings.cost_per_million_input_tokens
-        output_cost = (completion_tokens / 1_000_000.0) * self._settings.cost_per_million_output_tokens
+        output_cost = (
+            (completion_tokens / 1_000_000.0) * self._settings.cost_per_million_output_tokens
+        )
         return round(input_cost + output_cost, 6)
 
     async def complete_with_metadata(
-        self, prompt: str, *, system: str | None = None
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Return (completion_text, metadata) with observable model identity and token usage."""
 
@@ -94,10 +112,23 @@ class LlmClient:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
 
+        effective_temp = temperature if temperature is not None else self._default_temperature
+        effective_max_tokens = (
+            max_output_tokens if max_output_tokens is not None else self._default_max_output_tokens
+        )
+        request_body: dict[str, Any] = {
+            "model": self._settings.model_name,
+            "messages": messages,
+        }
+        if effective_temp is not None:
+            request_body["temperature"] = effective_temp
+        if effective_max_tokens is not None:
+            request_body["max_tokens"] = effective_max_tokens
+
         try:
             response = await self._client.post(
                 f"{self._settings.base_url}/chat/completions",
-                json={"model": self._settings.model_name, "messages": messages},
+                json=request_body,
                 headers=headers,
             )
             response.raise_for_status()
@@ -136,13 +167,27 @@ class LlmClient:
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
             "estimated_cost_usd": cost,
+            "temperature": effective_temp,
+            "max_output_tokens": effective_max_tokens,
         }
         self._last_metadata = metadata
         return content, metadata
 
-    async def complete(self, prompt: str, *, system: str | None = None) -> str:
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
+    ) -> str:
         """Return the model's completion for ``prompt``."""
-        content, _ = await self.complete_with_metadata(prompt, system=system)
+        content, _ = await self.complete_with_metadata(
+            prompt,
+            system=system,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
         return content
 
     async def generate(
@@ -157,8 +202,14 @@ class LlmClient:
         """Universal generate method supporting prompt/system and user_prompt/system_prompt."""
         effective_prompt = prompt or user_prompt or ""
         effective_system = system or system_prompt
-        return await self.complete(effective_prompt, system=effective_system)
-
+        temperature = kwargs.get("temperature")
+        max_output_tokens = kwargs.get("max_output_tokens")
+        return await self.complete(
+            effective_prompt,
+            system=effective_system,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
 
     async def generate_structured(
         self,
@@ -166,6 +217,8 @@ class LlmClient:
         system_prompt: str,
         user_prompt: str,
         response_model: type[ResponseModelT],
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
     ) -> ResponseModelT:
         """Generate and validate a JSON response against ``response_model``.
 
@@ -186,7 +239,12 @@ class LlmClient:
             f"JSON Schema:\n{schema}"
         )
 
-        content = await self.complete(user_prompt, system=structured_system)
+        content = await self.complete(
+            user_prompt,
+            system=structured_system,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
         payload = self._parse_json_object(content)
 
         try:
@@ -202,12 +260,16 @@ class LlmClient:
         system_prompt: str,
         user_prompt: str,
         response_model: type[ResponseModelT],
+        temperature: float | None = None,
+        max_output_tokens: int | None = None,
     ) -> tuple[ResponseModelT, dict[str, Any]]:
         """Generate structured output and return (response_model, metadata)."""
         result = await self.generate_structured(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_model=response_model,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
         )
         return result, self.last_metadata
 

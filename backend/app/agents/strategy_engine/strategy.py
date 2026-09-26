@@ -642,6 +642,10 @@ class StrategyAgent(BoundedWorkerAgent):
                 "s_alloc_confidence": str(alloc_reasoning.estimated_confidence),
                 "s_alloc_total_tokens": str(alloc_metadata.get("total_tokens", 0)),
             })
+            if "profile_id" in alloc_metadata:
+                provenance["s_alloc_profile_id"] = str(alloc_metadata["profile_id"])
+            if "profile_digest" in alloc_metadata:
+                provenance["s_alloc_profile_digest"] = str(alloc_metadata["profile_digest"])
         if result.provenance:
             provenance.update(result.provenance)
 
