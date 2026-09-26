@@ -46,8 +46,8 @@ if TYPE_CHECKING:
 
 
 _SENSITIVE_PATTERNS = [
-    (re.compile(r"(?i)(api[_-]?key|secret|token|password|auth)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.]{8,}['\"]?"), r"\1: [REDACTED]"),
-    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9_\-\.]{8,}"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(api[_-]?key|secret|token|password|auth|bearer)\s*[:=]\s*['\"]?[A-Za-z0-9_\-\.]{8,}['\"]?"), r"\1: [REDACTED]"),
+    (re.compile(r"(?i)(bearer\s*[:=]?\s*['\"]?)[A-Za-z0-9_\-\.]{8,}['\"]?"), r"\1[REDACTED]"),
 ]
 
 
@@ -57,6 +57,24 @@ def _sanitize_string(text: str) -> str:
     for pattern, replacement in _SENSITIVE_PATTERNS:
         sanitized = pattern.sub(replacement, sanitized)
     return sanitized
+
+
+def _sanitize_val(val: Any) -> Any:
+    """Recursively sanitize structured output objects."""
+    if isinstance(val, str):
+        return _sanitize_string(val)
+    if isinstance(val, dict):
+        return {
+            k: (
+                "[REDACTED]"
+                if any(s in k.lower() for s in ("secret", "token", "password", "api_key", "bearer", "private_key"))
+                else _sanitize_val(v)
+            )
+            for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [_sanitize_val(item) for item in val]
+    return val
 
 
 def _sanitize_payload(payload: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any], list[str]]:
@@ -71,7 +89,7 @@ def _sanitize_payload(payload: dict[str, Any]) -> tuple[dict[str, str], dict[str
         if cleaned_str != val_str:
             warnings.append(f"Sensitive content in field '{key}' was redacted.")
         sanitized_str[key] = cleaned_str
-        structured[key] = val
+        structured[key] = _sanitize_val(val)
 
     return sanitized_str, structured, warnings
 
@@ -522,6 +540,13 @@ class SandboxClient:
             raise SandboxInvocationError(
                 "Local micro-tool execution is prohibited when remote sandbox endpoint is configured."
             )
+        from app.core.settings import get_settings
+        current_env = getattr(self._settings, "environment", None) or getattr(get_settings(), "environment", "")
+        if current_env == "production" or mandate.payload.get("environment") == "production":
+            raise SandboxInvocationError(
+                f"Host-side fallback is strictly prohibited in production for capability '{mandate.capability.value}'. "
+                "Hardened remote sandbox execution is required (fail-closed)."
+            )
         return dispatch_micro_tool(mandate.capability, mandate.payload)
 
     def _execute_specialist(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
@@ -847,6 +872,154 @@ class SandboxClient:
 
                 if not isinstance(parsed, dict):
                     raise SandboxInvocationError("S_PARSE returned a non-object payload.")
+
+                return parsed
+
+            # 6. S_COPY execution via mounted skill in remote AIO sandbox
+            elif mandate.capability == SandboxCapability.COPY:
+                if not (
+                    hasattr(remote_client, "file")
+                    and (hasattr(remote_client.file, "write_file") or hasattr(remote_client.file, "write"))
+                    and hasattr(remote_client, "shell")
+                    and hasattr(remote_client.shell, "exec_command")
+                ):
+                    raise SandboxInvocationError(
+                        "Configured AIO sandbox does not expose required file/shell interfaces for S_COPY."
+                    )
+
+                workspace_dir = f"/workspace/{mandate.execution_id}"
+                input_path = f"{workspace_dir}/input.json"
+                output_path = f"{workspace_dir}/output.json"
+
+                try:
+                    mkdir_res = remote_client.shell.exec_command(command=f"mkdir -p {workspace_dir}")
+                except TypeError:
+                    mkdir_res = remote_client.shell.exec_command(f"mkdir -p {workspace_dir}")
+                mkdir_code = getattr(mkdir_res, "exit_code", 0)
+                if mkdir_code not in (0, None):
+                    stderr = getattr(mkdir_res, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"Failed to create execution workspace directory {workspace_dir} (exit code {mkdir_code}): {stderr}"
+                    )
+
+                write_fn = getattr(remote_client.file, "write_file", None) or getattr(remote_client.file, "write", None)
+                if not callable(write_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable write_file method.")
+                payload_json = json.dumps(mandate.payload, ensure_ascii=False)
+                try:
+                    write_fn(file=input_path, content=payload_json)
+                except TypeError:
+                    write_fn(input_path, payload_json)
+
+                command = (
+                    "python /home/gem/skills/s-copy/scripts/run.py "
+                    f"< {input_path} > {output_path}"
+                )
+                try:
+                    response = remote_client.shell.exec_command(command=command)
+                except TypeError:
+                    response = remote_client.shell.exec_command(command)
+                exit_code = getattr(response, "exit_code", 0)
+                if exit_code not in (0, None):
+                    stderr = getattr(response, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"S_COPY remote execution failed with exit code {exit_code}: {stderr}"
+                    )
+
+                read_fn = getattr(remote_client.file, "read_file", None) or getattr(remote_client.file, "read", None)
+                if not callable(read_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable read_file method.")
+                try:
+                    output = read_fn(file=output_path)
+                except TypeError:
+                    output = read_fn(output_path)
+                raw_content = getattr(getattr(output, "data", output), "content", output)
+                if not isinstance(raw_content, str):
+                    raw_content = str(raw_content)
+
+                try:
+                    parsed = json.loads(raw_content)
+                except Exception as parse_err:
+                    raise SandboxInvocationError(
+                        f"Failed to parse S_COPY structured output from {output_path}: {parse_err}"
+                    ) from parse_err
+
+                if not isinstance(parsed, dict):
+                    raise SandboxInvocationError("S_COPY returned a non-object payload.")
+
+                return parsed
+
+            # 7. S_ATTR execution via mounted skill in remote AIO sandbox
+            elif mandate.capability == SandboxCapability.ATTR:
+                if not (
+                    hasattr(remote_client, "file")
+                    and (hasattr(remote_client.file, "write_file") or hasattr(remote_client.file, "write"))
+                    and hasattr(remote_client, "shell")
+                    and hasattr(remote_client.shell, "exec_command")
+                ):
+                    raise SandboxInvocationError(
+                        "Configured AIO sandbox does not expose required file/shell interfaces for S_ATTR."
+                    )
+
+                workspace_dir = f"/workspace/{mandate.execution_id}"
+                input_path = f"{workspace_dir}/input.json"
+                output_path = f"{workspace_dir}/output.json"
+
+                try:
+                    mkdir_res = remote_client.shell.exec_command(command=f"mkdir -p {workspace_dir}")
+                except TypeError:
+                    mkdir_res = remote_client.shell.exec_command(f"mkdir -p {workspace_dir}")
+                mkdir_code = getattr(mkdir_res, "exit_code", 0)
+                if mkdir_code not in (0, None):
+                    stderr = getattr(mkdir_res, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"Failed to create execution workspace directory {workspace_dir} (exit code {mkdir_code}): {stderr}"
+                    )
+
+                write_fn = getattr(remote_client.file, "write_file", None) or getattr(remote_client.file, "write", None)
+                if not callable(write_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable write_file method.")
+                payload_json = json.dumps(mandate.payload, ensure_ascii=False)
+                try:
+                    write_fn(file=input_path, content=payload_json)
+                except TypeError:
+                    write_fn(input_path, payload_json)
+
+                command = (
+                    "python /home/gem/skills/s-attr/scripts/run.py "
+                    f"< {input_path} > {output_path}"
+                )
+                try:
+                    response = remote_client.shell.exec_command(command=command)
+                except TypeError:
+                    response = remote_client.shell.exec_command(command)
+                exit_code = getattr(response, "exit_code", 0)
+                if exit_code not in (0, None):
+                    stderr = getattr(response, "stderr", "")
+                    raise SandboxInvocationError(
+                        f"S_ATTR remote execution failed with exit code {exit_code}: {stderr}"
+                    )
+
+                read_fn = getattr(remote_client.file, "read_file", None) or getattr(remote_client.file, "read", None)
+                if not callable(read_fn):
+                    raise SandboxInvocationError("Remote sandbox file interface lacks a callable read_file method.")
+                try:
+                    output = read_fn(file=output_path)
+                except TypeError:
+                    output = read_fn(output_path)
+                raw_content = getattr(getattr(output, "data", output), "content", output)
+                if not isinstance(raw_content, str):
+                    raw_content = str(raw_content)
+
+                try:
+                    parsed = json.loads(raw_content)
+                except Exception as parse_err:
+                    raise SandboxInvocationError(
+                        f"Failed to parse S_ATTR structured output from {output_path}: {parse_err}"
+                    ) from parse_err
+
+                if not isinstance(parsed, dict):
+                    raise SandboxInvocationError("S_ATTR returned a non-object payload.")
 
                 return parsed
 

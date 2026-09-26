@@ -81,13 +81,20 @@ def create_mock_remote_sandbox(
     settings: Any = None,
     provenance_recorder: Any = None,
 ) -> SandboxClient:
-    """Create a SandboxClient wired to an injected mock remote container simulating s-alloc execution."""
+    """Create a SandboxClient wired to an injected mock remote container simulating specialist execution."""
     import json
     from unittest.mock import MagicMock
     from app.core.settings import SandboxSettings
     from app.integrations.sandbox.s_alloc_core import execute_s_alloc
+    from app.integrations.sandbox.micro_tools import (
+        execute_s_attr,
+        execute_s_copy,
+        execute_s_parse,
+        execute_s_val,
+    )
 
     written_payload: dict[str, Any] = {}
+    last_command = ""
     mock_remote = MagicMock()
 
     def mock_write(file: str = "", content: str = ""):
@@ -97,14 +104,31 @@ def create_mock_remote_sandbox(
         except Exception:
             written_payload = {}
 
+    def mock_exec(command: str = ""):
+        nonlocal last_command
+        last_command = command
+        return MagicMock(exit_code=0, stderr="")
+
     mock_remote.file.write_file.side_effect = mock_write
-    mock_remote.shell.exec_command.return_value = MagicMock(exit_code=0, stderr="")
+    mock_remote.shell.exec_command.side_effect = mock_exec
 
     def mock_read(file: str = ""):
-        out = execute_s_alloc(written_payload)
+        if "s-copy" in last_command:
+            out = execute_s_copy(written_payload)
+        elif "s-attr" in last_command:
+            out = execute_s_attr(written_payload)
+        elif "s-val" in last_command:
+            out = execute_s_val(written_payload)
+        elif "s-parse" in last_command:
+            out = execute_s_parse(written_payload)
+        else:
+            out = execute_s_alloc(written_payload)
         return MagicMock(data=MagicMock(content=json.dumps(out)))
 
     mock_remote.file.read_file.side_effect = mock_read
+    mock_remote.code.execute_code.return_value = MagicMock(stdout="diff applied successfully")
+    mock_remote.browser.navigate.return_value = MagicMock(content="<html><body>Price: $49.99</body></html>")
+
     client = SandboxClient(
         settings=settings or SandboxSettings(endpoint="http://remote-sandbox:8080"),
         provenance_recorder=provenance_recorder,

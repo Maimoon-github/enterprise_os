@@ -28,6 +28,7 @@ class SandboxCapability(StrEnum):
     COPY = "S_COPY"
     VAL = "S_VAL"
     COMP = "s-comp"
+    SCRAPE = "s-comp"  # Explicit backward-compatibility alias to COMP
     PARSE = "S_PARSE"
     ATTR = "S_ATTR"
 
@@ -38,10 +39,6 @@ class SandboxCapability(StrEnum):
             if val_norm in ("S_SCRAPE", "SCRAPE", "S_COMP"):
                 return cls.COMP
         return super()._missing_(value)
-
-
-# Explicit backward-compatibility alias; never emitted or documented as canonical
-SandboxCapability.SCRAPE = SandboxCapability.COMP
 
 
 class NetworkPolicy(StrEnum):

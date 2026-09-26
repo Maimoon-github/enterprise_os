@@ -76,6 +76,7 @@ class SandboxSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="SANDBOX_", extra="ignore")
 
+    environment: str | None = Field(default=None)
     endpoint: str | None = Field(default=None)
     api_key: str | None = Field(default=None, repr=False)
     proxy_endpoint: str | None = Field(default="http://aio-egress-proxy:8118")
