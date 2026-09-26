@@ -51,7 +51,10 @@ def _sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
     """Recursively redact sensitive fields from a metadata dictionary."""
     cleaned: dict[str, Any] = {}
     for k, v in data.items():
-        if isinstance(v, str):
+        k_lower = k.lower()
+        if any(s in k_lower for s in ("secret", "token", "password", "api_key", "hidden_reasoning", "private_key")):
+            cleaned[k] = "[REDACTED]"
+        elif isinstance(v, str):
             cleaned[k] = _sanitize_text(v)
         elif isinstance(v, dict):
             cleaned[k] = _sanitize_dict(v)
