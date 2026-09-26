@@ -19,6 +19,7 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+from app.schemas.strategy import StrategyDirective, StrategyResultEnvelope
 
 
 class StrategyAgent(BoundedWorkerAgent):
@@ -392,6 +393,17 @@ class StrategyAgent(BoundedWorkerAgent):
             constraints,
         ) = self._verify_and_normalize_dependencies(grant, context)
 
+        # Validate typed StrategyDirective boundary before sandbox serialization
+        StrategyDirective.from_grant(
+            grant,
+            {
+                **context,
+                "budget_ceiling": budget_ceiling,
+                "channels": allowed_channels,
+                "time_horizon": time_horizon,
+            },
+        )
+
         channels_str = ",".join(allowed_channels)
         tenant_id = grant.tenant_scope.tenant_id if grant.tenant_scope else "default"
 
@@ -633,7 +645,7 @@ class StrategyAgent(BoundedWorkerAgent):
         if result.provenance:
             provenance.update(result.provenance)
 
-        return EvidenceEnvelope(
+        envelope = EvidenceEnvelope(
             task_id=grant.task_id,
             worker_role=grant.worker_role,
             confidence=confidence,
@@ -649,3 +661,4 @@ class StrategyAgent(BoundedWorkerAgent):
             },
             unresolved_risks_or_assumptions=risks,
         )
+        return StrategyResultEnvelope.from_evidence_envelope(envelope)
