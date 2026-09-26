@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import pytest
 
+from app.core.exceptions import SandboxInvocationError
 from app.integrations.sandbox.micro_tools import (
     dispatch_micro_tool,
-    execute_s_alloc,
     execute_s_attr,
     execute_s_code,
     execute_s_comp,
@@ -16,6 +16,7 @@ from app.integrations.sandbox.micro_tools import (
     execute_s_scrape,
     execute_s_val,
 )
+from app.integrations.sandbox.s_alloc_core import execute_s_alloc
 from app.schemas.sandbox import SandboxCapability
 
 
@@ -180,6 +181,13 @@ def test_s_attr_attribution_and_decay_modeler() -> None:
 
 def test_dispatch_micro_tool_dispatches_correct_capability() -> None:
     for cap in SandboxCapability:
+        if cap == SandboxCapability.ALLOC:
+            with pytest.raises(
+                SandboxInvocationError,
+                match="S_ALLOC is not available via host micro-tool dispatch",
+            ):
+                dispatch_micro_tool(cap, {"task_id": f"test-{cap.value}"})
+            continue
         res = dispatch_micro_tool(cap, {"task_id": f"test-{cap.value}"})
         assert "status" in res
         assert res["task_id"] == f"test-{cap.value}"

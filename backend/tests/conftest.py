@@ -26,6 +26,7 @@ from app.persistence.repositories.vector import VectorRepository
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.provenance import ProvenanceRecord
 from app.schemas.sandbox import (
+    SandboxCapability,
     SandboxExecutionStatus,
     SandboxInvocationMandate,
     SandboxResult,
@@ -54,6 +55,16 @@ class FakeSandboxClient(SandboxClient):
                 error="simulated sandbox failure",
                 provenance={"status": "failed", "execution_id": mandate.execution_id},
             )
+        if mandate.capability == SandboxCapability.ALLOC:
+            import json
+            from app.integrations.sandbox.s_alloc_core import execute_s_alloc
+
+            sanitized_output = execute_s_alloc(mandate.payload)
+        else:
+            sanitized_output = {
+                "objective": mandate.payload.get("objective", "unknown"),
+                "result": f"{mandate.capability.value} completed for {mandate.task_id}",
+            }
         return SandboxResult(
             execution_id=mandate.execution_id,
             task_id=mandate.task_id,
@@ -61,12 +72,45 @@ class FakeSandboxClient(SandboxClient):
             capability=mandate.capability,
             status=SandboxExecutionStatus.COMPLETED,
             success=True,
-            sanitized_output={
-                "objective": mandate.payload.get("objective", "unknown"),
-                "result": f"{mandate.capability.value} completed for {mandate.task_id}",
-            },
+            sanitized_output=sanitized_output,
             provenance={"status": "completed", "execution_id": mandate.execution_id},
         )
+
+
+def create_mock_remote_sandbox(
+    settings: Any = None,
+    provenance_recorder: Any = None,
+) -> SandboxClient:
+    """Create a SandboxClient wired to an injected mock remote container simulating s-alloc execution."""
+    import json
+    from unittest.mock import MagicMock
+    from app.core.settings import SandboxSettings
+    from app.integrations.sandbox.s_alloc_core import execute_s_alloc
+
+    written_payload: dict[str, Any] = {}
+    mock_remote = MagicMock()
+
+    def mock_write(file: str = "", content: str = ""):
+        nonlocal written_payload
+        try:
+            written_payload = json.loads(content)
+        except Exception:
+            written_payload = {}
+
+    mock_remote.file.write_file.side_effect = mock_write
+    mock_remote.shell.exec_command.return_value = MagicMock(exit_code=0, stderr="")
+
+    def mock_read(file: str = ""):
+        out = execute_s_alloc(written_payload)
+        return MagicMock(data=MagicMock(content=json.dumps(out)))
+
+    mock_remote.file.read_file.side_effect = mock_read
+    client = SandboxClient(
+        settings=settings or SandboxSettings(endpoint="http://remote-sandbox:8080"),
+        provenance_recorder=provenance_recorder,
+    )
+    client._sandbox = mock_remote
+    return client
 
 
 class FakeVectorRepository(VectorRepository):
@@ -95,6 +139,12 @@ class FakeVectorRepository(VectorRepository):
         tenant_id: str,
         text: str,
         source: str,
+        namespace: str = "default",
+        embedding: list[float] | None = None,
+        model: str | None = None,
+        metric: str | None = None,
+        session: Any = None,
+        **kwargs: Any,
     ) -> None:
         self._documents.append(
             {
@@ -108,7 +158,19 @@ class FakeVectorRepository(VectorRepository):
         )
 
     async def similarity_search(
-        self, *, tenant_id: str, query: str, top_k: int
+        self,
+        *,
+        tenant_id: str,
+        query: str | None = None,
+        query_vector: list[float] | None = None,
+        top_k: int = 10,
+        namespace: str | None = None,
+        search_type: str = "exact",
+        metric: str = "cosine",
+        min_score: float = 0.0,
+        ef_search: int = 40,
+        session: Any = None,
+        **kwargs: Any,
     ) -> list[dict[str, Any]]:
         matches = [doc for doc in self._documents if doc["tenant_id"] == tenant_id]
         return matches[:top_k]
@@ -129,7 +191,9 @@ class FakeProvenanceRepository(ProvenanceRepository):
             recs.extend(chain)
         return recs
 
-    async def _latest(self, tenant_id: str) -> ProvenanceRecord | None:
+    async def _latest(
+        self, tenant_id: str, *, session: Any = None
+    ) -> ProvenanceRecord | None:
         records = self._chains.get(tenant_id, [])
         return records[-1] if records else None
 
@@ -143,6 +207,8 @@ class FakeProvenanceRepository(ProvenanceRepository):
         record_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         w3c_prov: dict[str, Any] | None = None,
+        session: Any = None,
+        **kwargs: Any,
     ) -> ProvenanceRecord:
         # Idempotency check: return existing record if record_id already in tenant chain
         if record_id is not None:

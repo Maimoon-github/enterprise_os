@@ -240,10 +240,10 @@ async def test_sandbox_client_timeout_handling() -> None:
 
 @pytest.mark.asyncio
 async def test_sandbox_client_provenance_and_duration() -> None:
-    from app.integrations.sandbox.client import SandboxClient
     from app.schemas.sandbox import SandboxExecutionStatus, SandboxInvocationMandate
+    from tests.conftest import create_mock_remote_sandbox
 
-    client = SandboxClient()
+    client = create_mock_remote_sandbox()
     mandate = SandboxInvocationMandate(
         execution_id="exec-prov-1",
         task_id="task-prov-1",
@@ -472,7 +472,18 @@ async def test_all_seven_specialists_structured_result_contracts() -> None:
             stop_rules=["max_duration_120s"],
         )
 
-        res = await client.execute(mandate)
+        if cap == SandboxCapability.ALLOC:
+            # Under T4, S_ALLOC fails closed without remote sandbox endpoint
+            res_fail = await client.execute(mandate)
+            assert res_fail.success is False
+            assert res_fail.status == SandboxExecutionStatus.FAILED
+            assert "Remote AIO sandbox is required for S_ALLOC" in str(res_fail.error)
+
+            # Remote execution succeeds via injected mock remote container
+            from tests.conftest import create_mock_remote_sandbox
+            res = await create_mock_remote_sandbox().execute(mandate)
+        else:
+            res = await client.execute(mandate)
 
         assert res.success is True
         assert res.status == SandboxExecutionStatus.COMPLETED

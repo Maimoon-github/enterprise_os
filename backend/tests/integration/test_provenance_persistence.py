@@ -193,10 +193,11 @@ async def test_sandbox_audit_captures_cgroup_and_resource_metrics() -> None:
     """Resource limits and observation metrics are bound in the audit metadata."""
     from app.integrations.sandbox.client import SandboxClient
     from app.schemas.sandbox import ResourceLimits, SandboxCapability, SandboxInvocationMandate
+    from tests.conftest import create_mock_remote_sandbox
 
     repo = FakeProvenanceRepository()
     recorder = ProvenanceRecorder(repo)
-    client = SandboxClient(provenance_recorder=recorder)
+    client = create_mock_remote_sandbox(provenance_recorder=recorder)
 
     mandate = SandboxInvocationMandate(
         execution_id="exec-metrics-audit",

@@ -37,7 +37,11 @@ from app.services.rag.freshness import FreshnessPolicy
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.schema_validator import SchemaValidator
 from app.services.telemetry import TelemetryNormalizer
-from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
+from tests.conftest import (
+    FakeProvenanceRepository,
+    FakeVectorRepository,
+    create_mock_remote_sandbox,
+)
 from tests.integration.test_telemetry_learning_loop import (
     _InMemoryMemoryRepository,
     _InMemoryTelemetryRepository,
@@ -211,7 +215,7 @@ async def test_governed_multi_worker_dag_pipeline(
     sandbox_client = SandboxClient()
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {
-        WorkerRole.STRATEGY: StrategyAgent(sandbox_client),
+        WorkerRole.STRATEGY: StrategyAgent(create_mock_remote_sandbox()),
         WorkerRole.PRODUCT_EVIDENCE: ProductEvidenceAgent(sandbox_client),
         WorkerRole.CREATIVE_CONTENT: CreativeContentAgent(),
         WorkerRole.DEVELOPMENT: DevelopmentAgent(sandbox_client),

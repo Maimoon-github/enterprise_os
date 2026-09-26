@@ -12,7 +12,7 @@ from app.agents.strategy import StrategyAgent
 from app.core.exceptions import SandboxInvocationError
 from app.integrations.sandbox.capabilities import validate_capability_access
 from app.integrations.sandbox.client import SandboxClient
-from app.integrations.sandbox.micro_tools import execute_s_alloc
+from app.integrations.sandbox.s_alloc_core import execute_s_alloc
 from app.schemas.agent_contracts import (
     ChannelAllocation,
     ConfidenceInterval,
@@ -24,7 +24,7 @@ from app.schemas.agent_contracts import (
 )
 from app.schemas.governance import TenantScope, WorkerRole
 from app.schemas.sandbox import SandboxCapability
-from tests.conftest import FakeSandboxClient
+from tests.conftest import FakeSandboxClient, create_mock_remote_sandbox
 
 
 def test_s_alloc_valid_inputs_and_evidence_influence() -> None:
@@ -101,7 +101,7 @@ def test_s_alloc_valid_inputs_and_evidence_influence() -> None:
 @pytest.mark.asyncio
 async def test_w_strat_generates_valid_evidence_envelope_and_strategy_plan() -> None:
     """StrategyAgent processes full T16-T18 inputs and produces valid EvidenceEnvelope with strategy artifact."""
-    sandbox_client = SandboxClient()
+    sandbox_client = create_mock_remote_sandbox()
     agent = StrategyAgent(sandbox_client)
 
     grant = TaskGrant(
@@ -306,7 +306,7 @@ def test_unauthorized_capability_rejected_for_w_strat() -> None:
         SandboxCapability.CODE,
         SandboxCapability.COPY,
         SandboxCapability.VAL,
-        SandboxCapability.SCRAPE,
+        SandboxCapability.COMP,
         SandboxCapability.PARSE,
         SandboxCapability.ATTR,
     ]
@@ -559,7 +559,7 @@ async def test_w_strat_and_s_alloc_use_distinct_purpose_scoped_reasoning() -> No
     s_client = LlmClient(s_settings, client=httpx.AsyncClient(transport=_mock_chat_transport(s_alloc_json, model="s-alloc-llm")))
 
     s_subagent = StrategyAllocationAgent(llm_client=s_client)
-    agent = StrategyAgent(SandboxClient(), llm_client=w_client, allocation_agent=s_subagent)
+    agent = StrategyAgent(create_mock_remote_sandbox(), llm_client=w_client, allocation_agent=s_subagent)
 
     grant = TaskGrant(
         task_id="task-strat-distinct-01",
@@ -621,7 +621,7 @@ async def test_s_alloc_reasoning_cannot_override_budget_ceiling_or_channels() ->
     s_settings = LlmSettings(provider="local", base_url="http://localhost:11434/v1", model_name="s-alloc-agg")
     s_client = LlmClient(s_settings, client=httpx.AsyncClient(transport=_mock_chat_transport(s_alloc_json, model="s-alloc-agg")))
     s_subagent = StrategyAllocationAgent(llm_client=s_client)
-    agent = StrategyAgent(SandboxClient(), allocation_agent=s_subagent)
+    agent = StrategyAgent(create_mock_remote_sandbox(), allocation_agent=s_subagent)
 
     # Directive/grant authorizes $10,000 and only 'meta'
     grant = TaskGrant(
@@ -675,7 +675,7 @@ async def test_s_alloc_llm_error_fallback_preserves_deterministic_execution() ->
     s_settings = LlmSettings(provider="local", base_url="http://localhost:11434/v1", model_name="s-alloc-err")
     s_client = LlmClient(s_settings, client=httpx.AsyncClient(transport=httpx.MockTransport(failing_handler)))
     s_subagent = StrategyAllocationAgent(llm_client=s_client)
-    agent = StrategyAgent(SandboxClient(), allocation_agent=s_subagent)
+    agent = StrategyAgent(create_mock_remote_sandbox(), allocation_agent=s_subagent)
 
     grant = TaskGrant(
         task_id="task-strat-fallback-01",
@@ -1048,8 +1048,9 @@ async def test_strat04_endpoint_configured_but_unreachable_fails_closed() -> Non
 
 
 @pytest.mark.asyncio
-async def test_strat04_no_endpoint_retains_local_fallback() -> None:
-    """When no sandbox endpoint is configured, execution safely uses local micro-tool fallback."""
+async def test_strat04_no_endpoint_fails_closed_without_local_fallback() -> None:
+    """When no sandbox endpoint is configured, S_ALLOC fails closed and never falls back to local micro-tools."""
+    from unittest.mock import patch
     from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
 
     client = SandboxClient(settings=None)
@@ -1064,10 +1065,83 @@ async def test_strat04_no_endpoint_retains_local_fallback() -> None:
         network_policy=NetworkPolicy.DISABLED,
     )
 
-    result = await client.invoke(mandate)
-    assert result.success is True
-    assert result.status == SandboxExecutionStatus.COMPLETED
-    assert "allocations" in result.sanitized_output
+    with patch("app.integrations.sandbox.client.dispatch_micro_tool") as mock_dispatch:
+        result = await client.invoke(mandate)
+        assert result.success is False
+        assert result.status == SandboxExecutionStatus.FAILED
+        assert "Remote AIO sandbox is required for S_ALLOC execution" in str(result.error)
+        assert "Host fallback is strictly prohibited" in str(result.error)
+        mock_dispatch.assert_not_called()
+
+
+def test_strat04_canonical_registry_entrypoint() -> None:
+    """Verify S_ALLOC profile has canonical registered skill entrypoint."""
+    from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY, get_skill_entrypoint
+
+    profile = CAPABILITY_REGISTRY[SandboxCapability.ALLOC]
+    assert profile.skill_entrypoint == "/home/gem/skills/s-alloc/scripts/run.py"
+    assert get_skill_entrypoint(SandboxCapability.ALLOC) == "/home/gem/skills/s-alloc/scripts/run.py"
+    assert get_skill_entrypoint("S_ALLOC") == "/home/gem/skills/s-alloc/scripts/run.py"
+
+
+def test_strat04_dispatch_micro_tool_rejects_s_alloc() -> None:
+    """dispatch_micro_tool must raise SandboxInvocationError for S_ALLOC fail-closed."""
+    from app.integrations.sandbox.micro_tools import dispatch_micro_tool
+
+    with pytest.raises(SandboxInvocationError, match="S_ALLOC is not available via host micro-tool dispatch"):
+        dispatch_micro_tool(SandboxCapability.ALLOC, {"budget": "10000.0"})
+
+
+def test_strat04_isolated_runtime_prohibits_s_alloc() -> None:
+    """client._execute_in_isolated_runtime must directly forbid S_ALLOC fail-closed."""
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+
+    client = SandboxClient(settings=None)
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-direct-iso",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    with pytest.raises(SandboxInvocationError, match="Host-side execution is strictly prohibited for S_ALLOC"):
+        client._execute_in_isolated_runtime(mandate)
+
+
+@pytest.mark.asyncio
+async def test_strat04_remote_malformed_output_fails_closed() -> None:
+    """When remote sandbox returns invalid/non-JSON output, S_ALLOC fails closed without local fallback."""
+    from unittest.mock import MagicMock, patch
+    from app.core.settings import SandboxSettings
+    from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxExecutionStatus, SandboxInvocationMandate
+
+    mock_remote = MagicMock()
+    mock_remote.file.write_file.return_value = None
+    mock_remote.shell.exec_command.return_value = MagicMock(exit_code=0, stderr="")
+    mock_remote.file.read_file.return_value = MagicMock(data=MagicMock(content="MALFORMED_NON_JSON_CONTENT"))
+
+    client = SandboxClient(settings=SandboxSettings(endpoint="http://remote-sandbox:8080"))
+    client._sandbox = mock_remote
+
+    mandate = SandboxInvocationMandate(
+        task_id="task-strat04-malformed",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant_01",
+        capability=SandboxCapability.ALLOC,
+        operation="optimize_budget",
+        payload={"budget": "10000.0", "channels": "meta,google"},
+        network_policy=NetworkPolicy.DISABLED,
+    )
+
+    with patch("app.integrations.sandbox.client.dispatch_micro_tool") as mock_dispatch:
+        result = await client.invoke(mandate)
+        assert result.success is False
+        assert result.status == SandboxExecutionStatus.FAILED
+        assert "Failed to parse S_ALLOC structured output" in str(result.error)
+        mock_dispatch.assert_not_called()
 
 
 @pytest.mark.asyncio

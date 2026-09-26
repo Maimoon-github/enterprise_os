@@ -20,6 +20,7 @@ from app.core.exceptions import SandboxInvocationError
 from app.core.settings import SandboxSettings
 from app.schemas.governance import WorkerRole
 from app.integrations.sandbox.capabilities import (
+    get_skill_entrypoint,
     validate_capability_access,
     validate_egress_target,
     validate_tool_access,
@@ -512,6 +513,11 @@ class SandboxClient:
 
     def _execute_in_isolated_runtime(self, mandate: SandboxInvocationMandate) -> dict[str, Any]:
         """Execute micro-tool inside sandbox boundary."""
+        if mandate.capability == SandboxCapability.ALLOC:
+            raise SandboxInvocationError(
+                "Host-side execution is strictly prohibited for S_ALLOC. "
+                "Hardened remote sandbox execution is required (fail-closed)."
+            )
         if (self._settings is not None and bool(self._settings.endpoint)) or self._sandbox is not None:
             raise SandboxInvocationError(
                 "Local micro-tool execution is prohibited when remote sandbox endpoint is configured."
@@ -575,9 +581,22 @@ class SandboxClient:
                 "Remote sandbox endpoint is configured but client failed to initialize."
             )
 
+        if mandate.capability == SandboxCapability.ALLOC and (
+            not remote_configured or remote_client is None
+        ):
+            raise SandboxInvocationError(
+                "Remote AIO sandbox is required for S_ALLOC execution. "
+                "Host fallback is strictly prohibited (fail-closed)."
+            )
+
         if remote_client is not None:
             # 1. S_ALLOC execution via mounted skill in remote AIO sandbox
             if mandate.capability == SandboxCapability.ALLOC:
+                entrypoint = get_skill_entrypoint(mandate.capability)
+                if not entrypoint:
+                    raise SandboxInvocationError(
+                        f"No registered skill entrypoint for capability '{mandate.capability.value}'."
+                    )
                 if not (
                     hasattr(remote_client, "file")
                     and (hasattr(remote_client.file, "write_file") or hasattr(remote_client.file, "write"))
@@ -616,7 +635,7 @@ class SandboxClient:
 
                 # Execute mounted read-only S_ALLOC skill script
                 command = (
-                    "python /home/gem/skills/s-alloc/scripts/run.py "
+                    f"python {entrypoint} "
                     f"< {input_path} > {output_path}"
                 )
                 try:
@@ -839,6 +858,12 @@ class SandboxClient:
         if remote_configured:
             raise SandboxInvocationError(
                 f"Configured remote sandbox failed to execute capability '{mandate.capability.value}'."
+            )
+
+        if mandate.capability == SandboxCapability.ALLOC:
+            raise SandboxInvocationError(
+                "Remote AIO sandbox is required for S_ALLOC execution. "
+                "Host fallback is strictly prohibited (fail-closed)."
             )
 
         if is_creative and (remote_configured or mandate.payload.get("require_aio", False)):

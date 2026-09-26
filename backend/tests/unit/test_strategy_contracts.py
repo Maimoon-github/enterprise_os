@@ -26,6 +26,7 @@ from app.agents.strategy_engine.subagents.allocation import (
 from app.core.settings import LlmSettings
 from app.integrations.llm.client import LlmClient
 from app.integrations.sandbox.client import SandboxClient
+from tests.conftest import create_mock_remote_sandbox
 from app.schemas.agent_contracts import (
     ChannelAllocation,
     ConfidenceInterval,
@@ -384,7 +385,7 @@ def test_pydantic_json_round_trips() -> None:
 
 @pytest.mark.asyncio
 async def test_strategy_agent_run_emits_validated_strategy_result_envelope() -> None:
-    sandbox = SandboxClient()
+    sandbox = create_mock_remote_sandbox()
     agent = StrategyAgent(sandbox_client=sandbox)
 
     grant = TaskGrant(
@@ -609,7 +610,7 @@ async def test_s_alloc_deterministic_fallback_on_error() -> None:
 @pytest.mark.asyncio
 async def test_strategy_agent_with_s_alloc_profile_provenance() -> None:
     subagent = StrategyAllocationAgent(llm_client=None, profile=S_ALLOC_PROFILE)
-    agent = StrategyAgent(sandbox_client=SandboxClient(), allocation_agent=subagent)
+    agent = StrategyAgent(sandbox_client=create_mock_remote_sandbox(), allocation_agent=subagent)
 
     grant = TaskGrant(
         task_id="task-strat-prov",

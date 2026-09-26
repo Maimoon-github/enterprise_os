@@ -44,7 +44,11 @@ from app.services.rag.controller import RagController
 from app.services.rag.freshness import FreshnessPolicy
 from app.services.rag.hybrid_retriever import HybridRetriever
 from app.services.rag.schema_validator import SchemaValidator
-from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
+from tests.conftest import (
+    FakeProvenanceRepository,
+    FakeVectorRepository,
+    create_mock_remote_sandbox,
+)
 
 
 def test_w_strat_module_has_zero_direct_persistence_or_rag_imports() -> None:
@@ -118,7 +122,7 @@ def test_unauthorized_capability_rejected_for_w_strat() -> None:
         SandboxCapability.CODE,
         SandboxCapability.COPY,
         SandboxCapability.VAL,
-        SandboxCapability.SCRAPE,
+        SandboxCapability.COMP,
         SandboxCapability.PARSE,
         SandboxCapability.ATTR,
     ]
@@ -136,7 +140,7 @@ async def test_governed_ie_grant_to_w_strat_pipeline(sample_directive: Directive
     """Full governed execution: T16/T17/T18 context -> IE Grant -> W_STRAT -> S_ALLOC in sandbox -> Strategy EvidenceEnvelope -> IE."""
     prov_repo = FakeProvenanceRepository()
     provenance_recorder = ProvenanceRecorder(prov_repo)
-    sandbox_client = SandboxClient(provenance_recorder=provenance_recorder)
+    sandbox_client = create_mock_remote_sandbox(provenance_recorder=provenance_recorder)
     w_strat = StrategyAgent(sandbox_client)
 
     # Verify W_STRAT and S_ALLOC use distinct purpose-scoped LLM client identities when configured
@@ -253,7 +257,7 @@ async def test_governed_ie_grant_to_w_strat_pipeline(sample_directive: Directive
 @pytest.mark.asyncio
 async def test_evidence_synthesizer_merges_w_strat_envelope() -> None:
     """EvidenceSynthesizer merges W_STRAT strategy proposal envelope with T16 and T17 evidence envelopes."""
-    sandbox_client = SandboxClient()
+    sandbox_client = create_mock_remote_sandbox()
     w_strat = StrategyAgent(sandbox_client)
 
     grant = TaskGrant(
@@ -316,7 +320,7 @@ async def test_strategy_spend_generates_hitl_preview_and_requires_authorized_app
     """Strategy spend proposal reaches HITL as SPEND preview and cannot dispatch without authorized finance sign-off."""
     prov_repo = FakeProvenanceRepository()
     provenance_recorder = ProvenanceRecorder(prov_repo)
-    sandbox_client = SandboxClient(provenance_recorder=provenance_recorder)
+    sandbox_client = create_mock_remote_sandbox(provenance_recorder=provenance_recorder)
     w_strat = StrategyAgent(sandbox_client)
 
     grant = TaskGrant(
@@ -466,8 +470,8 @@ async def test_strategy_remote_sandbox_failure_fails_closed_without_local_fallba
     assert envelope.confidence.point_estimate == 0.0
     assert any("sandbox execution failed" in e for e in envelope.evidence)
 
-    # Directly verify that local micro-tool execution is strictly forbidden when remote is configured
-    with pytest.raises(SandboxInvocationError, match="Local micro-tool execution is prohibited"):
+    # Directly verify that local micro-tool execution is strictly forbidden
+    with pytest.raises(SandboxInvocationError, match="strictly prohibited"):
         client._execute_in_isolated_runtime(mandate)
 
     # Verify fail-closed: failure provenance recorded, no local fallback execution

@@ -21,6 +21,7 @@ import re
 from typing import Any
 import uuid
 
+from app.core.exceptions import SandboxInvocationError
 from app.schemas.sandbox import SandboxCapability
 
 
@@ -2649,7 +2650,6 @@ def execute_s_code(
         "security_checks_passed": "True",
     }
 
-from app.integrations.sandbox.s_alloc_core import execute_s_alloc
 from app.integrations.sandbox.s_copy_core import execute_s_copy
 
 
@@ -3393,7 +3393,6 @@ def execute_s_attr(payload: dict[str, Any]) -> dict[str, str]:
 
 MICRO_TOOL_DISPATCH = {
     SandboxCapability.CODE: execute_s_code,
-    SandboxCapability.ALLOC: execute_s_alloc,
     SandboxCapability.COPY: execute_s_copy,
     SandboxCapability.VAL: execute_s_val,
     SandboxCapability.COMP: execute_s_comp,
@@ -3404,6 +3403,11 @@ MICRO_TOOL_DISPATCH = {
 
 def dispatch_micro_tool(capability: SandboxCapability, payload: dict[str, str]) -> dict[str, str]:
     """Dispatch execution to the specialist micro-tool corresponding to ``capability``."""
+    if capability == SandboxCapability.ALLOC:
+        raise SandboxInvocationError(
+            "S_ALLOC is not available via host micro-tool dispatch. "
+            "It requires hardened remote sandbox execution."
+        )
     handler = MICRO_TOOL_DISPATCH.get(capability)
     if handler is None:
         raise ValueError(f"No specialist micro-tool found for capability: {capability}")

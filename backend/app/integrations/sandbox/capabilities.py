@@ -33,6 +33,7 @@ class CapabilityProfile:
     network_policy: NetworkPolicy
     default_timeout_seconds: int
     allowed_tools: tuple[str, ...]
+    skill_entrypoint: str | None = None
 
 
 CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
@@ -162,6 +163,7 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
             "allocation_solver",
             "diminishing_returns_model",
         ),
+        skill_entrypoint="/home/gem/skills/s-alloc/scripts/run.py",
     ),
     SandboxCapability.COPY: CapabilityProfile(
         capability=SandboxCapability.COPY,
@@ -799,6 +801,17 @@ def get_capability_for_role(role: WorkerRole) -> SandboxCapability:
     if role not in WORKER_CAPABILITY_MAP:
         raise SandboxInvocationError(f"No sandbox capability authorized for worker role: {role}")
     return WORKER_CAPABILITY_MAP[role]
+
+
+def get_skill_entrypoint(capability: SandboxCapability | str) -> str | None:
+    """Return the authoritative skill entrypoint script path for a capability, if registered."""
+    if isinstance(capability, str):
+        try:
+            capability = SandboxCapability(capability)
+        except ValueError:
+            return None
+    profile = CAPABILITY_REGISTRY.get(capability)
+    return profile.skill_entrypoint if profile else None
 
 
 def validate_capability_access(
