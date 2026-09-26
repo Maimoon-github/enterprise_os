@@ -18,6 +18,7 @@ from app.schemas.development.provenance import (
     SlsaResourceDescriptor,
     SlsaRunDetails,
 )
+from app.schemas.governance import WorkerRole
 from app.schemas.provenance import (
     ProvenanceRecord,
     ProvRelationType,
@@ -59,6 +60,40 @@ def _sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
         else:
             cleaned[k] = v
     return cleaned
+
+
+def compute_canonical_sha256(data: Any) -> str:
+    """Compute deterministic SHA-256 digest using canonical JSON serialization.
+
+    Applies model_dump(mode='json') for Pydantic models, redacts sensitive patterns,
+    sorts dictionary keys, and UTF-8 encodes. Never hashes unstable repr() output.
+    """
+    if data is None:
+        return hashlib.sha256(b"null").hexdigest()
+    if hasattr(data, "model_dump"):
+        dumped = data.model_dump(mode="json")
+    elif isinstance(data, dict):
+        dumped = data
+    elif isinstance(data, (list, tuple)):
+        dumped = [
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+            for item in data
+        ]
+    else:
+        dumped = data
+
+    if isinstance(dumped, dict):
+        cleaned = _sanitize_dict(dumped)
+    elif isinstance(dumped, list):
+        cleaned = [
+            _sanitize_dict(i) if isinstance(i, dict) else i
+            for i in dumped
+        ]
+    else:
+        cleaned = dumped
+
+    serialized = json.dumps(cleaned, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 class ProvenanceRecorder:
@@ -442,6 +477,222 @@ class ProvenanceRecorder:
             agent=f"worker:{worker_role}",
             record_id=stable_event_id,
             metadata=metadata,
+            w3c_prov=w3c_bundle,
+        )
+
+    def build_worker_w3c_prov(
+        self,
+        *,
+        tenant_id: str,
+        task_id: str,
+        worker_role: str | WorkerRole,
+        lifecycle_stage: str,
+        input_data: Any | None = None,
+        output_data: Any | None = None,
+        sandbox_execution_id: str | None = None,
+        started_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> W3CProvBundle:
+        """Construct W3C PROV bundle mapping Entity, Activity, Agent, and relations for worker execution."""
+        worker_role_str = worker_role.value if hasattr(worker_role, "value") else str(worker_role)
+        activity_id = f"urn:enterprise_os:activity:worker_execution:{task_id}:{lifecycle_stage}"
+        worker_agent_id = f"urn:enterprise_os:agent:worker:{worker_role_str}"
+        orchestrator_agent_id = f"urn:enterprise_os:agent:orchestrator:{tenant_id}"
+        task_entity_id = f"urn:enterprise_os:entity:task:{task_id}"
+
+        act_attrs: dict[str, Any] = {
+            "worker_role": worker_role_str,
+            "lifecycle_stage": lifecycle_stage,
+            **(attributes or {}),
+        }
+        if sandbox_execution_id:
+            act_attrs["sandbox_execution_id"] = sandbox_execution_id
+
+        activities = [
+            W3CProvActivity(
+                id=activity_id,
+                label=f"Worker Execution: {worker_role_str} [{lifecycle_stage}]",
+                started_at=started_at or datetime.now(UTC),
+                ended_at=ended_at or datetime.now(UTC),
+                attributes=act_attrs,
+            )
+        ]
+
+        agents = [
+            W3CProvAgent(
+                id=worker_agent_id,
+                label=f"Bounded Worker Agent ({worker_role_str})",
+                role=worker_role_str,
+            ),
+            W3CProvAgent(
+                id=orchestrator_agent_id,
+                label=f"Tenant Orchestration Authority ({tenant_id})",
+                role="delegator",
+            ),
+        ]
+
+        entities = [
+            W3CProvEntity(
+                id=task_entity_id,
+                label=f"Governed Task ({task_id})",
+                attributes={"tenant_id": tenant_id},
+            )
+        ]
+
+        relations = [
+            W3CProvRelation(
+                relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                source_id=activity_id,
+                target_id=worker_agent_id,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.ACTED_ON_BEHALF_OF,
+                source_id=worker_agent_id,
+                target_id=orchestrator_agent_id,
+            ),
+            W3CProvRelation(
+                relation_type=ProvRelationType.USED,
+                source_id=activity_id,
+                target_id=task_entity_id,
+            ),
+        ]
+
+        input_entity_id: str | None = None
+        if input_data is not None:
+            input_hash = compute_canonical_sha256(input_data)
+            input_entity_id = f"urn:enterprise_os:entity:task_grant:{task_id}"
+            entities.append(
+                W3CProvEntity(
+                    id=input_entity_id,
+                    label=f"Task Grant Input ({input_hash[:12]})",
+                    value_hash=input_hash,
+                    attributes={"tenant_id": tenant_id, "task_id": task_id, "digest": input_hash},
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.USED,
+                    source_id=activity_id,
+                    target_id=input_entity_id,
+                )
+            )
+
+        if output_data is not None:
+            output_hash = compute_canonical_sha256(output_data)
+            output_entity_id = f"urn:enterprise_os:entity:worker_result:{task_id}:{lifecycle_stage}"
+            out_attrs: dict[str, Any] = {"lifecycle_stage": lifecycle_stage, "digest": output_hash}
+            if sandbox_execution_id:
+                out_attrs["sandbox_execution_id"] = sandbox_execution_id
+            entities.append(
+                W3CProvEntity(
+                    id=output_entity_id,
+                    label=f"Worker Result ({output_hash[:12]}) [{lifecycle_stage}]",
+                    value_hash=output_hash,
+                    attributes=out_attrs,
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_GENERATED_BY,
+                    source_id=output_entity_id,
+                    target_id=activity_id,
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_ATTRIBUTED_TO,
+                    source_id=output_entity_id,
+                    target_id=worker_agent_id,
+                )
+            )
+            if input_entity_id:
+                relations.append(
+                    W3CProvRelation(
+                        relation_type=ProvRelationType.WAS_DERIVED_FROM,
+                        source_id=output_entity_id,
+                        target_id=input_entity_id,
+                    )
+                )
+
+        return W3CProvBundle(
+            activities=activities,
+            agents=agents,
+            entities=entities,
+            relations=relations,
+        )
+
+    async def record_worker_execution(
+        self,
+        *,
+        tenant_id: str,
+        task_id: str,
+        worker_role: str | WorkerRole,
+        lifecycle_stage: str,
+        input_data: Any | None = None,
+        output_data: Any | None = None,
+        sandbox_execution_id: str | None = None,
+        duration_ms: float = 0.0,
+        started_at: datetime | None = None,
+        ended_at: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
+        session: Any = None,
+    ) -> ProvenanceRecord:
+        """Append worker-level W3C PROV audit record for started, completed, or failed executions."""
+        worker_role_str = worker_role.value if hasattr(worker_role, "value") else str(worker_role)
+
+        w3c_bundle = self.build_worker_w3c_prov(
+            tenant_id=tenant_id,
+            task_id=task_id,
+            worker_role=worker_role_str,
+            lifecycle_stage=lifecycle_stage,
+            input_data=input_data,
+            output_data=output_data,
+            sandbox_execution_id=sandbox_execution_id,
+            started_at=started_at,
+            ended_at=ended_at,
+            attributes=metadata,
+        ).model_dump(mode="json")
+
+        meta: dict[str, Any] = {
+            "task_id": task_id,
+            "worker_role": worker_role_str,
+            "lifecycle_stage": lifecycle_stage,
+            "duration_ms": duration_ms,
+            **(metadata or {}),
+        }
+        if input_data is not None:
+            meta["input_sha256"] = compute_canonical_sha256(input_data)
+        if output_data is not None:
+            meta["output_sha256"] = compute_canonical_sha256(output_data)
+        if sandbox_execution_id:
+            meta["sandbox_execution_id"] = sandbox_execution_id
+
+        stable_record_id = f"prov-worker-{tenant_id}-{task_id}-{lifecycle_stage}"
+        activity_tag = "worker_execution" if lifecycle_stage in ("completed", "failed") else f"worker_execution_{lifecycle_stage}"
+
+        if session is not None:
+            try:
+                return await self._repository.append(
+                    tenant_id=tenant_id,
+                    entity_id=task_id,
+                    activity=activity_tag,
+                    agent=worker_role_str,
+                    record_id=stable_record_id,
+                    metadata=meta,
+                    w3c_prov=w3c_bundle,
+                    session=session,
+                )
+            except TypeError:
+                pass
+
+        return await self._repository.append(
+            tenant_id=tenant_id,
+            entity_id=task_id,
+            activity=activity_tag,
+            agent=worker_role_str,
+            record_id=stable_record_id,
+            metadata=meta,
             w3c_prov=w3c_bundle,
         )
 

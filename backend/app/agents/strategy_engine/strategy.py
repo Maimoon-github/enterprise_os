@@ -553,6 +553,10 @@ class StrategyAgent(BoundedWorkerAgent):
         capability = self.capability
         sandbox_client = self._sandbox_client
 
+        # Validate input contract and dependencies before specialist or sandbox execution
+        StrategyDirective.from_grant(grant, context)
+        self._verify_and_normalize_dependencies(grant, context)
+
         reasoning_output: WorkerReasoningOutput | None = None
         llm_metadata: dict[str, Any] = {}
 

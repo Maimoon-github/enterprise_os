@@ -43,6 +43,7 @@ from app.schemas.development import (
     DevelopmentEngineResult,
     DevelopmentTaskGrant,
 )
+from app.schemas.strategy import StrategyResultEnvelope
 from app.schemas.artifact import ArtifactReference
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, WorkerRole
@@ -344,35 +345,117 @@ class IntelligenceEngine:
         else:
             in_prog_state = task
 
+        start_time = datetime.now(UTC)
+        if hasattr(self._provenance_recorder, "record_worker_execution"):
+            await self._provenance_recorder.record_worker_execution(
+                tenant_id=directive.tenant_id,
+                task_id=task.task_id,
+                worker_role=task.worker_role,
+                lifecycle_stage="started",
+                input_data=grant,
+                started_at=start_time,
+            )
+
         worker = self._workers[task.worker_role]
-        envelope = await worker.run(grant, context)
+        try:
+            envelope = await worker.run(grant, context)
+        except Exception as exc:
+            end_time = datetime.now(UTC)
+            duration_ms = (end_time - start_time).total_seconds() * 1000.0
+            if hasattr(self._provenance_recorder, "record_worker_execution"):
+                await self._provenance_recorder.record_worker_execution(
+                    tenant_id=directive.tenant_id,
+                    task_id=task.task_id,
+                    worker_role=task.worker_role,
+                    lifecycle_stage="failed",
+                    input_data=grant,
+                    output_data={"error": str(exc), "error_type": type(exc).__name__},
+                    duration_ms=duration_ms,
+                    started_at=start_time,
+                    ended_at=end_time,
+                    metadata={"error": str(exc)},
+                )
+            raise
+
+        end_time = datetime.now(UTC)
+        duration_ms = (end_time - start_time).total_seconds() * 1000.0
 
         if envelope.confidence.point_estimate > 0.0:
             self._task_state_machine.transition(
                 in_prog_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
             )
+            lifecycle_stage = "completed"
         else:
             self._task_state_machine.transition(
                 in_prog_state, TaskStatus.HELD, checkpoint_id=str(uuid.uuid4()), note="Execution produced zero confidence"
             )
+            lifecycle_stage = "failed"
 
+        sb_exec_id = envelope.provenance.get("sandbox_execution_id") or envelope.provenance.get("execution_id")
         prov_meta: dict[str, Any] = {
             "execution_id": envelope.provenance.get("execution_id"),
+            "sandbox_execution_id": sb_exec_id,
             "llm_reasoning_used": envelope.provenance.get("llm_reasoning_used", False),
             "model": envelope.provenance.get("llm_model", "deterministic"),
             "is_local_model": envelope.provenance.get("is_local_model", False),
             "total_tokens": envelope.provenance.get("total_tokens", 0),
             "estimated_cost_usd": envelope.provenance.get("estimated_cost_usd", 0.0),
         }
-        await self._provenance_recorder.record(
-            tenant_id=directive.tenant_id,
-            entity_id=task.task_id,
-            activity="worker_execution",
-            agent=task.worker_role.value,
-            metadata=prov_meta,
-        )
+        for k in ("s_alloc_reasoning_used", "s_alloc_profile_id", "s_alloc_profile_digest"):
+            if k in envelope.provenance:
+                prov_meta[k] = envelope.provenance[k]
+
+        if hasattr(self._provenance_recorder, "record_worker_execution"):
+            await self._provenance_recorder.record_worker_execution(
+                tenant_id=directive.tenant_id,
+                task_id=task.task_id,
+                worker_role=task.worker_role,
+                lifecycle_stage=lifecycle_stage,
+                input_data=grant,
+                output_data=envelope,
+                sandbox_execution_id=sb_exec_id,
+                duration_ms=duration_ms,
+                started_at=start_time,
+                ended_at=end_time,
+                metadata=prov_meta,
+            )
+        else:
+            await self._provenance_recorder.record(
+                tenant_id=directive.tenant_id,
+                entity_id=task.task_id,
+                activity="worker_execution",
+                agent=task.worker_role.value if hasattr(task.worker_role, "value") else str(task.worker_role),
+                metadata=prov_meta,
+            )
 
         return envelope
+
+    async def invoke_strategy_worker(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        *,
+        query: str = "propose omnichannel strategy and media allocation",
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        completed_upstream_task_ids: set[str] | None = None,
+    ) -> StrategyResultEnvelope:
+        """Bounded Intelligence Engine -> W_STRAT -> Intelligence Engine invocation contract."""
+        if task.worker_role != WorkerRole.STRATEGY:
+            raise PolicyViolationError(
+                f"Cannot invoke W_STRAT for task with worker role '{task.worker_role}'."
+            )
+        envelope = await self.delegate_task(
+            directive,
+            task,
+            query=query,
+            brand_id=brand_id,
+            token_budget=token_budget,
+            completed_upstream_task_ids=completed_upstream_task_ids,
+        )
+        if isinstance(envelope, StrategyResultEnvelope):
+            return envelope
+        return StrategyResultEnvelope.from_evidence_envelope(envelope)
 
     async def invoke_development_worker(
         self,

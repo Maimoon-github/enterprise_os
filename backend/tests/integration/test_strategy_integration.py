@@ -36,10 +36,12 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
+from app.schemas.provenance import ProvRelationType
 from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+from app.schemas.strategy import StrategyResultEnvelope
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 from app.services.hitl import HitlCoordinator
-from app.services.provenance import ProvenanceRecorder
+from app.services.provenance import ProvenanceRecorder, compute_canonical_sha256
 from app.services.rag.controller import RagController
 from app.services.rag.freshness import FreshnessPolicy
 from app.services.rag.hybrid_retriever import HybridRetriever
@@ -483,4 +485,239 @@ async def test_strategy_remote_sandbox_failure_fails_closed_without_local_fallba
     assert failed_records[0].metadata.get("capability") == "S_ALLOC"
     assert failed_records[0].metadata.get("execution_id") == mandate.execution_id
     assert failed_records[0].metadata.get("task_id") == mandate.task_id
+
+
+@pytest.mark.asyncio
+async def test_w_strat_orchestration_e2e_lifecycle_and_w3c_prov_lineage(sample_directive: Directive) -> None:
+    """Proves T5 end-to-end W_STRAT orchestration and W3C PROV lineage invariants."""
+    prov_repo = FakeProvenanceRepository()
+    provenance_recorder = ProvenanceRecorder(prov_repo)
+    sandbox_client = create_mock_remote_sandbox(provenance_recorder=provenance_recorder)
+
+    w_strat = StrategyAgent(sandbox_client)
+    allocation_specialist_spy = AsyncMock(wraps=w_strat.allocation_agent)
+    w_strat._allocation_agent = allocation_specialist_spy
+    sandbox_invoke_spy = AsyncMock(wraps=sandbox_client.invoke)
+    sandbox_client.invoke = sandbox_invoke_spy
+
+    rag_repo = FakeVectorRepository()
+    rag_controller = RagController(
+        HybridRetriever(rag_repo),
+        FreshnessPolicy(),
+        SchemaValidator(),
+    )
+    rag_dispatcher = RagQueryDispatcher(rag_controller)
+
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {
+        WorkerRole.STRATEGY: w_strat,
+    }
+
+    engine = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=ContextAssembler(rag_dispatcher, BrandPersonaResolver()),
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=HitlCoordinator(),
+        mcp_host=None,  # type: ignore[arg-type]
+        provenance_recorder=provenance_recorder,
+        workers=workers,
+    )
+
+    task = CanonicalTaskState(
+        task_id="task-strat-prov-e2e",
+        directive_id=sample_directive.directive_id,
+        worker_role=WorkerRole.STRATEGY,
+        status=TaskStatus.PENDING,
+        cts_state={
+            "budget_cap": 25000.0,
+            "claims_dossier": {
+                "tenant_id": sample_directive.tenant_id,
+                "claims": [{"claim_id": "c1", "validation_status": "SUPPORTED", "confidence": 0.95}],
+            },
+            "customer_voice_analysis": {
+                "tenant_id": sample_directive.tenant_id,
+                "objection_profiles": [{"objection_type": "price", "frequency": 4}],
+            },
+            "competitor_intelligence": {
+                "tenant_id": sample_directive.tenant_id,
+                "competitor": "BrandX",
+                "benchmark_price": "45.00",
+            },
+        },
+    )
+
+    # 1. Orchestrated invocation
+    result = await engine.invoke_strategy_worker(
+        directive=sample_directive,
+        task=task,
+        query="omnichannel acquisition media plan and budget allocation",
+        brand_id=sample_directive.tenant_id,
+    )
+
+    # 2. Exactly one bounded allocation specialist invocation & one hardened S_ALLOC invocation
+    assert allocation_specialist_spy.reason.await_count == 1
+    assert sandbox_invoke_spy.await_count == 1
+    assert sandbox_invoke_spy.await_args is not None
+    mandate_arg = sandbox_invoke_spy.await_args[0][0]
+    assert mandate_arg.capability == SandboxCapability.ALLOC
+    assert mandate_arg.network_policy == NetworkPolicy.DISABLED
+
+    # 3. Typed StrategyResultEnvelope round-trip
+    assert isinstance(result, StrategyResultEnvelope)
+    assert result.task_id == "task-strat-prov-e2e"
+    assert result.worker_role == WorkerRole.STRATEGY
+    assert result.strategy_plan is not None
+    assert result.strategy_plan.total_allocated <= 25000.0
+    assert len(result.channel_proposals) > 0
+
+    # 4. Verify W3C PROV records and lineage
+    records = prov_repo.records
+    worker_records = [r for r in records if "worker_execution" in r.activity]
+    assert len(worker_records) >= 2  # started + completed
+
+    started_rec = next(r for r in worker_records if r.metadata.get("lifecycle_stage") == "started")
+    completed_rec = next(r for r in worker_records if r.metadata.get("lifecycle_stage") == "completed")
+
+    assert completed_rec.activity == "worker_execution"
+    assert completed_rec.agent == "W_STRAT"
+    assert completed_rec.entity_id == task.task_id
+
+    # 5. Linkage to sandbox execution ID
+    sb_exec_id = completed_rec.metadata.get("sandbox_execution_id")
+    assert sb_exec_id is not None
+    assert sb_exec_id == mandate_arg.execution_id
+
+    # 6. W3C bundle relations & entities
+    bundle = completed_rec.w3c_prov
+    assert bundle is not None
+    act_ids = [a["id"] for a in bundle["activities"]]
+    agent_ids = [ag["id"] for ag in bundle["agents"]]
+    entity_dict = {e["id"]: e for e in bundle["entities"]}
+
+    assert any(a["id"] == f"urn:enterprise_os:activity:worker_execution:{task.task_id}:completed" for a in bundle["activities"])
+    assert "urn:enterprise_os:agent:worker:W_STRAT" in agent_ids
+
+    # Entity digests
+    input_entity_id = f"urn:enterprise_os:entity:task_grant:{task.task_id}"
+    output_entity_id = f"urn:enterprise_os:entity:worker_result:{task.task_id}:completed"
+    assert input_entity_id in entity_dict
+    assert output_entity_id in entity_dict
+
+    input_entity = entity_dict[input_entity_id]
+    output_entity = entity_dict[output_entity_id]
+    assert input_entity["value_hash"] == completed_rec.metadata["input_sha256"]
+    assert output_entity["value_hash"] == completed_rec.metadata["output_sha256"]
+
+    # Relations: used, wasAssociatedWith, wasGeneratedBy
+    relations = bundle["relations"]
+    relation_types = [r["relation_type"] for r in relations]
+    assert ProvRelationType.WAS_ASSOCIATED_WITH.value in relation_types
+    assert ProvRelationType.USED.value in relation_types
+    assert ProvRelationType.WAS_GENERATED_BY.value in relation_types
+
+    # Specific relation checks
+    assoc = next(r for r in relations if r["relation_type"] == ProvRelationType.WAS_ASSOCIATED_WITH.value)
+    assert assoc["target_id"] == "urn:enterprise_os:agent:worker:W_STRAT"
+
+    used_input = next(
+        r for r in relations
+        if r["relation_type"] == ProvRelationType.USED.value and r["target_id"] == input_entity_id
+    )
+    assert "worker_execution" in used_input["source_id"]
+
+    gen_output = next(
+        r for r in relations
+        if r["relation_type"] == ProvRelationType.WAS_GENERATED_BY.value and r["source_id"] == output_entity_id
+    )
+    assert "worker_execution" in gen_output["target_id"]
+
+    # 7. Append-only hash chain integrity & idempotency
+    assert await provenance_recorder.verify_chain(sample_directive.tenant_id) is True
+    chain_len_before = len(prov_repo.records)
+    re_rec = await provenance_recorder.record_worker_execution(
+        tenant_id=sample_directive.tenant_id,
+        task_id=task.task_id,
+        worker_role=task.worker_role,
+        lifecycle_stage="completed",
+        output_data=result,
+    )
+    assert re_rec.record_id == completed_rec.record_id
+    assert len(prov_repo.records) == chain_len_before
+
+
+@pytest.mark.asyncio
+async def test_w_strat_failure_lineage_never_reports_success(sample_directive: Directive) -> None:
+    """Proves that worker failures produce terminal failed lineage and never report success."""
+    prov_repo = FakeProvenanceRepository()
+    provenance_recorder = ProvenanceRecorder(prov_repo)
+    client = SandboxClient(
+        settings=SandboxSettings(endpoint="http://remote-sandbox.internal:8000"),
+        provenance_recorder=provenance_recorder,
+    )
+
+    mock_sandbox = MagicMock()
+    mock_sandbox.shell = MagicMock()
+    mock_sandbox.shell.exec_command.side_effect = RuntimeError("Container crashed")
+    client._sandbox = mock_sandbox
+
+    w_strat = StrategyAgent(client)
+    rag_repo = FakeVectorRepository()
+    rag_controller = RagController(
+        HybridRetriever(rag_repo),
+        FreshnessPolicy(),
+        SchemaValidator(),
+    )
+    rag_dispatcher = RagQueryDispatcher(rag_controller)
+
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {WorkerRole.STRATEGY: w_strat}
+    engine = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=ContextAssembler(rag_dispatcher, BrandPersonaResolver()),
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=HitlCoordinator(),
+        mcp_host=None,  # type: ignore[arg-type]
+        provenance_recorder=provenance_recorder,
+        workers=workers,
+    )
+
+    task = CanonicalTaskState(
+        task_id="task-strat-fail-lineage",
+        directive_id=sample_directive.directive_id,
+        worker_role=WorkerRole.STRATEGY,
+        status=TaskStatus.PENDING,
+        cts_state={"budget_cap": 10000.0},
+    )
+
+    envelope = await engine.delegate_task(
+        directive=sample_directive,
+        task=task,
+        query="propose strategy",
+        brand_id=sample_directive.tenant_id,
+    )
+
+    assert envelope.confidence.point_estimate == 0.0
+
+    # Verify provenance recorded failure, never completed/success
+    worker_records = [
+        r for r in prov_repo.records
+        if "worker_execution" in r.activity and r.entity_id == task.task_id
+    ]
+    completed_records = [
+        r for r in worker_records
+        if r.metadata.get("lifecycle_stage") == "completed"
+    ]
+    assert len(completed_records) == 0, "Failed worker execution must NEVER produce a completed record"
+
+    failed_records = [
+        r for r in worker_records
+        if r.metadata.get("lifecycle_stage") == "failed"
+    ]
+    assert len(failed_records) == 1
+    assert failed_records[0].metadata["lifecycle_stage"] == "failed"
+    assert await provenance_recorder.verify_chain(sample_directive.tenant_id) is True
 
