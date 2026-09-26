@@ -27,9 +27,21 @@ class SandboxCapability(StrEnum):
     ALLOC = "S_ALLOC"
     COPY = "S_COPY"
     VAL = "S_VAL"
-    SCRAPE = "S_SCRAPE"
+    COMP = "s-comp"
     PARSE = "S_PARSE"
     ATTR = "S_ATTR"
+
+    @classmethod
+    def _missing_(cls, value: object) -> SandboxCapability | None:
+        if isinstance(value, str):
+            val_norm = value.strip().upper()
+            if val_norm in ("S_SCRAPE", "SCRAPE", "S_COMP"):
+                return cls.COMP
+        return super()._missing_(value)
+
+
+# Explicit backward-compatibility alias; never emitted or documented as canonical
+SandboxCapability.SCRAPE = SandboxCapability.COMP
 
 
 class NetworkPolicy(StrEnum):
@@ -85,7 +97,7 @@ class SandboxEgressGrant(BaseModel):
     stage_attempt_id: str = ""
     worker_id: str = "W_COMP"
     worker_role: WorkerRole = WorkerRole.COMPETITOR_INTEL
-    capability: SandboxCapability = SandboxCapability.SCRAPE
+    capability: SandboxCapability = SandboxCapability.COMP
     allowed_domains: list[str] = Field(..., min_length=1)
     allowed_ports: list[int] = Field(default_factory=lambda: [80, 443])
     issued_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

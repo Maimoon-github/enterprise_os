@@ -737,7 +737,7 @@ class SandboxClient:
                     return {"status": "success", "stdout": stdout, "diff": code, "ast_valid": "True"}
 
             # 4. Browser / DOM extraction via remote SDK browser interface under governed egress
-            elif mandate.capability == SandboxCapability.SCRAPE and hasattr(remote_client, "browser"):
+            elif mandate.capability == SandboxCapability.COMP and hasattr(remote_client, "browser"):
                 url = (
                     mandate.payload.get("url")
                     or mandate.payload.get("target_url")

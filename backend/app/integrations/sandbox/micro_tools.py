@@ -3007,8 +3007,8 @@ def execute_s_val(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def execute_s_scrape(payload: dict[str, str]) -> dict[str, str]:
-    """S_SCRAPE: Price & Ad Scraper [Micro-Tool: External DOM Tracker].
+def execute_s_comp(payload: dict[str, str]) -> dict[str, str]:
+    """s-comp: Price & Ad Scraper [Micro-Tool: External DOM Tracker].
 
     Simulates whitelisted external DOM extraction for competitor ad libraries and price trends.
     """
@@ -3038,6 +3038,10 @@ def execute_s_scrape(payload: dict[str, str]) -> dict[str, str]:
         "pricing_trajectory": "discounting_aggressive",
         "threat_level": "medium",
     }
+
+
+# Backward-compatibility alias
+execute_s_scrape = execute_s_comp
 
 
 def execute_s_parse(payload: dict[str, Any]) -> dict[str, str]:
@@ -3392,7 +3396,7 @@ MICRO_TOOL_DISPATCH = {
     SandboxCapability.ALLOC: execute_s_alloc,
     SandboxCapability.COPY: execute_s_copy,
     SandboxCapability.VAL: execute_s_val,
-    SandboxCapability.SCRAPE: execute_s_scrape,
+    SandboxCapability.COMP: execute_s_comp,
     SandboxCapability.PARSE: execute_s_parse,
     SandboxCapability.ATTR: execute_s_attr,
 }

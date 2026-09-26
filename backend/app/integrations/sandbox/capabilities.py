@@ -5,7 +5,7 @@ W_DEV   -> S_CODE
 W_STRAT -> S_ALLOC
 W_CREAT -> S_COPY
 W_PROD  -> S_VAL
-W_COMP  -> S_SCRAPE
+W_COMP  -> s-comp
 W_VOICE -> S_PARSE
 W_LEARN -> S_ATTR
 
@@ -194,9 +194,9 @@ CAPABILITY_REGISTRY: dict[SandboxCapability, CapabilityProfile] = {
             "schema_validator",
         ),
     ),
-    SandboxCapability.SCRAPE: CapabilityProfile(
-        capability=SandboxCapability.SCRAPE,
-        specialist_name="Price & Ad Scraper",
+    SandboxCapability.COMP: CapabilityProfile(
+        capability=SandboxCapability.COMP,
+        specialist_name="Competitor Intelligence & Scraper",
         allowed_worker=WorkerRole.COMPETITOR_INTEL,
         allowed_operations=("scrape_prices", "parse_dom", "track_ads", "default"),
         network_policy=NetworkPolicy.CONTROLLED,
@@ -452,7 +452,7 @@ AUTHORIZED_CREATIVE_SPECIALISTS = frozenset(
 
 CREATIVE_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     "CREAT-RESEARCH": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE, SandboxCapability.COPY),
+        "allowed_capabilities": (SandboxCapability.COMP, SandboxCapability.COPY),
         "allowed_operations": (
             "public_search",
             "fetch_platform_specs",
@@ -550,7 +550,7 @@ AUTHORIZED_COMPETITOR_SPECIALISTS = frozenset(
 COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     # Discovery
     "w_comp.discovery": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "public_page_capture",
             "transparency_query",
@@ -562,7 +562,7 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
         "allowed_tools": ("public_search", "official_transparency", "dom_parser"),
     },
     "COMP-DISCOVERY": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "public_page_capture",
             "transparency_query",
@@ -575,7 +575,7 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     },
     # Ads
     "w_comp.ads": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "transparency_query",
             "public_page_capture",
@@ -586,7 +586,7 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
         "allowed_tools": ("official_transparency", "dom_parser", "browser_automation"),
     },
     "w_comp.advertising": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "transparency_query",
             "public_page_capture",
@@ -597,7 +597,7 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
         "allowed_tools": ("official_transparency", "dom_parser", "browser_automation"),
     },
     "COMP-ADS": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "transparency_query",
             "public_page_capture",
@@ -609,26 +609,26 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     },
     # Price
     "w_comp.price": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("public_page_capture", "price_extract_compare", "default"),
         "network_policy": NetworkPolicy.ALLOWLIST,
         "allowed_tools": ("dom_parser", "price_tracker", "browser_automation"),
     },
     "w_comp.pricing": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("public_page_capture", "price_extract_compare", "default"),
         "network_policy": NetworkPolicy.ALLOWLIST,
         "allowed_tools": ("dom_parser", "price_tracker", "browser_automation"),
     },
     "COMP-PRICE": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("public_page_capture", "price_extract_compare", "default"),
         "network_policy": NetworkPolicy.ALLOWLIST,
         "allowed_tools": ("dom_parser", "price_tracker", "browser_automation"),
     },
     # Search
     "w_comp.search": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "serp_query",
             "public_page_capture",
@@ -639,7 +639,7 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
         "allowed_tools": ("public_search", "serp_extractor", "browser_automation"),
     },
     "w_comp.search_intel": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "serp_query",
             "public_page_capture",
@@ -650,7 +650,7 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
         "allowed_tools": ("public_search", "serp_extractor", "browser_automation"),
     },
     "COMP-SEARCH": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": (
             "serp_query",
             "public_page_capture",
@@ -662,38 +662,38 @@ COMPETITOR_SPECIALIST_POLICIES: dict[str, dict[str, Any]] = {
     },
     # Position
     "w_comp.position": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("public_page_capture", "position_extract_compare", "default"),
         "network_policy": NetworkPolicy.ALLOWLIST,
         "allowed_tools": ("dom_parser", "browser_automation"),
     },
     "w_comp.positioning": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("public_page_capture", "position_extract_compare", "default"),
         "network_policy": NetworkPolicy.ALLOWLIST,
         "allowed_tools": ("dom_parser", "browser_automation"),
     },
     "COMP-POSITION": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("public_page_capture", "position_extract_compare", "default"),
         "network_policy": NetworkPolicy.ALLOWLIST,
         "allowed_tools": ("dom_parser", "browser_automation"),
     },
     # Synthesis (OFFLINE ONLY - Zero Research-Network Egress)
     "w_comp.synthesis": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("evidence_synthesize", "default"),
         "network_policy": NetworkPolicy.DISABLED,
         "allowed_tools": ("evidence_synthesizer",),
     },
     "w_comp.synth": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("evidence_synthesize", "default"),
         "network_policy": NetworkPolicy.DISABLED,
         "allowed_tools": ("evidence_synthesizer",),
     },
     "COMP-SYNTH": {
-        "allowed_capabilities": (SandboxCapability.SCRAPE,),
+        "allowed_capabilities": (SandboxCapability.COMP,),
         "allowed_operations": ("evidence_synthesize", "default"),
         "network_policy": NetworkPolicy.DISABLED,
         "allowed_tools": ("evidence_synthesizer",),
@@ -1038,7 +1038,7 @@ def validate_capability_access(
                 "W_COMP coordinator has zero sandbox authority; execution requires an authorized Competitor specialist_id."
             )
 
-        if specialist_id is not None and specialist_id != "S_SCRAPE":
+        if specialist_id is not None and specialist_id not in ("s-comp", "S_COMP", "S_SCRAPE"):
             if specialist_id not in AUTHORIZED_COMPETITOR_SPECIALISTS:
                 raise SandboxInvocationError(
                     f"Unauthorized or unknown Competitor specialist: '{specialist_id}'. Fail closed."

@@ -1,9 +1,9 @@
 ---
-name: s-scrape
+name: s-comp
 description: Governed competitor price, ad library, and DOM extraction micro-tool for W_COMP.
 ---
 
-# S_SCRAPE: Price & Ad Scraper
+# S_COMP: Price & Ad Scraper
 
 Authorized Worker: `W_COMP` (Competitor Intel)
 Permitted Operations: `gather_prices`, `parse_dom`, `track_ads`

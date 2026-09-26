@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""S_SCRAPE DOM Tracker & Price Scraper Execution Script."""
+"""s-comp DOM Tracker & Competitor Intel Execution Script."""
 import json
 import sys
 
-def run_s_scrape(payload: dict) -> dict:
+def run_s_comp(payload: dict) -> dict:
     task_id = payload.get("task_id", "unknown")
     competitor = payload.get("competitor", "CompetitorCorp")
     try:
@@ -29,8 +29,11 @@ def run_s_scrape(payload: dict) -> dict:
         "threat_level": "medium",
     }
 
+# Backward compatibility alias
+run_s_scrape = run_s_comp
+
 if __name__ == "__main__":
     raw_input = sys.stdin.read()
     data = json.loads(raw_input) if raw_input.strip() else {}
-    result = run_s_scrape(data)
+    result = run_s_comp(data)
     sys.stdout.write(json.dumps(result))

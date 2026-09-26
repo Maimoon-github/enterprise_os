@@ -10,6 +10,7 @@ from app.integrations.sandbox.micro_tools import (
     execute_s_alloc,
     execute_s_attr,
     execute_s_code,
+    execute_s_comp,
     execute_s_copy,
     execute_s_parse,
     execute_s_scrape,
@@ -130,20 +131,24 @@ def test_s_val_claim_validator_flags_unsupported_absolute() -> None:
     assert any("cures" in v for v in violations)
 
 
-def test_s_scrape_price_and_ad_scraper() -> None:
+def test_s_comp_price_and_ad_scraper() -> None:
     payload = {
-        "task_id": "task-scrape-1",
+        "task_id": "task-comp-1",
         "competitor": "AcmeRival",
         "benchmark_price": "79.95",
         "active_ads": "28",
     }
-    result = execute_s_scrape(payload)
+    result = execute_s_comp(payload)
 
     assert result["status"] == "success"
     assert result["competitor"] == "AcmeRival"
     assert result["benchmark_price"] == "79.95"
     assert result["active_ads"] == "28"
     assert "top_ad_hook" in result
+
+    # Verify backward-compatibility alias produces identical result
+    compat_result = execute_s_scrape(payload)
+    assert compat_result == result
 
 
 def test_s_parse_sentiment_and_objection_parser() -> None:
@@ -199,13 +204,13 @@ def test_s_alloc_handles_malformed_and_negative_inputs() -> None:
     assert len(allocations) > 0
 
 
-def test_s_scrape_handles_malformed_inputs() -> None:
+def test_s_comp_handles_malformed_inputs() -> None:
     payload = {
-        "task_id": "task-scrape-malformed",
+        "task_id": "task-comp-malformed",
         "benchmark_price": "invalid-price",
         "active_ads": "invalid-ads",
     }
-    result = execute_s_scrape(payload)
+    result = execute_s_comp(payload)
     assert result["status"] == "success"
     assert result["benchmark_price"] == "49.99"
     assert result["active_ads"] == "14"

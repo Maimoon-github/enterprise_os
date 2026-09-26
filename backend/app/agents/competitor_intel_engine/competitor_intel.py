@@ -30,7 +30,7 @@ class CompetitorIntelAgent(BoundedWorkerAgent):
     to IE-authorized specialist attempts.
     """
 
-    capability = SandboxCapability.SCRAPE
+    capability = SandboxCapability.COMP
 
     def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
         """Formulate legacy baseline payload if invoked via base execute path."""

@@ -12,6 +12,7 @@ import pytest
 from app.agents.base import BoundedWorkerAgent
 from app.schemas.agent_contracts import TaskGrant
 from app.schemas.governance import TenantScope
+from app.schemas.sandbox import SandboxCapability
 from tests.conftest import FakeSandboxClient
 
 _AGENT_MODULES = [
@@ -106,7 +107,7 @@ async def test_worker_executes_only_through_sandbox_client(
     assert inv.tenant_id == "acme"
     assert inv.execution_id.startswith("exec-")
     assert inv.operation is not None
-    if inv.capability == "S_SCRAPE":
+    if inv.capability in ("s-comp", "S_SCRAPE", SandboxCapability.COMP):
         from app.schemas.sandbox import NetworkPolicy
         assert inv.network_policy == NetworkPolicy.CONTROLLED
     else:
@@ -124,10 +125,14 @@ def test_validate_capability_access_authorized_cases() -> None:
     assert p1.allowed_worker == "W_DEV"
     assert p1.network_policy == NetworkPolicy.DISABLED
 
-    # S_SCRAPE
-    p2 = validate_capability_access("S_SCRAPE", "W_COMP", "scrape_prices", requested_network=NetworkPolicy.CONTROLLED)
+    # s-comp (canonical)
+    p2 = validate_capability_access("s-comp", "W_COMP", "scrape_prices", requested_network=NetworkPolicy.CONTROLLED)
     assert p2.allowed_worker == "W_COMP"
     assert p2.network_policy == NetworkPolicy.CONTROLLED
+
+    # S_SCRAPE (backward-compatible boundary)
+    p2_compat = validate_capability_access("S_SCRAPE", "W_COMP", "scrape_prices", requested_network=NetworkPolicy.CONTROLLED)
+    assert p2_compat.capability == SandboxCapability.COMP
 
 
 def test_validate_capability_access_unauthorized_role_raises() -> None:
@@ -135,7 +140,7 @@ def test_validate_capability_access_unauthorized_role_raises() -> None:
     from app.integrations.sandbox.capabilities import validate_capability_access
 
     with pytest.raises(SandboxInvocationError, match="not authorized"):
-        validate_capability_access("S_SCRAPE", "W_DEV", "scrape_prices")
+        validate_capability_access("s-comp", "W_DEV", "scrape_prices")
 
     with pytest.raises(SandboxInvocationError, match="not authorized"):
         validate_capability_access("S_CODE", "W_STRAT", "generate_diff")
@@ -272,7 +277,7 @@ async def test_sandbox_client_egress_authorized_flow() -> None:
         task_id="task-scrape-1",
         worker_id="W_COMP",
         worker_role="W_COMP",
-        capability="S_SCRAPE",
+        capability="s-comp",
         allowed_domains=["*.competitor.com", "example.com"],
         allowed_ports=[80, 443],
         expires_at=datetime.now(UTC) + timedelta(minutes=15),
@@ -282,7 +287,7 @@ async def test_sandbox_client_egress_authorized_flow() -> None:
         task_id="task-scrape-1",
         worker_role="W_COMP",
         tenant_id="acme",
-        capability="S_SCRAPE",
+        capability="s-comp",
         operation="scrape_prices",
         network_policy=NetworkPolicy.CONTROLLED,
         egress_grant=grant,
@@ -333,7 +338,7 @@ def test_sandbox_wildcard_domain_matching() -> None:
         tenant_id="acme",
         task_id="task-wc",
         worker_role="W_COMP",
-        capability="S_SCRAPE",
+        capability="s-comp",
         allowed_domains=["*.example.com", "exact-target.com"],
         expires_at=datetime.now(UTC) + timedelta(minutes=10),
     )
@@ -395,7 +400,7 @@ def test_complete_cross_worker_specialist_authorization_matrix() -> None:
     for role in all_roles:
         for cap in all_capabilities:
             profile = CAPABILITY_REGISTRY[cap]
-            network_req = NetworkPolicy.CONTROLLED if cap == SandboxCapability.SCRAPE else NetworkPolicy.DISABLED
+            network_req = NetworkPolicy.CONTROLLED if cap == SandboxCapability.COMP else NetworkPolicy.DISABLED
 
             if profile.allowed_worker == role:
                 # Authorized call must succeed
@@ -432,7 +437,7 @@ async def test_all_seven_specialists_structured_result_contracts() -> None:
         SandboxCapability.ALLOC: {"budget": "50000", "channels": "google,meta"},
         SandboxCapability.COPY: {"objective": "scale ad conversions", "brand_voice": "punchy"},
         SandboxCapability.VAL: {"claim": "100% organic growth *results may vary", "required_disclaimer": "*results may vary"},
-        SandboxCapability.SCRAPE: {"competitor": "AlphaCorp", "benchmark_price": "89.00"},
+        SandboxCapability.COMP: {"competitor": "AlphaCorp", "benchmark_price": "89.00"},
         SandboxCapability.PARSE: {"feedback_text": "Great service and fast delivery!"},
         SandboxCapability.ATTR: {"roas": "4.2", "days_active": "7.0"},
     }
@@ -442,7 +447,7 @@ async def test_all_seven_specialists_structured_result_contracts() -> None:
         grant = None
         net_pol = NetworkPolicy.DISABLED
 
-        if cap == SandboxCapability.SCRAPE:
+        if cap == SandboxCapability.COMP:
             net_pol = NetworkPolicy.CONTROLLED
             grant = SandboxEgressGrant(
                 grant_id="grant-test-all",

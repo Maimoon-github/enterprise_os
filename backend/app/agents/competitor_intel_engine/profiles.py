@@ -233,7 +233,7 @@ async def dispatch_competitor_specialist_attempt(
         tenant_id=attempt_input.tenant_id,
         worker_role=WorkerRole.COMPETITOR_INTEL,
         worker_id="W_COMP",
-        capability=SandboxCapability.SCRAPE,
+        capability=SandboxCapability.COMP,
         specialist_id=attempt_input.role.value,
         operation=operation,
         payload={
