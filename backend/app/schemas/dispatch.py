@@ -47,6 +47,7 @@ class DispatchDirective(BaseModel):
     idempotency_key: str | None = None
     expires_at: datetime | None = None
     policy_version: str | None = None
+    nonce: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

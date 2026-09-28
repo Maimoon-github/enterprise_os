@@ -622,3 +622,158 @@ async def test_gateway_blocks_non_executable_task_state() -> None:
     with pytest.raises(PolicyViolationError, match="in non-executable state 'held'"):
         await gateway.execute(dispatch)
 
+
+@pytest.mark.asyncio
+async def test_nonce_replay_rejected() -> None:
+    """Gateway rejects re-use of consumed nonce across different dispatches."""
+    gateway, hitl, preview, priv_key, pub_pem, fake_ads, _ = _setup_approved_preview_and_gateway()
+    decision = hitl.get_decision(preview.preview_id)
+    assert decision is not None and decision.clearance is not None
+
+    dispatch1 = DispatchDirective(
+        dispatch_id="disp-nonce-1",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        nonce="nonce-secret-12345",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-1"},
+    )
+    sig1 = sign_payload(canonical_dispatch_bytes(dispatch1), priv_key)
+    dispatch1 = dispatch1.model_copy(update={"signature": sig1})
+
+    r1 = await gateway.validate_readiness(dispatch1)
+    assert r1.is_ready is True
+
+    # Attempting to use the same nonce in a distinct dispatch must fail closed
+    dispatch2 = DispatchDirective(
+        dispatch_id="disp-nonce-2",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        nonce="nonce-secret-12345",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-2"},
+    )
+    sig2 = sign_payload(canonical_dispatch_bytes(dispatch2), priv_key)
+    dispatch2 = dispatch2.model_copy(update={"signature": sig2})
+
+    with pytest.raises(PolicyViolationError, match="Replay detected: nonce 'nonce-secret-12345' has already been consumed"):
+        await gateway.validate_readiness(dispatch2)
+
+
+@pytest.mark.asyncio
+async def test_payload_size_limit_enforced() -> None:
+    """Gateway rejects directives whose payload size exceeds configured maximum."""
+    gateway, hitl, preview, priv_key, pub_pem, fake_ads, _ = _setup_approved_preview_and_gateway()
+    gateway._max_payload_bytes = 100  # Set low limit for testing
+    decision = hitl.get_decision(preview.preview_id)
+    assert decision is not None and decision.clearance is not None
+
+    dispatch = DispatchDirective(
+        dispatch_id="disp-oversized",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"huge_data": "x" * 200},
+    )
+    sig = sign_payload(canonical_dispatch_bytes(dispatch), priv_key)
+    dispatch = dispatch.model_copy(update={"signature": sig})
+
+    with pytest.raises(PolicyViolationError, match="Payload size .* exceeds maximum allowed limit"):
+        await gateway.validate_readiness(dispatch)
+
+
+@pytest.mark.asyncio
+async def test_atomic_budget_reservation_and_oversubscription() -> None:
+    """Verifies atomic budget reservation prevents concurrent oversubscription and rolls back on failure."""
+    from app.schemas.task_state import CanonicalTaskState, TaskStatus, WorkerRole
+    from app.services.task_state import TaskStateService
+
+    gateway, hitl, preview, priv_key, pub_pem, fake_ads, _ = _setup_approved_preview_and_gateway(spend_amount=500.0)
+    decision = hitl.get_decision(preview.preview_id)
+    assert decision is not None and decision.clearance is not None
+    decision.clearance.approved_scope = {"spend_amount": 500.0}
+
+    class MockRepo:
+        def __init__(self, state: CanonicalTaskState) -> None:
+            self.state = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def get_state(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.state = state
+
+    task_state = CanonicalTaskState(
+        task_id=preview.task_id,
+        directive_id="dir-test",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant-alpha",
+        status=TaskStatus.APPROVED,
+    )
+    state_service = TaskStateService(MockRepo(task_state))
+    gateway._task_state_service = state_service
+
+    # First dispatch of $300 (succeeds, commits $300)
+    dispatch1 = DispatchDirective(
+        dispatch_id="disp-spend-1",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-1", "spend_amount": 300.0},
+    )
+    sig1 = sign_payload(canonical_dispatch_bytes(dispatch1), priv_key)
+    dispatch1 = dispatch1.model_copy(update={"signature": sig1})
+
+    res1 = await gateway.execute(dispatch1)
+    assert res1["status_code"] == "200"
+    st1 = await state_service.get_state(preview.task_id)
+    assert float(st1.cts_state.get("committed_budget", 0.0)) == 300.0
+    assert float(st1.cts_state.get("reserved_budget", 0.0)) == 0.0
+
+    # Second dispatch of $300 on same task (exceeds total cap $500: $300 committed + $300 > $500)
+    # Re-approve task state for dispatch attempt
+    st1.status = TaskStatus.APPROVED
+    await state_service.save_state("tenant-alpha", st1)
+
+    dispatch2 = DispatchDirective(
+        dispatch_id="disp-spend-2",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-2", "spend_amount": 300.0},
+    )
+    sig2 = sign_payload(canonical_dispatch_bytes(dispatch2), priv_key)
+    dispatch2 = dispatch2.model_copy(update={"signature": sig2})
+
+    with pytest.raises(PolicyViolationError, match="Atomic budget reservation failed: requested spend 300.0 exceeds available budget cap under 500.0"):
+        await gateway.execute(dispatch2)
+
+

@@ -189,6 +189,27 @@ class TaskStateService:
             )
         return True
 
+    async def release_budget(
+        self,
+        tenant_id: str,
+        task_id: str,
+        amount: float,
+    ) -> bool:
+        """Atomically release reserved budget upon execution failure without effect."""
+        state = await self.get_state(task_id)
+        current_reserved = float(state.cts_state.get("reserved_budget", 0.0))
+        state.cts_state["reserved_budget"] = max(0.0, current_reserved - amount)
+        await self.save_state(tenant_id, state)
+        if self._provenance_recorder:
+            await self._provenance_recorder.record(
+                tenant_id=tenant_id,
+                entity_id=task_id,
+                activity="release_budget",
+                agent="task_state_service",
+                metadata={"amount": amount},
+            )
+        return True
+
     async def hold_task(
         self,
         tenant_id: str,

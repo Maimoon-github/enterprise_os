@@ -9,6 +9,7 @@ validation, (4) rate-limit capacity, and (5) replay/idempotency protection.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
@@ -91,6 +92,8 @@ def canonical_dispatch_bytes(dispatch: DispatchDirective) -> bytes:
         canonical["idempotency_key"] = dispatch.idempotency_key
     if getattr(dispatch, "policy_version", None):
         canonical["policy_version"] = dispatch.policy_version
+    if getattr(dispatch, "nonce", None):
+        canonical["nonce"] = dispatch.nonce
     return json.dumps(canonical, sort_keys=True).encode("utf-8")
 
 
@@ -124,6 +127,8 @@ class OutboundGateway:
         require_signature: bool = True,
         provenance_recorder: ProvenanceRecorder | None = None,
         task_state_service: TaskStateService | None = None,
+        max_concurrency: int = 10,
+        max_payload_bytes: int = 1_048_576,
     ) -> None:
         self._hitl = hitl
         self._crypto_validator = crypto_validator
@@ -135,6 +140,10 @@ class OutboundGateway:
         self._require_signature = require_signature
         self._provenance_recorder = provenance_recorder
         self._task_state_service = task_state_service
+        self._max_concurrency = max_concurrency
+        self._max_payload_bytes = max_payload_bytes
+        self._concurrency_semaphore = asyncio.Semaphore(max_concurrency)
+        self._used_nonces: set[str] = set()
         self._idempotency_records: dict[str, tuple[str, str, DispatchReadiness]] = {}
         self._execution_records: dict[str, dict[str, Any]] = {}
 
@@ -142,7 +151,19 @@ class OutboundGateway:
         """Certify that ``dispatch`` satisfies all post-HITL gate invariants without executing outbound side-effects."""
 
         idempotency_key = dispatch.idempotency_key or dispatch.dispatch_id
-        payload_hash = hashlib.sha256(json.dumps(dispatch.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        payload_bytes = json.dumps(dispatch.payload, sort_keys=True, default=str).encode("utf-8")
+        if len(payload_bytes) > self._max_payload_bytes:
+            raise PolicyViolationError(
+                f"Payload size {len(payload_bytes)} bytes exceeds maximum allowed limit of {self._max_payload_bytes} bytes."
+            )
+        payload_hash = hashlib.sha256(payload_bytes).hexdigest()
+
+        # Single-use Nonce Replay Check
+        if getattr(dispatch, "nonce", None):
+            if dispatch.nonce in self._used_nonces and idempotency_key not in self._idempotency_records:
+                raise PolicyViolationError(
+                    f"Replay detected: nonce '{dispatch.nonce}' has already been consumed."
+                )
 
         # 1. Replay & Idempotency Protection
         if idempotency_key in self._idempotency_records:
@@ -565,6 +586,8 @@ class OutboundGateway:
         )
 
         self._idempotency_records[idempotency_key] = (payload_hash, dispatch.signature, readiness)
+        if getattr(dispatch, "nonce", None):
+            self._used_nonces.add(dispatch.nonce)
 
         if self._provenance_recorder:
             scrubbed = scrub_sensitive_payload(dispatch.payload)
@@ -593,39 +616,83 @@ class OutboundGateway:
             # Return cached execution result safely without re-actuating
             return self._execution_records[idempotency_key]
 
-        # Transition CTS task to DISPATCHED if state service is wired
-        task_state = None
-        if self._task_state_service and dispatch.task_id:
-            task_state = await self._task_state_service.get_state(dispatch.task_id)
-            if task_state is not None:
-                if task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED) or task_state.hold_reason:
-                    raise PolicyViolationError(
-                        f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
-                    )
-                task_tenant = getattr(task_state, "tenant_id", None)
-                if task_tenant is not None and task_tenant not in ("default", "global", dispatch.tenant_id):
-                    raise PolicyViolationError(
-                        f"Tenant authority mismatch: task tenant '{task_tenant}' cannot authorize dispatch for '{dispatch.tenant_id}'."
-                    )
-                if task_state.status == TaskStatus.APPROVED:
-                    task_state = await self._task_state_service.transition(
-                        dispatch.tenant_id,
-                        task_state,
-                        TaskStatus.DISPATCHED,
-                        note=f"Dispatched directive {dispatch.dispatch_id} to channel {dispatch.channel} via MCP_ACT",
-                    )
+        async with self._concurrency_semaphore:
+            # Re-check idempotency under semaphore lock
+            if idempotency_key in self._execution_records:
+                cached = self._execution_records[idempotency_key]
+                if cached.get("status") not in ("DISPATCH_INTENT", "AMBIGUOUS_TIMEOUT"):
+                    return cached
 
-        # Persist dispatch intent and idempotency identity BEFORE external execution
-        payload_hash = hashlib.sha256(json.dumps(dispatch.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-        self._execution_records[idempotency_key] = {
-            "status": "DISPATCH_INTENT",
-            "dispatch_id": dispatch.dispatch_id,
-            "idempotency_key": idempotency_key,
-            "channel": dispatch.channel,
-            "payload_hash": payload_hash,
-            "tenant_id": dispatch.tenant_id,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
+            # 1. Atomic budget reservation before spend-bearing dispatch
+            reserved_amount: float | None = None
+            if self._task_state_service and dispatch.task_id:
+                decision = self._hitl.get_decision(dispatch.action_preview_id)
+                if decision and decision.clearance and decision.clearance.approved_scope:
+                    approved_spend = (
+                        decision.clearance.approved_scope.get("spend_amount")
+                        or decision.clearance.approved_scope.get("budget")
+                        or decision.clearance.approved_scope.get("max_budget")
+                        or decision.clearance.approved_scope.get("daily_budget")
+                    )
+                    req_spend = (
+                        dispatch.payload.get("spend_amount")
+                        or dispatch.payload.get("budget")
+                        or dispatch.payload.get("daily_budget")
+                        or dispatch.payload.get("lifetime_budget")
+                        or dispatch.payload.get("amount")
+                    )
+                    if approved_spend is not None and req_spend is not None:
+                        try:
+                            amount_val = float(req_spend)
+                            cap_val = float(approved_spend)
+                            if amount_val > 0:
+                                reserved = await self._task_state_service.reserve_budget(
+                                    dispatch.tenant_id,
+                                    dispatch.task_id,
+                                    amount_val,
+                                    cap_val,
+                                )
+                                if not reserved:
+                                    raise PolicyViolationError(
+                                        f"Atomic budget reservation failed: requested spend {amount_val} exceeds available budget cap under {cap_val}."
+                                    )
+                                reserved_amount = amount_val
+                        except (ValueError, TypeError):
+                            pass
+
+            # Transition CTS task to DISPATCHED if state service is wired
+            task_state = None
+            if self._task_state_service and dispatch.task_id:
+                task_state = await self._task_state_service.get_state(dispatch.task_id)
+                if task_state is not None:
+                    if task_state.status in (TaskStatus.HELD, TaskStatus.REJECTED, TaskStatus.FAILED) or task_state.hold_reason:
+                        raise PolicyViolationError(
+                            f"Task '{dispatch.task_id}' is in non-executable state '{task_state.status.value}'."
+                        )
+                    task_tenant = getattr(task_state, "tenant_id", None)
+                    if task_tenant is not None and task_tenant not in ("default", "global", dispatch.tenant_id):
+                        raise PolicyViolationError(
+                            f"Tenant authority mismatch: task tenant '{task_tenant}' cannot authorize dispatch for '{dispatch.tenant_id}'."
+                        )
+                    if task_state.status == TaskStatus.APPROVED:
+                        task_state = await self._task_state_service.transition(
+                            dispatch.tenant_id,
+                            task_state,
+                            TaskStatus.DISPATCHED,
+                            note=f"Dispatched directive {dispatch.dispatch_id} to channel {dispatch.channel} via MCP_ACT",
+                        )
+
+            # Persist dispatch intent and idempotency identity BEFORE external execution
+            payload_hash = hashlib.sha256(json.dumps(dispatch.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+            self._execution_records[idempotency_key] = {
+                "status": "DISPATCH_INTENT",
+                "dispatch_id": dispatch.dispatch_id,
+                "idempotency_key": idempotency_key,
+                "channel": dispatch.channel,
+                "payload_hash": payload_hash,
+                "tenant_id": dispatch.tenant_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
         if self._provenance_recorder:
             await self._provenance_recorder.record(
                 tenant_id=dispatch.tenant_id,
@@ -824,6 +891,14 @@ class OutboundGateway:
                         note=f"Successfully actuated {dispatch.channel} directive {dispatch.dispatch_id}",
                     )
 
+            # Commit reserved budget upon successful deployment
+            if reserved_amount is not None and self._task_state_service and dispatch.task_id:
+                await self._task_state_service.commit_budget(
+                    dispatch.tenant_id,
+                    dispatch.task_id,
+                    reserved_amount,
+                )
+
             # Record deployment execution provenance with sensitive data scrubbed
             if self._provenance_recorder:
                 scrubbed = scrub_sensitive_payload(res)
@@ -862,6 +937,12 @@ class OutboundGateway:
                     self._execution_records[idempotency_key] = reconciled
                     if self._task_state_service and dispatch.task_id and task_state:
                         try:
+                            if reserved_amount is not None:
+                                await self._task_state_service.commit_budget(
+                                    dispatch.tenant_id,
+                                    dispatch.task_id,
+                                    reserved_amount,
+                                )
                             await self._task_state_service.transition(
                                 dispatch.tenant_id,
                                 task_state,
@@ -872,7 +953,7 @@ class OutboundGateway:
                             pass
                     return reconciled
 
-                # Ambiguous outcome unreconciled: mark task HELD to prevent blind duplicate actuation
+                # Ambiguous outcome unreconciled: mark task HELD to prevent blind duplicate actuation and retain spend exposure
                 if self._task_state_service and dispatch.task_id and task_state:
                     try:
                         await self._task_state_service.transition(
@@ -888,6 +969,7 @@ class OutboundGateway:
                     "error": str(exc),
                     "idempotency_key": idempotency_key,
                     "requires_reconciliation": True,
+                    "retained_spend_exposure": reserved_amount,
                 }
                 if self._provenance_recorder:
                     await self._provenance_recorder.record(
@@ -895,9 +977,20 @@ class OutboundGateway:
                         entity_id=dispatch.dispatch_id,
                         activity=f"outbound_{dispatch.channel}_timeout_reconciliation_held",
                         agent="mcp_act_boundary",
-                        metadata={"error": str(exc), "idempotency_key": idempotency_key},
+                        metadata={"error": str(exc), "idempotency_key": idempotency_key, "retained_spend_exposure": reserved_amount},
                     )
                 raise
+
+            # Release reserved budget on execution failure without effect
+            if reserved_amount is not None and self._task_state_service and dispatch.task_id:
+                try:
+                    await self._task_state_service.release_budget(
+                        dispatch.tenant_id,
+                        dispatch.task_id,
+                        reserved_amount,
+                    )
+                except Exception:
+                    pass
 
             # Mark task FAILED if state service is wired
             if self._task_state_service and dispatch.task_id and task_state:
