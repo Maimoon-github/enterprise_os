@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -775,5 +776,287 @@ async def test_atomic_budget_reservation_and_oversubscription() -> None:
 
     with pytest.raises(PolicyViolationError, match="Atomic budget reservation failed: requested spend 300.0 exceeds available budget cap under 500.0"):
         await gateway.execute(dispatch2)
+
+
+@pytest.mark.asyncio
+async def test_unreconciled_timeout_holds_task_and_retains_spend_exposure() -> None:
+    """Verifies that an unreconciled provider timeout places the task in HELD and retains spend exposure."""
+    import httpx
+    from app.schemas.task_state import CanonicalTaskState, TaskStatus, WorkerRole
+    from app.services.task_state import TaskStateService
+
+    class TimeoutMetaAdapter(AdsAdapter):
+        channel = "meta"
+
+        async def apply_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+            raise httpx.TimeoutException("Meta API timeout after 10s")
+
+        async def reconcile(self, payload: dict[str, Any], idempotency_key: str | None = None) -> dict[str, Any] | None:
+            return None  # Outcome unknown / unreconciled
+
+    gateway, hitl, preview, priv_key, pub_pem, _, prov = _setup_approved_preview_and_gateway(spend_amount=500.0)
+    decision = hitl.get_decision(preview.preview_id)
+    assert decision is not None and decision.clearance is not None
+    decision.clearance.approved_scope = {"spend_amount": 500.0}
+
+    timeout_adapter = TimeoutMetaAdapter(None)
+    gateway._ads_adapters["meta"] = timeout_adapter
+
+    class MockRepo:
+        def __init__(self, state: CanonicalTaskState) -> None:
+            self.state = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def get_state(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.state = state
+
+    task_state = CanonicalTaskState(
+        task_id=preview.task_id,
+        directive_id="dir-test",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant-alpha",
+        status=TaskStatus.APPROVED,
+    )
+    state_service = TaskStateService(MockRepo(task_state))
+    gateway._task_state_service = state_service
+
+    dispatch = DispatchDirective(
+        dispatch_id="disp-timeout-1",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-timeout", "spend_amount": 250.0},
+    )
+    sig = sign_payload(canonical_dispatch_bytes(dispatch), priv_key)
+    dispatch = dispatch.model_copy(update={"signature": sig})
+
+    with pytest.raises(httpx.TimeoutException, match="Meta API timeout"):
+        await gateway.execute(dispatch)
+
+    # Invariants verification:
+    # 1. Task transitioned to HELD (not FAILED or COMPLETED)
+    st = await state_service.get_state(preview.task_id)
+    assert st.status == TaskStatus.HELD
+    # 2. Spend exposure is retained (reserved_budget remains 250.0)
+    assert float(st.cts_state.get("reserved_budget", 0.0)) == 250.0
+    # 3. Execution record marks AMBIGUOUS_TIMEOUT with retained_spend_exposure
+    idempotency_key = dispatch.idempotency_key or dispatch.dispatch_id
+    record = gateway._execution_records[idempotency_key]
+    assert record["status"] == "AMBIGUOUS_TIMEOUT"
+    assert record["retained_spend_exposure"] == 250.0
+    assert record["requires_reconciliation"] is True
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_releases_budget_reservation() -> None:
+    """Verifies that non-timeout execution failure safely releases the reserved budget."""
+    from app.schemas.task_state import CanonicalTaskState, TaskStatus, WorkerRole
+    from app.services.task_state import TaskStateService
+
+    class FailingMetaAdapter(AdsAdapter):
+        channel = "meta"
+
+        async def apply_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+            raise ValueError("Invalid target audience specification in payload")
+
+    gateway, hitl, preview, priv_key, pub_pem, _, prov = _setup_approved_preview_and_gateway(spend_amount=500.0)
+    decision = hitl.get_decision(preview.preview_id)
+    assert decision is not None and decision.clearance is not None
+    decision.clearance.approved_scope = {"spend_amount": 500.0}
+
+    gateway._ads_adapters["meta"] = FailingMetaAdapter(None)
+
+    class MockRepo:
+        def __init__(self, state: CanonicalTaskState) -> None:
+            self.state = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def get_state(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.state = state
+
+    task_state = CanonicalTaskState(
+        task_id=preview.task_id,
+        directive_id="dir-test",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant-alpha",
+        status=TaskStatus.APPROVED,
+    )
+    state_service = TaskStateService(MockRepo(task_state))
+    gateway._task_state_service = state_service
+
+    dispatch = DispatchDirective(
+        dispatch_id="disp-fail-1",
+        task_id=preview.task_id,
+        action_preview_id=preview.preview_id,
+        signature="",
+        approved_by=decision.approver,
+        approved_at=decision.decided_at,
+        channel="meta",
+        tenant_id="tenant-alpha",
+        clearance_id=decision.clearance.clearance_id,
+        payload={"campaign_id": "meta-camp-fail", "spend_amount": 250.0},
+    )
+    sig = sign_payload(canonical_dispatch_bytes(dispatch), priv_key)
+    dispatch = dispatch.model_copy(update={"signature": sig})
+
+    with pytest.raises(ValueError, match="Invalid target audience"):
+        await gateway.execute(dispatch)
+
+    # Invariants verification:
+    # 1. Task transitioned to FAILED
+    st = await state_service.get_state(preview.task_id)
+    assert st.status == TaskStatus.FAILED
+    # 2. Spend reservation was released (reserved_budget rolled back to 0.0)
+    assert float(st.cts_state.get("reserved_budget", 0.0)) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_full_governed_actuation_lineage() -> None:
+    """Verifies end-to-end lineage: Strategy preview -> HITL sign-off -> signed dispatch -> actuation -> CTS & secret-free audit."""
+    from app.orchestration.dag_scheduler import DagScheduler
+    from app.orchestration.evidence_synthesis import EvidenceSynthesizer
+    from app.orchestration.hitl_preview_generator import HitlPreviewGenerator
+    from app.orchestration.intelligence_engine import IntelligenceEngine
+    from app.orchestration.policy_evaluator import PolicyEvaluator
+    from app.orchestration.task_state_machine import TaskStateMachine
+    from app.schemas.task_state import CanonicalTaskState, TaskStatus, WorkerRole
+    from app.services.task_state import TaskStateService
+
+    priv_key, pub_pem = _make_keypair()
+    validator = CryptographicValidator(pub_pem)
+    hitl = HitlCoordinator(validator)
+    prov_repo = FakeProvenanceRepository()
+    recorder = ProvenanceRecorder(prov_repo)
+
+    # 1. Action Preview from Strategy Proposal
+    preview = ActionPreview(
+        preview_id="prev-lineage-100",
+        task_id="task-lineage-100",
+        tenant_id="tenant-acme",
+        kind=ActionPreviewKind.SPEND,
+        summary="Launch Acme Spring Campaign",
+        spend_amount=1500.0,
+        risk_level=RiskLevel.MEDIUM,
+    )
+    hitl.submit_for_approval(preview)
+
+    # 2. Authenticated HITL Human Approval
+    content_hash = compute_preview_hash(preview)
+    now_dt = datetime.now(UTC)
+    canon_bytes = canonical_decision_bytes(
+        preview_id=preview.preview_id,
+        decision="APPROVE",
+        approver="[email protected]",
+        tenant_id="tenant-acme",
+        preview_content_hash=content_hash,
+        decided_at=now_dt.isoformat(),
+    )
+    sig = sign_payload(canon_bytes, priv_key)
+    decision = hitl.decide(
+        preview.preview_id,
+        decision=HumanDecisionType.APPROVE,
+        approver="[email protected]",
+        approver_role=ReviewerRole.FINANCE,
+        tenant_id="tenant-acme",
+        signature=sig,
+        public_key_pem=pub_pem,
+        preview_content_hash=content_hash,
+        decided_at=now_dt,
+    )
+    assert decision.clearance is not None
+    decision.clearance.approved_scope = {"spend_amount": 1500.0}
+
+    # 3. Intelligence Engine Mints Signed Dispatch Directive
+    ie = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=None,  # type: ignore[arg-type]
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=hitl,
+        mcp_host=None,  # type: ignore[arg-type]
+        provenance_recorder=recorder,
+        workers={},
+    )
+    directive = await ie.create_authorized_dispatch(
+        preview.preview_id,
+        channel="meta",
+        audience="global",
+        payload={
+            "campaign_id": "cmp_spring_acme",
+            "spend_amount": 1500.0,
+            "secret_token": "bearer-should-be-scrubbed-xyz",
+        },
+        private_key=priv_key,
+        tenant_id="tenant-acme",
+    )
+
+    # 4. Outbound Actuation Gateway Execution with CTS tracking
+    class MockRepo:
+        def __init__(self, state: CanonicalTaskState) -> None:
+            self.state = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def get_state(self, task_id: str) -> CanonicalTaskState:
+            return self.state
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.state = state
+
+    task_state = CanonicalTaskState(
+        task_id=preview.task_id,
+        directive_id="dir-lineage",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_id="tenant-acme",
+        status=TaskStatus.APPROVED,
+    )
+    state_service = TaskStateService(MockRepo(task_state))
+
+    fake_ads = FakeAdsAdapter()
+    gateway = OutboundGateway(
+        hitl,
+        validator,
+        ads_adapters={"meta": fake_ads},
+        task_state_service=state_service,
+        provenance_recorder=recorder,
+    )
+
+    res = await gateway.execute(directive)
+    assert res["status_code"] == "200"
+
+    # 5. CTS Verification: State COMPLETED, budget committed, paid campaign saved
+    updated_cts = await state_service.get_state(preview.task_id)
+    assert updated_cts.status == TaskStatus.COMPLETED
+    assert float(updated_cts.cts_state.get("committed_budget", 0.0)) == 1500.0
+    assert float(updated_cts.cts_state.get("reserved_budget", 0.0)) == 0.0
+    assert updated_cts.cts_state["paid_campaign"]["campaign_id"] == "cmp_spring_acme"
+
+    # 6. Provenance Lineage Verification: Secret-free
+    chain = await prov_repo.chain("tenant-acme")
+    activities = [r.activity for r in chain]
+    assert "outbound_meta_deployment_executed" in activities
+
+    # Ensure no secrets leak into provenance records
+    for r in chain:
+        meta_str = str(r.metadata).lower()
+        assert "bearer-should-be-scrubbed-xyz" not in meta_str
 
 

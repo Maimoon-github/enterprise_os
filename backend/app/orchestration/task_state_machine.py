@@ -16,7 +16,7 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     ),
     TaskStatus.APPROVED: frozenset({TaskStatus.DISPATCHED, TaskStatus.HELD}),
     TaskStatus.REJECTED: frozenset({TaskStatus.IN_PROGRESS, TaskStatus.FAILED}),
-    TaskStatus.DISPATCHED: frozenset({TaskStatus.COMPLETED, TaskStatus.FAILED}),
+    TaskStatus.DISPATCHED: frozenset({TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.HELD}),
     TaskStatus.HELD: frozenset(
         {
             TaskStatus.PENDING,
@@ -24,6 +24,8 @@ _ALLOWED_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
             TaskStatus.IN_PROGRESS,
             TaskStatus.AWAITING_APPROVAL,
             TaskStatus.APPROVED,
+            TaskStatus.DISPATCHED,
+            TaskStatus.COMPLETED,
             TaskStatus.FAILED,
         }
     ),
