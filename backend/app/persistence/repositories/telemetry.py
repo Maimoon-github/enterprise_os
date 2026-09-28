@@ -740,3 +740,5 @@ class TelemetryRepository(BaseJsonRepository[TelemetryEvent]):
                 res = await _execute_commit(local_session)
                 await local_session.commit()
                 return res
+
+    commit_report_run = commit_collection_run

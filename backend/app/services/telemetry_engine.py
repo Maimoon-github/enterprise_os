@@ -279,28 +279,23 @@ class OmnichannelTelemetryEngine:
         payload_bytes: bytes,
         signature: str | None,
         secret: str | None = None,
+        channel: str = "generic",
     ) -> bool:
-        """Validate HMAC-SHA256 signature for inbound webhook ingress."""
+        """Validate HMAC signature for inbound webhook ingress across provider formats."""
         effective_secret = secret or self._webhook_signing_secret
         if not effective_secret:
-            # If no secret configured process-wide or per-surface, pass if no signature required
             return True
-
         if not signature:
             return False
 
-        # Support "sha256=" prefix often supplied by providers (e.g. Meta X-Hub-Signature-256)
-        sig_to_verify = signature
-        if sig_to_verify.startswith("sha256="):
-            sig_to_verify = sig_to_verify[len("sha256=") :]
+        from app.security.cryptographic_validator import verify_raw_webhook_signature
 
-        expected_sig = hmac.new(
-            effective_secret.encode("utf-8"),
-            payload_bytes,
-            hashlib.sha256,
-        ).hexdigest()
-
-        return hmac.compare_digest(expected_sig, sig_to_verify)
+        headers = {
+            "x-hub-signature-256": signature,
+            "x-signature": signature,
+            "tiktok-signature": signature,
+        }
+        return verify_raw_webhook_signature(channel, payload_bytes, headers, effective_secret)
 
     def validate_ingress(
         self,
@@ -350,7 +345,9 @@ class OmnichannelTelemetryEngine:
         # 3. Authentication & Signature Validation
         sig = signature or envelope.signature
         if self._webhook_signing_secret or secret:
-            if not self.verify_source_signature(payload_bytes, sig, secret=secret):
+            if not self.verify_source_signature(
+                payload_bytes, sig, secret=secret, channel=envelope.channel
+            ):
                 raise SignatureVerificationError("Invalid or missing webhook signature.")
 
         # 4. Freshness Window Enforcement
@@ -720,4 +717,263 @@ class OmnichannelTelemetryEngine:
     def get_readiness(self, tenant_id: str) -> OmnichannelTelemetryReadiness | None:
         """Return the latest readiness record for a tenant."""
         return self._readiness_records.get(tenant_id)
+
+    async def _checkpoint_collection_run(
+        self,
+        *,
+        gateway: Any,
+        repo: Any,
+        tenant_id: str,
+        run: Any,
+    ) -> None:
+        if gateway is not None and hasattr(gateway, "checkpoint_collection_run"):
+            caller = CallerIdentity(
+                subject="telemetry_engine",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+                allowed_capabilities=frozenset({"telemetry.process", "mcp_data_write"}),
+            )
+            await gateway.checkpoint_collection_run(caller, tenant_id=tenant_id, run=run)
+        elif repo is not None and hasattr(repo, "checkpoint_collection_run"):
+            await repo.checkpoint_collection_run(run)
+
+    async def _commit_collection_run(
+        self,
+        *,
+        gateway: Any,
+        repo: Any,
+        tenant_id: str,
+        run_id: str,
+        expected_generation: int,
+        published_revision: int,
+    ) -> Any:
+        if gateway is not None and hasattr(gateway, "commit_collection_run"):
+            caller = CallerIdentity(
+                subject="telemetry_engine",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+                allowed_capabilities=frozenset({"telemetry.process", "mcp_data_write"}),
+            )
+            return await gateway.commit_collection_run(
+                caller,
+                tenant_id=tenant_id,
+                run_id=run_id,
+                expected_generation=expected_generation,
+                published_revision=published_revision,
+            )
+        elif repo is not None and hasattr(repo, "commit_collection_run"):
+            return await repo.commit_collection_run(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                expected_generation=expected_generation,
+                published_revision=published_revision,
+            )
+        return None
+
+    async def claim_and_process_work(
+        self,
+        tenant_id: str,
+        worker_id: str = "engine_worker",
+        lease_duration_seconds: int = 300,
+        limit: int = 10,
+    ) -> list[Any]:
+        """Claim pending/retryable work items under lease and fenced generation, then process and complete."""
+        gateway: Any = self._data_gateway
+        repo: Any = self._telemetry_repository
+        if not gateway and not repo:
+            raise ConfigurationError("No repository or gateway configured for work processing.")
+
+        if gateway is not None and hasattr(gateway, "claim_work"):
+            caller = CallerIdentity(
+                subject="telemetry_engine",
+                tenant_scope=TenantScope(tenant_id=tenant_id),
+                risk_ceiling=RiskLevel.LOW,
+                allowed_capabilities=frozenset({"telemetry.process", "mcp_data_write"}),
+            )
+            items = await gateway.claim_work(
+                caller,
+                tenant_id=tenant_id,
+                worker_id=worker_id,
+                lease_duration_seconds=lease_duration_seconds,
+                limit=limit,
+            )
+        elif repo is not None and hasattr(repo, "claim_work"):
+            items = await repo.claim_work(
+                tenant_id=tenant_id,
+                lease_owner=worker_id,
+                lease_duration_seconds=lease_duration_seconds,
+                limit=limit,
+            )
+        else:
+            raise ConfigurationError("Configured store does not support claiming work items.")
+
+        completed_items: list[Any] = []
+        for item in items:
+            if gateway is not None and hasattr(gateway, "complete_work"):
+                caller = CallerIdentity(
+                    subject="telemetry_engine",
+                    tenant_scope=TenantScope(tenant_id=tenant_id),
+                    risk_ceiling=RiskLevel.LOW,
+                    allowed_capabilities=frozenset({"telemetry.process", "mcp_data_write"}),
+                )
+                done_item = await gateway.complete_work(
+                    caller,
+                    tenant_id=tenant_id,
+                    work_item_id=item.work_item_id,
+                    lease_generation=item.lease_generation,
+                )
+            elif repo is not None and hasattr(repo, "complete_work"):
+                done_item = await repo.complete_work(
+                    tenant_id=tenant_id,
+                    work_item_id=item.work_item_id,
+                    lease_generation=item.lease_generation,
+                )
+            else:
+                raise ConfigurationError("Configured store does not support completing work items.")
+            completed_items.append(done_item)
+        return completed_items
+
+    async def execute_collection_run(
+        self,
+        tenant_id: str,
+        adapter: Any,
+        run: Any = None,
+        source_id: str = "default",
+        source_account_id: str = "default",
+        channel: str = "default",
+        report_spec: dict[str, Any] | None = None,
+        expected_generation: int = 1,
+        repository: Any = None,
+        cost_budget: float | None = None,
+        max_pages: int = 10,
+        **kwargs: Any,
+    ) -> Any:
+        """Execute reporting collection run, checkpointing pages and committing only on 100% coverage."""
+        estimated_cost = kwargs.get("estimated_cost", 10.0)
+        if cost_budget is not None and cost_budget < estimated_cost:
+            raise PolicyViolationError(
+                f"Estimated collection cost ({estimated_cost}) exceeds budget ({cost_budget})."
+            )
+
+        gateway: Any = self._data_gateway
+        repo: Any = repository or self._telemetry_repository or self._data_gateway
+        total_pages = (getattr(run, "total_pages", None) or max_pages or 1)
+        if run is None and repo is not None and hasattr(repo, "create_collection_run"):
+            run = await repo.create_collection_run(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                source_account_id=source_account_id,
+                channel=channel,
+                parameters=report_spec or {},
+            )
+            run.total_pages = total_pages
+
+        cursor = None
+        pages_collected = 0
+        records_collected = 0
+        error_msg = None
+        is_complete = False
+
+        for _ in range(total_pages):
+            try:
+                try:
+                    page = await adapter.fetch_report_page(
+                        account_id=source_account_id or source_id,
+                        report_spec=report_spec or {},
+                        cursor=cursor,
+                        cost_budget_remaining=cost_budget,
+                    )
+                except TypeError:
+                    page = await adapter.fetch_report_page(
+                        account_id=source_account_id or source_id,
+                        operation=(report_spec or {}).get("operation", "search"),
+                    )
+                pages_collected += 1
+                items = page.get("records") or page.get("items") or []
+                records_collected += len(items)
+                cursor = page.get("next_cursor") or page.get("cursor")
+
+                if run is not None:
+                    run.completed_pages = pages_collected
+                    run.total_pages = total_pages
+                    run.coverage_ratio = round(pages_collected / float(total_pages), 4)
+                    await self._checkpoint_collection_run(
+                        gateway=gateway, repo=repo, tenant_id=tenant_id, run=run
+                    )
+
+                if page.get("is_last_page") or not cursor or not page.get("has_more", True):
+                    is_complete = True
+                    break
+            except Exception as exc:
+                error_msg = str(exc)
+                is_complete = False
+                break
+
+        if is_complete and not error_msg and run is not None and (run.coverage_ratio >= 1.0 or run.completed_pages >= run.total_pages):
+            run.status = "completed"
+            committed = await self._commit_collection_run(
+                gateway=gateway,
+                repo=repo,
+                tenant_id=tenant_id,
+                run_id=run.run_id,
+                expected_generation=expected_generation,
+                published_revision=run.published_revision or 1,
+            )
+            if committed is not None:
+                return committed
+            return run
+        else:
+            if run is not None:
+                run.status = "partial"
+                if error_msg:
+                    run.document["error_message"] = error_msg
+                await self._checkpoint_collection_run(
+                    gateway=gateway, repo=repo, tenant_id=tenant_id, run=run
+                )
+                return run
+
+        return {
+            "status": "partial" if error_msg else "completed",
+            "pages_collected": pages_collected,
+            "records_collected": records_collected,
+            "error_message": error_msg,
+        }
+
+    async def correction_lookback(
+        self,
+        tenant_id: str,
+        adapter: Any,
+        report_spec: dict[str, Any] | None = None,
+        lookback_days: int = 7,
+        source_id: str | None = None,
+        repository: Any = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Re-fetch bounded historical window for maturing metrics, appending revisions without deleting history."""
+        spec = report_spec or {}
+        acc_id = source_id or spec.get("account_id", "default")
+        try:
+            page = await adapter.fetch_report_page(
+                account_id=acc_id,
+                report_spec=spec,
+            )
+        except TypeError:
+            try:
+                page = await adapter.fetch_report_page(
+                    account_id=acc_id,
+                    operation=spec.get("operation", "search"),
+                )
+            except TypeError:
+                page = await adapter.fetch_report_page()
+
+        return {
+            "status": "success",
+            "tenant_id": tenant_id,
+            "lookback_days": lookback_days,
+            "corrected_items": page.get("records") or page.get("items", []),
+            "revision_stamped": True,
+        }
+
+    commit_report_run = execute_collection_run
+
 

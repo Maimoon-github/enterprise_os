@@ -135,6 +135,11 @@ class TelemetryNormalizer:
         if isinstance(rec_dict.get("payload"), dict):
             rec_dict["payload"] = scrub_sensitive_telemetry(rec_dict["payload"])
 
+        channel = rec_dict.get("channel")
+        if rec_dict.get("trust_class") == "browser_untrusted":
+            if isinstance(rec_dict.get("payload"), dict):
+                rec_dict["payload"]["is_authoritative_order"] = False
+
         if self._data_gateway is not None and hasattr(self._data_gateway, "admit"):
             from app.schemas.governance import RiskLevel, TenantScope
             from app.security.authorization_boundary import CallerIdentity
@@ -145,9 +150,14 @@ class TelemetryNormalizer:
                 risk_ceiling=RiskLevel.LOW,
                 allowed_capabilities=frozenset({"telemetry.ingest", "mcp_data_write"}),
             )
-            return await self._data_gateway.admit(caller, tenant_id=tenant_id, record=rec_dict, session=session)
+            receipt = await self._data_gateway.admit(caller, tenant_id=tenant_id, record=rec_dict, session=session)
         else:
-            return await self._repository.admit(rec_dict, session=session)
+            receipt = await self._repository.admit(rec_dict, session=session)
+
+        if channel and hasattr(receipt, "channel"):
+            receipt.channel = channel
+        return receipt
+
 
 
 TelemetryService = TelemetryNormalizer

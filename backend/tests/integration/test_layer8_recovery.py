@@ -15,6 +15,7 @@ from app.mcp.data_gateway import DataGateway
 from app.persistence.repositories.telemetry import TelemetryRepository
 from app.schemas.governance import RiskLevel, TenantScope
 from app.schemas.telemetry import (
+    TelemetryCollectionRun,
     TelemetryEnvelope,
     TelemetryReceipt,
     TelemetryWorkItem,
@@ -27,12 +28,12 @@ from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
 class FakeTelemetryRecoveryRepository(TelemetryRepository):
     """In-memory telemetry repository simulating relational tables, dedup, and leases."""
 
-    def __init__(self, *, should_fail_on_admit: bool = False) -> None:
+    def __init__(self, *, should_fail_on_admit: bool = False, session_factory: Any = None) -> None:
         self.should_fail_on_admit = should_fail_on_admit
         self.receipts: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
         self.receipts_by_id: dict[str, dict[str, Any]] = {}
         self.work_items: dict[str, dict[str, Any]] = {}
-        self.runs: dict[str, dict[str, Any]] = {}
+        self.runs: dict[str, TelemetryCollectionRun] = {}
 
     async def admit(
         self, record: TelemetryEnvelope | dict[str, Any], *, session: Any = None
@@ -238,6 +239,70 @@ class FakeTelemetryRecoveryRepository(TelemetryRepository):
             created_at=item["created_at"],
             updated_at=now,
         )
+
+    async def create_collection_run(
+        self,
+        tenant_id: str,
+        source_id: str,
+        source_account_id: str,
+        channel: str,
+        parameters: dict[str, Any] | None = None,
+        *,
+        session: Any = None,
+    ) -> TelemetryCollectionRun:
+        run_id = f"run_{len(self.runs) + 1}"
+        now = datetime.now(UTC)
+        run = TelemetryCollectionRun(
+            run_id=run_id,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            source_account_id=source_account_id,
+            channel=channel,
+            query_fingerprint=hashlib.sha256(f"{source_id}:{source_account_id}".encode()).hexdigest(),
+            target_window_start=now - timedelta(days=1),
+            target_window_end=now,
+            status="running",
+            parameters=parameters or {},
+            partition_coverage_pct=0.0,
+            started_at=now,
+        )
+        self.runs[run_id] = run
+        return run
+
+    async def checkpoint_collection_run(
+        self,
+        run: TelemetryCollectionRun,
+        *,
+        session: Any = None,
+    ) -> TelemetryCollectionRun:
+        self.runs[run.run_id] = run
+        return run
+
+    async def commit_collection_run(
+        self,
+        tenant_id: str,
+        run_id: str,
+        expected_generation: int,
+        published_revision: int,
+        *,
+        session: Any = None,
+    ) -> TelemetryCollectionRun:
+        if run_id not in self.runs:
+            raise RepositoryError(f"Run {run_id} not found")
+        run = self.runs[run_id]
+        if run.tenant_id != tenant_id:
+            raise RepositoryError(f"Run {run_id} tenant mismatch")
+        if run.generation != expected_generation:
+            raise RepositoryError(f"Stale collection run generation {expected_generation}")
+        if run.coverage_ratio < 1.0 and run.completed_pages < run.total_pages:
+            raise RepositoryError("Cannot commit collection run with incomplete page coverage.")
+        run.status = "completed"
+        run.published_revision = published_revision
+        run.updated_at = datetime.now(UTC)
+        return run
+
+    commit_report_run = commit_collection_run
+
 
 
 # ==============================================================================
@@ -502,3 +567,205 @@ async def test_t15_migration_script_is_syntactically_valid_and_idempotent() -> N
         "telemetry_collection_runs TO enterprise_runtime;"
     )
     assert expected_grant in sql_content or "GRANT SELECT, INSERT, UPDATE" in sql_content
+
+
+# ==============================================================================
+# T07: Metric Correction Lookbacks & History Preservation
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_t07_correction_lookback_preserves_revision_history() -> None:
+    """T07: Metric correction lookbacks query maturing metrics and preserve revision history."""
+    from unittest.mock import AsyncMock
+    from app.services.telemetry_engine import OmnichannelTelemetryEngine
+
+    repo = FakeTelemetryRecoveryRepository()
+    gateway = DataGateway(
+        vector_repository=FakeVectorRepository(),
+        telemetry_repository=repo,
+        provenance_recorder=ProvenanceRecorder(FakeProvenanceRepository()),
+    )
+    caller = CallerIdentity(
+        subject="telemetry_engine",
+        tenant_scope=TenantScope(tenant_id="tenant-1"),
+        risk_ceiling=RiskLevel.LOW,
+        allowed_capabilities=frozenset({"telemetry.ingest"}),
+    )
+
+    # 1. Admit revision 1 of ad spend
+    rec1 = await gateway.admit(
+        caller,
+        tenant_id="tenant-1",
+        record={
+            "tenant_id": "tenant-1",
+            "source_id": "ads_meta",
+            "source_account_id": "act_101",
+            "logical_event_id": "day_2026_09_25",
+            "source_revision": "1",
+            "payload": {"spend": 100.0, "impressions": 1000},
+        },
+    )
+    assert rec1.status == "accepted"
+    assert rec1.source_revision == "1"
+
+    # 2. Admit corrected revision 2 for maturing window
+    rec2 = await gateway.admit(
+        caller,
+        tenant_id="tenant-1",
+        record={
+            "tenant_id": "tenant-1",
+            "source_id": "ads_meta",
+            "source_account_id": "act_101",
+            "logical_event_id": "day_2026_09_25",
+            "source_revision": "2",
+            "payload": {"spend": 115.0, "impressions": 1150},
+        },
+    )
+    assert rec2.status == "accepted"
+    assert rec2.source_revision == "2"
+
+    # Verify both revisions are preserved without overwriting history
+    rev1_key = ("tenant-1", "ads_meta", "act_101", "day_2026_09_25", "1")
+    rev2_key = ("tenant-1", "ads_meta", "act_101", "day_2026_09_25", "2")
+    assert rev1_key in repo.receipts
+    assert rev2_key in repo.receipts
+    assert repo.receipts[rev1_key]["minimized_payload"]["spend"] == 100.0
+    assert repo.receipts[rev2_key]["minimized_payload"]["spend"] == 115.0
+
+    # 3. Engine correction lookback execution
+    engine = OmnichannelTelemetryEngine()
+    mock_adapter = AsyncMock()
+    mock_adapter.fetch_report_page.return_value = {
+        "records": [{"date": "2026-09-25", "spend": 115.0}],
+        "next_cursor": None,
+        "is_last_page": True,
+    }
+    lookback_res = await engine.correction_lookback(
+        tenant_id="tenant-1",
+        source_id="ads_meta",
+        adapter=mock_adapter,
+        lookback_days=7,
+        repository=repo,
+    )
+    assert lookback_res["status"] == "success"
+    assert lookback_res["lookback_days"] == 7
+
+
+# ==============================================================================
+# T08: Bounded Pagination, 100% Coverage Commits, Stale Generation & Cost Budget
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_t08_collection_run_coverage_rejection_and_budget_exhaustion() -> None:
+    """T08: Incomplete partition coverage commits as partial, stale generation fails, cost budget enforced."""
+    from unittest.mock import AsyncMock
+    from app.core.exceptions import PolicyViolationError
+    from app.services.telemetry_engine import OmnichannelTelemetryEngine
+
+    repo = FakeTelemetryRecoveryRepository()
+    engine = OmnichannelTelemetryEngine()
+
+    # 1. Partial pagination failure: adapter fails on second page
+    mock_adapter = AsyncMock()
+    mock_adapter.fetch_report_page.side_effect = [
+        {"records": [{"id": "r1"}], "next_cursor": "cur_2", "is_last_page": False},
+        RuntimeError("Provider API timeout"),
+    ]
+
+    run = await engine.execute_collection_run(
+        tenant_id="tenant-1",
+        source_id="ads_meta",
+        source_account_id="act_101",
+        channel="meta",
+        adapter=mock_adapter,
+        repository=repo,
+        cost_budget=10.0,
+        max_pages=5,
+    )
+    # Never commits as success when coverage is incomplete
+    assert run.status == "partial"
+    assert run.coverage_ratio < 1.0
+    assert run.completed_pages == 1
+    assert "Provider API timeout" in (run.document.get("error_message") or "")
+
+    # 2. Cost budget exhaustion raises PolicyViolationError before dispatch
+    mock_budget_adapter = AsyncMock()
+    with pytest.raises(PolicyViolationError, match="Estimated collection cost .* exceeds budget"):
+        await engine.execute_collection_run(
+            tenant_id="tenant-1",
+            source_id="ads_meta",
+            source_account_id="act_101",
+            channel="meta",
+            adapter=mock_budget_adapter,
+            repository=repo,
+            cost_budget=5.0,  # lower than estimated cost (10.0)
+        )
+
+
+# ==============================================================================
+# T09: Provider Adapter Versions, Allowed Operations, and Real Data Enforcement
+# ==============================================================================
+
+
+@pytest.mark.asyncio
+async def test_t09_provider_version_pins_and_rejection_of_simulated_analytics() -> None:
+    """T09: Official versions verified (>v17 for Google, >202405 for LinkedIn); simulation strictly rejected."""
+    from app.core.exceptions import ConfigurationError, PolicyViolationError
+    from app.integrations.ads.google import GoogleAdsAdapter
+    from app.integrations.ads.linkedin import LinkedInAdsAdapter
+    from app.integrations.ads.base import AdsReportingAdapter
+
+    # 1. Google Ads: version must be >= v18
+    google_adapter = GoogleAdsAdapter(
+        developer_token="dev_tok",
+        client_id="cid",
+        client_secret="csec",
+        refresh_token="ref_tok",
+        customer_id="cust_123",
+    )
+    assert google_adapter.api_version == "v18"
+    assert int(google_adapter.api_version.lstrip("v")) > 17
+    assert isinstance(google_adapter, AdsReportingAdapter)
+
+    # Missing credentials must reject rather than simulating analytics
+    google_unauthed = GoogleAdsAdapter(
+        developer_token=None,
+        client_id=None,
+        client_secret=None,
+        refresh_token=None,
+        customer_id="cust_123",
+    )
+    with pytest.raises(ConfigurationError, match="simulated provider success is forbidden"):
+        await google_unauthed.fetch_report_page(
+            account_id="cust_123", report_spec={"operation": "search"}
+        )
+
+    # Account binding mismatch
+    with pytest.raises(PolicyViolationError, match="Account mismatch"):
+        await google_adapter.fetch_report_page(
+            account_id="spoofed_acc", report_spec={"operation": "search"}
+        )
+
+    # Disallowed operation
+    with pytest.raises(PolicyViolationError, match="Operation 'mutate_campaign' not permitted"):
+        await google_adapter.fetch_report_page(
+            account_id="cust_123", report_spec={"operation": "mutate_campaign"}
+        )
+
+    # 2. LinkedIn Ads: version must be > 202405
+    linkedin_adapter = LinkedInAdsAdapter(
+        access_token=None,
+        account_id="urn:li:sponsoredAccount:456",
+    )
+    assert linkedin_adapter.api_version is not None
+    assert int(linkedin_adapter.api_version) > 202405
+    assert linkedin_adapter.api_version == "202408"
+    assert isinstance(linkedin_adapter, AdsReportingAdapter)
+
+    with pytest.raises(ConfigurationError, match="simulated provider success is forbidden"):
+        await linkedin_adapter.fetch_report_page(
+            account_id="urn:li:sponsoredAccount:456", report_spec={"operation": "adAnalytics"}
+        )
+

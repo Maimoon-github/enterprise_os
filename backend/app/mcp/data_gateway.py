@@ -980,3 +980,5 @@ class DataGateway:
             fail_closed=True,
         )
         return res
+
+    commit_report_run = commit_collection_run

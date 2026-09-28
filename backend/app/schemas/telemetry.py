@@ -215,6 +215,7 @@ class TelemetryReceipt(BaseModel):
     source_revision: str = "1"
     content_hash: str
     status: str = "accepted"  # accepted, duplicate, quarantined
+    channel: str | None = None
     minimized_payload: dict[str, Any] = Field(default_factory=dict)
     schema_version: str = "1.0"
     policy_version: str = "1.0"

@@ -31,7 +31,7 @@ from tests.conftest import FakeProvenanceRepository, FakeVectorRepository
 class FakeTelemetryRepository(TelemetryRepository):
     """In-memory telemetry repository for boundary testing."""
 
-    def __init__(self) -> None:
+    def __init__(self, session_factory: Any = None) -> None:
         self.receipts: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
         self.work_items: dict[str, dict[str, Any]] = {}
         self.events: list[dict[str, Any]] = []
@@ -335,3 +335,250 @@ async def test_t11_secret_scrubbing_in_telemetry_and_provenance(mock_gateway: Da
         assert "ya29.a0AfH6SMD_secret_token_12345" not in doc_str
         assert "top_secret_key_abcdefg" not in doc_str
         assert "4111 1111 1111 1111" not in doc_str
+
+
+@pytest.mark.asyncio
+async def test_t01_raw_before_parse_cryptographic_verification() -> None:
+    """T01: Authenticated deliveries are verified against raw request bytes before parsing; key rotation supported."""
+    import hashlib
+    import hmac
+    import time
+    from datetime import datetime, timezone
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+    from app.schemas.telemetry import OmnichannelTelemetryReadiness, TelemetrySurface, TelemetrySourceType, TelemetryEventType
+    from app.services.telemetry_engine import OmnichannelTelemetryEngine
+    from app.security.cryptographic_validator import ProviderHmacValidator, verify_raw_webhook_signature
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    raw_payload = f'{{"tenant_id": "tenant-sec", "channel": "meta", "event_type": "ad_spend", "occurred_at": "{now_iso}", "metrics": {{"spend": 100.0}}}}'.encode()
+    secret = "primary_secret_123"
+    rotated_secret = "secondary_secret_456"
+
+    # 1. Meta provider verification with prefix 'sha256='
+    computed_sig = hmac.new(secret.encode(), raw_payload, hashlib.sha256).hexdigest()
+    assert ProviderHmacValidator.verify_meta(raw_payload, f"sha256={computed_sig}", secret) is True
+    assert ProviderHmacValidator.verify_meta(raw_payload, "sha256=invalid_hash", secret) is False
+
+    # 2. Key rotation verification
+    computed_rotated = hmac.new(rotated_secret.encode(), raw_payload, hashlib.sha256).hexdigest()
+    assert (
+        ProviderHmacValidator.verify_meta(
+            raw_payload, f"sha256={computed_rotated}", [secret, rotated_secret]
+        )
+        is True
+    )
+
+    # 3. TikTok signature verification with timestamp
+    now_ts = str(int(time.time()))
+    tiktok_msg = now_ts.encode() + raw_payload
+    tt_sig = hmac.new(secret.encode(), tiktok_msg, hashlib.sha256).hexdigest()
+    assert (
+        ProviderHmacValidator.verify_tiktok(
+            raw_payload, tt_sig, now_ts, secret, tolerance_seconds=300
+        )
+        is True
+    )
+    # Expired timestamp fails
+    old_ts = str(int(time.time()) - 1000)
+    assert (
+        ProviderHmacValidator.verify_tiktok(
+            raw_payload, tt_sig, old_ts, secret, tolerance_seconds=300
+        )
+        is False
+    )
+
+    # 4. Route-level verification: raw invalid bytes or forged signature fails with 401 before schema parsing
+    engine = OmnichannelTelemetryEngine(webhook_signing_secret=secret)
+    surface = TelemetrySurface(
+        channel="meta",
+        source_type=TelemetrySourceType.WEBHOOK,
+        endpoint="/api/v1/telemetry/webhooks/ads/meta",
+        tenant_id="tenant-sec",
+        event_classes=[TelemetryEventType.AD_SPEND],
+        is_active=True,
+    )
+    engine.register_surface(surface)
+    engine.register_readiness(
+        OmnichannelTelemetryReadiness(
+            readiness_id="r-1",
+            tenant_id="tenant-sec",
+            is_ready=True,
+            dependencies={},
+            active_surfaces=[surface],
+            probes=[],
+            blocked_reasons=[],
+        )
+    )
+    orig_engine = getattr(app.state, "telemetry_engine", None)
+    app.state.telemetry_engine = engine
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # Invalid signature on raw body -> HTTP 401
+            res = await client.post(
+                "/telemetry/webhooks/ads/meta",
+                content=raw_payload,
+                headers={"X-Hub-Signature-256": "sha256=bad_sig", "Content-Type": "application/json"},
+            )
+            assert res.status_code == 401
+
+            # Valid signature -> HTTP 202 with opaque receipt
+            res_ok = await client.post(
+                "/telemetry/webhooks/ads/meta",
+                content=raw_payload,
+                headers={"X-Hub-Signature-256": f"sha256={computed_sig}", "Content-Type": "application/json"},
+            )
+            assert res_ok.status_code == 202
+            body = res_ok.json()
+            assert body["status"] == "accepted"
+            assert body["tenant_id"] == "tenant-sec"
+            assert "receipt_id" in body
+    finally:
+        app.state.telemetry_engine = orig_engine
+
+
+@pytest.mark.asyncio
+async def test_t02_ingress_tenant_spoofing_and_browser_untrusted() -> None:
+    """T02: Spoofed tenant/account rejected; browser traffic marked browser_untrusted and never authoritative orders."""
+    from datetime import datetime, timezone
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+    from app.schemas.telemetry import OmnichannelTelemetryReadiness, TelemetrySurface, TelemetrySourceType, TelemetryEventType
+    from app.services.telemetry_engine import OmnichannelTelemetryEngine
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    engine = OmnichannelTelemetryEngine(webhook_signing_secret=None)
+    surface = TelemetrySurface(
+        channel="website",
+        source_type=TelemetrySourceType.PIXEL,
+        endpoint="/telemetry/pixel",
+        tenant_id="tenant-real",
+        event_classes=[TelemetryEventType.TRAFFIC, TelemetryEventType.CONVERSION],
+        is_active=True,
+    )
+    engine.register_surface(surface)
+    engine.register_readiness(
+        OmnichannelTelemetryReadiness(
+            readiness_id="r-2",
+            tenant_id="tenant-real",
+            is_ready=True,
+            dependencies={},
+            active_surfaces=[surface],
+            probes=[],
+            blocked_reasons=[],
+        )
+    )
+    orig_engine = getattr(app.state, "telemetry_engine", None)
+    app.state.telemetry_engine = engine
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Spoofed tenant ID on active surface -> HTTP 403
+            spoofed_payload = {
+                "tenant_id": "tenant-attacker",
+                "channel": "website",
+                "event_type": "traffic",
+                "occurred_at": now_iso,
+                "metrics": {"pageviews": 1.0},
+            }
+            res_spoof = await client.post("/telemetry/pixel", json=spoofed_payload)
+            assert res_spoof.status_code == 403
+
+            # 2. Browser purchase marked browser_untrusted and never authoritative order
+            purchase_payload = {
+                "tenant_id": "tenant-real",
+                "channel": "website",
+                "event_type": "conversion",
+                "occurred_at": now_iso,
+                "metrics": {"revenue": 250.0},
+                "payload": {"order_id": "ord-123", "is_authoritative_order": True},
+            }
+            res_purchase = await client.post("/telemetry/pixel", json=purchase_payload)
+            assert res_purchase.status_code == 202
+            receipt = res_purchase.json()
+            assert receipt["status"] == "accepted"
+            # Verify minimized payload stripped authoritative order flag
+            min_p = receipt.get("minimized_payload", {}).get("properties", {})
+            assert min_p.get("is_authoritative_order") is False
+    finally:
+        app.state.telemetry_engine = orig_engine
+
+
+@pytest.mark.asyncio
+async def test_t13_cms_release_stamping_and_site_availability_isolation() -> None:
+    """T13: Deployed CMS release is stamped on telemetry, and admission failure never takes down production site."""
+    from datetime import datetime, timezone
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+    from app.integrations.cms.client import CmsClient
+    from app.core.exceptions import RepositoryError
+    from app.schemas.telemetry import OmnichannelTelemetryReadiness, TelemetrySurface, TelemetrySourceType, TelemetryEventType
+    from app.services.telemetry_engine import OmnichannelTelemetryEngine
+
+    # 1. CMS deploy stamps release_id
+    cms = CmsClient()
+    deploy_res = await cms.deploy_payload(
+        {"items": [{"content_type": "pages", "id": "p-1", "title": "Home"}]},
+        tenant_id="tenant-rel",
+    )
+    assert deploy_res is not None
+    assert deploy_res["status"] == "published"
+    assert "release_id" in deploy_res
+    release_id = deploy_res["release_id"]
+    current_rel = cms.get_current_release("tenant-rel")
+    assert current_rel is not None
+    assert current_rel["release_id"] == release_id
+
+    # 2. Site availability isolation: telemetry failure returns HTTP 503 without crash
+    now_iso = datetime.now(timezone.utc).isoformat()
+    engine = OmnichannelTelemetryEngine(webhook_signing_secret=None)
+    surface = TelemetrySurface(
+        channel="website",
+        source_type=TelemetrySourceType.PIXEL,
+        endpoint="/telemetry/pixel",
+        tenant_id="tenant-rel",
+        event_classes=[TelemetryEventType.TRAFFIC, TelemetryEventType.CONVERSION],
+        is_active=True,
+    )
+    engine.register_surface(surface)
+    engine.register_readiness(
+        OmnichannelTelemetryReadiness(
+            readiness_id="r-3",
+            tenant_id="tenant-rel",
+            is_ready=True,
+            dependencies={},
+            active_surfaces=[surface],
+            probes=[],
+            blocked_reasons=[],
+        )
+    )
+    orig_engine = getattr(app.state, "telemetry_engine", None)
+    orig_repo = getattr(app.state, "telemetry_repository", None)
+    app.state.telemetry_engine = engine
+
+    class BrokenRepository(FakeTelemetryRepository):
+        async def admit(self, record: Any, *, session: Any = None) -> Any:
+            raise RepositoryError("Underlying TimescaleDB unreachable")
+
+    app.state.telemetry_repository = BrokenRepository()
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            payload = {
+                "tenant_id": "tenant-rel",
+                "channel": "website",
+                "event_type": "traffic",
+                "occurred_at": now_iso,
+                "metrics": {"pageviews": 1.0},
+            }
+            res = await client.post("/telemetry/pixel", json=payload)
+            # Safe 503 error returned, preventing cascade
+            assert res.status_code == 503
+            assert "Telemetry admission failure" in res.json()["detail"]
+    finally:
+        app.state.telemetry_engine = orig_engine
+        app.state.telemetry_repository = orig_repo
+
+

@@ -29,6 +29,7 @@ class CmsClient:
         self._published_store: dict[str, dict[str, dict[str, Any]]] = {}
         self._version_history: dict[str, list[dict[str, Any]]] = {}
         self._idempotency_store: dict[str, dict[str, Any]] = {}
+        self._current_releases: dict[str, dict[str, Any]] = {}
 
     def _require_configured(self) -> str:
         if not self._base_url:
@@ -370,15 +371,37 @@ class CmsClient:
             h = hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
             applied_hashes.append(h)
 
+        release_id = str(
+            payload.get("release_id")
+            or payload.get("revision_id")
+            or f"rel_{hashlib.sha256((version + (applied_hashes[0] if applied_hashes else 'default')).encode('utf-8')).hexdigest()[:16]}"
+        )
+        revision_id = str(payload.get("revision_id") or version)
+        deployed_at = datetime.now(UTC).isoformat()
+        rel_info = {
+            "release_id": release_id,
+            "revision_id": revision_id,
+            "version": version,
+            "deployed_at": deployed_at,
+            "applied_hashes": applied_hashes,
+        }
+        self._current_releases[tenant_id or "default"] = rel_info
+
         return {
             "status_code": "200",
             "status": "published",
+            "release_id": release_id,
+            "revision_id": revision_id,
             "applied_items": applied_items,
             "applied_hashes": applied_hashes,
             "version": version,
             "target": "cms",
-            "deployed_at": datetime.now(UTC).isoformat(),
+            "deployed_at": deployed_at,
         }
+
+    def get_current_release(self, tenant_id: str | None = None) -> dict[str, Any] | None:
+        """Return the active deployed release metadata for a tenant without exposing secrets."""
+        return self._current_releases.get(tenant_id or "default")
 
     async def health(self) -> dict[str, Any]:
         """Check CMS client capability and configuration readiness without leaking secrets."""
