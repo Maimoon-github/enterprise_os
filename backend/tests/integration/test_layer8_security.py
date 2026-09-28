@@ -582,3 +582,137 @@ async def test_t13_cms_release_stamping_and_site_availability_isolation() -> Non
         app.state.telemetry_repository = orig_repo
 
 
+@pytest.mark.asyncio
+async def test_t12_missing_stale_suppressed_metrics_and_worker_direct_retrieval_denied() -> None:
+    from datetime import datetime, timedelta, timezone
+    from app.agents.strategy_engine.strategy import StrategyAgent
+    from app.orchestration.brand_persona import BrandPersonaResolver
+    from app.orchestration.context_assembly import ContextAssembler
+    from app.orchestration.intelligence_engine import IntelligenceEngine
+    from app.orchestration.rag_query_dispatch import RagQueryDispatcher
+    from app.schemas.agent_contracts import TaskGrant
+    from app.schemas.governance import WorkerRole
+    from app.schemas.strategy import PerformanceContextReference
+    from app.services.rag.controller import RagController
+    from app.services.rag.freshness import FreshnessPolicy
+    from app.services.rag.hybrid_retriever import HybridRetriever
+    from app.services.rag.schema_validator import SchemaValidator
+
+    # 1. Direct worker retrieval without valid IE token is strictly denied by RAG dispatcher
+    rag_controller = RagController(
+        retriever=HybridRetriever(FakeVectorRepository()),
+        schema_validator=SchemaValidator(),
+        freshness_policy=FreshnessPolicy(),
+    )
+    rag_dispatcher = RagQueryDispatcher(rag_controller)
+
+    with pytest.raises(AuthorizationError, match="without a valid Intelligence Engine token"):
+        await rag_dispatcher.dispatch(
+            None,  # type: ignore[arg-type] # Direct worker caller lacks IE token
+            tenant_id="acme",
+            query="campaign metrics",
+        )
+
+    # 2. IE builds performance context preserving unavailable, stale, and suppressed metrics
+    assembler = ContextAssembler(rag_dispatcher, BrandPersonaResolver())
+    engine = IntelligenceEngine(
+        policy_evaluator=MagicMock(),
+        dag_scheduler=MagicMock(),
+        task_state_machine=MagicMock(),
+        context_assembler=assembler,
+        evidence_synthesizer=MagicMock(),
+        hitl_preview_generator=MagicMock(),
+        hitl_coordinator=MagicMock(),
+        mcp_host=MagicMock(),
+        provenance_recorder=MagicMock(),
+        workers={},
+    )
+
+    perf_ctx_dict = await engine.build_performance_context(
+        tenant_id="acme",
+        brand_id="brand-1",
+        channels=["meta", "google", "tiktok"],
+        requested_metrics=["roas", "cpa", "spend"],
+        raw_performance_data={
+            "meta": {"status": "valid", "value": 3.4},
+            "google": {"status": "suppressed", "reason": "privacy_threshold"},
+            "tiktok": {"status": "stale", "value": 1500.0, "staleness_seconds": 90000},
+        },
+    )
+    perf_ctx = PerformanceContextReference.model_validate(perf_ctx_dict)
+
+    # Verify missing/suppressed metrics are NOT zeroed or fabricated
+    assert perf_ctx.metrics["meta"]["value"] == 3.4
+    assert perf_ctx.metrics["meta"]["status"] == "valid"
+    assert perf_ctx.metrics["google"]["value"] is None
+    assert perf_ctx.metrics["google"]["status"] == "suppressed"
+    assert perf_ctx.quality_flags["has_stale_data"] is True
+    assert perf_ctx.quality_flags["has_suppression"] is True
+    assert perf_ctx.is_valid is False
+
+    # 3. Strategy agent verifies and gates on performance context quality and tenant boundaries
+    grant = TaskGrant(
+        task_id="task-strat-12",
+        directive_id="dir-12",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="acme", allowed_channels=["meta", "google"]),
+        brand_id="brand-1",
+        allowed_capabilities=[],
+        risk_ceiling=RiskLevel.LOW,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    strategy_agent = StrategyAgent()
+    base_context = {
+        "budget_ceiling": 5000.0,
+        "channels": ["meta", "google"],
+        "approved_claims": [{"claim_id": "c1", "text": "Best in class", "status": "approved"}],
+        "objections": [{"objection_id": "o1", "theme": "Price"}],
+        "competitor_signals": {"competitor": "CompetitorA", "benchmark_price": "29.99"},
+    }
+
+    # Blocked if performance context contains stale or suppressed data when required
+    with pytest.raises(PolicyViolationError, match="Ungrounded budget allocation blocked"):
+        strategy_agent._verify_and_normalize_dependencies(
+            grant,
+            {**base_context, "performance_context": perf_ctx, "require_performance_context": True},
+        )
+
+    # Blocked on tenant mismatch
+    off_tenant_ctx = perf_ctx.model_copy(update={"tenant_id": "evil-corp"})
+    with pytest.raises(ValueError, match="Tenant isolation breach in performance context"):
+        strategy_agent._verify_and_normalize_dependencies(
+            grant,
+            {**base_context, "performance_context": off_tenant_ctx},
+        )
+
+    # Clean fresh performance context passes validation
+    clean_dict = await engine.build_performance_context(
+        tenant_id="acme",
+        brand_id="brand-1",
+        channels=["meta", "google"],
+        requested_metrics=["roas", "spend"],
+        raw_performance_data={
+            "meta": {"status": "valid", "value": 3.4},
+            "google": {"status": "valid", "value": 1500.0},
+        },
+    )
+    clean_perf_ctx = PerformanceContextReference.model_validate(clean_dict)
+    assert clean_perf_ctx.quality_flags["has_stale_data"] is False
+    assert clean_perf_ctx.quality_flags["has_suppression"] is False
+    assert clean_perf_ctx.quality_flags["is_complete"] is True
+    assert clean_perf_ctx.is_valid is True
+
+    deps = strategy_agent._verify_and_normalize_dependencies(
+        grant,
+        {**base_context, "performance_context": clean_perf_ctx, "require_performance_context": True},
+    )
+    assert deps[0] == 5000.0
+
+    deps = strategy_agent._verify_and_normalize_dependencies(
+        grant,
+        {**base_context, "performance_context": clean_perf_ctx, "require_performance_context": True},
+    )
+    assert deps[0] == 5000.0
+
+
+

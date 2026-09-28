@@ -267,6 +267,38 @@ class ChannelSpendProposal(BaseModel):
         )
 
 
+class PerformanceContextReference(BaseModel):
+    """Governed performance context reference and quality metadata passed to Strategy."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    context_id: str
+    tenant_id: str
+    brand_id: str = "default"
+    schema_version: str = "1.0"
+    mapping_version: str = "1.0"
+    source_coverage: dict[str, float] = Field(default_factory=dict)
+    window_start: str | None = None
+    window_end: str | None = None
+    as_of_time: str | None = None
+    metric_definitions: dict[str, str] = Field(default_factory=dict)
+    units: dict[str, str] = Field(default_factory=dict)
+    currency: str = "USD"
+    attribution_assumptions: dict[str, Any] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    quality_flags: dict[str, Any] = Field(default_factory=dict)
+    suppression_flags: dict[str, Any] = Field(default_factory=dict)
+    freshness_flags: dict[str, Any] = Field(default_factory=dict)
+    learning_reference: dict[str, Any] = Field(default_factory=dict)
+    applicable_policy_version: str = "1.0"
+    budget_version: str = "1.0"
+    provenance_references: list[str] = Field(default_factory=list)
+    expires_at: str | None = None
+    revalidation_conditions: list[str] = Field(default_factory=list)
+    is_valid: bool = True
+    blocking_reasons: list[str] = Field(default_factory=list)
+
+
 class StrategyDirective(BaseModel):
     """Typed normalized Strategy input derived from IE TaskGrant and bounded context."""
 
@@ -292,6 +324,7 @@ class StrategyDirective(BaseModel):
     mroi_floor: float = 0.0
     scenario_emphasis: Literal["balanced", "aggressive", "conservative"] = "balanced"
     prior_roas: dict[str, float] = Field(default_factory=dict)
+    performance_context: PerformanceContextReference | None = None
 
     @field_validator("authorized_channels")
     @classmethod
@@ -348,6 +381,16 @@ class StrategyDirective(BaseModel):
                 raise ValueError(
                     f"Prior ROAS references unauthorized channel '{ch}'. "
                     f"Authorized channels: {self.authorized_channels}"
+                )
+
+        if self.performance_context:
+            if self.performance_context.tenant_id != self.tenant_id:
+                raise ValueError(
+                    f"Tenant isolation breach in performance context: '{self.performance_context.tenant_id}' != '{self.tenant_id}'."
+                )
+            if self.performance_context.brand_id and self.brand_id and self.performance_context.brand_id != self.brand_id:
+                raise ValueError(
+                    f"Brand scope mismatch in performance context: '{self.performance_context.brand_id}' != '{self.brand_id}'."
                 )
 
         return self
@@ -445,6 +488,15 @@ class StrategyDirective(BaseModel):
                 with contextlib.suppress(ValueError, TypeError):
                     priors[ch] = float(ctx[prior_key])
 
+        # 5. Governed performance context
+        perf_ctx_raw = ctx.get("performance_context") or grant.cts_state.get("performance_context")
+        perf_ctx: PerformanceContextReference | None = None
+        if perf_ctx_raw:
+            if isinstance(perf_ctx_raw, PerformanceContextReference):
+                perf_ctx = perf_ctx_raw
+            elif isinstance(perf_ctx_raw, dict):
+                perf_ctx = PerformanceContextReference.model_validate(perf_ctx_raw)
+
         return cls(
             task_id=grant.task_id,
             tenant_id=tenant_id,
@@ -458,6 +510,7 @@ class StrategyDirective(BaseModel):
             kpi_name=ctx.get("kpi_name"),
             mroi_floor=float(ctx.get("mroi_floor", 0.0)),
             prior_roas=priors,
+            performance_context=perf_ctx,
         )
 
 

@@ -15,8 +15,10 @@ brand persona resolver, following a strict 9-stage deterministic precedence mode
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import hashlib
 from typing import Any
+import uuid
 
 from app.core.exceptions import PolicyViolationError, RetrievalGovernanceError
 from app.integrations.sandbox.capabilities import CAPABILITY_REGISTRY, WORKER_CAPABILITY_MAP
@@ -242,3 +244,154 @@ class ContextAssembler:
                 if k not in assembled:
                     assembled[k] = v
         return assembled
+
+    async def build_performance_context(
+        self,
+        token: IntelligenceEngineToken,
+        *,
+        tenant_id: str,
+        brand_id: str = "default",
+        time_window_start: datetime | None = None,
+        time_window_end: datetime | None = None,
+        requested_metrics: list[str] | None = None,
+        channels: list[str] | None = None,
+        purpose: str = "strategy_performance_evaluation",
+        token_budget: int = 4000,
+        raw_performance_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Assemble governed, cited, bounded performance context envelope via IE-exclusive RAG bridge."""
+        if not tenant_id or not tenant_id.strip():
+            raise RetrievalGovernanceError("Performance context assembly requires an explicit tenant scope.")
+
+        now = datetime.now(UTC)
+        win_start = time_window_start or (now - timedelta(days=30))
+        win_end = time_window_end or now
+
+        query = f"performance metrics {brand_id} {' '.join(channels or [])}"
+        raw_documents = await self._rag_dispatcher.dispatch(
+            token,
+            tenant_id=tenant_id,
+            query=query,
+            top_k=10,
+            purpose=purpose,
+            freshness_target=timedelta(hours=24),
+            provenance_required=False,
+        )
+
+        dataset_ids: list[str] = []
+        evidence_hashes: list[str] = []
+        provenance_references: list[str] = []
+        timestamps: list[str] = []
+
+        for doc in raw_documents:
+            doc_id = doc.get("doc_id") or doc.get("id")
+            if doc_id:
+                dataset_ids.append(str(doc_id))
+            prov_hash = doc.get("provenance_hash")
+            if prov_hash:
+                evidence_hashes.append(str(prov_hash))
+                provenance_references.append(str(prov_hash))
+            retrieved_at = doc.get("retrieved_at")
+            if retrieved_at:
+                timestamps.append(str(retrieved_at))
+
+        # Channel & metric coverage and quality calculation
+        target_channels = [c.lower() for c in (channels or ["meta", "google", "tiktok", "linkedin"])]
+        metrics_by_channel: dict[str, Any] = {}
+        source_coverage: dict[str, float] = {}
+        quality_flags: dict[str, Any] = {"is_complete": True, "has_suppression": False, "has_stale_data": False}
+        suppression_flags: dict[str, Any] = {}
+        freshness_flags: dict[str, Any] = {}
+
+        perf_source = raw_performance_data or {}
+
+        for ch in target_channels:
+            ch_data = perf_source.get(ch)
+            if ch_data is None:
+                # Missing channel metrics: explicitly preserved as unavailable, never zeroed!
+                metrics_by_channel[ch] = {
+                    "status": "unavailable",
+                    "value": None,
+                    "reason": "no_active_source_or_data",
+                }
+                source_coverage[ch] = 0.0
+                quality_flags["is_complete"] = False
+                freshness_flags[ch] = "missing"
+            elif isinstance(ch_data, dict) and ch_data.get("status") == "suppressed":
+                metrics_by_channel[ch] = {
+                    "status": "suppressed",
+                    "value": None,
+                    "reason": ch_data.get("reason", "privacy_threshold_suppressed"),
+                }
+                source_coverage[ch] = ch_data.get("coverage_ratio", 0.5)
+                quality_flags["has_suppression"] = True
+                suppression_flags[ch] = ch_data.get("reason", "privacy_threshold_suppressed")
+                freshness_flags[ch] = "suppressed"
+            elif isinstance(ch_data, dict) and ch_data.get("status") == "stale":
+                metrics_by_channel[ch] = {
+                    "status": "stale",
+                    "value": ch_data.get("value"),
+                    "staleness_seconds": ch_data.get("staleness_seconds", 100000),
+                }
+                source_coverage[ch] = ch_data.get("coverage_ratio", 1.0)
+                quality_flags["has_stale_data"] = True
+                freshness_flags[ch] = "stale"
+            else:
+                val = ch_data if not isinstance(ch_data, dict) else ch_data.get("value", ch_data)
+                cov = ch_data.get("coverage_ratio", 1.0) if isinstance(ch_data, dict) else 1.0
+                metrics_by_channel[ch] = {
+                    "status": "valid",
+                    "value": val,
+                }
+                source_coverage[ch] = cov
+                freshness_flags[ch] = "fresh"
+
+        context_id = f"perf_ctx_{uuid.uuid4().hex[:12]}"
+        revalidation_conditions = ["freshness_expired", "channel_unlinked", "policy_updated"]
+
+        is_valid = (
+            quality_flags["is_complete"]
+            and not quality_flags["has_stale_data"]
+            and not quality_flags["has_suppression"]
+        )
+        blocking_reasons: list[str] = []
+        if not quality_flags["is_complete"]:
+            blocking_reasons.append("Missing required channel metrics")
+        if quality_flags["has_stale_data"]:
+            blocking_reasons.append("Stale performance metrics detected")
+        if quality_flags["has_suppression"]:
+            blocking_reasons.append("Suppressed metrics detected")
+
+        return {
+            "context_id": context_id,
+            "tenant_id": tenant_id,
+            "brand_id": brand_id,
+            "dataset_ids": dataset_ids,
+            "evidence_hashes": evidence_hashes,
+            "schema_version": "1.0",
+            "mapping_version": "1.0",
+            "source_coverage": source_coverage,
+            "window_start": win_start.isoformat(),
+            "window_end": win_end.isoformat(),
+            "as_of_time": now.isoformat(),
+            "metric_definitions": {
+                "roas": "Return on advertising spend (revenue / spend)",
+                "cpa": "Cost per acquisition",
+                "spend": "Advertising expenditure in currency",
+            },
+            "units": {"roas": "ratio", "cpa": "currency", "spend": "currency"},
+            "currency": "USD",
+            "attribution_assumptions": {"model": "last_touch_30d", "window_days": 30},
+            "metrics": metrics_by_channel,
+            "quality_flags": quality_flags,
+            "suppression_flags": suppression_flags,
+            "freshness_flags": freshness_flags,
+            "learning_reference": {"model_id": "learn_decay_v1", "uncertainty": 0.05},
+            "applicable_policy_version": "1.0",
+            "budget_version": "1.0",
+            "provenance_references": provenance_references,
+            "expires_at": (now + timedelta(hours=24)).isoformat(),
+            "revalidation_conditions": revalidation_conditions,
+            "is_valid": is_valid,
+            "blocking_reasons": blocking_reasons,
+        }

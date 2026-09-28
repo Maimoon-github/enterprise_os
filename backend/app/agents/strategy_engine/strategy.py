@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import inspect
 import json
 from typing import Any
@@ -20,7 +21,13 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
-from app.schemas.strategy import SAllocDomainStatus, StrategyDirective, StrategyResultEnvelope
+from app.schemas.strategy import (
+    PerformanceContextReference,
+    SAllocDomainStatus,
+    StrategyDirective,
+    StrategyResultEnvelope,
+)
+
 
 
 class StrategyAgent(BoundedWorkerAgent):
@@ -372,6 +379,81 @@ class StrategyAgent(BoundedWorkerAgent):
         if isinstance(raw_constraints, list):
             constraints.extend(str(c) for c in raw_constraints)
 
+        # -------------------------------------------------------------
+        # 5. Verify Governed Performance Context (Quality, Freshness, Suppression)
+        # -------------------------------------------------------------
+        perf_ctx_raw = context.get("performance_context") or grant.cts_state.get("performance_context")
+        require_perf = bool(
+            context.get("require_performance_context") or grant.cts_state.get("require_performance_context")
+        )
+
+        if require_perf and not perf_ctx_raw:
+            raise PolicyViolationError(
+                "Missing required governed performance context: performance-dependent allocation requires valid IE context."
+            )
+
+        if perf_ctx_raw:
+            if isinstance(perf_ctx_raw, dict):
+                try:
+                    perf_ctx = PerformanceContextReference.model_validate(perf_ctx_raw)
+                except Exception as err:
+                    raise PolicyViolationError(f"Malformed performance context reference: {err}") from err
+            elif isinstance(perf_ctx_raw, PerformanceContextReference):
+                perf_ctx = perf_ctx_raw
+            else:
+                raise PolicyViolationError(
+                    "Invalid performance context type; expected PerformanceContextReference or dict."
+                )
+
+            # Validate tenant isolation
+            if perf_ctx.tenant_id != grant_tenant:
+                raise ValueError(
+                    f"Tenant isolation breach in performance context: '{perf_ctx.tenant_id}' does not match grant tenant '{grant_tenant}'."
+                )
+
+            # Validate brand isolation if grant has brand_id
+            if grant.brand_id and perf_ctx.brand_id and perf_ctx.brand_id != grant.brand_id:
+                raise ValueError(
+                    f"Brand scope mismatch in performance context: '{perf_ctx.brand_id}' does not match grant brand '{grant.brand_id}'."
+                )
+
+            # Validate validity and blocking reasons
+            if not perf_ctx.is_valid:
+                reasons = ", ".join(perf_ctx.blocking_reasons) or "unspecified reasons"
+                raise PolicyViolationError(
+                    f"Ungrounded budget allocation blocked: performance context is marked invalid ({reasons})."
+                )
+
+            # Validate expiry
+            if perf_ctx.expires_at:
+                try:
+                    expires_dt = datetime.fromisoformat(perf_ctx.expires_at)
+                    now_dt = datetime.now(timezone.utc)
+                    if expires_dt.tzinfo is None:
+                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                    if expires_dt < now_dt:
+                        raise PolicyViolationError(
+                            f"Performance context expired at {perf_ctx.expires_at}. Request revalidation through Intelligence Engine."
+                        )
+                except (ValueError, TypeError) as parse_err:
+                    if isinstance(parse_err, PolicyViolationError):
+                        raise
+
+            # Quality / freshness / suppression gating
+            if require_perf:
+                if perf_ctx.quality_flags.get("has_stale_data"):
+                    raise PolicyViolationError(
+                        "Ungrounded budget allocation blocked: performance context contains stale data."
+                    )
+                if perf_ctx.quality_flags.get("has_suppression") or perf_ctx.suppression_flags.get("is_suppressed"):
+                    raise PolicyViolationError(
+                        "Ungrounded budget allocation blocked: performance context contains suppressed metrics."
+                    )
+                if perf_ctx.quality_flags.get("is_complete") is False:
+                    raise PolicyViolationError(
+                        "Ungrounded budget allocation blocked: performance context is incomplete."
+                    )
+
         return (
             budget_ceiling,
             allowed_channels,
@@ -431,6 +513,7 @@ class StrategyAgent(BoundedWorkerAgent):
             "kpi_name",
             "media_history",
             "performance_telemetry",
+            "performance_context",
             "control_variables",
             "incrementality_evidence",
             "channel_constraints",

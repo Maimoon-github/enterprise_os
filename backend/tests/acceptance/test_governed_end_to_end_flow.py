@@ -523,3 +523,146 @@ async def test_governed_e2e_hold_checkpoint_recovery_flow(
     assert "mcp_act_readiness_validation" in activities
     assert "outbound_dispatch_intent_persisted" in activities
     assert "outbound_meta_deployment_executed" in activities
+
+
+@pytest.mark.asyncio
+async def test_t14_governed_end_to_end_feedback_loop(ed25519_keypair: tuple[str, str]) -> None:
+    """T14: Approved release -> trusted signal -> durable evidence -> IE/Learning -> validated Strategy input -> proposed action requiring approval."""
+    from datetime import timedelta
+    from app.agents.strategy_engine.strategy import StrategyAgent
+    from app.integrations.cms.client import CmsClient
+    from app.schemas.agent_contracts import TaskGrant
+    from app.schemas.governance import TenantScope
+    from app.schemas.strategy import PerformanceContextReference
+    from app.schemas.telemetry import RecordKind, TelemetryEnvelope, TrustClass
+    from app.services.telemetry import TelemetryService
+
+    tenant_id = "tenant-t14"
+    brand_id = "brand-t14"
+
+    # 1. Approved CMS release stamps release_id
+    cms = CmsClient()
+    deploy_res = await cms.deploy_payload(
+        {"items": [{"content_type": "pages", "id": "page-t14", "title": "Verified Performance Page"}]},
+        tenant_id=tenant_id,
+    )
+    assert deploy_res["status"] == "published"
+    release_id = deploy_res["release_id"]
+    assert release_id is not None
+
+    # 2. Trusted Telemetry signal admitted into durable repository with release stamp
+    from tests.integration.test_layer8_security import FakeTelemetryRepository
+    telemetry_repo = FakeTelemetryRepository()
+    telemetry_service = TelemetryService(telemetry_repo)
+    env = TelemetryEnvelope(
+        envelope_id="env-t14-1",
+        tenant_id=tenant_id,
+        brand_id=brand_id,
+        channel="meta",
+        record_kind=RecordKind.METRIC_SNAPSHOT,
+        trust_class=TrustClass.PROVIDER_VERIFIED,
+        source_id="meta_ads_webhook",
+        source_account_id="act-meta-14",
+        source_revision=release_id,
+        logical_event_id="evt-perf-14",
+        payload={"spend": 1250.0, "roas": 4.1, "conversions": 85},
+    )
+    receipt = await telemetry_service.admit(env)
+    assert receipt.receipt_id is not None
+    assert receipt.status in ("accepted", "admitted")
+    assert receipt.source_revision == release_id
+
+    # 3. IE-mediated Performance Context Assembly via RAG bridge
+    vector_repo = FakeVectorRepository()
+    vector_repo.seed(tenant_id=tenant_id, text=f"Release {release_id} performance: ROAS 4.1x on Meta Ads.")
+    rag_controller = RagController(
+        HybridRetriever(vector_repo), FreshnessPolicy(), SchemaValidator()
+    )
+    rag_dispatcher = RagQueryDispatcher(rag_controller)
+    hitl_coordinator = HitlCoordinator()
+    assembler = ContextAssembler(rag_dispatcher, BrandPersonaResolver())
+
+    _, public_pem = ed25519_keypair
+    crypto_validator = CryptographicValidator(public_pem)
+    outbound_gateway = OutboundGateway(
+        hitl_coordinator, crypto_validator, ads_adapters={"meta": _RecordingAdsAdapter()}
+    )
+    data_gateway = DataGateway(vector_repo, AuthorizationBoundary(ScopeEvaluator()))
+    mcp_host = McpHost(data_gateway, outbound_gateway)
+
+    engine = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=assembler,
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=hitl_coordinator,
+        mcp_host=mcp_host,
+        provenance_recorder=ProvenanceRecorder(FakeProvenanceRepository()),
+        workers={},
+    )
+
+    perf_ctx_dict = await engine.build_performance_context(
+        tenant_id=tenant_id,
+        brand_id=brand_id,
+        channels=["meta", "google"],
+        requested_metrics=["roas", "spend"],
+        raw_performance_data={
+            "meta": {"status": "valid", "value": 4.1},
+            "google": {"status": "valid", "value": 2500.0},
+        },
+    )
+    perf_ctx = PerformanceContextReference.model_validate(perf_ctx_dict)
+    assert perf_ctx.is_valid is True
+    assert perf_ctx.quality_flags["has_stale_data"] is False
+    assert perf_ctx.quality_flags["has_suppression"] is False
+    assert perf_ctx.metrics["meta"]["value"] == 4.1
+
+    # 4. Learning hand-off: receives governed performance context without DB/gateway credentials
+    learning_evidence = {
+        "model_id": "w_learn_attribution_v1",
+        "tenant_id": tenant_id,
+        "performance_context_id": perf_ctx.context_id,
+        "channel_weights": {"meta": 0.65, "google": 0.35},
+        "uncertainty_score": 0.04,
+    }
+
+    # 5. Validated Strategy Input: StrategyAgent validates context & produces proposal
+    strat_grant = TaskGrant(
+        task_id="task-strat-t14",
+        directive_id="dir-t14",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id=tenant_id, allowed_channels=["meta", "google"]),
+        brand_id=brand_id,
+        allowed_capabilities=[],
+        risk_ceiling=RiskLevel.MEDIUM,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    strat_context = {
+        "budget_ceiling": 10000.0,
+        "channels": ["meta", "google"],
+        "approved_claims": [{"claim_id": "c-14", "text": "Clinically proven results", "status": "approved"}],
+        "objections": [{"objection_id": "o-14", "theme": "Pricing transparency"}],
+        "competitor_signals": {"competitor": "CompetitorZ", "benchmark_price": "59.99"},
+        "performance_context": perf_ctx,
+        "require_performance_context": True,
+        "learning_evidence": learning_evidence,
+    }
+
+    mock_sandbox = create_mock_remote_sandbox()
+    strat_agent = StrategyAgent(mock_sandbox)
+    strat_envelope = await strat_agent.run(strat_grant, strat_context)
+    assert strat_envelope.task_id == "task-strat-t14"
+    assert "strategy_plan" in strat_envelope.payload
+
+    # 6. Proposed Action still requires mandatory HITL approval before actuation
+    preview = await engine.build_preview(
+        [strat_envelope], kind=ActionPreviewKind.SPEND, risk_level=RiskLevel.MEDIUM
+    )
+    assert preview.requires_approval is True
+    assert hitl_coordinator.is_pending(preview.preview_id) is True
+
+    # 7. Approving through HITL resolves preview
+    hitl_coordinator.decide(preview.preview_id, approved=True, approver="[email protected]")
+    assert hitl_coordinator.is_pending(preview.preview_id) is False

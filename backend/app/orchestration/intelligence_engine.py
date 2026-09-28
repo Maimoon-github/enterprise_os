@@ -46,7 +46,7 @@ from app.schemas.development import (
 from app.schemas.strategy import StrategyResultEnvelope
 from app.schemas.artifact import ArtifactReference
 from app.schemas.dispatch import DispatchDirective
-from app.schemas.governance import Directive, RiskLevel, WorkerRole
+from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 from app.services.hitl import ApprovalDecision, HitlCoordinator
 from app.services.provenance import ProvenanceRecorder
@@ -166,6 +166,42 @@ class IntelligenceEngine:
 
     def _mint_token(self) -> IntelligenceEngineToken:
         return IntelligenceEngineToken(issued_to="intelligence_engine")
+
+    async def build_performance_context(
+        self,
+        *,
+        tenant_id: str,
+        brand_id: str = "default",
+        time_window_start: datetime | None = None,
+        time_window_end: datetime | None = None,
+        requested_metrics: list[str] | None = None,
+        channels: list[str] | None = None,
+        purpose: str = "strategy_performance_evaluation",
+        token_budget: int = 4000,
+        raw_performance_data: dict[str, Any] | None = None,
+        caller: CallerIdentity | None = None,
+    ) -> dict[str, Any]:
+        """Assemble governed, bounded, cited performance context via IE-exclusive RAG bridge."""
+        if caller is not None and self._authorization_boundary is not None:
+            self._authorization_boundary.authorize(
+                caller,
+                requested_scope=TenantScope(tenant_id=tenant_id),
+                requested_risk=RiskLevel.LOW,
+                requested_capability="telemetry.process",
+            )
+        token = self._mint_token()
+        return await self._context_assembler.build_performance_context(
+            token,
+            tenant_id=tenant_id,
+            brand_id=brand_id,
+            time_window_start=time_window_start,
+            time_window_end=time_window_end,
+            requested_metrics=requested_metrics,
+            channels=channels,
+            purpose=purpose,
+            token_budget=token_budget,
+            raw_performance_data=raw_performance_data,
+        )
 
     async def assemble_task_grant(
         self,
