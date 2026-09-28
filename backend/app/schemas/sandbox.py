@@ -281,6 +281,8 @@ class SandboxResult(BaseModel):
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
+    raw_output_sha256: str | None = None
+    sanitized_output_sha256: str | None = None
     execution_receipt: SandboxExecutionReceipt | None = None
     teardown_receipt: SandboxTeardownReceipt | None = None
 

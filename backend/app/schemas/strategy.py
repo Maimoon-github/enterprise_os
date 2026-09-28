@@ -31,7 +31,11 @@ from app.schemas.agent_contracts import (
     OmnichannelStrategyPlan,
     TaskGrant,
 )
-from app.schemas.sandbox import SandboxExecutionReceipt, SandboxTeardownReceipt
+from app.schemas.sandbox import (
+    SandboxExecutionReceipt,
+    SandboxInvocationMandate,
+    SandboxTeardownReceipt,
+)
 
 
 class SAllocDomainStatus(StrEnum):
@@ -451,15 +455,22 @@ class StrategyResultEnvelope(EvidenceEnvelope):
         strategy_plan: OmnichannelStrategyPlan | None = None
         channel_proposals: list[ChannelSpendProposal] = []
 
-        raw_plan = env.payload.get("strategy_plan")
+        raw_plan = (
+            env.payload.get("strategy_plan")
+            or env.payload.get("strategy_proposal")
+            or getattr(env, "strategy_proposal", None)
+        )
         if raw_plan:
-            try:
-                if isinstance(raw_plan, str):
-                    strategy_plan = OmnichannelStrategyPlan.model_validate_json(raw_plan)
-                elif isinstance(raw_plan, dict):
-                    strategy_plan = OmnichannelStrategyPlan.model_validate(raw_plan)
-            except Exception:
-                strategy_plan = None
+            if isinstance(raw_plan, str):
+                strategy_plan = OmnichannelStrategyPlan.model_validate_json(raw_plan)
+            elif isinstance(raw_plan, dict):
+                strategy_plan = OmnichannelStrategyPlan.model_validate(raw_plan)
+            elif isinstance(raw_plan, OmnichannelStrategyPlan):
+                strategy_plan = raw_plan
+            else:
+                raise ValueError(
+                    f"strategy_plan in payload is not a valid plan type: {type(raw_plan)}"
+                )
 
         if strategy_plan and strategy_plan.channel_allocations:
             for ca in strategy_plan.channel_allocations:
@@ -766,8 +777,13 @@ class SAllocResult(BaseModel):
             exclude_fields={"output_sha256", "execution_receipt", "teardown_receipt"},
         )
 
-    def verify_correlation(self, mandate: SAllocMandate) -> None:
-        """Verify correlation identities and input digest match the authoritative mandate."""
+    def verify_correlation(
+        self,
+        mandate: SAllocMandate | SandboxInvocationMandate | Any,
+        *,
+        require_receipts: bool = False,
+    ) -> None:
+        """Verify correlation identities, input digest, receipts, and domain bounds against authoritative mandate."""
         if self.execution_id != mandate.execution_id:
             raise ValueError(
                 f"Result execution_id '{self.execution_id}' does not match mandate '{mandate.execution_id}'."
@@ -784,9 +800,67 @@ class SAllocResult(BaseModel):
             raise ValueError(
                 f"Result tenant_id '{self.tenant_id}' does not match mandate '{mandate.tenant_id}'."
             )
-        expected_input_hash = mandate.input_sha256 or mandate.compute_input_digest()
-        if self.input_sha256 != expected_input_hash:
+        expected_input_hash = getattr(mandate, "input_sha256", None)
+        if not expected_input_hash:
+            if hasattr(mandate, "compute_input_digest"):
+                expected_input_hash = mandate.compute_input_digest()
+            elif hasattr(mandate, "payload"):
+                expected_input_hash = compute_canonical_sha256(mandate.payload)
+        if expected_input_hash and self.input_sha256 != expected_input_hash:
             raise ValueError(
                 f"Result input_sha256 '{self.input_sha256}' does not match expected mandate digest '{expected_input_hash}'."
             )
+
+        if self.status == SAllocDomainStatus.OK:
+            if require_receipts:
+                if self.execution_receipt is None or self.execution_receipt.exit_code != 0:
+                    raise ValueError("SAllocResult with status OK must have a successful execution_receipt (exit_code 0).")
+                if self.teardown_receipt is None or self.teardown_receipt.status not in ("CLEAN", "verified", "completed"):
+                    raise ValueError("SAllocResult with status OK must have a verified teardown_receipt.")
+
+            scenario_ids = getattr(mandate, "scenario_ids", None)
+            if scenario_ids is None and hasattr(mandate, "payload"):
+                scenario_ids = mandate.payload.get("scenarios")
+
+            authorized_channels = getattr(mandate, "authorized_channels", None)
+            if authorized_channels is None and hasattr(mandate, "payload"):
+                authorized_channels = mandate.payload.get("channels")
+
+            budget_ceiling = getattr(mandate, "budget_ceiling", None)
+            if budget_ceiling is None and hasattr(mandate, "payload"):
+                budget_ceiling = mandate.payload.get("target_budget") or mandate.payload.get("budget_ceiling")
+
+            if self.scenario_allocations:
+                if scenario_ids:
+                    mandate_scenarios = set(scenario_ids)
+                    result_scenarios = set(self.scenario_allocations.keys())
+                    if result_scenarios != mandate_scenarios:
+                        raise ValueError(
+                            f"Result scenarios {sorted(result_scenarios)} do not match mandate scenarios {sorted(mandate_scenarios)}."
+                        )
+                if authorized_channels:
+                    authorized = set(authorized_channels)
+                    for sc_id, props in self.scenario_allocations.items():
+                        sc_total = 0.0
+                        for p in props:
+                            if p.channel not in authorized:
+                                raise ValueError(
+                                    f"Scenario '{sc_id}' allocates to unauthorized channel '{p.channel}'. Authorized: {authorized_channels}"
+                                )
+                            amount = getattr(p, "allocated_amount", getattr(p, "spend", 0.0))
+                            if amount < 0.0 or not math.isfinite(amount):
+                                raise ValueError(
+                                    f"Scenario '{sc_id}' channel '{p.channel}' has invalid amount: {amount}"
+                                )
+                            sc_total += amount
+                        if budget_ceiling is not None and sc_total > budget_ceiling + 0.01:
+                            raise ValueError(
+                                f"Scenario '{sc_id}' total ({sc_total}) exceeds ceiling ({budget_ceiling})."
+                            )
+
+            if budget_ceiling is not None and self.total_allocated + self.budget_residual > budget_ceiling + 0.01:
+                raise ValueError(
+                    f"Total allocated ({self.total_allocated}) + residual ({self.budget_residual}) "
+                    f"exceeds mandate budget ceiling ({budget_ceiling})."
+                )
 

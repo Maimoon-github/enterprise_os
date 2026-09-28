@@ -380,14 +380,24 @@ class IntelligenceEngine:
         end_time = datetime.now(UTC)
         duration_ms = (end_time - start_time).total_seconds() * 1000.0
 
-        if envelope.confidence.point_estimate > 0.0:
+        proposed_status = envelope.proposed_state_changes.get("status")
+        domain_status = envelope.payload.get("domain_status")
+        is_successful = (
+            envelope.confidence.point_estimate > 0.0
+            and (proposed_status != "failed")
+            and (domain_status is None or domain_status in ("OK", "success"))
+        )
+        if is_successful:
             self._task_state_machine.transition(
                 in_prog_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
             )
             lifecycle_stage = "completed"
         else:
             self._task_state_machine.transition(
-                in_prog_state, TaskStatus.HELD, checkpoint_id=str(uuid.uuid4()), note="Execution produced zero confidence"
+                in_prog_state,
+                TaskStatus.HELD,
+                checkpoint_id=str(uuid.uuid4()),
+                note=f"Execution validation failed or zero confidence: domain_status={domain_status}, proposed={proposed_status}",
             )
             lifecycle_stage = "failed"
 

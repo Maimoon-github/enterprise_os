@@ -8,18 +8,26 @@ Quantitative allocation remains deterministic inside the S_ALLOC isolated sandbo
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.agent_contracts import TaskGrant
+from app.schemas.sandbox import (
+    SandboxExecutionStatus,
+    SandboxInvocationMandate,
+    SandboxResult,
+)
 from app.schemas.strategy import (
     AllocationConstraint,
+    ChannelSpendProposal,
     SAllocDomainStatus,
     SAllocMandate,
     SAllocResult,
     StrategyDirective,
+    compute_canonical_sha256,
 )
 
 from ..profiles import S_ALLOC_PROFILE, SpecialistModelProfile
@@ -253,4 +261,110 @@ class StrategyAllocationAgent:
                 return fallback, {"reasoning_mode": "llm_error_fallback", **base_meta}
 
         return fallback, {"reasoning_mode": "deterministic_bridge", **base_meta}
+
+    def parse_and_validate_result(
+        self,
+        mandate: SAllocMandate | SandboxInvocationMandate | Any,
+        sandbox_result: SandboxResult,
+    ) -> SAllocResult:
+        """Parse, validate, and seal the typed SAllocResult against the authoritative mandate."""
+        structured = sandbox_result.structured_output or getattr(sandbox_result, "result_payload", None) or {}
+        sanitized = sandbox_result.sanitized_output or {}
+
+        # Parse scenario allocations if present
+        scenario_allocs: dict[str, list[ChannelSpendProposal]] = {}
+        raw_scenarios = structured.get("scenarios") or sanitized.get("scenarios")
+        if isinstance(raw_scenarios, str):
+            try:
+                raw_scenarios = json.loads(raw_scenarios)
+            except Exception:
+                raw_scenarios = {}
+        if isinstance(raw_scenarios, dict):
+            for sc_name, sc_data in raw_scenarios.items():
+                props: list[ChannelSpendProposal] = []
+                allocs = sc_data.get("allocations", {}) if isinstance(sc_data, dict) else {}
+                tot = sum(allocs.values()) if allocs else 1.0
+                for ch, amt in allocs.items():
+                    props.append(
+                        ChannelSpendProposal(
+                            channel=ch,
+                            allocated_amount=float(amt),
+                            percentage_of_total=round((float(amt) / tot) * 100.0, 2) if tot > 0 else 0.0,
+                        )
+                    )
+                scenario_allocs[sc_name] = props
+
+        # Parse marginal roas
+        raw_mroas = structured.get("marginal_roas") or sanitized.get("marginal_roas")
+        marginal_roas: dict[str, float] = {}
+        if isinstance(raw_mroas, str):
+            try:
+                raw_mroas = json.loads(raw_mroas)
+            except Exception:
+                raw_mroas = {}
+        if isinstance(raw_mroas, dict):
+            for k, v in raw_mroas.items():
+                try:
+                    fval = float(v)
+                    if math.isfinite(fval):
+                        marginal_roas[str(k)] = fval
+                except (ValueError, TypeError):
+                    pass
+
+        # Parse diagnostics
+        raw_diag = structured.get("model_diagnostics") or sanitized.get("model_diagnostics")
+        diagnostics: dict[str, Any] = {}
+        if isinstance(raw_diag, str):
+            try:
+                diagnostics = json.loads(raw_diag)
+            except Exception:
+                diagnostics = {}
+        elif isinstance(raw_diag, dict):
+            diagnostics = raw_diag
+
+        # Determine domain status
+        raw_domain_status = (
+            structured.get("domain_status")
+            or sanitized.get("domain_status")
+            or structured.get("status")
+            or sanitized.get("status")
+            or SAllocDomainStatus.OK.value
+        )
+        try:
+            domain_status = SAllocDomainStatus(raw_domain_status)
+        except ValueError:
+            domain_status = SAllocDomainStatus.INVALID_INPUT
+
+        if not sandbox_result.success or sandbox_result.status != SandboxExecutionStatus.COMPLETED:
+            if sandbox_result.status == SandboxExecutionStatus.TIMEOUT:
+                domain_status = SAllocDomainStatus.SOLVER_FAILED
+            else:
+                domain_status = SAllocDomainStatus.SOLVER_FAILED
+
+        total_allocated = float(structured.get("allocated_total") or sanitized.get("allocated_total") or 0.0)
+        budget_residual = float(structured.get("budget_residual") or sanitized.get("budget_residual") or 0.0)
+
+        s_alloc_result = SAllocResult(
+            execution_id=mandate.execution_id,
+            task_id=mandate.task_id,
+            stage_attempt_id=mandate.stage_attempt_id,
+            tenant_id=mandate.tenant_id,
+            input_sha256=(
+                getattr(mandate, "input_sha256", None)
+                or (mandate.compute_input_digest() if hasattr(mandate, "compute_input_digest") else None)
+                or (compute_canonical_sha256(mandate.payload) if hasattr(mandate, "payload") else compute_canonical_sha256(mandate))
+            ),
+            status=domain_status,
+            scenario_allocations=scenario_allocs,
+            total_allocated=total_allocated,
+            budget_residual=budget_residual,
+            marginal_roas=marginal_roas,
+            diagnostics=diagnostics,
+            execution_receipt=sandbox_result.execution_receipt,
+            teardown_receipt=sandbox_result.teardown_receipt,
+        )
+        s_alloc_result.verify_correlation(mandate, require_receipts=bool(sandbox_result.execution_receipt))
+        s_alloc_result.output_sha256 = s_alloc_result.compute_output_digest()
+        return s_alloc_result
+
 

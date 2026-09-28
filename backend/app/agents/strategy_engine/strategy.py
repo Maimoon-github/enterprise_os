@@ -38,7 +38,7 @@ class StrategyAgent(BoundedWorkerAgent):
 
     def __init__(
         self,
-        sandbox_client: SandboxClient,
+        sandbox_client: SandboxClient | None = None,
         llm_client: Any | None = None,
         allocation_agent: StrategyAllocationAgent | None = None,
     ) -> None:
@@ -616,8 +616,17 @@ class StrategyAgent(BoundedWorkerAgent):
             findings.append(f"S_ALLOC Rationale: {alloc_reasoning.rationale_summary}")
         risks.extend(alloc_reasoning.risk_flags)
 
-        domain_status = result.sanitized_output.get("domain_status", SAllocDomainStatus.OK.value)
-        if not result.success or domain_status != SAllocDomainStatus.OK.value:
+        try:
+            s_alloc_res = self._allocation_agent.parse_and_validate_result(child_mandate, result)
+            if inspect.isawaitable(s_alloc_res):
+                s_alloc_res = await s_alloc_res
+            s_alloc_result = s_alloc_res
+            domain_status = s_alloc_result.status.value
+        except Exception:
+            domain_status = SAllocDomainStatus.INVALID_INPUT.value
+            s_alloc_result = None
+
+        if not result.success or s_alloc_result is None or domain_status != SAllocDomainStatus.OK.value:
             err_msg = (
                 result.error
                 or result.sanitized_output.get("error")

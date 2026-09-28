@@ -243,6 +243,18 @@ class ProvenanceRecorder:
             ),
         ]
 
+        is_alloc = capability in ("ALLOC", "alloc") or worker_role == "W_STRAT"
+        specialist_agent_id = f"urn:enterprise_os:agent:specialist:s_alloc:{execution_id}" if is_alloc else None
+        if is_alloc and specialist_agent_id:
+            agents.append(
+                W3CProvAgent(
+                    id=specialist_agent_id,
+                    label="S_ALLOC Specialist Agent",
+                    role="specialist",
+                    attributes={"capability": capability, "task_id": task_id},
+                )
+            )
+
         # 3. Entities
         entities = [
             W3CProvEntity(
@@ -336,6 +348,22 @@ class ProvenanceRecorder:
                 target_id=mandate_entity_id,
             ),
         ]
+
+        if is_alloc and specialist_agent_id:
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.WAS_ASSOCIATED_WITH,
+                    source_id=activity_id,
+                    target_id=specialist_agent_id,
+                )
+            )
+            relations.append(
+                W3CProvRelation(
+                    relation_type=ProvRelationType.ACTED_ON_BEHALF_OF,
+                    source_id=specialist_agent_id,
+                    target_id=worker_agent_id,
+                )
+            )
 
         if input_payload:
             relations.append(

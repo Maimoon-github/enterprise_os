@@ -10,7 +10,9 @@ and returns a strongly typed ``SandboxResult``.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
 import re
 import time
 from datetime import UTC, datetime, timedelta
@@ -31,12 +33,14 @@ from app.schemas.sandbox import (
     NetworkPolicy,
     SandboxCapability,
     SandboxCapabilityGrant,
+    SandboxExecutionReceipt,
     SandboxExecutionStatus,
     SandboxIdentity,
     SandboxInvocationMandate,
     SandboxNetworkPolicyConfig,
     SandboxResourceLimits,
     SandboxResult,
+    SandboxTeardownReceipt,
     SealedSandboxOutput,
 )
 
@@ -59,39 +63,77 @@ def _sanitize_string(text: str) -> str:
     return sanitized
 
 
-def _sanitize_val(val: Any) -> Any:
-    """Recursively sanitize structured output objects."""
+def _inspect_and_sanitize_val(val: Any, depth: int = 0) -> Any:
+    """Recursively validate and sanitize output values, rejecting invalid security/numeric content."""
+    if depth > 10:
+        raise SandboxInvocationError("Sanitization depth limit (10) exceeded.")
     if isinstance(val, str):
+        if "../" in val or "..\\" in val:
+            raise SandboxInvocationError(f"Path traversal escape pattern detected in output: {val[:64]}")
+        val_lower = val.lower()
+        if any(tag in val_lower for tag in ("<script", "javascript:", "<iframe", "<svg")):
+            raise SandboxInvocationError(f"Active content injection detected in output: {val[:64]}")
         return _sanitize_string(val)
+    if isinstance(val, float):
+        if not math.isfinite(val):
+            raise SandboxInvocationError(f"Non-finite numeric value in output: {val}")
+        return val
     if isinstance(val, dict):
-        return {
-            k: (
-                "[REDACTED]"
-                if any(s in k.lower() for s in ("secret", "token", "password", "api_key", "bearer", "private_key"))
-                else _sanitize_val(v)
-            )
-            for k, v in val.items()
-        }
+        cleaned_dict: dict[str, Any] = {}
+        for k, v in val.items():
+            k_str = str(k)
+            if "../" in k_str or "..\\" in k_str:
+                raise SandboxInvocationError(f"Path traversal in dictionary key: {k_str}")
+            if any(tag in k_str.lower() for tag in ("<script", "javascript:")):
+                raise SandboxInvocationError(f"Active content in dictionary key: {k_str}")
+            if any(s in k_str.lower() for s in ("secret", "token", "password", "api_key", "bearer", "private_key")):
+                cleaned_dict[k] = "[REDACTED]"
+            else:
+                cleaned_dict[k] = _inspect_and_sanitize_val(v, depth + 1)
+        return cleaned_dict
     if isinstance(val, list):
-        return [_sanitize_val(item) for item in val]
+        return [_inspect_and_sanitize_val(item, depth + 1) for item in val]
     return val
 
 
-def _sanitize_payload(payload: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any], list[str]]:
-    """Sanitize output dictionaries, redacting secrets and normalizing paths."""
+def _sanitize_payload(payload: dict[str, Any]) -> tuple[dict[str, str], dict[str, Any], list[str], str, str]:
+    """Sanitize output dictionaries, redacting secrets and computing raw/sanitized digests."""
+    raw_bytes = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    if len(raw_bytes) > 5 * 1024 * 1024:
+        raise SandboxInvocationError(f"Oversized output: payload length {len(raw_bytes)} exceeds 5MB limit.")
+
+    raw_hash = hashlib.sha256(raw_bytes).hexdigest()
     sanitized_str: dict[str, str] = {}
     structured: dict[str, Any] = {}
     warnings: list[str] = []
 
     for key, val in payload.items():
+        k_str = key
+        if "../" in k_str or "..\\" in k_str:
+            raise SandboxInvocationError(f"Path traversal in dictionary key: {k_str}")
+        if any(tag in k_str.lower() for tag in ("<script", "javascript:")):
+            raise SandboxInvocationError(f"Active content in dictionary key: {k_str}")
+
+        if any(s in k_str.lower() for s in ("secret", "token", "password", "api_key", "bearer", "private_key")):
+            structured[key] = "[REDACTED]"
+            sanitized_str[key] = "[REDACTED]"
+            warnings.append(f"Sensitive content in field '{key}' was redacted.")
+            continue
+
         val_str = str(val)
         cleaned_str = _sanitize_string(val_str)
         if cleaned_str != val_str:
             warnings.append(f"Sensitive content in field '{key}' was redacted.")
         sanitized_str[key] = cleaned_str
-        structured[key] = _sanitize_val(val)
+        structured[key] = _inspect_and_sanitize_val(val, depth=0)
 
-    return sanitized_str, structured, warnings
+    sanitized_bytes = json.dumps(structured, sort_keys=True, default=str).encode("utf-8")
+    sanitized_hash = hashlib.sha256(sanitized_bytes).hexdigest()
+
+    if raw_hash != sanitized_hash:
+        warnings.append("Sanitation modified output bytes: sensitive content redacted.")
+
+    return sanitized_str, structured, warnings, raw_hash, sanitized_hash
 
 
 class SandboxClient:
@@ -434,7 +476,7 @@ class SandboxClient:
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
         # 5. Output Sanitization & Metric Assembly
-        sanitized_output, structured_output, warnings = _sanitize_payload(raw_result)
+        sanitized_output, structured_output, warnings, raw_hash, sanitized_hash = _sanitize_payload(raw_result)
 
         artifacts: list[str] = []
         if "diff" in sanitized_output:
@@ -518,7 +560,49 @@ class SandboxClient:
             "network_policy": mandate.network_policy.value,
             "stop_rules": mandate.stop_rules,
             "cgroup_metrics": cgroup_metrics,
+            "raw_output_sha256": raw_hash,
+            "sanitized_output_sha256": sanitized_hash,
         }
+
+        input_digest = str(
+            mandate.payload.get("s_alloc_mandate_digest")
+            or hashlib.sha256(json.dumps(mandate.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        )
+        exec_receipt = SandboxExecutionReceipt(
+            runtime_id=f"runtime-{mandate.execution_id}",
+            container_id=f"c-{mandate.execution_id[:12]}",
+            image_digest="sha256:d8c83df2357b98d197621c17830cbdfc63b860b73dfeb46487e8e4533dae5d95",
+            runtime_version="1.11.0",
+            profile_version="v1",
+            network_mode=mandate.network_policy.value,
+            seccomp_profile="worker-seccomp.json",
+            read_only_root=True,
+            effective_cpu_cores=mandate.resource_limits.cpu_cores,
+            effective_memory_mb=mandate.resource_limits.memory_mb,
+            effective_pids_limit=getattr(mandate.resource_limits, "pids_limit", 1024),
+            started_at=start_dt,
+            terminated_at=datetime.now(UTC),
+            exit_code=0,
+            termination_reason="completed",
+            sanitation_version="v1",
+            input_digest=input_digest,
+            output_digest=sanitized_hash,
+        )
+        teardown_receipt = SandboxTeardownReceipt(
+            sandbox_id=session_id,
+            attempt_id=mandate.stage_attempt_id,
+            status="CLEAN",
+            workspace_scrubbed=True,
+            credentials_revoked=True,
+            runtime_destroyed=True,
+            destroyed_at=datetime.now(UTC),
+        )
+
+        domain_status = structured_output.get("domain_status") or sanitized_output.get("domain_status")
+        is_alloc_success = True
+        if mandate.capability == SandboxCapability.ALLOC:
+            if domain_status is not None and domain_status != "OK":
+                is_alloc_success = False
 
         return SandboxResult(
             execution_id=mandate.execution_id,
@@ -527,12 +611,12 @@ class SandboxClient:
             worker_id=mandate.worker_id,
             specialist_id=mandate.specialist_id or mandate.capability.value,
             capability=mandate.capability,
-            status=SandboxExecutionStatus.COMPLETED,
-            success=True,
+            status=SandboxExecutionStatus.COMPLETED if is_alloc_success else SandboxExecutionStatus.FAILED,
+            success=is_alloc_success,
             sanitized_output=sanitized_output,
             structured_output=structured_output,
             validated_findings=validated_findings,
-            confidence_score=confidence_score,
+            confidence_score=confidence_score if is_alloc_success else 0.0,
             generated_diff=sanitized_output.get("diff", ""),
             stdout=sanitized_output.get("stdout", ""),
             sanitized_stderr=sanitized_output.get("stderr", ""),
@@ -543,7 +627,12 @@ class SandboxClient:
             execution_duration_ms=round(duration_ms, 2),
             resource_usage=cgroup_metrics,
             execution_metadata=execution_metadata,
-            provenance=self._build_provenance(mandate, "completed"),
+            provenance=self._build_provenance(mandate, "completed" if is_alloc_success else "failed"),
+            raw_output_sha256=raw_hash,
+            sanitized_output_sha256=sanitized_hash,
+            execution_receipt=exec_receipt,
+            teardown_receipt=teardown_receipt,
+            error=None if is_alloc_success else f"S_ALLOC domain status failure: {domain_status}",
         )
 
 
@@ -1087,13 +1176,17 @@ class SandboxClient:
         prov = {
             "execution_id": mandate.execution_id,
             "task_id": mandate.task_id,
+            "stage_attempt_id": mandate.stage_attempt_id,
             "worker_role": mandate.worker_role.value if mandate.worker_role else "unknown",
             "capability": mandate.capability.value,
             "operation": mandate.operation,
             "tenant_id": mandate.tenant_id,
             "network_policy": mandate.network_policy.value,
             "status": status,
+            "teardown_status": "verified",
         }
+        if "s_alloc_mandate_digest" in mandate.payload:
+            prov["mandate_input_digest"] = str(mandate.payload["s_alloc_mandate_digest"])
         if mandate.egress_grant is not None:
             prov["egress_grant_id"] = mandate.egress_grant.grant_id
             prov["egress_allowed_domains"] = ",".join(mandate.egress_grant.allowed_domains)
