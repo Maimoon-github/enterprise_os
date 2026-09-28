@@ -7,15 +7,27 @@ append-only hash chain integrity, idempotency, and absence of raw secrets.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.schemas.agent_contracts import ConfidenceInterval, EvidenceEnvelope, TaskGrant
 from app.schemas.governance import TenantScope, WorkerRole
-from app.schemas.provenance import ProvRelationType
+from app.schemas.provenance import (
+    ProvActivityRecord,
+    ProvAgentRecord,
+    ProvEntityRecord,
+    ProvRelationRecord,
+    ProvRelationType,
+    StrategyProvGraph,
+)
 from app.schemas.strategy import ChannelSpendProposal, StrategyResultEnvelope
-from app.services.provenance import ProvenanceRecorder, compute_canonical_sha256
+from app.services.provenance import (
+    ProvenanceRecorder,
+    ProvenanceService,
+    compute_canonical_sha256,
+)
 from tests.conftest import FakeProvenanceRepository
 
 
@@ -182,3 +194,182 @@ async def test_strategy_failure_lifecycle_never_emits_completed() -> None:
         r for r in repo.records if r.metadata.get("lifecycle_stage") == "completed"
     ]
     assert len(completed_recs) == 0
+
+
+# =============================================================================
+# 4. Layer 9 W3C PROV Strategy Graph Persistence & Attestation (L9-01, L9-02)
+# =============================================================================
+
+
+def test_strategy_prov_graph_contracts_and_relations() -> None:
+    """StrategyProvGraph enforces strictly typed W3C PROV entities, activities, agents, and relations."""
+    tenant_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    graph_id = uuid.uuid4()
+    sandbox_exec_id = uuid.uuid4()
+    slice_uuid = uuid.uuid4()
+
+    agent = ProvAgentRecord(agent_id="agent:w_strat:strategy_engine", subagent_id="allocation")
+    activity = ProvActivityRecord(
+        activity_id="act-opt-01",
+        activity_type="strat:LinearOptimization",
+        started_at=datetime.now(UTC),
+        ended_at=datetime.now(UTC),
+        sandbox_execution_id=sandbox_exec_id,
+    )
+    ent_slice = ProvEntityRecord(
+        entity_id=f"slice:{slice_uuid}",
+        entity_type="strat:ContextSlice",
+        artifact_uuid=slice_uuid,
+        content_hash_sha256="a" * 64,
+    )
+    ent_envelope = ProvEntityRecord(
+        entity_id="env:strat-dossier-01",
+        entity_type="strat:EvidenceEnvelope",
+        content_hash_sha256="b" * 64,
+    )
+
+    relations = [
+        ProvRelationRecord(
+            relation_type="used",
+            source_id="act-opt-01",
+            target_id=f"slice:{slice_uuid}",
+        ),
+        ProvRelationRecord(
+            relation_type="wasAssociatedWith",
+            source_id="act-opt-01",
+            target_id="agent:w_strat:strategy_engine",
+        ),
+        ProvRelationRecord(
+            relation_type="wasGeneratedBy",
+            source_id="env:strat-dossier-01",
+            target_id="act-opt-01",
+        ),
+        ProvRelationRecord(
+            relation_type="wasDerivedFrom",
+            source_id="env:strat-dossier-01",
+            target_id=f"slice:{slice_uuid}",
+        ),
+    ]
+
+    graph = StrategyProvGraph(
+        graph_id=graph_id,
+        task_id=task_id,
+        tenant_id=tenant_id,
+        agents=[agent],
+        activities=[activity],
+        entities=[ent_slice, ent_envelope],
+        relations=relations,
+    )
+
+    assert graph.graph_id == graph_id
+    assert len(graph.relations) == 4
+    rel_types = {r.relation_type for r in graph.relations}
+    assert rel_types == {"used", "wasAssociatedWith", "wasGeneratedBy", "wasDerivedFrom"}
+
+
+@pytest.mark.asyncio
+async def test_provenance_service_record_strategy_lineage_and_persistence() -> None:
+    """ProvenanceService commits typed provenance graphs to ProvenanceRepository with hash chaining."""
+    repo = FakeProvenanceRepository()
+    service = ProvenanceService(repo)
+
+    tenant_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    graph = StrategyProvGraph(
+        graph_id=uuid.uuid4(),
+        task_id=task_id,
+        tenant_id=tenant_id,
+        agents=[ProvAgentRecord()],
+        activities=[
+            ProvActivityRecord(
+                activity_id="act-1",
+                activity_type="strat:DossierSynthesis",
+                started_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
+            )
+        ],
+        entities=[
+            ProvEntityRecord(
+                entity_id="ent-1",
+                entity_type="strat:EvidenceEnvelope",
+                content_hash_sha256="c" * 64,
+            )
+        ],
+        relations=[
+            ProvRelationRecord(
+                relation_type="wasGeneratedBy",
+                source_id="ent-1",
+                target_id="act-1",
+            )
+        ],
+    )
+
+    prov_signature = await service.record_strategy_lineage(graph)
+    assert isinstance(prov_signature, str)
+    assert len(prov_signature) == 64
+
+    # Verify repository storage
+    tenant_records = await repo.chain(str(tenant_id))
+    assert len(tenant_records) == 1
+    assert tenant_records[0].record_hash == prov_signature
+    assert tenant_records[0].activity == "strat:StrategyLineageCommit"
+
+    # Verify unbroken hash chain
+    assert await repo.verify_chain(str(tenant_id)) is True
+
+
+@pytest.mark.asyncio
+async def test_strategy_provenance_tamper_evidence_and_altered_hash_rejection() -> None:
+    """Tampering with an entity content hash or record invalidates chain verification."""
+    repo = FakeProvenanceRepository()
+    service = ProvenanceService(repo)
+
+    tenant_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+
+    graph = StrategyProvGraph(
+        graph_id=uuid.uuid4(),
+        task_id=task_id,
+        tenant_id=tenant_id,
+        agents=[ProvAgentRecord()],
+        activities=[
+            ProvActivityRecord(
+                activity_id="act-1",
+                activity_type="strat:ContextIngestion",
+                started_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
+            )
+        ],
+        entities=[
+            ProvEntityRecord(
+                entity_id="slice-01",
+                entity_type="strat:ContextSlice",
+                content_hash_sha256="1" * 64,
+            )
+        ],
+        relations=[
+            ProvRelationRecord(
+                relation_type="used",
+                source_id="act-1",
+                target_id="slice-01",
+            )
+        ],
+    )
+
+    await service.record_strategy_lineage(graph)
+    assert await repo.verify_chain(str(tenant_id)) is True
+
+    # Alter record metadata/payload to simulate tampering
+    records = await repo.chain(str(tenant_id))
+    records[0].metadata["tampered"] = True
+    assert repo.verify(records) is False
+
+
+def test_strategy_worker_model_a_zero_db_isolation() -> None:
+    """Worker agents retain zero database connection pools, ORMs, or direct repository handles."""
+    from app.agents.strategy_engine.strategy import StrategyAgent
+
+    forbidden_attributes = ["db", "database", "session", "repository", "repo", "_session_factory"]
+    for attr in forbidden_attributes:
+        assert not hasattr(StrategyAgent, attr), f"StrategyAgent violates Model A by declaring {attr}"

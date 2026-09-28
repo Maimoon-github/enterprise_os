@@ -84,6 +84,8 @@ class EvidenceEnvelope(BaseModel):
     provenance: dict[str, str] = Field(default_factory=dict)
     proposed_state_changes: dict[str, str] = Field(default_factory=dict)
     unresolved_risks_or_assumptions: list[str] = Field(default_factory=list)
+    prov_activity_id: str | None = None
+    prov_signature: str | None = None
 
 
 class ClaimValidationStatus(StrEnum):

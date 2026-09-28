@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProvRelationType(StrEnum):
@@ -73,6 +74,75 @@ class W3CProvBundle(BaseModel):
     agents: list[W3CProvAgent] = Field(default_factory=list)
     entities: list[W3CProvEntity] = Field(default_factory=list)
     relations: list[W3CProvRelation] = Field(default_factory=list)
+
+
+class ProvAgentRecord(BaseModel):
+    """W3C PROV Agent record attributing responsibility for a strategy operation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    agent_id: str = "agent:w_strat:strategy_engine"
+    agent_type: Literal["SoftwareAgent", "Person"] = "SoftwareAgent"
+    subagent_id: str | None = None
+
+
+class ProvActivityRecord(BaseModel):
+    """W3C PROV Activity record tracking a discrete computational step in strategy formulation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    activity_id: str
+    activity_type: Literal[
+        "strat:ContextIngestion",
+        "strat:MMMFitting",
+        "strat:LinearOptimization",
+        "strat:FunnelSimulation",
+        "strat:MonteCarloSampling",
+        "strat:DossierSynthesis",
+    ]
+    started_at: datetime
+    ended_at: datetime
+    sandbox_execution_id: UUID | None = None
+
+
+class ProvEntityRecord(BaseModel):
+    """W3C PROV Entity record representing immutable inputs, outputs, or artifacts."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    entity_id: str
+    entity_type: Literal[
+        "strat:ContextSlice",
+        "strat:SolverOutput",
+        "strat:EvidenceEnvelope",
+        "strat:ActionPreview",
+    ]
+    artifact_uuid: UUID | None = None
+    content_hash_sha256: str
+
+
+class ProvRelationRecord(BaseModel):
+    """W3C PROV Directed Relation associating entities, activities, and agents."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    relation_type: Literal["wasGeneratedBy", "used", "wasAssociatedWith", "wasDerivedFrom"]
+    source_id: str
+    target_id: str
+
+
+class StrategyProvGraph(BaseModel):
+    """Immutable, typed W3C PROV graph capturing the end-to-end lineage of a strategic formulation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    graph_id: UUID
+    task_id: UUID
+    tenant_id: UUID
+    agents: list[ProvAgentRecord]
+    activities: list[ProvActivityRecord]
+    entities: list[ProvEntityRecord]
+    relations: list[ProvRelationRecord]
 
 
 class SandboxExecutionAuditMetadata(BaseModel):

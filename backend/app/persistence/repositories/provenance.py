@@ -141,6 +141,30 @@ class ProvenanceRepository:
                 await local_session.commit()
         return record
 
+    async def append_prov_graph(
+        self,
+        *,
+        tenant_id: str | uuid.UUID,
+        task_id: str | uuid.UUID,
+        graph_payload: dict[str, Any],
+        session: AsyncSession | None = None,
+    ) -> str:
+        """Append an immutable W3C PROV graph payload and return the resulting record hash."""
+        tid = str(tenant_id)
+        task_id_str = str(task_id)
+        graph_id = graph_payload.get("graph_id", str(uuid.uuid4()))
+        record = await self.append(
+            tenant_id=tid,
+            entity_id=f"prov_graph:{graph_id}",
+            activity="strat:StrategyLineageCommit",
+            agent="agent:w_strat:strategy_engine",
+            record_id=f"prov-graph-{tid}-{task_id_str}-{graph_id}",
+            metadata={"task_id": task_id_str, "graph_id": str(graph_id)},
+            w3c_prov=graph_payload,
+            session=session,
+        )
+        return record.record_hash
+
     async def chain(self, tenant_id: str) -> list[ProvenanceRecord]:
         """Return the full, time-ordered provenance chain for ``tenant_id``."""
         async with self._session_factory() as session:

@@ -23,6 +23,7 @@ from app.schemas.provenance import (
     ProvenanceRecord,
     ProvRelationType,
     SandboxExecutionAuditMetadata,
+    StrategyProvGraph,
     W3CProvActivity,
     W3CProvAgent,
     W3CProvBundle,
@@ -181,6 +182,14 @@ class ProvenanceRecorder:
         if not records:
             return True
         return self._repository.verify(records)
+
+    async def record_strategy_lineage(self, graph: StrategyProvGraph) -> str:
+        """Commit an immutable, cryptographically chained provenance record for a strategic run."""
+        return await self._repository.append_prov_graph(
+            tenant_id=graph.tenant_id,
+            task_id=graph.task_id,
+            graph_payload=graph.model_dump(mode="json"),
+        )
 
     def build_sandbox_w3c_prov(
         self,
@@ -1476,3 +1485,22 @@ class ProvenanceRecorder:
             "repository_chain_verified": self._repository.verify(chain),
             "w3c_prov_bundles": [rec.w3c_prov for rec in matching_records if rec.w3c_prov],
         }
+
+
+class ProvenanceService:
+    """Service boundary for Strategy Engine lineage attestation and W3C PROV graph persistence.
+
+    Preserves Model A: workers retain zero direct database access and invoke lineage
+    persistence exclusively through this service boundary.
+    """
+
+    def __init__(self, prov_repo: ProvenanceRepository):
+        self._repo = prov_repo
+
+    async def record_strategy_lineage(self, graph: StrategyProvGraph) -> str:
+        """Commit an immutable, cryptographically chained provenance record for a strategic run."""
+        return await self._repo.append_prov_graph(
+            tenant_id=graph.tenant_id,
+            task_id=graph.task_id,
+            graph_payload=graph.model_dump(mode="json"),
+        )
