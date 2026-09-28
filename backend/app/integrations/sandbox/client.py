@@ -173,8 +173,19 @@ class SandboxClient:
         """Deterministic cleanup and scrubbing of ephemeral execution session state."""
         scrubbed = False
         if session_id in self._active_sessions:
-            del self._active_sessions[session_id]
+            session_data = self._active_sessions.pop(session_id)
             scrubbed = True
+            try:
+                remote = self._get_sandbox()
+            except Exception:
+                remote = None
+            if remote is not None and hasattr(remote, "shell"):
+                work_dir = session_data.get("working_directory")
+                if work_dir:
+                    try:
+                        remote.shell.exec_command(command=f"rm -rf {work_dir}")
+                    except Exception:
+                        pass
         if self._control_plane is not None:
             self._control_plane.destroy(session_id, reason="teardown")
             scrubbed = True
@@ -308,6 +319,16 @@ class SandboxClient:
         except (TimeoutError, asyncio.TimeoutError):
             duration_ms = (time.perf_counter() - start_time) * 1000.0
             timeout_err_msg = f"Sandbox execution timed out after {timeout} seconds."
+
+            # Kill remote attempt process group on timeout
+            remote_client = self._get_sandbox()
+            if remote_client is not None and hasattr(remote_client, "shell"):
+                try:
+                    scoped_dir = f"/workspace/{mandate.execution_id}"
+                    kill_cmd = f"pkill -TERM -f '{scoped_dir}' || pkill -KILL -f '{scoped_dir}'"
+                    remote_client.shell.exec_command(command=kill_cmd)
+                except Exception:
+                    pass
 
             # Audit record: timed_out stage (Fail-Closed)
             if self._provenance_recorder is not None:

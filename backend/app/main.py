@@ -17,7 +17,7 @@ from app.agents.development import DevelopmentAgent
 from app.agents.learning_performance import LearningPerformanceAgent
 from app.agents.product_evidence import ProductEvidenceAgent
 from app.agents.strategy import StrategyAgent
-from app.agents.strategy_engine.profiles import S_ALLOC_PROFILE, create_s_alloc_llm_client
+from app.agents.strategy_engine.profiles import S_ALLOC_PROFILE
 from app.agents.strategy_engine.subagents import StrategyAllocationAgent
 from app.api.router import api_router
 from app.core.exceptions import (
@@ -100,7 +100,6 @@ logger = get_logger(__name__)
 def _build_workers(
     sandbox_client: SandboxClient,
     llm_client: LlmClient | None = None,
-    s_alloc_llm_client: LlmClient | None = None,
     creative_workflow: Any = None,
     voice_specialists: dict[str, Any] | None = None,
     voice_llm_client: LlmClient | None = None,
@@ -129,7 +128,6 @@ def _build_workers(
         assert get_capability_for_role(role) == agent_class.capability
         if role == WorkerRole.STRATEGY:
             allocation_agent = StrategyAllocationAgent(
-                llm_client=s_alloc_llm_client,
                 profile=S_ALLOC_PROFILE,
             )
             workers[role] = StrategyAgent(
@@ -188,11 +186,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
     llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
-    s_alloc_llm_client = (
-        create_s_alloc_llm_client(S_ALLOC_PROFILE, base_settings=settings.llm)[0]
-        if settings.llm.provider != "unset"
-        else None
-    )
 
     # Wire 7 independent Creative LLM identities: W_CREAT + 6 specialists
     creative_llm_clients: list[LlmClient] = []
@@ -291,7 +284,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     workers = _build_workers(
         sandbox_client,
         llm_client=w_creat_llm or llm_client,
-        s_alloc_llm_client=s_alloc_llm_client,
         creative_workflow=creative_workflow,
         voice_specialists=voice_specialists,
         voice_llm_client=w_voice_llm,
@@ -395,8 +387,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         for social_adapter in social_adapters.values():
             await social_adapter.aclose()
         await cms_client.aclose()
-        if s_alloc_llm_client is not None:
-            await s_alloc_llm_client.aclose()
         await database.dispose()
         logger.info("Governed backend shutdown complete")
 

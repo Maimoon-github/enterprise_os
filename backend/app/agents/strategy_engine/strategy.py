@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Any
 
@@ -19,7 +20,7 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
-from app.schemas.strategy import StrategyDirective, StrategyResultEnvelope
+from app.schemas.strategy import SAllocDomainStatus, StrategyDirective, StrategyResultEnvelope
 
 
 class StrategyAgent(BoundedWorkerAgent):
@@ -554,7 +555,7 @@ class StrategyAgent(BoundedWorkerAgent):
         sandbox_client = self._sandbox_client
 
         # Validate input contract and dependencies before specialist or sandbox execution
-        StrategyDirective.from_grant(grant, context)
+        directive = StrategyDirective.from_grant(grant, context)
         self._verify_and_normalize_dependencies(grant, context)
 
         reasoning_output: WorkerReasoningOutput | None = None
@@ -563,25 +564,39 @@ class StrategyAgent(BoundedWorkerAgent):
         if self._llm_client is not None:
             reasoning_output, llm_metadata = await self._reason_domain(grant, context)
 
-        alloc_reasoning, alloc_metadata = await self._allocation_agent.reason(grant, context)
+        alloc_reasoning, alloc_metadata = await self._allocation_agent.reason(
+            grant, context, directive=directive
+        )
 
         augmented_context = dict(context)
         if "s_alloc_reasoning" not in augmented_context:
             augmented_context["s_alloc_reasoning"] = alloc_reasoning.model_dump()
 
+        child_mandate = self._allocation_agent.build_mandate(
+            grant, augmented_context, directive=directive
+        )
+        if inspect.isawaitable(child_mandate):
+            child_mandate = await child_mandate
+
         payload = self.build_payload(grant, augmented_context)
+        payload["s_alloc_mandate_digest"] = child_mandate.input_sha256 or ""
+        payload["stage_attempt_id"] = child_mandate.stage_attempt_id
+
         operation = payload.get("operation", "default")
         egress_grant = context.get("egress_grant")
+        effective_timeout = child_mandate.time_quota_seconds
+
         mandate = SandboxInvocationMandate(
             task_id=grant.task_id,
             worker_role=grant.worker_role,
             tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
+            stage_attempt_id=child_mandate.stage_attempt_id,
             capability=capability,
             operation=operation,
             payload=payload,
             network_policy=NetworkPolicy.DISABLED,
             egress_grant=egress_grant,  # type: ignore[arg-type]
-            timeout_seconds=grant.token_budget if grant.token_budget > 0 else 120,
+            timeout_seconds=effective_timeout,
         )
         result = await sandbox_client.invoke(mandate)
 
@@ -601,10 +616,16 @@ class StrategyAgent(BoundedWorkerAgent):
             findings.append(f"S_ALLOC Rationale: {alloc_reasoning.rationale_summary}")
         risks.extend(alloc_reasoning.risk_flags)
 
-        if not result.success:
-            evidence = [f"sandbox execution failed: {result.error or 'unknown error'}"]
+        domain_status = result.sanitized_output.get("domain_status", SAllocDomainStatus.OK.value)
+        if not result.success or domain_status != SAllocDomainStatus.OK.value:
+            err_msg = (
+                result.error
+                or result.sanitized_output.get("error")
+                or f"domain execution status: {domain_status}"
+            )
+            evidence = [f"sandbox execution failed: {err_msg}"]
             confidence = ConfidenceInterval(point_estimate=0.0, lower_bound=0.0, upper_bound=0.0)
-            risks.append(result.error or "sandbox execution failed")
+            risks.append(err_msg)
         else:
             evidence, confidence = self.interpret_result(result.sanitized_output)
             findings.extend([line for line in evidence if not line.startswith("error")])

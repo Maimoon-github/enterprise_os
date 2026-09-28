@@ -181,3 +181,124 @@ def test_strategy_engine_modules_maintain_zero_persistence_or_rag_imports() -> N
                     assert not node.module.startswith(prefix), (
                         f"Disallowed import in {sf.name}: {node.module}"
                     )
+
+
+# =============================================================================
+# 5. L6-03 Fresh Hardened Execution Lifecycle & Isolation Tests
+# =============================================================================
+
+
+def test_hardened_compose_profile_isolation_and_network_none() -> None:
+    """Verify s-alloc-compute has network_mode: none, read_only root, cap_drop ALL, and strict bounds."""
+    import yaml  # type: ignore[import-untyped]
+
+    repo_root = Path(__file__).resolve().parents[3]
+    compose_path = repo_root / "sandbox" / "docker" / "hardened" / "docker-compose.hardened.yaml"
+    assert compose_path.exists(), f"Hardened compose must exist at {compose_path}"
+
+    with open(compose_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    services = config.get("services", {})
+    assert "s-alloc-compute" in services, "s-alloc-compute profile service must exist in compose"
+    spec = services["s-alloc-compute"]
+
+    assert spec.get("network_mode") == "none", "Workload must strictly use network_mode: none"
+    assert spec.get("read_only") is True, "Workload root filesystem must be read_only"
+    assert "ALL" in spec.get("cap_drop", []), "Workload must drop ALL Linux capabilities"
+    assert "no-new-privileges:true" in spec.get("security_opt", []), "Must set no-new-privileges"
+    assert spec.get("user") not in ("0", "0:0", "root", None), "Must run as non-root user"
+    assert "ports" not in spec or not spec["ports"], "Workload must not publish any ports"
+    assert "@sha256:" in spec.get("image", ""), "Image must be pinned to explicit digest"
+
+    # Verify scoped tmpfs
+    tmpfs = spec.get("tmpfs", [])
+    assert any("/tmp:" in t and "noexec" in t and "nodev" in t and "nosuid" in t for t in tmpfs)
+
+    # Verify resource boundaries
+    assert spec.get("cpus") == "1"
+    assert spec.get("mem_limit") == "512m"
+    assert spec.get("pids_limit") == 128
+
+
+def test_cleanup_script_attempt_scoping_no_broad_pkill() -> None:
+    """Verify cleanup.sh targets only attempt-scoped workspace/PIDs and avoids broad pkill."""
+    repo_root = Path(__file__).resolve().parents[3]
+    cleanup_path = repo_root / "sandbox" / "docker" / "hardened" / "scripts" / "cleanup.sh"
+    assert cleanup_path.exists(), f"cleanup.sh must exist at {cleanup_path}"
+
+    content = cleanup_path.read_text(encoding="utf-8")
+    assert "pkill -9 -f python" not in content, "Broad python pkill strictly forbidden"
+    assert "pkill -9 -f node" not in content, "Broad node pkill strictly forbidden"
+    assert "SANDBOX_WORKSPACE" in content, "Cleanup must target SANDBOX_WORKSPACE"
+    assert "SANDBOX_ATTEMPT_PID" in content, "Cleanup must target SANDBOX_ATTEMPT_PID"
+
+
+def test_token_budget_separation_from_execution_seconds() -> None:
+    """Verify grant.token_budget does not inflate execution time quota."""
+    from app.agents.strategy_engine.subagents.allocation import StrategyAllocationAgent
+
+    alloc_agent = StrategyAllocationAgent()
+    grant = TaskGrant(
+        task_id="task-budget-separation",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="tenant_01", allowed_channels=["meta", "google"]),
+        brand_id="tenant_01",
+        token_budget=100000,  # Large token quota
+        expires_at=datetime.now(UTC) + timedelta(minutes=30),
+    )
+
+    mandate = alloc_agent.build_mandate(grant, {"timeout_seconds": 30})
+    assert mandate.time_quota_seconds == 30
+    assert mandate.token_quota <= alloc_agent.profile.token_quota
+
+
+def test_main_wiring_excludes_host_s_alloc_client() -> None:
+    """Verify backend/app/main.py does not define or instantiate host create_s_alloc_llm_client."""
+    repo_root = Path(__file__).resolve().parents[2]
+    main_py = repo_root / "app" / "main.py"
+    assert main_py.exists()
+
+    content = main_py.read_text(encoding="utf-8")
+    assert "create_s_alloc_llm_client" not in content
+    assert "s_alloc_llm_client" not in content
+
+
+@pytest.mark.asyncio
+async def test_remote_process_cancellation_and_scrubbing_on_timeout() -> None:
+    """Verify timeout triggers remote process tree termination and workspace scrubbing."""
+    import asyncio
+    client = SandboxClient(SandboxSettings(endpoint="http://remote-sandbox.internal:8000"))
+
+    executed_commands: list[str] = []
+
+    mock_sandbox = MagicMock()
+    mock_sandbox.shell = MagicMock()
+    def mock_exec(command: str):
+        executed_commands.append(command)
+        return MagicMock(exit_code=0)
+    mock_sandbox.shell.exec_command.side_effect = mock_exec
+    client._sandbox = mock_sandbox
+
+    # Mock _execute_specialist to simulate timeout
+    async def mock_timeout(*args, **kwargs):
+        await asyncio.sleep(0.5)
+
+    with patch.object(client, "_execute_specialist", side_effect=asyncio.TimeoutError):
+        mandate = SandboxInvocationMandate(
+            task_id="task-timeout-test",
+            worker_role=WorkerRole.STRATEGY,
+            tenant_id="tenant_01",
+            capability=SandboxCapability.ALLOC,
+            operation="optimize_budget",
+            payload={"budget": "10000.0"},
+            network_policy=NetworkPolicy.DISABLED,
+        )
+        result = await client.invoke(mandate)
+
+    assert result.success is False
+    assert result.status.value == "timeout"
+    assert any("pkill -TERM" in cmd for cmd in executed_commands), "Must attempt SIGTERM on timeout"
+    assert any("pkill -KILL" in cmd for cmd in executed_commands), "Must attempt SIGKILL on timeout"
+    assert any("rm -rf" in cmd for cmd in executed_commands), "Must scrub workspace directory on teardown"
+

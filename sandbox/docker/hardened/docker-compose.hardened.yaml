@@ -124,6 +124,32 @@ services:
     networks:
       - sandbox-internal
 
+  s-alloc-compute:
+    image: ghcr.io/agent-infra/sandbox@sha256:d8c83df2357b98d197621c17830cbdfc63b860b73dfeb46487e8e4533dae5d95
+    network_mode: none
+    read_only: true
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp/worker-seccomp.json
+    cap_drop:
+      - ALL
+    mem_limit: "512m"
+    cpus: "1"
+    pids_limit: 128
+    volumes:
+      - ./skills/s-alloc:/home/gem/skills/s-alloc:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m
+      - /workspace:rw,noexec,nosuid,nodev,size=256m
+    environment:
+      EGRESS_NETWORK_POLICY: DENY_ALL
+      AIO_SKILLS_PATH: /home/gem/skills/s-alloc
+      WORKSPACE: /workspace
+      TZ: UTC
+      DISABLE_JUPYTER: "true"
+      DISABLE_CODE_SERVER: "true"
+
 networks:
   # Internal bridge network has no gateway to external networks; direct egress blocked
   sandbox-internal:
