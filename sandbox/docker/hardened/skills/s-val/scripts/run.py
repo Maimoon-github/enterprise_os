@@ -45,13 +45,18 @@ def run_s_val(payload: dict) -> dict:
         except Exception:
             claims_to_check = [claims_raw]
 
-    required_disclaimer = payload.get("required_disclaimer", "*Results may vary based on usage.")
+    required_disclaimer = str(payload.get("required_disclaimer") or "*Results may vary based on usage.")
+    disclaimer_lower = required_disclaimer.lower()
 
-    for claim_text in claims_to_check:
+    for raw_claim in claims_to_check:
+        if raw_claim is None:
+            continue
+        claim_text = str(raw_claim)
+        claim_lower = claim_text.lower()
         for pattern in prohibited_claim_patterns:
             if re.search(pattern, claim_text, re.IGNORECASE):
                 violations.append(f"Prohibited absolute claim pattern detected in '{claim_text}': {pattern}")
-        disclaimer_present = required_disclaimer.lower() in claim_text.lower() or "*results" in claim_text.lower()
+        disclaimer_present = disclaimer_lower in claim_lower or "*results" in claim_lower
         if not disclaimer_present and "%" in claim_text:
             violations.append(f"Quantitative claim '{claim_text}' requires statutory disclaimer footnote.")
 

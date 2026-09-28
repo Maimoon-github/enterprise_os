@@ -205,12 +205,13 @@ class ReleaseOpsAgent:
         context: dict[str, Any] | None = None,
     ) -> ReleaseCandidateDeliverable:
         """Execute release packaging and produce sealed ReleaseCandidateDeliverable."""
-        tenant_id = (
-            grant.tenant_scope.tenant_id
-            if hasattr(grant, "tenant_scope") and grant.tenant_scope
-            else "default"
-        )
-        task_id = grant.task_id if hasattr(grant, "task_id") else "unknown"
+        if grant is None:
+            raise PolicyViolationError("Release ops execution requires an active TaskGrant.")
+        tenant_scope = getattr(grant, "tenant_scope", None)
+        tenant_id = tenant_scope.tenant_id if tenant_scope else getattr(grant, "tenant_id", "")
+        if not tenant_id:
+            raise PolicyViolationError("Release ops execution requires a valid tenant_id.")
+        task_id = grant.task_id
         return await self.prepare_release(
             tenant_id=tenant_id,
             task_id=task_id,

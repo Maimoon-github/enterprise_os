@@ -466,8 +466,8 @@ def execute_s_copy(payload: dict[str, Any]) -> dict[str, str]:
         ch = str(payload.get("channel", "meta"))
         fmt = payload.get("format")
         chars = int(payload.get("character_count", 0)) if payload.get("character_count") else None
-        ar = payload.get("aspect_ratio")
-        pf_res = validate_platform_format(ch, fmt, chars, ar)
+        aspect_ratio = payload.get("aspect_ratio")
+        pf_res = validate_platform_format(ch, fmt, chars, aspect_ratio)
         return {
             "status": "success" if pf_res["is_valid"] else "validation_error",
             "task_id": task_id,

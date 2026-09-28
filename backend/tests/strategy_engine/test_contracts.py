@@ -106,8 +106,8 @@ def test_channel_spend_proposal_valid_and_aliases() -> None:
     # Alias construction
     prop_alias = ChannelSpendProposal(
         channel="meta",
-        spend=8000.0,  # type: ignore[call-arg]
-        percentage=26.67,  # type: ignore[call-arg]
+        spend=8000.0,
+        percentage=26.67,
     )
     assert prop_alias.allocated_amount == 8000.0
     assert prop_alias.percentage_of_total == 26.67
@@ -117,8 +117,8 @@ def test_channel_spend_proposal_to_channel_allocation() -> None:
     """Conversion to canonical agent_contracts.ChannelAllocation."""
     prop = ChannelSpendProposal(
         channel="tiktok",
-        spend=5000.0,  # type: ignore[call-arg]
-        percentage=16.67,  # type: ignore[call-arg]
+        spend=5000.0,
+        percentage=16.67,
         role="Awareness",
         primary_kpi="CPM / Reach",
     )

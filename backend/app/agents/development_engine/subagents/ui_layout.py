@@ -168,8 +168,6 @@ class UiLayoutAgent:
                 logger.warning("LLM reasoning failed for DEV-UI; falling back to deterministic planning: %s", exc)
 
         # Deterministic offline planning fallback
-        title_prop = "title"
-        desc_prop = "description"
         extra_markup = ""
         extra_props: dict[str, Any] = {
             "title": {"type": "string", "required": True, "default": f"{c_clean} Title"},
@@ -437,8 +435,9 @@ class UiLayoutAgent:
         )
 
         all_target_candidates: list[str] = []
-        if getattr(grant, "target_files", None):
-            all_target_candidates.extend(grant.target_files)
+        grant_targets = getattr(grant, "target_files", None)
+        if grant_targets:
+            all_target_candidates.extend(grant_targets)
         if ctx.get("target_files"):
             if isinstance(ctx["target_files"], list):
                 all_target_candidates.extend(ctx["target_files"])

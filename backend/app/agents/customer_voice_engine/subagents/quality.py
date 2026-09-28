@@ -78,7 +78,13 @@ class VoiceQualityAgent:
         aspects_dict = [a.model_dump() if hasattr(a, "model_dump") else dict(a) for a in (aspect_sentiment or [])]
         needs_dict = [n.model_dump() if hasattr(n, "model_dump") else dict(n) for n in (needs_and_objections or [])]
         journey_dict = [j.model_dump() if hasattr(j, "model_dump") else dict(j) for j in (journey_comparisons or [])]
-        survey_dict = survey_methodology.model_dump() if hasattr(survey_methodology, "model_dump") else (dict(survey_methodology) if survey_methodology else None)
+        survey_dict = None
+        if survey_methodology is not None:
+            survey_dict = (
+                survey_methodology.model_dump()
+                if hasattr(survey_methodology, "model_dump")
+                else dict(survey_methodology)
+            )
 
         candidate_input_hash = corpus_hash or hashlib.sha256(
             (str(records_dict) + str(spans_dict)).encode("utf-8")

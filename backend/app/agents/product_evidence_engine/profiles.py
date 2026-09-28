@@ -542,7 +542,7 @@ def dispatch_specialist_s_val(
         import asyncio
         if hasattr(sandbox_client, "invoke"):
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
                 res = sandbox_client._execute_specialist(mandate)
             except RuntimeError:
                 res = asyncio.run(sandbox_client.invoke(mandate))

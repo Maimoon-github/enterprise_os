@@ -283,6 +283,19 @@ class AuditLineageValidator:
                 tgt = rel.get("target_id")
                 rel_type = rel.get("relation_type")
 
+                if not rel_type:
+                    prov_graph_valid = False
+                    detected_gaps.append(f"Missing relation_type in record '{rec.record_id}'")
+                    findings.append(
+                        AuditValidationFinding(
+                            stage="w3c_prov",
+                            entity_id=rec.entity_id,
+                            activity=rec.activity,
+                            status="GAP",
+                            details="Relation missing relation_type",
+                        )
+                    )
+
                 # Verify source and target resolve within bundle or global urns
                 if src and src not in known_nodes and not src.startswith("urn:enterprise_os:"):
                     prov_graph_valid = False
@@ -372,7 +385,6 @@ class AuditLineageValidator:
         # -------------------------------------------------------------------
         cts_reconciled = True
         activity_set = {r.activity.lower() for r in chain}
-        agent_set = {r.agent.lower() for r in chain}
         entity_set = {r.entity_id for r in chain}
 
         # Verify completed tasks have corresponding provenance trail

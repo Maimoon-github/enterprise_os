@@ -18,7 +18,7 @@ import hashlib
 import json
 import math
 import re
-from typing import Any
+from typing import Any, Callable
 import uuid
 
 from app.core.exceptions import SandboxInvocationError
@@ -374,7 +374,7 @@ def execute_s_code(
                 properties[name] = prop_entry
 
             if errors:
-                err_res: dict[str, Any] = {
+                err_res = {
                     "status": "VALIDATION_ERROR",
                     "operation": "validate_cms_schema",
                     "valid": False,
@@ -557,7 +557,7 @@ def execute_s_code(
 
             added_defs = [d["new_definition"] for d in field_diffs if d["change_type"] == "added"]
             removed_defs = [d["old_definition"] for d in field_diffs if d["change_type"] == "removed"]
-            res: dict[str, Any] = {
+            res = {
                 "status": "SUCCESS",
                 "operation": "generate_schema_diff",
                 "model_name": model_name,
@@ -595,7 +595,7 @@ def execute_s_code(
             else:
                 remediations.append("Safe for direct additive migration without downtime.")
 
-            res: dict[str, Any] = {
+            res = {
                 "status": "SUCCESS",
                 "operation": "analyze_compatibility",
                 "is_compatible": is_compat,
@@ -735,7 +735,7 @@ def execute_s_code(
                     for i, s in enumerate(reversed(steps))
                 ]
 
-            res: dict[str, Any] = {
+            res = {
                 "status": "SUCCESS",
                 "operation": "generate_migration",
                 "migration_id": f"mig-{uuid.uuid4().hex[:8]}",
@@ -775,7 +775,7 @@ def execute_s_code(
                     for r in records:
                         r.pop("simulated_new_field", None)
 
-            res: dict[str, Any] = {
+            res = {
                 "status": "SUCCESS",
                 "operation": "simulate_migration",
                 "simulated_success": True,
@@ -792,7 +792,7 @@ def execute_s_code(
             schema_info = payload.get("schema") or {}
             val_res = execute_s_code({"schema": schema_info}, operation="validate_cms_schema")
             if not val_res.get("valid") and not val_res.get("is_valid"):
-                err_res: dict[str, Any] = {
+                err_res = {
                     "status": "VALIDATION_ERROR",
                     "operation": "generate_contracts",
                     "errors": val_res.get("errors", ["Invalid schema"]),
@@ -842,7 +842,7 @@ def execute_s_code(
             gql_lines.append("}")
             graphql_sdl = "\n".join(gql_lines)
 
-            res: dict[str, Any] = {
+            res = {
                 "status": "SUCCESS",
                 "operation": "generate_contracts",
                 "model_name": model_name,
@@ -870,9 +870,8 @@ def execute_s_code(
             markup = str(payload.get("template_markup") or payload.get("markup") or payload.get("code") or "")
             styles = str(payload.get("css_styles") or payload.get("styles") or "")
             cms_schema = payload.get("cms_schema") or payload.get("current_schema") or {}
-            props_schema = payload.get("props_schema") or {}
 
-            errors: list[str] = []
+            errors = []
             warnings: list[str] = []
 
             if not markup.strip():
@@ -1065,7 +1064,6 @@ def execute_s_code(
 
         elif effective_operation == "scan_accessibility_wcag":
             markup = str(payload.get("template_markup") or payload.get("markup") or "")
-            tokens = payload.get("design_tokens") or {}
             styles = str(payload.get("css_styles") or "")
 
             findings: list[dict[str, Any]] = []
@@ -1288,7 +1286,7 @@ def execute_s_code(
                 except Exception:
                     pass
 
-            res_fmt: dict[str, Any] = {
+            res_fmt = {
                 "status": "SUCCESS",
                 "operation": "format_code",
                 "file_path": file_path,
@@ -1305,7 +1303,7 @@ def execute_s_code(
             classes: list[dict[str, Any]] = []
             functions: list[dict[str, Any]] = []
             imports: list[dict[str, Any]] = []
-            errors: list[str] = []
+            errors = []
             node_count = 0
 
             try:
@@ -1373,8 +1371,8 @@ def execute_s_code(
             file_path = str(payload.get("file_path") or "module.py")
 
             checks_run = ["ast_parsing", "python_compiler_exec", "symbol_resolution"]
-            errors: list[str] = []
-            warnings: list[str] = []
+            errors = []
+            warnings = []
             syntax_valid = True
             compiler_passed = True
 
@@ -1673,21 +1671,21 @@ def execute_s_code(
             simulated_test_results = payload.get("simulate_test_results")
 
             if simulated_test_results:
-                passed = int(simulated_test_results.get("passed", 0))
+                tests_passed_count = int(simulated_test_results.get("passed", 0))
                 failed = int(simulated_test_results.get("failed", 0))
                 skipped = int(simulated_test_results.get("skipped", 0))
                 errored = int(simulated_test_results.get("errored", 0))
                 duration_s = float(simulated_test_results.get("duration_s", 1.25))
                 failures = list(simulated_test_results.get("failures", []))
             else:
-                passed = int(payload.get("tests_passed", 12))
+                tests_passed_count = int(payload.get("tests_passed", 12))
                 failed = int(payload.get("tests_failed", 0))
                 skipped = int(payload.get("tests_skipped", 0))
                 errored = int(payload.get("tests_errored", 0))
                 duration_s = float(payload.get("duration_s", 0.85))
                 failures = payload.get("test_failures") or []
 
-            total = passed + failed + skipped + errored
+            total = tests_passed_count + failed + skipped + errored
             all_passed = (failed == 0 and errored == 0 and total > 0)
             res_test: dict[str, Any] = {
                 "status": "SUCCESS" if all_passed else "FAIL",
@@ -1696,7 +1694,7 @@ def execute_s_code(
                 "test_type": test_type,
                 "all_passed": all_passed,
                 "test_totals": {
-                    "passed": passed,
+                    "passed": tests_passed_count,
                     "failed": failed,
                     "skipped": skipped,
                     "errored": errored,
@@ -1704,7 +1702,7 @@ def execute_s_code(
                     "duration_s": duration_s,
                 },
                 "failures": failures,
-                "stdout": f"==== {passed} passed in {duration_s}s ====" if all_passed else f"==== {failed} failed, {passed} passed ====",
+                "stdout": f"==== {tests_passed_count} passed in {duration_s}s ====" if all_passed else f"==== {failed} failed, {tests_passed_count} passed ====",
                 "stderr": "\n".join(failures) if failures else "",
             }
             res_test["output"] = dict(res_test)
@@ -1819,8 +1817,7 @@ def execute_s_code(
                                 })
                             elif (
                                 func_name in ("system", "popen")
-                                and getattr(node.func, "value", None)
-                                and getattr(node.func.value, "id", "") == "os"
+                                and getattr(getattr(node.func, "value", None), "id", "") == "os"
                             ):
                                 sec_findings.append({
                                     "finding_id": f"sast-cmd-{uuid.uuid4().hex[:8]}",
@@ -2471,6 +2468,9 @@ def execute_s_code(
         elif isinstance(staged_models_raw, dict):
             staged_models = [staged_models_raw]
 
+    if staged_models:
+        validation_findings.append(f"Loaded {len(staged_models)} staged CMS models for schema verification.")
+
     # Generate schema diff for component or page extension
     schema_diff_entry = {
         "schema_name": f"{component_name.lower()}_schema",
@@ -2832,7 +2832,6 @@ def execute_s_val(payload: dict[str, Any]) -> dict[str, str]:
         for ev in evidence_pool:
             ev_id = str(ev.get("doc_id", ev.get("evidence_id", ev.get("id", "ev-ref"))))
             ev_content = str(ev.get("text", ev.get("content", "")))
-            ev_source = str(ev.get("source", ev.get("source_uri", "dossier")))
             ev_stale = bool(ev.get("is_stale", ev.get("stale", False)))
             ev_contradicts = bool(
                 ev.get("contradicts", False)
@@ -3051,10 +3050,6 @@ def execute_s_parse(payload: dict[str, Any]) -> dict[str, str]:
     multi-class sentiment and polarity analysis, intent and objection extraction,
     and recurring objection clustering across tickets, reviews, and survey responses.
     """
-    task_id = str(payload.get("task_id", "unknown"))
-    tenant_id = str(payload.get("tenant_id", "default"))
-    product_id = payload.get("product_id")
-
     from app.integrations.sandbox.s_parse_core import execute_s_parse_payload
     return execute_s_parse_payload(payload)
 
@@ -3391,7 +3386,7 @@ def execute_s_attr(payload: dict[str, Any]) -> dict[str, str]:
     }
 
 
-MICRO_TOOL_DISPATCH = {
+MICRO_TOOL_DISPATCH: dict[SandboxCapability, Callable[..., dict[str, Any]]] = {
     SandboxCapability.CODE: execute_s_code,
     SandboxCapability.COPY: execute_s_copy,
     SandboxCapability.VAL: execute_s_val,
@@ -3401,7 +3396,7 @@ MICRO_TOOL_DISPATCH = {
 }
 
 
-def dispatch_micro_tool(capability: SandboxCapability, payload: dict[str, str]) -> dict[str, str]:
+def dispatch_micro_tool(capability: SandboxCapability, payload: dict[str, Any]) -> dict[str, Any]:
     """Dispatch execution to the specialist micro-tool corresponding to ``capability``."""
     if capability == SandboxCapability.ALLOC:
         raise SandboxInvocationError(

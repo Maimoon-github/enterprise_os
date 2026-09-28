@@ -125,6 +125,9 @@ def run_s_code(payload: dict[str, Any]) -> dict[str, str]:
         elif isinstance(staged_models_raw, dict):
             staged_models = [staged_models_raw]
 
+    if staged_models:
+        validation_findings.append(f"Loaded {len(staged_models)} staged CMS models for schema verification.")
+
     schema_diff_entry = {
         "schema_name": f"{component_name.lower()}_schema",
         "target_content_type": "components" if component_type == "component" else "pages",

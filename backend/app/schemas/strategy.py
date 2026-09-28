@@ -22,7 +22,14 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.core.exceptions import PolicyViolationError
 from app.schemas.agent_contracts import (
@@ -178,13 +185,55 @@ class ChannelSpendProposal(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
 
     channel: str = Field(..., min_length=1)
-    allocated_amount: float = Field(..., ge=0.0, alias="spend")
-    percentage_of_total: float = Field(..., ge=0.0, le=100.0, alias="percentage")
+    allocated_amount: float = Field(
+        ...,
+        ge=0.0,
+        validation_alias=AliasChoices("allocated_amount", "spend"),
+        serialization_alias="allocated_amount",
+    )
+    percentage_of_total: float = Field(
+        ...,
+        ge=0.0,
+        le=100.0,
+        validation_alias=AliasChoices("percentage_of_total", "percentage"),
+        serialization_alias="percentage_of_total",
+    )
     role: str = ""
     primary_kpi: str = "mROI / incremental KPI"
     prior_roas: float | None = None
     target_roas_range: tuple[float, float] | None = None
     constraints: list[str] = Field(default_factory=list)
+
+    def __init__(
+        self,
+        channel: str,
+        allocated_amount: float | None = None,
+        percentage_of_total: float | None = None,
+        spend: float | None = None,
+        percentage: float | None = None,
+        role: str = "",
+        primary_kpi: str = "mROI / incremental KPI",
+        prior_roas: float | None = None,
+        target_roas_range: tuple[float, float] | None = None,
+        constraints: list[str] | None = None,
+        **data: Any,
+    ) -> None:
+        amt = allocated_amount if allocated_amount is not None else spend
+        pct = percentage_of_total if percentage_of_total is not None else percentage
+        init_data: dict[str, Any] = {
+            "channel": channel,
+            "role": role,
+            "primary_kpi": primary_kpi,
+            "prior_roas": prior_roas,
+            "target_roas_range": target_roas_range,
+            "constraints": constraints or [],
+            **data,
+        }
+        if amt is not None:
+            init_data["allocated_amount"] = amt
+        if pct is not None:
+            init_data["percentage_of_total"] = pct
+        super().__init__(**init_data)
 
     @field_validator("channel")
     @classmethod

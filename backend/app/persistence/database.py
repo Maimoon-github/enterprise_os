@@ -190,11 +190,15 @@ class Database:
         """Perform database readiness check without leaking credentials or tenant records."""
         start = time.perf_counter()
         pool = self._engine.pool
+        pool_size_fn = getattr(pool, "size", None)
+        pool_in_fn = getattr(pool, "checkedin", None)
+        pool_out_fn = getattr(pool, "checkedout", None)
+        pool_ov_fn = getattr(pool, "overflow", None)
         pool_stats = {
-            "size": pool.size(),
-            "checked_in": pool.checkedin(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
+            "size": int(pool_size_fn()) if callable(pool_size_fn) else 0,
+            "checked_in": int(pool_in_fn()) if callable(pool_in_fn) else 0,
+            "checked_out": int(pool_out_fn()) if callable(pool_out_fn) else 0,
+            "overflow": int(pool_ov_fn()) if callable(pool_ov_fn) else 0,
         }
         try:
             async with self._engine.connect() as conn:

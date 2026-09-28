@@ -79,8 +79,6 @@ class CreativeAdaptationAgent:
         context: dict[str, Any] | None = None,
     ) -> AdaptedCreativePack:
         """Adapt creative copy and visual assets to supplied platform-spec snapshots."""
-        effective_context = context or {}
-
         tenant_id = (
             grant.tenant_scope.tenant_id
             if (grant and grant.tenant_scope)

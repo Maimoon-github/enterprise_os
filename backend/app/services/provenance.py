@@ -85,6 +85,7 @@ def compute_canonical_sha256(data: Any) -> str:
     else:
         dumped = data
 
+    cleaned: Any
     if isinstance(dumped, dict):
         cleaned = _sanitize_dict(dumped)
     elif isinstance(dumped, list):
@@ -886,11 +887,6 @@ class ProvenanceRecorder:
     async def audit_chain(self, tenant_id: str) -> list[ProvenanceRecord]:
         """Return the full provenance chain for ``tenant_id``."""
         return await self._repository.chain(tenant_id)
-
-    async def verify_chain(self, tenant_id: str) -> bool:
-        """Return True if the persisted chain for ``tenant_id`` is intact."""
-        chain = await self._repository.chain(tenant_id)
-        return self._repository.verify(chain)
 
     async def reconstruct_lineage(self, tenant_id: str, execution_id: str) -> dict[str, Any]:
         """Reconstruct the end-to-end W3C PROV lineage for a specific sandbox execution."""

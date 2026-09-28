@@ -376,9 +376,9 @@ class CodeImplementationAgent:
         dependency_changes: list[DependencyChange] = []
         if requested_deps_raw:
             for dep in requested_deps_raw:
-                pkg_name = dep.get("package_name") if isinstance(dep, dict) else str(dep)
-                pkg_action = dep.get("action", "ADD") if isinstance(dep, dict) else "ADD"
-                pkg_version = dep.get("version_spec", "") if isinstance(dep, dict) else ""
+                pkg_name = str(dep.get("package_name") or "") if isinstance(dep, dict) else str(dep)
+                pkg_action = str(dep.get("action", "ADD")) if isinstance(dep, dict) else "ADD"
+                pkg_version = str(dep.get("version_spec", "")) if isinstance(dep, dict) else ""
 
                 is_authorized = plan_dependencies_authorized or (pkg_name in allowed_packages)
                 if not is_authorized:

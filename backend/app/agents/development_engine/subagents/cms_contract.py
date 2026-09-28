@@ -464,7 +464,7 @@ class CmsContractAgent:
                         field_type=str(f_type),
                         required=f.get("required", False),
                         default_value=f.get("default_value", f.get("default")),
-                        description=f.get("description", f.get("label", "")),
+                        description=str(f.get("description") or f.get("label") or ""),
                         label=f.get("label", ""),
                         max_length=f.get("max_length"),
                         min_length=f.get("min_length"),
@@ -675,6 +675,15 @@ class CmsContractAgent:
     ) -> EvidenceEnvelope:
         """Wrap candidate deliverable into standardized EvidenceEnvelope for W_DEV handoff."""
         deliverable_diff = candidate.schema_diffs[0].to_deliverable_diff() if candidate.schema_diffs else {}
+        payload_data: dict[str, Any] = {
+            "candidate_id": candidate.candidate_id,
+            "candidate_hash": candidate.candidate_hash,
+            "attempt_id": candidate.attempt_id,
+            "compatibility_classification": candidate.compatibility_report.classification.value,
+            "is_backward_compatible": candidate.compatibility_report.is_compatible,
+            "cms_schema_diff": deliverable_diff,
+            "migration_strategy": candidate.migration_plan.strategy if candidate.migration_plan else "DIRECT_APPLY",
+        }
         return EvidenceEnvelope(
             task_id=candidate.task_id,
             worker_role=grant.worker_role,
@@ -684,15 +693,7 @@ class CmsContractAgent:
                 upper_bound=1.0,
             ),
             findings=candidate.validation_evidence.findings,
-            payload={
-                "candidate_id": candidate.candidate_id,
-                "candidate_hash": candidate.candidate_hash,
-                "attempt_id": candidate.attempt_id,
-                "compatibility_classification": candidate.compatibility_report.classification.value,
-                "is_backward_compatible": candidate.compatibility_report.is_compatible,
-                "cms_schema_diff": deliverable_diff,
-                "migration_strategy": candidate.migration_plan.strategy if candidate.migration_plan else "DIRECT_APPLY",
-            },
+            payload=payload_data,
             provenance={
                 "subagent": SUBAGENT_CMS,
                 "candidate_id": candidate.candidate_id,

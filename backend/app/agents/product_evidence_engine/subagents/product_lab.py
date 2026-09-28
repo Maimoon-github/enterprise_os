@@ -286,6 +286,7 @@ class ProductLabAgent:
                 converted_uncertainty = round(converted_uncertainty, precision)
 
         # 5. Handle Final Normalized Value
+        normalized_val: str | float
         if is_nondetect:
             assumptions.append("Non-detect preserved: analytical measurement is below detection threshold; never treated as zero.")
             if converted_lod is not None:
@@ -622,7 +623,6 @@ class ProductLabAgent:
             if not product_linkage_verified and expected_product_or_batch_id:
                 deviations.append("Batch linkage not established; limits cannot be evaluated for this product.")
         else:
-            all_passed = True
             any_failed = False
             requires_guard_band_review = False
 

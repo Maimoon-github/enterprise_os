@@ -14,21 +14,24 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-try:
+if TYPE_CHECKING:
     from app.schemas.strategy import SAllocDomainStatus
-except ImportError:
-    from enum import StrEnum
+else:
+    try:
+        from app.schemas.strategy import SAllocDomainStatus
+    except ImportError:
+        from enum import StrEnum
 
-    class SAllocDomainStatus(StrEnum):
-        OK = "OK"
-        EVIDENCE_GAP = "EVIDENCE_GAP"
-        INVALID_INPUT = "INVALID_INPUT"
-        INFEASIBLE = "INFEASIBLE"
-        UNSUPPORTED_MODEL = "UNSUPPORTED_MODEL"
-        UNSUPPORTED_CONSTRAINT = "UNSUPPORTED_CONSTRAINT"
-        SOLVER_FAILED = "SOLVER_FAILED"
+        class SAllocDomainStatus(StrEnum):
+            OK = "OK"
+            EVIDENCE_GAP = "EVIDENCE_GAP"
+            INVALID_INPUT = "INVALID_INPUT"
+            INFEASIBLE = "INFEASIBLE"
+            UNSUPPORTED_MODEL = "UNSUPPORTED_MODEL"
+            UNSUPPORTED_CONSTRAINT = "UNSUPPORTED_CONSTRAINT"
+            SOLVER_FAILED = "SOLVER_FAILED"
 
 
 # =============================================================================

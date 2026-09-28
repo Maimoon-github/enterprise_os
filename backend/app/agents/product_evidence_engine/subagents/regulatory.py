@@ -99,7 +99,6 @@ class ProductRegulatoryAgent:
         r_jurisdiction = str(r_data.get("jurisdiction", "")).upper()
         r_class = str(r_data.get("product_class", "cosmetics")).lower()
         r_status = str(r_data.get("status", "verified_applicable")).lower()
-        r_force = str(r_data.get("force", "regulation")).lower()
         effective_from = r_data.get("effective_from")
         effective_to = r_data.get("effective_to")
         repeal_date = r_data.get("repeal_date")

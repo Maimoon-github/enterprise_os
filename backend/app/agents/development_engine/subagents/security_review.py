@@ -187,12 +187,13 @@ class SecurityReviewAgent:
         context: dict[str, Any] | None = None,
     ) -> SecurityDossier:
         """Execute independent security audit against a verified candidate snapshot."""
-        tenant_id = (
-            grant.tenant_scope.tenant_id
-            if hasattr(grant, "tenant_scope") and grant.tenant_scope
-            else "default"
-        )
-        task_id = grant.task_id if hasattr(grant, "task_id") else "unknown"
+        if grant is None:
+            raise PolicyViolationError("Security audit execution requires an active TaskGrant.")
+        tenant_scope = getattr(grant, "tenant_scope", None)
+        tenant_id = tenant_scope.tenant_id if tenant_scope else getattr(grant, "tenant_id", "")
+        if not tenant_id:
+            raise PolicyViolationError("Security audit execution requires a valid tenant_id.")
+        task_id = grant.task_id
         return await self.review_security(
             tenant_id=tenant_id,
             task_id=task_id,
@@ -342,13 +343,15 @@ class SecurityReviewAgent:
 
         # Extract candidate source files strictly read-only
         source_code: dict[str, str] = {}
-        if hasattr(candidate, "source_code") and isinstance(candidate.source_code, dict):
-            source_code = dict(candidate.source_code)
-        elif hasattr(candidate, "code_diffs"):
-            for d in getattr(candidate, "code_diffs", []):
-                fp = getattr(d, "file_path", "")
-                if fp:
-                    source_code[fp] = getattr(d, "diff_unified", "")
+        if candidate is not None:
+            cand_src = getattr(candidate, "source_code", None)
+            if isinstance(cand_src, dict):
+                source_code = dict(cand_src)
+            elif hasattr(candidate, "code_diffs"):
+                for d in getattr(candidate, "code_diffs", []):
+                    fp = getattr(d, "file_path", "")
+                    if fp:
+                        source_code[fp] = getattr(d, "diff_unified", "")
         if "source_code" in ctx and isinstance(ctx["source_code"], dict):
             source_code.update(ctx["source_code"])
 

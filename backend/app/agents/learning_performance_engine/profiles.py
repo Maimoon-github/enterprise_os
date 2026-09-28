@@ -318,6 +318,7 @@ async def dispatch_learning_specialist_attempt(
     )
 
     mandate = SandboxInvocationMandate(
+        provenance_context={"sandbox_id": identity.sandbox_id},
         task_id=task_id,
         stage_attempt_id=attempt,
         worker_role=WorkerRole.LEARNING_PERFORMANCE,

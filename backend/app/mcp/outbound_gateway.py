@@ -807,7 +807,9 @@ class OutboundGateway:
             # Update CTS state to COMPLETED
             if self._task_state_service and dispatch.task_id and task_state:
                 if dispatch.channel in self._ads_adapters:
-                    task_state.cts_state["paid_campaign"] = res
+                    task_state.cts_state["paid_campaign"] = (
+                        paid_res.model_dump() if paid_res else res
+                    )
                 elif dispatch.channel in self._social_adapters:
                     task_state.cts_state["social_post"] = (
                         social_res.model_dump() if social_res else res

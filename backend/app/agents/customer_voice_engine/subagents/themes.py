@@ -71,7 +71,13 @@ class VoiceThemesAgent:
 
         records_dict = [r.model_dump() if hasattr(r, "model_dump") else dict(r) for r in records]
         spans_dict = [s.model_dump() if hasattr(s, "model_dump") else dict(s) for s in evidence_spans]
-        survey_dict = survey_methodology.model_dump() if hasattr(survey_methodology, "model_dump") else (dict(survey_methodology) if survey_methodology else None)
+        survey_dict = None
+        if survey_methodology is not None:
+            survey_dict = (
+                survey_methodology.model_dump()
+                if hasattr(survey_methodology, "model_dump")
+                else dict(survey_methodology)
+            )
 
         input_hash = corpus_hash or hashlib.sha256(
             (str(records_dict) + str(spans_dict)).encode("utf-8")

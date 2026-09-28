@@ -380,7 +380,7 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
                 scoped_metrics=scoped_metrics,
             )
 
-        evidence_lines = []
+        evidence_lines: list[str] = []
         for s in specialist_results:
             evidence_lines.extend(s.findings)
         evidence_lines.append(f"QA Decision: {qa_result.decision.value} (Digest: {qa_result.evidence_bundle_digest[:12]})")
