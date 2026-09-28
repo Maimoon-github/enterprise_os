@@ -304,7 +304,7 @@ async def test_apply_migrations_ordering_and_tracking(database_instance: Databas
 
     applied = await database_instance.apply_migrations()
 
-    # All 6 migrations applied in exact numerical order
+    # All 7 migrations applied in exact numerical order
     expected = [
         "0001_layer4_extensions.sql",
         "0002_layer4_core.sql",
@@ -312,5 +312,6 @@ async def test_apply_migrations_ordering_and_tracking(database_instance: Databas
         "0004_telemetry_hypertable.sql",
         "0005_tenant_rls_privileges.sql",
         "0006_layer4_indexes.sql",
+        "0007_layer8_ingestion.sql",
     ]
     assert applied == expected

@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from app.core.exceptions import AuthorizationError, PolicyViolationError
+from app.core.exceptions import AuthorizationError, PolicyViolationError, RepositoryError
 from app.integrations.artifact_store.client import ArtifactStoreClient
 from app.integrations.cms.client import CmsClient
 from app.persistence.repositories.artifact import ArtifactReference, ArtifactRepository
@@ -26,7 +26,13 @@ from app.persistence.repositories.operational import OperationalRepository
 from app.persistence.repositories.telemetry import TelemetryRepository
 from app.persistence.repositories.vector import VectorRepository
 from app.schemas.governance import Directive, RiskLevel, TenantScope
-from app.schemas.telemetry import TelemetryEvent
+from app.schemas.telemetry import (
+    TelemetryCollectionRun,
+    TelemetryEnvelope,
+    TelemetryEvent,
+    TelemetryReceipt,
+    TelemetryWorkItem,
+)
 from app.security.authorization_boundary import AuthorizationBoundary, CallerIdentity
 from app.services.provenance import ProvenanceRecorder
 
@@ -835,3 +841,142 @@ class DataGateway:
             session=session,
         )
         return events
+
+    async def admit(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        record: TelemetryEnvelope | dict[str, Any],
+        session: Any = None,
+    ) -> TelemetryReceipt:
+        """Authorize and admit a telemetry envelope through the narrow service-ingestion capability."""
+        req_cap = "telemetry.ingest" if ("*" not in caller.allowed_capabilities and "telemetry.ingest" in caller.allowed_capabilities) else "mcp_data_write"
+        self._authorize_tenant(caller, tenant_id, requested_capability=req_cap)
+        self._assert_no_worker_access(caller)
+        if self._telemetry_repository is None:
+            raise RepositoryError("Telemetry repository not configured on DataGateway.")
+
+        receipt = await self._telemetry_repository.admit(record, session=session)
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=receipt.receipt_id,
+            activity=f"telemetry_receipt_{receipt.status}",
+            agent=caller.subject,
+            metadata={
+                "receipt_id": receipt.receipt_id,
+                "logical_event_id": receipt.logical_event_id,
+                "source_id": receipt.source_id,
+                "status": receipt.status,
+                "content_hash": receipt.content_hash,
+            },
+            session=session,
+            fail_closed=True,
+        )
+        return receipt
+
+    async def claim_work(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        worker_id: str,
+        lease_duration_seconds: int = 300,
+        limit: int = 10,
+        session: Any = None,
+    ) -> list[TelemetryWorkItem]:
+        """Authorize and claim pending telemetry work items under lease fencing."""
+        req_cap = "telemetry.process" if ("*" not in caller.allowed_capabilities and "telemetry.process" in caller.allowed_capabilities) else "mcp_data_write"
+        self._authorize_tenant(caller, tenant_id, requested_capability=req_cap)
+        self._assert_no_worker_access(caller)
+        if self._telemetry_repository is None:
+            return []
+        return await self._telemetry_repository.claim_work(
+            tenant_id=tenant_id,
+            lease_owner=worker_id,
+            lease_duration_seconds=lease_duration_seconds,
+            limit=limit,
+            session=session,
+        )
+
+    async def complete_work(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        work_item_id: str,
+        lease_generation: int,
+        session: Any = None,
+    ) -> TelemetryWorkItem:
+        """Authorize and atomically complete a claimed work item, validating lease generation."""
+        req_cap = "telemetry.process" if ("*" not in caller.allowed_capabilities and "telemetry.process" in caller.allowed_capabilities) else "mcp_data_write"
+        self._authorize_tenant(caller, tenant_id, requested_capability=req_cap)
+        self._assert_no_worker_access(caller)
+        if self._telemetry_repository is None:
+            raise RepositoryError("Telemetry repository not configured on DataGateway.")
+        item = await self._telemetry_repository.complete_work(
+            tenant_id=tenant_id,
+            work_item_id=work_item_id,
+            lease_generation=lease_generation,
+            session=session,
+        )
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=work_item_id,
+            activity="mcp_data_telemetry_work_complete",
+            agent=caller.subject,
+            metadata={"work_item_id": work_item_id, "lease_generation": lease_generation},
+            session=session,
+            fail_closed=True,
+        )
+        return item
+
+    async def checkpoint_collection_run(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        run: TelemetryCollectionRun,
+        session: Any = None,
+    ) -> TelemetryCollectionRun:
+        """Authorize and checkpoint a telemetry collection run."""
+        req_cap = "telemetry.process" if ("*" not in caller.allowed_capabilities and "telemetry.process" in caller.allowed_capabilities) else "mcp_data_write"
+        self._authorize_tenant(caller, tenant_id, requested_capability=req_cap)
+        self._assert_no_worker_access(caller)
+        if self._telemetry_repository is None:
+            raise RepositoryError("Telemetry repository not configured on DataGateway.")
+        return await self._telemetry_repository.checkpoint_collection_run(run, session=session)
+
+    async def commit_collection_run(
+        self,
+        caller: CallerIdentity,
+        *,
+        tenant_id: str,
+        run_id: str,
+        expected_generation: int,
+        published_revision: int,
+        session: Any = None,
+    ) -> TelemetryCollectionRun:
+        """Authorize and commit a completed collection run, validating partition generation fencing."""
+        req_cap = "telemetry.process" if ("*" not in caller.allowed_capabilities and "telemetry.process" in caller.allowed_capabilities) else "mcp_data_write"
+        self._authorize_tenant(caller, tenant_id, requested_capability=req_cap)
+        self._assert_no_worker_access(caller)
+        if self._telemetry_repository is None:
+            raise RepositoryError("Telemetry repository not configured on DataGateway.")
+        res = await self._telemetry_repository.commit_collection_run(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            expected_generation=expected_generation,
+            published_revision=published_revision,
+            session=session,
+        )
+        await self._record_audit(
+            tenant_id=tenant_id,
+            entity_id=run_id,
+            activity="mcp_data_telemetry_run_commit",
+            agent=caller.subject,
+            metadata={"run_id": run_id, "published_revision": published_revision},
+            session=session,
+            fail_closed=True,
+        )
+        return res

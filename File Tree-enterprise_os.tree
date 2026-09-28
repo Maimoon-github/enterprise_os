@@ -31,6 +31,12 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📁 Layer 5 Worker Agent implementation/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
+│   ├── 📁 Layer 7 — Egress Perimeter/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
+│   ├── 📁 Layer 8 — Public Surfaces & Telemetry Collector/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 Layer-6 execution boundary for the Strategy Engine/
 │   │   ├── 📝 research findings.md
 │   │   └── 📝 task plan.md
@@ -339,7 +345,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 📄 0003_memory_artifact_provenance.sql
 │   │   │   ├── 📄 0004_telemetry_hypertable.sql
 │   │   │   ├── 📄 0005_tenant_rls_privileges.sql
-│   │   │   └── 📄 0006_layer4_indexes.sql
+│   │   │   ├── 📄 0006_layer4_indexes.sql
+│   │   │   └── 📄 0007_layer8_ingestion.sql
 │   │   └── 📝 README.md
 │   ├── 📁 scripts/
 │   │   ├── 📄 bootstrap.sh
@@ -394,6 +401,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_customer_voice_integration.py
 │   │   │   ├── 🐍 test_development_integration.py
 │   │   │   ├── 🐍 test_layer5_governance_release_gate.py
+│   │   │   ├── 🐍 test_layer8_recovery.py
+│   │   │   ├── 🐍 test_layer8_security.py
 │   │   │   ├── 🐍 test_llm_live_e2e.py
 │   │   │   ├── 🐍 test_model_a_data_access.py
 │   │   │   ├── 🐍 test_outbound_after_approval.py
@@ -436,6 +445,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_allocation.py
 │   │   │   ├── 🐍 test_contracts.py
 │   │   │   ├── 🐍 test_ie_roundtrip.py
+│   │   │   ├── 🐍 test_l6_04_validation.py
 │   │   │   ├── 🐍 test_provenance.py
 │   │   │   └── 🐍 test_sandbox_security.py
 │   │   ├── 📁 unit/
