@@ -48,6 +48,7 @@ from app.schemas.sandbox import (
     SandboxNetworkPolicyConfig,
     SandboxResourceLimits,
     SandboxResult,
+    SandboxTeardownReceipt,
     SealedSandboxOutput,
 )
 from app.schemas.task_state import DevelopmentExecutionLease
@@ -329,6 +330,7 @@ class SandboxInstance:
         self.state: SandboxLifecycleState = SandboxLifecycleState.PROVISIONING
         self.created_at: datetime = datetime.now(UTC)
         self.sealed_output: SealedSandboxOutput | None = None
+        self.teardown_receipt: SandboxTeardownReceipt | None = None
         self.destroyed_at: datetime | None = None
 
 
@@ -488,6 +490,10 @@ class SandboxControlPlane:
         try:
             if runner_fn is not None:
                 result = runner_fn(mandate, instance.workspace_dir)
+            elif mandate.capability == SandboxCapability.ALLOC:
+                raise SandboxExecutionError(
+                    "Execution failed in sandbox: No executable runner provided for S_ALLOC (fail-closed)."
+                )
             else:
                 result = {"status": "success", "stdout": "Execution completed", "diff": ""}
             return result
@@ -542,9 +548,18 @@ class SandboxControlPlane:
         # 2. Revoke credential
         self.credential_manager.revoke_credential(sandbox_id)
 
-        # 3. Transition lifecycle state
+        # 3. Transition lifecycle state and record teardown receipt
         instance.state = SandboxLifecycleState.DESTROYED
         instance.destroyed_at = datetime.now(UTC)
+        instance.teardown_receipt = SandboxTeardownReceipt(
+            sandbox_id=sandbox_id,
+            attempt_id=instance.identity.attempt_id,
+            status="CLEAN",
+            workspace_scrubbed=True,
+            credentials_revoked=True,
+            runtime_destroyed=True,
+            destroyed_at=instance.destroyed_at,
+        )
 
         logger.info(
             "Sandbox %s deterministically destroyed and scrubbed (reason=%s)",

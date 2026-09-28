@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
+from app.core.exceptions import PolicyViolationError
 from app.schemas.agent_contracts import (
     ChannelAllocation,
     ConfidenceInterval,
@@ -20,12 +21,24 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.governance import Directive, TenantScope, WorkerRole
+from app.schemas.sandbox import (
+    SandboxExecutionReceipt,
+    SandboxExecutionStatus,
+    SandboxTeardownReceipt,
+)
 from app.schemas.strategy import (
     AllocationConstraint,
     ChannelSpendProposal,
+    SAllocDomainStatus,
+    SAllocMandate,
+    SAllocResult,
     StrategyDirective,
     StrategyResultEnvelope,
+    canonical_json_dumps,
+    compute_canonical_sha256,
+    parse_canonical_json_strictly,
 )
+
 
 
 # =============================================================================
@@ -290,3 +303,416 @@ def test_strategy_result_envelope_invalid_confidence_rejected() -> None:
             worker_role=WorkerRole.STRATEGY,
             confidence=ConfidenceInterval(point_estimate=0.5, lower_bound=0.8, upper_bound=0.9),
         )
+
+
+# =============================================================================
+# 5. SAllocDomainStatus & Independence from Transport Tests
+# =============================================================================
+
+
+def test_s_alloc_domain_statuses_complete_and_independent() -> None:
+    """Verify all domain statuses are defined and distinct from transport execution statuses."""
+    expected_domain_statuses = {
+        "OK",
+        "EVIDENCE_GAP",
+        "INVALID_INPUT",
+        "INFEASIBLE",
+        "UNSUPPORTED_MODEL",
+        "UNSUPPORTED_CONSTRAINT",
+        "SOLVER_FAILED",
+    }
+    actual_domain_statuses = {s.value for s in SAllocDomainStatus}
+    assert actual_domain_statuses == expected_domain_statuses
+
+    # Domain status OK must not be equated with transport completion
+    assert SAllocDomainStatus.OK.value != SandboxExecutionStatus.COMPLETED.value
+    assert SAllocDomainStatus.INFEASIBLE.value not in [s.value for s in SandboxExecutionStatus]
+
+
+# =============================================================================
+# 6. Canonical JSON Serialization & Hashing Tests
+# =============================================================================
+
+
+def test_canonical_json_determinism_and_key_sorting() -> None:
+    """Keys are sorted, whitespace is normalized, and output bytes are identical."""
+    dict_1 = {"z_channel": "meta", "a_budget": 5000.0, "sub": {"b": 2, "a": 1}}
+    dict_2 = {"sub": {"a": 1, "b": 2}, "a_budget": 5000.0, "z_channel": "meta"}
+
+    bytes_1 = canonical_json_dumps(dict_1)
+    bytes_2 = canonical_json_dumps(dict_2)
+    assert bytes_1 == bytes_2
+    assert b" " not in bytes_1  # minimal separators
+    assert compute_canonical_sha256(dict_1) == compute_canonical_sha256(dict_2)
+
+
+def test_canonical_json_rejects_nan_and_infinity() -> None:
+    """NaN, Infinity, and -Infinity are strictly rejected in canonical serialization."""
+    with pytest.raises(ValueError, match="Non-finite float value"):
+        canonical_json_dumps({"spend": float("nan")})
+
+    with pytest.raises(ValueError, match="Non-finite float value"):
+        canonical_json_dumps({"spend": float("inf")})
+
+    with pytest.raises(ValueError, match="Non-finite float value"):
+        canonical_json_dumps({"spend": float("-inf")})
+
+
+def test_strict_json_parser_rejects_duplicate_keys_and_nan() -> None:
+    """parse_canonical_json_strictly rejects duplicate keys and literal NaN/Infinity."""
+    dup_json = '{"channel": "meta", "budget": 1000, "channel": "google"}'
+    with pytest.raises(ValueError, match="Duplicate key detected"):
+        parse_canonical_json_strictly(dup_json)
+
+    nan_json = '{"channel": "meta", "spend": NaN}'
+    with pytest.raises(ValueError, match="Illegal non-finite constant"):
+        parse_canonical_json_strictly(nan_json)
+
+    inf_json = '{"channel": "meta", "spend": Infinity}'
+    with pytest.raises(ValueError, match="Illegal non-finite constant"):
+        parse_canonical_json_strictly(inf_json)
+
+
+def test_canonical_digest_excludes_self_referential_fields() -> None:
+    """Self-referential digest fields (input_sha256, output_sha256, signature) do not change digest."""
+    base = {"task_id": "task-01", "budget_ceiling": 10000.0}
+    with_digests = {
+        "task_id": "task-01",
+        "budget_ceiling": 10000.0,
+        "input_sha256": "abcdef1234567890",
+        "output_sha256": "fedcba0987654321",
+        "signature": "sig-000",
+    }
+    assert compute_canonical_sha256(base) == compute_canonical_sha256(with_digests)
+
+
+# =============================================================================
+# 7. SAllocMandate Construction, Validation & Invariants
+# =============================================================================
+
+
+def test_s_alloc_mandate_valid_construction() -> None:
+    """SAllocMandate constructs cleanly and generates deterministic input hash."""
+    mandate = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-001",
+        parent_grant_id="grant-001",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        authorized_channels=["meta", "google"],
+        budget_ceiling=10000.0,
+        currency="USD",
+        token_quota=2048,
+        time_quota_seconds=60,
+    )
+    assert mandate.tenant_id == "tenant-alpha"
+    assert mandate.currency == "USD"
+    assert mandate.budget_ceiling == 10000.0
+    assert mandate.token_quota == 2048
+    assert mandate.time_quota_seconds == 60
+
+    digest = mandate.compute_input_digest()
+    assert len(digest) == 64
+    assert mandate.compute_input_digest() == digest
+
+
+def test_s_alloc_mandate_monetary_zero_preserved_and_negatives_rejected() -> None:
+    """Explicit zero budget is preserved; negative and non-finite money is rejected."""
+    zero_mandate = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-zero",
+        parent_grant_id="grant-001",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        authorized_channels=["meta"],
+        budget_ceiling=0.0,
+    )
+    assert zero_mandate.budget_ceiling == 0.0
+
+    # Negative budget rejected
+    with pytest.raises(ValidationError):
+        SAllocMandate(
+            tenant_id="tenant-alpha",
+            task_id="task-neg",
+            parent_grant_id="grant-001",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            authorized_channels=["meta"],
+            budget_ceiling=-500.0,
+        )
+
+    # Non-finite budget rejected
+    with pytest.raises(ValidationError):
+        SAllocMandate(
+            tenant_id="tenant-alpha",
+            task_id="task-nan",
+            parent_grant_id="grant-001",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            authorized_channels=["meta"],
+            budget_ceiling=float("nan"),
+        )
+
+
+def test_s_alloc_mandate_currency_and_channel_normalization() -> None:
+    """Currency is normalized to uppercase 3-letters; channels are lowercased and deduplicated."""
+    mandate = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-norm",
+        parent_grant_id="grant-001",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        authorized_channels=[" Meta ", "google", "meta"],
+        currency="usd",
+        budget_ceiling=5000.0,
+    )
+    assert mandate.currency == "USD"
+    assert mandate.authorized_channels == ["meta", "google"]
+
+    # Invalid currency length rejected
+    with pytest.raises(ValidationError):
+        SAllocMandate(
+            tenant_id="tenant-alpha",
+            task_id="task-bad-curr",
+            parent_grant_id="grant-001",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            authorized_channels=["meta"],
+            currency="US_DOLLAR",
+            budget_ceiling=5000.0,
+        )
+
+    # Non-alpha currency code rejected
+    with pytest.raises(ValidationError, match="3-letter ISO code"):
+        SAllocMandate(
+            tenant_id="tenant-alpha",
+            task_id="task-bad-curr-num",
+            parent_grant_id="grant-001",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            authorized_channels=["meta"],
+            currency="123",
+            budget_ceiling=5000.0,
+        )
+
+
+
+def test_s_alloc_mandate_constraint_invariants() -> None:
+    """Constraints must bind to authorized channels and not violate budget bounds."""
+    # Unauthorized channel constraint
+    with pytest.raises(ValidationError, match="unauthorized channel 'tiktok'"):
+        SAllocMandate(
+            tenant_id="tenant-alpha",
+            task_id="task-bad-con",
+            parent_grant_id="grant-001",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            authorized_channels=["meta"],
+            budget_ceiling=5000.0,
+            allocation_constraints=[AllocationConstraint(channel="tiktok", min_spend=100.0)],
+        )
+
+    # Min spend exceeds budget ceiling
+    with pytest.raises(ValidationError, match="exceeds total budget ceiling"):
+        SAllocMandate(
+            tenant_id="tenant-alpha",
+            task_id="task-min-spend-high",
+            parent_grant_id="grant-001",
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            authorized_channels=["meta"],
+            budget_ceiling=5000.0,
+            allocation_constraints=[AllocationConstraint(channel="meta", min_spend=6000.0)],
+        )
+
+
+# =============================================================================
+# 8. Authority Attenuation Verification Tests
+# =============================================================================
+
+
+def test_authority_attenuation_enforced_fail_closed() -> None:
+    """Child mandate authority must not exceed parent TaskGrant."""
+    now = datetime.now(UTC)
+    grant = TaskGrant(
+        task_id="task-grant-att",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="tenant-alpha", allowed_channels=["meta", "google"]),
+        brand_id="brand-glow",
+        objective="propose allocation",
+        expires_at=now + timedelta(minutes=30),
+        token_budget=4000,
+        cts_state={"budget_cap": 10000.0},
+    )
+
+    valid_mandate = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-grant-att",
+        parent_grant_id=grant.task_id,
+        expires_at=now + timedelta(minutes=20),  # Less than grant expiry
+        authorized_channels=["meta"],           # Subset of allowed
+        budget_ceiling=8000.0,                 # <= 10000.0
+        token_quota=2048,                      # <= 4000
+    )
+    # Valid attenuation passes without error
+    valid_mandate.validate_attenuation(grant)
+
+    # 1. Budget expansion fails
+    budget_expanded = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-grant-att",
+        parent_grant_id=grant.task_id,
+        expires_at=now + timedelta(minutes=20),
+        authorized_channels=["meta"],
+        budget_ceiling=15000.0,  # Exceeds 10000.0
+    )
+    with pytest.raises(PolicyViolationError, match="exceeds authorized ceiling"):
+        budget_expanded.validate_attenuation(grant)
+
+    # 2. Channel expansion fails
+    channel_expanded = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-grant-att",
+        parent_grant_id=grant.task_id,
+        expires_at=now + timedelta(minutes=20),
+        authorized_channels=["meta", "tiktok"],  # tiktok not in grant
+        budget_ceiling=5000.0,
+    )
+    with pytest.raises(PolicyViolationError, match="unauthorized channels"):
+        channel_expanded.validate_attenuation(grant)
+
+    # 3. Expiry expansion fails
+    expiry_expanded = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-grant-att",
+        parent_grant_id=grant.task_id,
+        expires_at=now + timedelta(hours=2),  # Exceeds grant expiry (30m)
+        authorized_channels=["meta"],
+        budget_ceiling=5000.0,
+    )
+    with pytest.raises(PolicyViolationError, match="exceeds parent grant expires_at"):
+        expiry_expanded.validate_attenuation(grant)
+
+    # 4. Token quota expansion fails
+    token_expanded = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-grant-att",
+        parent_grant_id=grant.task_id,
+        expires_at=now + timedelta(minutes=20),
+        authorized_channels=["meta"],
+        budget_ceiling=5000.0,
+        token_quota=8000,  # Exceeds 4000
+    )
+    with pytest.raises(PolicyViolationError, match="exceeds grant token_budget"):
+        token_expanded.validate_attenuation(grant)
+
+    # 5. Stale/expired grant fails
+    stale_grant = TaskGrant(
+        task_id="task-grant-stale",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="tenant-alpha", allowed_channels=["meta"]),
+        expires_at=now - timedelta(seconds=10),  # Expired!
+    )
+    with pytest.raises(PolicyViolationError, match="has expired"):
+        valid_mandate.validate_attenuation(stale_grant)
+
+
+# =============================================================================
+# 9. SAllocResult Correlation & Tampering Rejection Tests
+# =============================================================================
+
+
+def test_s_alloc_result_correlation_and_tampering_rejection() -> None:
+    """Result correlation validates identities and input SHA-256; rejections are fail-closed."""
+    mandate = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-corr-01",
+        execution_id="exec-12345",
+        stage_attempt_id="att-67890",
+        parent_grant_id="grant-001",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        authorized_channels=["meta", "google"],
+        budget_ceiling=10000.0,
+    )
+    input_hash = mandate.compute_input_digest()
+
+    valid_result = SAllocResult(
+        execution_id="exec-12345",
+        task_id="task-corr-01",
+        stage_attempt_id="att-67890",
+        tenant_id="tenant-alpha",
+        input_sha256=input_hash,
+        status=SAllocDomainStatus.OK,
+        total_allocated=10000.0,
+        budget_residual=0.0,
+    )
+    # Valid correlation passes
+    valid_result.verify_correlation(mandate)
+
+    # Execution ID tampering
+    bad_exec = valid_result.model_copy(update={"execution_id": "exec-spoofed"})
+    with pytest.raises(ValueError, match="execution_id .* does not match"):
+        bad_exec.verify_correlation(mandate)
+
+    # Input hash tampering (replay / modified inputs)
+    bad_hash = valid_result.model_copy(update={"input_sha256": "0" * 64})
+    with pytest.raises(ValueError, match="input_sha256 .* does not match expected"):
+        bad_hash.verify_correlation(mandate)
+
+    # Tenant tampering
+    bad_tenant = valid_result.model_copy(update={"tenant_id": "tenant-other"})
+    with pytest.raises(ValueError, match="tenant_id .* does not match"):
+        bad_tenant.verify_correlation(mandate)
+
+
+# =============================================================================
+# 10. Receipt Integrity & Binding Tests
+# =============================================================================
+
+
+def test_sandbox_receipts_binding_and_digest_immutability() -> None:
+    """SandboxExecutionReceipt and SandboxTeardownReceipt bind cleanly without altering result digest."""
+    now = datetime.now(UTC)
+    exec_receipt = SandboxExecutionReceipt(
+        runtime_id="rt-001",
+        container_id="c-001",
+        image_digest="sha256:11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
+        runtime_version="1.11.0",
+        network_mode="none",
+        read_only_root=True,
+        effective_cpu_cores=1.0,
+        effective_memory_mb=1024,
+        effective_pids_limit=1024,
+        started_at=now - timedelta(seconds=5),
+        terminated_at=now,
+        input_digest="a" * 64,
+        output_digest="b" * 64,
+    )
+    teardown_receipt = SandboxTeardownReceipt(
+        sandbox_id="sbx-001",
+        attempt_id="att-001",
+        status="CLEAN",
+        workspace_scrubbed=True,
+        credentials_revoked=True,
+        runtime_destroyed=True,
+        destroyed_at=now,
+    )
+
+    result_without_receipts = SAllocResult(
+        execution_id="exec-rec",
+        task_id="task-rec",
+        stage_attempt_id="att-rec",
+        tenant_id="tenant-alpha",
+        input_sha256="c" * 64,
+        status=SAllocDomainStatus.OK,
+        total_allocated=5000.0,
+        budget_residual=0.0,
+    )
+    digest_before = result_without_receipts.compute_output_digest()
+
+    result_with_receipts = result_without_receipts.model_copy(
+        update={
+            "execution_receipt": exec_receipt,
+            "teardown_receipt": teardown_receipt,
+        }
+    )
+    digest_after = result_with_receipts.compute_output_digest()
+
+    # Digest remains stable because receipts are self-referential / trusted external attestations
+    assert digest_before == digest_after
+    assert result_with_receipts.execution_receipt is not None
+    assert result_with_receipts.teardown_receipt is not None
+    assert result_with_receipts.execution_receipt.network_mode == "none"
+    assert result_with_receipts.teardown_receipt.status == "CLEAN"
+

@@ -64,6 +64,8 @@ class SandboxExecutionStatus(StrEnum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
+    ISOLATION_UNAVAILABLE = "isolation_unavailable"
+    TEARDOWN_FAILED = "teardown_failed"
 
 
 _BLOCKED_HOSTNAMES = frozenset({
@@ -279,6 +281,8 @@ class SandboxResult(BaseModel):
     execution_metadata: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
+    execution_receipt: SandboxExecutionReceipt | None = None
+    teardown_receipt: SandboxTeardownReceipt | None = None
 
 
 # ===========================================================================
@@ -436,3 +440,48 @@ class SealedSandboxOutput(BaseModel):
     structured_output: dict[str, Any] = Field(default_factory=dict)
     sealed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     signature: str | None = None
+    input_digest: str = ""
+    execution_receipt: SandboxExecutionReceipt | None = None
+    teardown_receipt: SandboxTeardownReceipt | None = None
+
+
+class SandboxExecutionReceipt(BaseModel):
+    """Trusted runtime receipt recording physical containment and execution facts."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    runtime_id: str = Field(..., min_length=1)
+    container_id: str = Field(..., min_length=1)
+    image_digest: str = Field(..., min_length=1)
+    runtime_version: str = "1.11.0"
+    profile_version: str = "v1"
+    skill_digest: str = ""
+    core_digest: str = ""
+    network_mode: str = "none"
+    seccomp_profile: str = "worker-seccomp.json"
+    read_only_root: bool = True
+    effective_cpu_cores: float = Field(default=1.0, ge=0.1)
+    effective_memory_mb: int = Field(default=1024, ge=128)
+    effective_pids_limit: int = Field(default=1024, ge=32)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    terminated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    exit_code: int = 0
+    termination_reason: str = "completed"
+    sanitation_version: str = "v1"
+    input_digest: str = Field(..., min_length=1)
+    output_digest: str = Field(..., min_length=1)
+
+
+class SandboxTeardownReceipt(BaseModel):
+    """Trusted teardown and cleanup receipt confirming attempt isolation destruction."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sandbox_id: str = Field(..., min_length=1)
+    attempt_id: str = Field(..., min_length=1)
+    status: str = "CLEAN"  # "CLEAN" | "TEARDOWN_FAILED"
+    workspace_scrubbed: bool = True
+    credentials_revoked: bool = True
+    runtime_destroyed: bool = True
+    destroyed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    error_details: str | None = None

@@ -2,25 +2,136 @@
 
 Provides strictly validated boundary contracts for Strategy input normalization
 and output validation:
+- SAllocDomainStatus: Explicit calculation and domain outcome statuses.
 - AllocationConstraint: Channel-scoped budget and share boundary constraints.
 - ChannelSpendProposal: Typed spend proposal genuinely emitted/derivable from S_ALLOC.
 - StrategyDirective: Normalized W_STRAT execution directive derived from IE TaskGrant.
 - StrategyResultEnvelope: Typed Strategy result envelope compatible with EvidenceEnvelope.
+- SAllocMandate: Typed execution mandate for S_ALLOC specialist.
+- SAllocResult: Typed execution result and diagnostics from S_ALLOC specialist.
 """
 
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import json
+import math
+import uuid
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.exceptions import PolicyViolationError
 from app.schemas.agent_contracts import (
     ChannelAllocation,
     EvidenceEnvelope,
     OmnichannelStrategyPlan,
     TaskGrant,
 )
+from app.schemas.sandbox import SandboxExecutionReceipt, SandboxTeardownReceipt
+
+
+class SAllocDomainStatus(StrEnum):
+    """Authoritative domain outcome statuses for S_ALLOC specialist calculations."""
+
+    OK = "OK"
+    EVIDENCE_GAP = "EVIDENCE_GAP"
+    INVALID_INPUT = "INVALID_INPUT"
+    INFEASIBLE = "INFEASIBLE"
+    UNSUPPORTED_MODEL = "UNSUPPORTED_MODEL"
+    UNSUPPORTED_CONSTRAINT = "UNSUPPORTED_CONSTRAINT"
+    SOLVER_FAILED = "SOLVER_FAILED"
+
+
+def canonical_json_dumps(data: Any, exclude_fields: set[str] | None = None) -> bytes:
+    """Serialize data into deterministic UTF-8 canonical JSON bytes.
+
+    Rules enforced:
+    - UTF-8 encoding
+    - Sorted dictionary keys with minimal separators (',', ':')
+    - NaN and Infinity are strictly rejected (allow_nan=False)
+    - Normalized numeric representations (floats rounded to 6 decimal places)
+    - Excludes self-referential digest and signature fields
+    - Sets/frozensets are stably sorted as lists
+    - Pydantic models are normalized via model_dump(mode='json')
+    """
+    excluded = exclude_fields or {
+        "input_sha256",
+        "output_sha256",
+        "signature",
+        "execution_receipt",
+        "teardown_receipt",
+    }
+
+    def _normalize(val: Any) -> Any:
+        if isinstance(val, BaseModel):
+            val = val.model_dump(mode="json")
+        if isinstance(val, dict):
+            return {
+                k: _normalize(v)
+                for k, v in sorted(val.items(), key=lambda item: item[0])
+                if k not in excluded
+            }
+        if isinstance(val, (list, tuple)):
+            return [_normalize(item) for item in val]
+        if isinstance(val, (set, frozenset)):
+            return [_normalize(item) for item in sorted(val, key=lambda x: str(x))]
+        if isinstance(val, float):
+            if math.isnan(val) or math.isinf(val):
+                raise ValueError(
+                    f"Non-finite float value '{val}' is rejected in canonical serialization."
+                )
+            return round(val, 6)
+        if isinstance(val, datetime):
+            val_utc = val if val.tzinfo is not None else val.replace(tzinfo=UTC)
+            return val_utc.isoformat()
+        return val
+
+    normalized = _normalize(data)
+    return json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def compute_canonical_sha256(data: Any, exclude_fields: set[str] | None = None) -> str:
+    """Compute deterministic SHA-256 digest over canonical JSON bytes."""
+    raw_bytes = canonical_json_dumps(data, exclude_fields=exclude_fields)
+    return hashlib.sha256(raw_bytes).hexdigest()
+
+
+def parse_canonical_json_strictly(json_str_or_bytes: str | bytes) -> dict[str, Any]:
+    """Parse JSON string or bytes, rejecting duplicate object keys and NaN/Infinity."""
+
+    def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"Duplicate key detected in canonical JSON: '{key}'")
+            result[key] = value
+        return result
+
+    raw_str = (
+        json_str_or_bytes.decode("utf-8")
+        if isinstance(json_str_or_bytes, bytes)
+        else json_str_or_bytes
+    )
+
+    def _reject_constant(val: str) -> None:
+        raise ValueError(f"Illegal non-finite constant in JSON: '{val}'")
+
+    return json.loads(
+        raw_str,
+        object_pairs_hook=_reject_duplicate_keys,
+        parse_constant=_reject_constant,
+    )
+
 
 
 class AllocationConstraint(BaseModel):
@@ -373,3 +484,309 @@ class StrategyResultEnvelope(EvidenceEnvelope):
         """Downcast to base EvidenceEnvelope for generic consumers."""
         data = self.model_dump(exclude={"strategy_plan", "channel_proposals"})
         return EvidenceEnvelope.model_validate(data)
+
+
+# ===========================================================================
+# S_ALLOC Strict Specialist Execution Contracts (L6-01)
+# ===========================================================================
+
+
+class SAllocMandate(BaseModel):
+    """Typed execution mandate for the S_ALLOC ephemeral specialist."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_version: str = "1.0"
+    tenant_id: str = Field(..., min_length=1)
+    brand_id: str = Field(default="default", min_length=1)
+    task_id: str = Field(..., min_length=1)
+    execution_id: str = Field(default_factory=lambda: f"exec-{uuid.uuid4().hex[:12]}")
+    stage_attempt_id: str = Field(default_factory=lambda: f"att-{uuid.uuid4().hex[:8]}")
+    parent_grant_id: str = Field(..., min_length=1)
+    parent_grant_version: str = Field(default="v1", min_length=1)
+    parent_grant_hash: str = Field(default="", min_length=0)
+    scenario_ids: list[str] = Field(default_factory=lambda: ["base"])
+    worker_id: str = Field(default="W_STRAT", min_length=1)
+    delegated_by: str = Field(default="W_STRAT", min_length=1)
+    purpose: str = Field(default="media_and_budget_allocation", min_length=1)
+    expires_at: datetime
+    authorized_channels: list[str] = Field(..., min_length=1)
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency_precision: int = Field(default=2, ge=0, le=4)
+    budget_ceiling: float = Field(..., ge=0.0)
+    cost_basis: str = Field(default="gross", min_length=1)
+    allowed_operations: list[str] = Field(
+        default_factory=lambda: [
+            "model_media_mix",
+            "optimize_budget",
+            "simulate_funnel",
+            "simulate_scenarios",
+            "calculate_roas",
+        ]
+    )
+    allowed_tools: list[str] = Field(
+        default_factory=lambda: [
+            "media_mix_modeler",
+            "budget_allocator_tool",
+            "funnel_simulator",
+            "optimization_modeler",
+            "allocation_solver",
+            "diminishing_returns_model",
+        ]
+    )
+    stop_rules: list[str] = Field(default_factory=list)
+    token_quota: int = Field(default=4096, ge=1, le=128000)
+    time_quota_seconds: int = Field(default=120, ge=1, le=600)
+    cpu_cores: float = Field(default=1.0, ge=0.1, le=4.0)
+    memory_mb: int = Field(default=1024, ge=128, le=8192)
+    kpi_name: str | None = None
+    kpi_unit: str | None = None
+    time_horizon: str = Field(default="90_days", min_length=1)
+    allocation_constraints: list[AllocationConstraint] = Field(default_factory=list)
+    channel_parameters: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    model_reference: str | dict[str, Any] = Field(default="planning_proxy")
+    code_digest: str | None = None
+    profile_reference: str = Field(default="w_strat.s_alloc.v1")
+    policy_version: str = Field(default="v1")
+    measurement_mode: Literal["planning_proxy", "validated_model_snapshot"] = "planning_proxy"
+    missing_inputs: list[str] = Field(default_factory=list)
+    algorithm_version: str = Field(default="1.0")
+    uncertainty_method: str = Field(default="none")
+    mroi_floor: float = Field(default=0.0, ge=0.0)
+    input_sha256: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, v: str) -> str:
+        curr = v.strip().upper()
+        if len(curr) != 3 or not curr.isalpha():
+            raise ValueError(f"Invalid currency code '{v}'; must be 3-letter ISO code.")
+        return curr
+
+    @field_validator("authorized_channels")
+    @classmethod
+    def normalize_channels(cls, channels: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for ch in channels:
+            c = ch.strip().lower()
+            if not c:
+                raise ValueError("Channel name in authorized_channels cannot be empty.")
+            if c not in cleaned:
+                cleaned.append(c)
+        if not cleaned:
+            raise ValueError("authorized_channels must contain at least one valid channel.")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_mandate_invariants(self) -> SAllocMandate:
+        if not math.isfinite(self.budget_ceiling):
+            raise ValueError(f"Budget ceiling must be a finite number: {self.budget_ceiling}")
+
+        authorized_set = set(self.authorized_channels)
+        seen_channels: set[str] = set()
+        total_min_spend = 0.0
+        total_min_share = 0.0
+
+        for c in self.allocation_constraints:
+            if c.channel not in authorized_set:
+                raise ValueError(
+                    f"Allocation constraint references unauthorized channel '{c.channel}'. "
+                    f"Authorized channels: {self.authorized_channels}"
+                )
+            if c.channel in seen_channels:
+                raise ValueError(f"Duplicate allocation constraint for channel '{c.channel}'")
+            seen_channels.add(c.channel)
+
+            if c.min_spend > self.budget_ceiling:
+                raise ValueError(
+                    f"min_spend ({c.min_spend}) for channel '{c.channel}' "
+                    f"exceeds total budget ceiling ({self.budget_ceiling})"
+                )
+            total_min_spend += c.min_spend
+            total_min_share += c.min_share
+
+        if total_min_spend > self.budget_ceiling + 1e-6:
+            raise ValueError(
+                f"Sum of constraint min_spend values ({total_min_spend}) "
+                f"exceeds budget ceiling ({self.budget_ceiling})"
+            )
+        if total_min_share > 1.0 + 1e-6:
+            raise ValueError(
+                f"Sum of constraint min_share values ({total_min_share}) exceeds 1.0 (100%)"
+            )
+
+        # Validate channel parameters if provided
+        for ch, params in self.channel_parameters.items():
+            if ch not in authorized_set:
+                raise ValueError(f"Channel parameters reference unauthorized channel '{ch}'")
+            if not isinstance(params, dict):
+                raise ValueError(f"Channel parameters for '{ch}' must be a dictionary.")
+            if "initial_marginal_return" in params:
+                imr = params["initial_marginal_return"]
+                if not isinstance(imr, (int, float)) or not math.isfinite(imr) or imr < 0:
+                    raise ValueError(f"initial_marginal_return for '{ch}' must be finite and >= 0")
+            if "saturation_spend" in params:
+                sat = params["saturation_spend"]
+                if not isinstance(sat, (int, float)) or not math.isfinite(sat) or sat <= 0:
+                    raise ValueError(f"saturation_spend for '{ch}' must be finite and > 0")
+
+        return self
+
+    def compute_input_digest(self) -> str:
+        """Compute canonical SHA-256 digest over mandate excluding input_sha256."""
+        return compute_canonical_sha256(self, exclude_fields={"input_sha256"})
+
+    def validate_attenuation(
+        self,
+        parent_grant: TaskGrant,
+        parent_directive: StrategyDirective | None = None,
+    ) -> None:
+        """Enforce strict authority attenuation against parent TaskGrant and StrategyDirective."""
+        # 1. Expiry check
+        current_time = datetime.now(UTC)
+        grant_exp = (
+            parent_grant.expires_at
+            if parent_grant.expires_at.tzinfo is not None
+            else parent_grant.expires_at.replace(tzinfo=UTC)
+        )
+        if current_time > grant_exp:
+            raise PolicyViolationError(
+                f"Parent TaskGrant '{parent_grant.task_id}' has expired at {grant_exp}."
+            )
+
+        mandate_exp = (
+            self.expires_at
+            if self.expires_at.tzinfo is not None
+            else self.expires_at.replace(tzinfo=UTC)
+        )
+        if mandate_exp > grant_exp:
+            raise PolicyViolationError(
+                f"Mandate expires_at ({mandate_exp}) exceeds parent grant expires_at ({grant_exp})."
+            )
+
+        # 2. Identity binding
+        if parent_grant.tenant_scope and self.tenant_id != parent_grant.tenant_scope.tenant_id:
+            raise PolicyViolationError(
+                f"Mandate tenant '{self.tenant_id}' does not match grant tenant '{parent_grant.tenant_scope.tenant_id}'."
+            )
+        if self.task_id != parent_grant.task_id:
+            raise PolicyViolationError(
+                f"Mandate task_id '{self.task_id}' does not match grant task_id '{parent_grant.task_id}'."
+            )
+
+        # 3. Budget attenuation
+        max_allowed_budget = self.budget_ceiling
+        if parent_directive is not None:
+            max_allowed_budget = min(max_allowed_budget, parent_directive.budget_ceiling)
+        if parent_grant.cts_state.get("budget_cap") is not None:
+            with contextlib.suppress(ValueError, TypeError):
+                max_allowed_budget = min(
+                    max_allowed_budget, float(parent_grant.cts_state["budget_cap"])
+                )
+        elif parent_grant.budget_breakdown and "spend" in parent_grant.budget_breakdown:
+            with contextlib.suppress(ValueError, TypeError):
+                max_allowed_budget = min(
+                    max_allowed_budget, float(parent_grant.budget_breakdown["spend"])
+                )
+        if self.budget_ceiling > max_allowed_budget + 1e-6:
+            raise PolicyViolationError(
+                f"Mandate budget_ceiling ({self.budget_ceiling}) exceeds authorized ceiling ({max_allowed_budget})."
+            )
+
+        # 4. Channel attenuation
+        parent_allowed: set[str] = set()
+        if parent_grant.tenant_scope and parent_grant.tenant_scope.allowed_channels:
+            parent_allowed = {
+                c.strip().lower() for c in parent_grant.tenant_scope.allowed_channels if c.strip()
+            }
+        if parent_directive is not None:
+            dir_channels = set(parent_directive.authorized_channels)
+            parent_allowed = parent_allowed.intersection(dir_channels) if parent_allowed else dir_channels
+
+        if parent_allowed:
+            mandate_channels = set(self.authorized_channels)
+            unauthorized = mandate_channels - parent_allowed
+            if unauthorized:
+                raise PolicyViolationError(
+                    f"Mandate contains unauthorized channels not permitted by parent grant: {sorted(unauthorized)}"
+                )
+
+        # 5. Quota attenuation
+        if parent_grant.token_budget is not None and self.token_quota > parent_grant.token_budget:
+            raise PolicyViolationError(
+                f"Mandate token_quota ({self.token_quota}) exceeds grant token_budget ({parent_grant.token_budget})."
+            )
+
+
+class SAllocResult(BaseModel):
+    """Typed sanitized calculation and diagnostic result from S_ALLOC."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    execution_id: str = Field(..., min_length=1)
+    task_id: str = Field(..., min_length=1)
+    stage_attempt_id: str = Field(..., min_length=1)
+    tenant_id: str = Field(..., min_length=1)
+    input_sha256: str = Field(..., min_length=64, max_length=64)
+    status: SAllocDomainStatus = SAllocDomainStatus.OK
+    scenario_allocations: dict[str, list[ChannelSpendProposal]] = Field(default_factory=dict)
+    total_allocated: float = Field(default=0.0, ge=0.0)
+    budget_residual: float = Field(default=0.0, ge=0.0)
+    bound_residuals: dict[str, float] = Field(default_factory=dict)
+    modeled_response: float = Field(default=0.0, ge=0.0)
+    marginal_roas: dict[str, float] = Field(default_factory=dict)
+    kpi_units: str = "modeled_units"
+    funnel_metrics: dict[str, Any] | None = None
+    measurement_mode: str = "planning_proxy"
+    uncertainty_method: str = "none"
+    uncertainty_intervals: dict[str, tuple[float, float]] | None = None
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
+    advisory_rationale: str | None = None
+    output_sha256: str | None = None
+    execution_receipt: SandboxExecutionReceipt | None = None
+    teardown_receipt: SandboxTeardownReceipt | None = None
+
+    @model_validator(mode="after")
+    def validate_result_invariants(self) -> SAllocResult:
+        if not math.isfinite(self.total_allocated):
+            raise ValueError(f"total_allocated must be finite: {self.total_allocated}")
+        if not math.isfinite(self.budget_residual):
+            raise ValueError(f"budget_residual must be finite: {self.budget_residual}")
+        if not math.isfinite(self.modeled_response):
+            raise ValueError(f"modeled_response must be finite: {self.modeled_response}")
+        for ch, mroi in self.marginal_roas.items():
+            if not math.isfinite(mroi):
+                raise ValueError(f"marginal_roas for '{ch}' must be finite: {mroi}")
+        return self
+
+    def compute_output_digest(self) -> str:
+        """Compute canonical SHA-256 digest over result excluding self-referential fields."""
+        return compute_canonical_sha256(
+            self,
+            exclude_fields={"output_sha256", "execution_receipt", "teardown_receipt"},
+        )
+
+    def verify_correlation(self, mandate: SAllocMandate) -> None:
+        """Verify correlation identities and input digest match the authoritative mandate."""
+        if self.execution_id != mandate.execution_id:
+            raise ValueError(
+                f"Result execution_id '{self.execution_id}' does not match mandate '{mandate.execution_id}'."
+            )
+        if self.task_id != mandate.task_id:
+            raise ValueError(
+                f"Result task_id '{self.task_id}' does not match mandate '{mandate.task_id}'."
+            )
+        if self.stage_attempt_id != mandate.stage_attempt_id:
+            raise ValueError(
+                f"Result stage_attempt_id '{self.stage_attempt_id}' does not match mandate '{mandate.stage_attempt_id}'."
+            )
+        if self.tenant_id != mandate.tenant_id:
+            raise ValueError(
+                f"Result tenant_id '{self.tenant_id}' does not match mandate '{mandate.tenant_id}'."
+            )
+        expected_input_hash = mandate.input_sha256 or mandate.compute_input_digest()
+        if self.input_sha256 != expected_input_hash:
+            raise ValueError(
+                f"Result input_sha256 '{self.input_sha256}' does not match expected mandate digest '{expected_input_hash}'."
+            )
+

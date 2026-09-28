@@ -51,6 +51,8 @@ class SpecialistModelProfile:
     context_limit: int = 64000
     max_output_tokens: int = 4096
     timeout_ms: int = 45000
+    token_quota: int = 4096
+    time_quota_seconds: int = 120
     max_attempts: int = 3
     data_classification_allowlist: tuple[str, ...] = ("internal", "public", "de_identified")
     allowed_tools: tuple[str, ...] = ()
@@ -90,7 +92,9 @@ class SpecialistModelProfile:
             "temperature_default": self.temperature_default,
             "temperature_max": self.temperature_max,
             "temperature_min": self.temperature_min,
+            "time_quota_seconds": self.time_quota_seconds,
             "timeout_ms": self.timeout_ms,
+            "token_quota": self.token_quota,
         }
         canonical_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()

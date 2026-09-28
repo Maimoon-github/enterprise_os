@@ -27,6 +27,7 @@ from app.core.settings import LlmSettings
 from app.integrations.llm.client import LlmClient
 from app.integrations.sandbox.client import SandboxClient
 from tests.conftest import create_mock_remote_sandbox
+from app.core.exceptions import PolicyViolationError
 from app.schemas.agent_contracts import (
     ChannelAllocation,
     ConfidenceInterval,
@@ -35,12 +36,24 @@ from app.schemas.agent_contracts import (
     TaskGrant,
 )
 from app.schemas.governance import TenantScope, WorkerRole
+from app.schemas.sandbox import (
+    SandboxExecutionReceipt,
+    SandboxExecutionStatus,
+    SandboxTeardownReceipt,
+)
 from app.schemas.strategy import (
     AllocationConstraint,
     ChannelSpendProposal,
+    SAllocDomainStatus,
+    SAllocMandate,
+    SAllocResult,
     StrategyDirective,
     StrategyResultEnvelope,
+    canonical_json_dumps,
+    compute_canonical_sha256,
+    parse_canonical_json_strictly,
 )
+
 
 
 def test_allocation_constraint_valid() -> None:
@@ -640,4 +653,113 @@ async def test_strategy_agent_with_s_alloc_profile_provenance() -> None:
     envelope = await agent.run(grant, context)
     assert envelope.provenance["s_alloc_profile_id"] == "w_strat.s_alloc.v1"
     assert envelope.provenance["s_alloc_profile_digest"] == S_ALLOC_PROFILE.compute_digest()
+
+
+def test_s_alloc_mandate_strict_serialization_and_tampering() -> None:
+    """Validate SAllocMandate canonical digest stability and tampering detection."""
+    now = datetime.now(UTC)
+    mandate = SAllocMandate(
+        tenant_id="tenant-beta",
+        task_id="task-beta-01",
+        parent_grant_id="grant-beta",
+        expires_at=now + timedelta(minutes=20),
+        authorized_channels=["meta", "google"],
+        budget_ceiling=15000.0,
+        currency="USD",
+        currency_precision=2,
+    )
+    digest = mandate.compute_input_digest()
+    assert len(digest) == 64
+
+    # Result bound to this mandate
+    result = SAllocResult(
+        execution_id=mandate.execution_id,
+        task_id=mandate.task_id,
+        stage_attempt_id=mandate.stage_attempt_id,
+        tenant_id=mandate.tenant_id,
+        input_sha256=digest,
+        status=SAllocDomainStatus.OK,
+        total_allocated=15000.0,
+        budget_residual=0.0,
+    )
+    result.verify_correlation(mandate)
+
+    # Tampered mandate digest
+    tampered_result = result.model_copy(update={"input_sha256": "f" * 64})
+    with pytest.raises(ValueError, match="does not match expected mandate digest"):
+        tampered_result.verify_correlation(mandate)
+
+
+def test_s_alloc_authority_attenuation_bounds_and_quotas() -> None:
+    """Enforce that child mandate cannot expand parent grant limits."""
+    now = datetime.now(UTC)
+    grant = TaskGrant(
+        task_id="grant-01",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="tenant-gamma", allowed_channels=["meta"]),
+        expires_at=now + timedelta(minutes=15),
+        token_budget=2048,
+        cts_state={"budget_cap": 5000.0},
+    )
+
+    # Valid child
+    child = SAllocMandate(
+        tenant_id="tenant-gamma",
+        task_id="grant-01",
+        parent_grant_id="grant-01",
+        expires_at=now + timedelta(minutes=10),
+        authorized_channels=["meta"],
+        budget_ceiling=5000.0,
+        token_quota=1024,
+    )
+    child.validate_attenuation(grant)
+
+    # Exceeding budget ceiling
+    bad_budget = child.model_copy(update={"budget_ceiling": 6000.0})
+    with pytest.raises(PolicyViolationError, match="exceeds authorized ceiling"):
+        bad_budget.validate_attenuation(grant)
+
+    # Exceeding channels
+    bad_channel = child.model_copy(update={"authorized_channels": ["meta", "google"]})
+    with pytest.raises(PolicyViolationError, match="unauthorized channels"):
+        bad_channel.validate_attenuation(grant)
+
+    # Exceeding token quota
+    bad_token = child.model_copy(update={"token_quota": 4096})
+    with pytest.raises(PolicyViolationError, match="exceeds grant token_budget"):
+        bad_token.validate_attenuation(grant)
+
+
+def test_s_alloc_receipt_structures() -> None:
+    """Validate SandboxExecutionReceipt and SandboxTeardownReceipt models and validations."""
+    now = datetime.now(UTC)
+    exec_receipt = SandboxExecutionReceipt(
+        runtime_id="rt-unit",
+        container_id="cont-unit",
+        image_digest="sha256:abcd",
+        runtime_version="1.11.0",
+        network_mode="none",
+        read_only_root=True,
+        effective_cpu_cores=1.0,
+        effective_memory_mb=1024,
+        effective_pids_limit=1024,
+        started_at=now - timedelta(seconds=1),
+        terminated_at=now,
+        input_digest="e" * 64,
+        output_digest="f" * 64,
+    )
+    assert exec_receipt.network_mode == "none"
+    assert exec_receipt.read_only_root is True
+
+    teardown_receipt = SandboxTeardownReceipt(
+        sandbox_id="sbx-unit",
+        attempt_id="att-unit",
+        status="CLEAN",
+        workspace_scrubbed=True,
+        credentials_revoked=True,
+        runtime_destroyed=True,
+        destroyed_at=now,
+    )
+    assert teardown_receipt.status == "CLEAN"
+
 
