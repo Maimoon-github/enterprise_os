@@ -15,10 +15,18 @@ from typing import Any
 
 # Ensure backend directory is in sys.path when running from repo or tests
 _current_dir = os.path.dirname(os.path.abspath(__file__))
-_repo_root = os.path.abspath(os.path.join(_current_dir, "../../../../../../../"))
-_backend_path = os.path.join(_repo_root, "backend")
-if os.path.isdir(_backend_path) and _backend_path not in sys.path:
-    sys.path.insert(0, _backend_path)
+# Check candidate paths to locate enterprise_os/backend
+for _up in range(1, 8):
+    _candidate_root = os.path.abspath(os.path.join(_current_dir, *[".."] * _up))
+    _candidate_backend = os.path.join(_candidate_root, "backend")
+    if os.path.isfile(os.path.join(_candidate_backend, "app", "integrations", "sandbox", "s_alloc_core.py")):
+        if _candidate_backend not in sys.path:
+            sys.path.insert(0, _candidate_backend)
+        break
+    if os.path.isfile(os.path.join(_candidate_root, "s_alloc_core.py")):
+        if _candidate_root not in sys.path:
+            sys.path.insert(0, _candidate_root)
+        break
 
 # Ensure s_alloc_core can be imported in both container and local test environments
 try:

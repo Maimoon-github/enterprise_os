@@ -716,3 +716,32 @@ def test_sandbox_receipts_binding_and_digest_immutability() -> None:
     assert result_with_receipts.execution_receipt.network_mode == "none"
     assert result_with_receipts.teardown_receipt.status == "CLEAN"
 
+
+@pytest.mark.asyncio
+async def test_invalid_mandate_or_grant_spawns_zero_runtimes() -> None:
+    """T01: Invalid mandates or grants fail closed before invoking runtime execution."""
+    from unittest.mock import MagicMock
+    from app.agents.strategy_engine.strategy import StrategyAgent
+    from app.integrations.sandbox.client import SandboxClient
+    from app.core.settings import SandboxSettings
+
+    client = SandboxClient(SandboxSettings(endpoint="http://remote-sandbox.internal:8000"))
+    mock_sandbox = MagicMock()
+    mock_sandbox.shell = MagicMock()
+    client._sandbox = mock_sandbox
+
+    w_strat = StrategyAgent(sandbox_client=client)
+
+    # Stale/expired grant
+    now = datetime.now(UTC)
+    expired_grant = TaskGrant(
+        task_id="task-zero-rt-expired",
+        worker_role=WorkerRole.STRATEGY,
+        tenant_scope=TenantScope(tenant_id="tenant-alpha", allowed_channels=["meta"]),
+        expires_at=now - timedelta(seconds=30),  # expired!
+    )
+    with pytest.raises(PolicyViolationError, match="has expired"):
+        await w_strat.run(expired_grant, {"budget_ceiling": 5000.0})
+    # Sandbox was NEVER contacted -> zero runtimes spawned
+    mock_sandbox.shell.exec_command.assert_not_called()
+

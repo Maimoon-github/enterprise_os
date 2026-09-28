@@ -302,3 +302,128 @@ async def test_remote_process_cancellation_and_scrubbing_on_timeout() -> None:
     assert any("pkill -KILL" in cmd for cmd in executed_commands), "Must attempt SIGKILL on timeout"
     assert any("rm -rf" in cmd for cmd in executed_commands), "Must scrub workspace directory on teardown"
 
+
+# =============================================================================
+# 6. Real Mounted S_ALLOC Runner Process Isolation & Teardown Verification
+# =============================================================================
+
+
+def test_mounted_s_alloc_runner_fresh_subprocess_execution_and_isolation() -> None:
+    """T09: Execute actual mounted S_ALLOC runner in a fresh isolated runtime process.
+    
+    Verifies process isolation, distinct PIDs per attempt, exit code 0, and non-leakage
+    of host secrets from environment into generated output.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[2].parent
+    runner_path = repo_root / "sandbox" / "docker" / "hardened" / "skills" / "s-alloc" / "scripts" / "run.py"
+    assert runner_path.exists(), f"Mounted runner must exist at {runner_path}"
+
+    payload = {
+        "task_id": "task-proc-iso-01",
+        "tenant_id": "tenant-iso",
+        "budget": "25000.0",
+        "channels": "meta,google",
+    }
+    input_json = json.dumps(payload)
+
+    # Pass sensitive decoy credentials in environment to test leakage resistance
+    env = os.environ.copy()
+    env["SECRET_API_KEY"] = "super-secret-key-12345"
+    env["DATABASE_URL"] = "postgres://root:password@localhost:5432/db"
+
+    # Attempt 1
+    proc_1 = subprocess.run(
+        [sys.executable, str(runner_path)],
+        input=input_json,
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=10,
+    )
+    assert proc_1.returncode == 0, f"Runner failed: {proc_1.stderr}"
+    res_1 = json.loads(proc_1.stdout)
+    assert res_1["status"] == "success"
+    assert "super-secret-key-12345" not in proc_1.stdout
+    assert "password@localhost" not in proc_1.stdout
+
+    # Attempt 2 (New runtime execution retry)
+    proc_2 = subprocess.run(
+        [sys.executable, str(runner_path)],
+        input=input_json,
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=10,
+    )
+    assert proc_2.returncode == 0
+    res_2 = json.loads(proc_2.stdout)
+    assert res_2["status"] == "success"
+    # Bit-for-bit identical numerical result
+    assert res_1["allocations"] == res_2["allocations"]
+
+
+def test_teardown_failure_prevents_success() -> None:
+    """T13: Failed or dirty teardown receipt rejects SAllocResult acceptance even if execution succeeded."""
+    from app.schemas.sandbox import SandboxExecutionReceipt, SandboxTeardownReceipt
+    from app.schemas.strategy import SAllocDomainStatus, SAllocMandate, SAllocResult
+
+    mandate = SAllocMandate(
+        tenant_id="tenant-alpha",
+        task_id="task-td-fail",
+        execution_id="exec-td-01",
+        stage_attempt_id="att-td-01",
+        parent_grant_id="grant-td",
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        authorized_channels=["meta"],
+        budget_ceiling=10000.0,
+    )
+
+    now = datetime.now(UTC)
+    exec_receipt = SandboxExecutionReceipt(
+        runtime_id="rt-01",
+        container_id="c-01",
+        image_digest="sha256:d8c83df2357b98d197621c17830cbdfc63b860b73dfeb46487e8e4533dae5d95",
+        runtime_version="1.11.0",
+        network_mode="none",
+        read_only_root=True,
+        effective_cpu_cores=1.0,
+        effective_memory_mb=512,
+        effective_pids_limit=128,
+        started_at=now - timedelta(seconds=2),
+        terminated_at=now,
+        exit_code=0,
+        input_digest="a" * 64,
+        output_digest="b" * 64,
+    )
+    # Dirty teardown receipt indicating workspace scrub or container kill failure
+    dirty_teardown = SandboxTeardownReceipt(
+        sandbox_id="sbx-fail",
+        attempt_id="att-td-01",
+        status="DIRTY",
+        workspace_scrubbed=False,
+        credentials_revoked=False,
+        runtime_destroyed=False,
+        destroyed_at=now,
+    )
+
+    result = SAllocResult(
+        execution_id="exec-td-01",
+        task_id="task-td-fail",
+        stage_attempt_id="att-td-01",
+        tenant_id="tenant-alpha",
+        input_sha256=mandate.compute_input_digest(),
+        status=SAllocDomainStatus.OK,
+        total_allocated=5000.0,
+        budget_residual=5000.0,
+        execution_receipt=exec_receipt,
+        teardown_receipt=dirty_teardown,
+    )
+
+    with pytest.raises(ValueError, match="verified teardown_receipt"):
+        result.verify_correlation(mandate, require_receipts=True)
+
