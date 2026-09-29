@@ -1,0 +1,70 @@
+test_real_ie_sdk_ledger_roundtrip (tests.integration.test_live_strategy.LiveStrategyTests.test_real_ie_sdk_ledger_roundtrip) ... skipped 'Requires actual IE/PAB, agent_sandbox micro-VM controller and immutable ledger'
+test_real_immutable_ledger_replay_and_restart (tests.integration.test_live_strategy.LiveStrategyTests.test_real_immutable_ledger_replay_and_restart) ... skipped 'Requires actual IE/PAB, agent_sandbox micro-VM controller and immutable ledger'
+test_real_network_tmpfs_syscalls_and_microvm_teardown (tests.integration.test_live_strategy.LiveStrategyTests.test_real_network_tmpfs_syscalls_and_microvm_teardown) ... skipped 'Requires actual IE/PAB, agent_sandbox micro-VM controller and immutable ledger'
+test_infeasible_strategy_returns_revision_with_audit (tests.integration.test_strategy_integration.StrategyIntegrationTests.test_infeasible_strategy_returns_revision_with_audit) ... ok
+test_two_brand_tasks_remain_separate (tests.integration.test_strategy_integration.StrategyIntegrationTests.test_two_brand_tasks_remain_separate) ... ok
+test_five_channel_bounds_and_exact_money (tests.strategy_engine.test_allocation.AllocationTests.test_five_channel_bounds_and_exact_money) ... ok
+test_grid_global_optimum_against_independent_oracle (tests.strategy_engine.test_allocation.AllocationTests.test_grid_global_optimum_against_independent_oracle) ... ok
+test_grid_rounds_inward_not_past_bounds (tests.strategy_engine.test_allocation.AllocationTests.test_grid_rounds_inward_not_past_bounds) ... ok
+test_limit_exactly_at_search_size_is_success (tests.strategy_engine.test_allocation.AllocationTests.test_limit_exactly_at_search_size_is_success) ... ok
+test_pareto_points_are_nondominated (tests.strategy_engine.test_allocation.AllocationTests.test_pareto_points_are_nondominated) ... ok
+test_performance_infeasibility_and_search_limit (tests.strategy_engine.test_allocation.AllocationTests.test_performance_infeasibility_and_search_limit) ... ok
+test_randomized_spend_invariants (tests.strategy_engine.test_allocation.AllocationTests.test_randomized_spend_invariants) ... ok
+test_roadmap_budget_and_contiguity (tests.strategy_engine.test_allocation.AllocationTests.test_roadmap_budget_and_contiguity) ... ok
+test_seeded_determinism_and_seed_sensitivity (tests.strategy_engine.test_allocation.AllocationTests.test_seeded_determinism_and_seed_sensitivity) ... ok
+test_zero_conversion_is_not_division_by_zero (tests.strategy_engine.test_allocation.AllocationTests.test_zero_conversion_is_not_division_by_zero) ... ok
+test_attenuation (tests.strategy_engine.test_contracts.ContractTests.test_attenuation) ... ok
+test_context_duplicate_period_and_impossible_funnel (tests.strategy_engine.test_contracts.ContractTests.test_context_duplicate_period_and_impossible_funnel) ... ok
+test_duplicate_channels (tests.strategy_engine.test_contracts.ContractTests.test_duplicate_channels) ... ok
+test_frozen_and_nested_revalidation (tests.strategy_engine.test_contracts.ContractTests.test_frozen_and_nested_revalidation) ... ok
+test_lattice_infeasible (tests.strategy_engine.test_contracts.ContractTests.test_lattice_infeasible) ... ok
+test_no_code_or_open_ast (tests.strategy_engine.test_contracts.ContractTests.test_no_code_or_open_ast) ... ok
+test_nonfinite_and_negative (tests.strategy_engine.test_contracts.ContractTests.test_nonfinite_and_negative) ... ok
+test_removed_required_channel_and_relaxed_performance (tests.strategy_engine.test_contracts.ContractTests.test_removed_required_channel_and_relaxed_performance) ... ok
+test_roundtrip (tests.strategy_engine.test_contracts.ContractTests.test_roundtrip) ... ok
+test_scope_and_freshness (tests.strategy_engine.test_contracts.ContractTests.test_scope_and_freshness) ... ok
+test_unknown_fields_and_numeric_coercion (tests.strategy_engine.test_contracts.ContractTests.test_unknown_fields_and_numeric_coercion) ... ok
+test_audit_failure_prevents_dispatch (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_audit_failure_prevents_dispatch) ... ok
+test_budget_narrowing (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_budget_narrowing) ... ok
+test_cancellation_records_failure (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_cancellation_records_failure) ... ok
+test_changed_retry_context_is_immutable_conflict (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_changed_retry_context_is_immutable_conflict) ... ok
+test_expired_grant_or_revocation (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_expired_grant_or_revocation) ... ok
+test_expiry_budget_is_not_silently_extended (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_expiry_budget_is_not_silently_extended) ... ok
+test_ie_grant_context_dispatch_evidence (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_ie_grant_context_dispatch_evidence) ... ok
+test_injected_context_no_fetch (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_injected_context_no_fetch) ... ok
+test_invalid_receipt_not_accepted (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_invalid_receipt_not_accepted) ... ok
+test_no_context_budget_stops_before_dispatch (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_no_context_budget_stops_before_dispatch) ... ok
+test_preview_never_authorizes_spend (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_preview_never_authorizes_spend) ... ok
+test_proposal_audit_failure_prevents_submission (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_proposal_audit_failure_prevents_submission) ... ok
+test_replay_deduplicates_artifacts_and_events (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_replay_deduplicates_artifacts_and_events) ... ok
+test_revocation_after_context (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_revocation_after_context) ... ok
+test_revocation_during_audit_blocks_submission (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_revocation_during_audit_blocks_submission) ... ok
+test_search_limit_is_upward_revision_not_plan (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_search_limit_is_upward_revision_not_plan) ... ok
+test_wrong_tenant_context_stops_before_dispatch (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_wrong_tenant_context_stops_before_dispatch) ... ok
+test_zero_token_budget_is_allowed_no_llm_used (tests.strategy_engine.test_ie_roundtrip.RoundtripTests.test_zero_token_budget_is_allowed_no_llm_used) ... ok
+test_append_chain_and_prov_export_for_every_action (tests.strategy_engine.test_provenance.ProvenanceTests.test_append_chain_and_prov_export_for_every_action) ... ok
+test_entity_activity_agent_lineage (tests.strategy_engine.test_provenance.ProvenanceTests.test_entity_activity_agent_lineage) ... ok
+test_envelope_integrity (tests.strategy_engine.test_provenance.ProvenanceTests.test_envelope_integrity) ... ok
+test_tamper_same_event_id_rejected (tests.strategy_engine.test_provenance.ProvenanceTests.test_tamper_same_event_id_rejected) ... ok
+test_unresolved_provenance_reference_rejected (tests.strategy_engine.test_provenance.ProvenanceTests.test_unresolved_provenance_reference_rejected) ... ok
+test_cli_returns_exact_typed_solution (tests.strategy_engine.test_runtime_cli.RuntimeCLITests.test_cli_returns_exact_typed_solution) ... ok
+test_input_size_limit (tests.strategy_engine.test_runtime_cli.RuntimeCLITests.test_input_size_limit) ... ok
+test_invalid_payload_has_no_reflected_secret (tests.strategy_engine.test_runtime_cli.RuntimeCLITests.test_invalid_payload_has_no_reflected_secret) ... ok
+test_execution_id_reuse_with_changed_seed_rejected (tests.strategy_engine.test_sandbox_security.SecurityTests.test_execution_id_reuse_with_changed_seed_rejected) ... ok
+test_invalid_signature_blocks_upward_evidence (tests.strategy_engine.test_sandbox_security.SecurityTests.test_invalid_signature_blocks_upward_evidence) ... ok
+test_oversized_and_malformed_result (tests.strategy_engine.test_sandbox_security.SecurityTests.test_oversized_and_malformed_result) ... ok
+test_policy_cannot_relax_containment (tests.strategy_engine.test_sandbox_security.SecurityTests.test_policy_cannot_relax_containment) ... ok
+test_signed_but_overspending_result_rejected (tests.strategy_engine.test_sandbox_security.SecurityTests.test_signed_but_overspending_result_rejected) ... ok
+test_signed_roadmap_budget_tamper (tests.strategy_engine.test_sandbox_security.SecurityTests.test_signed_roadmap_budget_tamper) ... ok
+test_static_guard_detects_forbidden_examples (tests.strategy_engine.test_sandbox_security.SecurityTests.test_static_guard_detects_forbidden_examples) ... ok
+test_timeout_rejects_late_output (tests.strategy_engine.test_sandbox_security.SecurityTests.test_timeout_rejects_late_output) ... ok
+test_worker_import_allowlist_model_a (tests.strategy_engine.test_sandbox_security.SecurityTests.test_worker_import_allowlist_model_a) ... ok
+test_worker_roundtrip_attempts_no_external_network (tests.strategy_engine.test_sandbox_security.SecurityTests.test_worker_roundtrip_attempts_no_external_network) ... ok
+test_wrapper_has_no_local_execution_fallback (tests.strategy_engine.test_sandbox_security.SecurityTests.test_wrapper_has_no_local_execution_fallback) ... ok
+test_wrong_pinned_image (tests.strategy_engine.test_sandbox_security.SecurityTests.test_wrong_pinned_image) ... ok
+
+----------------------------------------------------------------------
+Ran 64 tests in 1.820s
+
+OK (skipped=3)
+PRODUCTION ACCEPTANCE BLOCKED: live runtime/ledger checks did not run.
