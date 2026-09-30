@@ -193,6 +193,7 @@ def create_voice_llm_client(
     *,
     attempt_id: str | None = None,
     tenant_id: str | None = None,
+    model_identity: str | None = None,
 ) -> LlmClient:
     """Instantiate an independent request-local LlmClient bound to the specialist profile.
 
@@ -204,16 +205,17 @@ def create_voice_llm_client(
     tenant_prefix = f"tenant-{tenant_id}." if tenant_id else ""
     role_name = profile.specialist_id.lower().replace("-", "_")
 
+    resolved_model = model_identity or profile.model_id
     settings = base_settings or LlmSettings(
         provider="local",
-        model_name=profile.model_id,
+        model_name=resolved_model,
         request_timeout_seconds=max(1, profile.timeout_ms // 1000),
     )
 
     return LlmClient(
         settings=settings,
         agent_identity=f"{tenant_prefix}w_voice.{role_name}.{unique_instance_id}",
-        model_identity=profile.model_id,
+        model_identity=resolved_model,
     )
 
 

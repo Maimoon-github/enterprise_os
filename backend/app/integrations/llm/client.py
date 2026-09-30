@@ -21,6 +21,8 @@ from app.core.settings import LlmSettings
 ResponseModelT = TypeVar("ResponseModelT", bound=BaseModel)
 
 DEFAULT_OLLAMA_MODEL: str = "qwen2.5-coder:7b"
+DEFAULT_OLLAMA_CODER_MODEL: str = "qwen2.5-coder:7b"
+DEFAULT_OLLAMA_INTELLIGENCE_MODEL: str = "qwen2.5:7b"
 DEFAULT_OLLAMA_BASE_URL: str = "http://localhost:11434/v1"
 DEFAULT_OLLAMA_PROVIDER: str = "ollama"
 
@@ -33,6 +35,8 @@ class LlmClient:
     """Provider-neutral chat-completion boundary with local-model priority."""
 
     DEFAULT_MODEL: str = DEFAULT_OLLAMA_MODEL
+    DEFAULT_CODER_MODEL: str = DEFAULT_OLLAMA_CODER_MODEL
+    DEFAULT_INTELLIGENCE_MODEL: str = DEFAULT_OLLAMA_INTELLIGENCE_MODEL
     DEFAULT_BASE_URL: str = DEFAULT_OLLAMA_BASE_URL
     DEFAULT_PROVIDER: str = DEFAULT_OLLAMA_PROVIDER
 
@@ -55,6 +59,14 @@ class LlmClient:
         self._agent_identity = agent_identity
         if model_identity:
             self._model_identity = model_identity
+        elif agent_identity == "INTELLIGENCE_ENGINE" and self._settings.intelligence_model_name:
+            self._model_identity = self._settings.intelligence_model_name
+        elif (
+            agent_identity
+            and (agent_identity.startswith("W_DEV") or agent_identity.startswith("DEV-"))
+            and self._settings.coder_model_name
+        ):
+            self._model_identity = self._settings.coder_model_name
         elif self._settings.model_name and self._settings.model_name != "unset":
             self._model_identity = self._settings.model_name
         else:
@@ -133,11 +145,7 @@ class LlmClient:
         effective_max_tokens = (
             max_output_tokens if max_output_tokens is not None else self._default_max_output_tokens
         )
-        effective_model = (
-            self._settings.model_name
-            if self._settings.model_name != "unset"
-            else self._model_identity
-        )
+        effective_model = self._model_identity
         request_body: dict[str, Any] = {
             "model": effective_model,
             "messages": messages,
@@ -350,3 +358,64 @@ def create_default_client(
         default_temperature=default_temperature,
         default_max_output_tokens=default_max_output_tokens,
     )
+
+
+def create_intelligence_client(
+    agent_identity: str = "INTELLIGENCE_ENGINE",
+    *,
+    model_identity: str | None = None,
+    base_settings: LlmSettings | None = None,
+    client: httpx.AsyncClient | None = None,
+    default_temperature: float | None = None,
+    default_max_output_tokens: int | None = None,
+) -> LlmClient:
+    """Create an LlmClient specifically for the Intelligence Engine orchestrator using qwen2.5:7b."""
+    settings = base_settings or LlmSettings(
+        provider=DEFAULT_OLLAMA_PROVIDER,
+        base_url=DEFAULT_OLLAMA_BASE_URL,
+        model_name=DEFAULT_OLLAMA_INTELLIGENCE_MODEL,
+    )
+    resolved_model = (
+        model_identity
+        or (settings.intelligence_model_name if settings.intelligence_model_name else None)
+        or DEFAULT_OLLAMA_INTELLIGENCE_MODEL
+    )
+    return LlmClient(
+        settings=settings,
+        client=client,
+        agent_identity=agent_identity,
+        model_identity=resolved_model,
+        default_temperature=default_temperature,
+        default_max_output_tokens=default_max_output_tokens,
+    )
+
+
+def create_coder_client(
+    agent_identity: str = "W_DEV",
+    *,
+    model_identity: str | None = None,
+    base_settings: LlmSettings | None = None,
+    client: httpx.AsyncClient | None = None,
+    default_temperature: float | None = None,
+    default_max_output_tokens: int | None = None,
+) -> LlmClient:
+    """Create an LlmClient specifically for Development Worker and coding specialists using qwen2.5-coder:7b."""
+    settings = base_settings or LlmSettings(
+        provider=DEFAULT_OLLAMA_PROVIDER,
+        base_url=DEFAULT_OLLAMA_BASE_URL,
+        model_name=DEFAULT_OLLAMA_CODER_MODEL,
+    )
+    resolved_model = (
+        model_identity
+        or (settings.coder_model_name if settings.coder_model_name else None)
+        or DEFAULT_OLLAMA_CODER_MODEL
+    )
+    return LlmClient(
+        settings=settings,
+        client=client,
+        agent_identity=agent_identity,
+        model_identity=resolved_model,
+        default_temperature=default_temperature,
+        default_max_output_tokens=default_max_output_tokens,
+    )
+

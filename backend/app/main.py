@@ -41,7 +41,11 @@ from app.integrations.ads.linkedin import LinkedInAdsAdapter
 from app.integrations.ads.meta import MetaAdsAdapter
 from app.integrations.ads.tiktok import TikTokAdsAdapter
 from app.integrations.cms.client import CmsClient
-from app.integrations.llm.client import LlmClient
+from app.integrations.llm.client import (
+    DEFAULT_OLLAMA_CODER_MODEL,
+    DEFAULT_OLLAMA_INTELLIGENCE_MODEL,
+    LlmClient,
+)
 from app.integrations.sandbox.capabilities import get_capability_for_role
 from app.integrations.sandbox.client import SandboxClient
 from app.integrations.social.base import SocialAdapter
@@ -257,8 +261,37 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=provenance_recorder)
 
     if settings.llm.provider != "unset":
+        # Architectural multi-model Ollama isolation:
+        # - Intelligence Engine (Orchestrator Layer 2): qwen2.5:7b (general reasoning and strategic synthesis)
+        # - Development Worker & Sub-agents: qwen2.5-coder:7b (code synthesis, execution, and verification)
+        # - Other Workers & Sub-agents: general intelligence model
+        # Guarantees that every single invoke uses exactly one deterministic model per role.
+        ie_model = (
+            settings.llm.intelligence_model_name
+            or (
+                settings.llm.model_name
+                if settings.llm.model_name != "unset" and settings.llm.model_name != DEFAULT_OLLAMA_CODER_MODEL
+                else DEFAULT_OLLAMA_INTELLIGENCE_MODEL
+            )
+        )
+        coder_model = settings.llm.coder_model_name or DEFAULT_OLLAMA_CODER_MODEL
+        general_model = (
+            settings.llm.model_name
+            if settings.llm.model_name != "unset"
+            else DEFAULT_OLLAMA_INTELLIGENCE_MODEL
+        )
+
+        # Helper factories ensuring deterministic model identity per agent role
+        def _coder_llm(ident: str) -> LlmClient:
+            return LlmClient(settings.llm, agent_identity=ident, model_identity=coder_model)
+
+        def _gen_llm(ident: str) -> LlmClient:
+            return LlmClient(settings.llm, agent_identity=ident, model_identity=general_model)
+
         # 1. Intelligence Engine (Orchestrator Layer 2) isolated cognitive client
-        ie_llm = LlmClient(settings.llm, agent_identity="INTELLIGENCE_ENGINE")
+        ie_llm = LlmClient(
+            settings.llm, agent_identity="INTELLIGENCE_ENGINE", model_identity=ie_model
+        )
         llm_client = ie_llm
         all_llm_clients.append(ie_llm)
 
@@ -274,13 +307,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             create_voice_llm_client,
         )
 
-        w_dev_llm = LlmClient(settings.llm, agent_identity="W_DEV")
-        w_strat_llm = LlmClient(settings.llm, agent_identity="W_STRAT")
-        w_creat_llm = LlmClient(settings.llm, agent_identity="W_CREAT")
-        w_prod_llm = LlmClient(settings.llm, agent_identity="W_PROD")
-        w_comp_llm = LlmClient(settings.llm, agent_identity="W_COMP")
-        w_voice_llm = create_voice_llm_client(COORDINATOR_PROFILE, base_settings=settings.llm)
-        w_learn_llm = LlmClient(settings.llm, agent_identity="W_LEARN")
+        w_dev_llm = _coder_llm("W_DEV")
+        w_strat_llm = _gen_llm("W_STRAT")
+        w_creat_llm = _gen_llm("W_CREAT")
+        w_prod_llm = _gen_llm("W_PROD")
+        w_comp_llm = _gen_llm("W_COMP")
+        w_voice_llm = create_voice_llm_client(
+            COORDINATOR_PROFILE, base_settings=settings.llm, model_identity=general_model
+        )
+        w_learn_llm = _gen_llm("W_LEARN")
 
         worker_llm_clients = {
             WorkerRole.DEVELOPMENT: w_dev_llm,
@@ -296,56 +331,68 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # 3. Specialist Sub-Agents (Layer 6) isolated cognitive clients (38 sub-agents)
         specialist_llm_clients_by_worker = {
             WorkerRole.DEVELOPMENT: {
-                "DEV-PLAN": LlmClient(settings.llm, agent_identity="DEV-PLAN"),
-                "DEV-CMS": LlmClient(settings.llm, agent_identity="DEV-CMS"),
-                "DEV-UI": LlmClient(settings.llm, agent_identity="DEV-UI"),
-                "DEV-CODE": LlmClient(settings.llm, agent_identity="DEV-CODE"),
-                "DEV-VERIFY": LlmClient(settings.llm, agent_identity="DEV-VERIFY"),
-                "DEV-SEC": LlmClient(settings.llm, agent_identity="DEV-SEC"),
-                "DEV-REL": LlmClient(settings.llm, agent_identity="DEV-REL"),
+                "DEV-PLAN": _coder_llm("DEV-PLAN"),
+                "DEV-CMS": _coder_llm("DEV-CMS"),
+                "DEV-UI": _coder_llm("DEV-UI"),
+                "DEV-CODE": _coder_llm("DEV-CODE"),
+                "DEV-VERIFY": _coder_llm("DEV-VERIFY"),
+                "DEV-SEC": _coder_llm("DEV-SEC"),
+                "DEV-REL": _coder_llm("DEV-REL"),
             },
             WorkerRole.STRATEGY: {
-                "STRAT-ALLOC": LlmClient(settings.llm, agent_identity="STRAT-ALLOC"),
+                "STRAT-ALLOC": _gen_llm("STRAT-ALLOC"),
             },
             WorkerRole.CREATIVE_CONTENT: {
-                "CREAT-RESEARCH": LlmClient(settings.llm, agent_identity="CREAT-RESEARCH"),
-                "CREAT-CONCEPT": LlmClient(settings.llm, agent_identity="CREAT-CONCEPT"),
-                "CREAT-COPY": LlmClient(settings.llm, agent_identity="CREAT-COPY"),
-                "CREAT-VISUAL": LlmClient(settings.llm, agent_identity="CREAT-VISUAL"),
-                "CREAT-ADAPT": LlmClient(settings.llm, agent_identity="CREAT-ADAPT"),
-                "CREAT-QA": LlmClient(settings.llm, agent_identity="CREAT-QA"),
+                "CREAT-RESEARCH": _gen_llm("CREAT-RESEARCH"),
+                "CREAT-CONCEPT": _gen_llm("CREAT-CONCEPT"),
+                "CREAT-COPY": _gen_llm("CREAT-COPY"),
+                "CREAT-VISUAL": _gen_llm("CREAT-VISUAL"),
+                "CREAT-ADAPT": _gen_llm("CREAT-ADAPT"),
+                "CREAT-QA": _gen_llm("CREAT-QA"),
             },
             WorkerRole.PRODUCT_EVIDENCE: {
-                "PROD-DISCOVERY": LlmClient(settings.llm, agent_identity="PROD-DISCOVERY"),
-                "PROD-APPRAISAL": LlmClient(settings.llm, agent_identity="PROD-APPRAISAL"),
-                "PROD-CLAIMS": LlmClient(settings.llm, agent_identity="PROD-CLAIMS"),
-                "PROD-LAB": LlmClient(settings.llm, agent_identity="PROD-LAB"),
-                "PROD-REGULATORY": LlmClient(settings.llm, agent_identity="PROD-REGULATORY"),
-                "PROD-SAFETY": LlmClient(settings.llm, agent_identity="PROD-SAFETY"),
+                "PROD-DISCOVERY": _gen_llm("PROD-DISCOVERY"),
+                "PROD-APPRAISAL": _gen_llm("PROD-APPRAISAL"),
+                "PROD-CLAIMS": _gen_llm("PROD-CLAIMS"),
+                "PROD-LAB": _gen_llm("PROD-LAB"),
+                "PROD-REGULATORY": _gen_llm("PROD-REGULATORY"),
+                "PROD-SAFETY": _gen_llm("PROD-SAFETY"),
             },
             WorkerRole.COMPETITOR_INTEL: {
-                "COMP-DISCOVERY": LlmClient(settings.llm, agent_identity="COMP-DISCOVERY"),
-                "COMP-ADS": LlmClient(settings.llm, agent_identity="COMP-ADS"),
-                "COMP-PRICING": LlmClient(settings.llm, agent_identity="COMP-PRICING"),
-                "COMP-SEARCH": LlmClient(settings.llm, agent_identity="COMP-SEARCH"),
-                "COMP-POSITIONING": LlmClient(settings.llm, agent_identity="COMP-POSITIONING"),
-                "COMP-SYNTHESIS": LlmClient(settings.llm, agent_identity="COMP-SYNTHESIS"),
+                "COMP-DISCOVERY": _gen_llm("COMP-DISCOVERY"),
+                "COMP-ADS": _gen_llm("COMP-ADS"),
+                "COMP-PRICING": _gen_llm("COMP-PRICING"),
+                "COMP-SEARCH": _gen_llm("COMP-SEARCH"),
+                "COMP-POSITIONING": _gen_llm("COMP-POSITIONING"),
+                "COMP-SYNTHESIS": _gen_llm("COMP-SYNTHESIS"),
             },
             WorkerRole.CUSTOMER_VOICE: {
-                "VOICE-DISCOVERY": create_voice_llm_client(DISCOVERY_PROFILE, base_settings=settings.llm),
-                "VOICE-THEMES": create_voice_llm_client(THEMES_PROFILE, base_settings=settings.llm),
-                "VOICE-SENTIMENT": create_voice_llm_client(SENTIMENT_PROFILE, base_settings=settings.llm),
-                "VOICE-NEEDS": create_voice_llm_client(NEEDS_PROFILE, base_settings=settings.llm),
-                "VOICE-JOURNEY": create_voice_llm_client(JOURNEY_PROFILE, base_settings=settings.llm),
-                "VOICE-QA": create_voice_llm_client(QA_PROFILE, base_settings=settings.llm),
+                "VOICE-DISCOVERY": create_voice_llm_client(
+                    DISCOVERY_PROFILE, base_settings=settings.llm, model_identity=general_model
+                ),
+                "VOICE-THEMES": create_voice_llm_client(
+                    THEMES_PROFILE, base_settings=settings.llm, model_identity=general_model
+                ),
+                "VOICE-SENTIMENT": create_voice_llm_client(
+                    SENTIMENT_PROFILE, base_settings=settings.llm, model_identity=general_model
+                ),
+                "VOICE-NEEDS": create_voice_llm_client(
+                    NEEDS_PROFILE, base_settings=settings.llm, model_identity=general_model
+                ),
+                "VOICE-JOURNEY": create_voice_llm_client(
+                    JOURNEY_PROFILE, base_settings=settings.llm, model_identity=general_model
+                ),
+                "VOICE-QA": create_voice_llm_client(
+                    QA_PROFILE, base_settings=settings.llm, model_identity=general_model
+                ),
             },
             WorkerRole.LEARNING_PERFORMANCE: {
-                "LEARN-TELEMETRY": LlmClient(settings.llm, agent_identity="LEARN-TELEMETRY"),
-                "LEARN-ATTRIBUTION": LlmClient(settings.llm, agent_identity="LEARN-ATTRIBUTION"),
-                "LEARN-INCREMENTALITY": LlmClient(settings.llm, agent_identity="LEARN-INCREMENTALITY"),
-                "LEARN-FATIGUE": LlmClient(settings.llm, agent_identity="LEARN-FATIGUE"),
-                "LEARN-DECAY": LlmClient(settings.llm, agent_identity="LEARN-DECAY"),
-                "LEARN-QA": LlmClient(settings.llm, agent_identity="LEARN-QA"),
+                "LEARN-TELEMETRY": _gen_llm("LEARN-TELEMETRY"),
+                "LEARN-ATTRIBUTION": _gen_llm("LEARN-ATTRIBUTION"),
+                "LEARN-INCREMENTALITY": _gen_llm("LEARN-INCREMENTALITY"),
+                "LEARN-FATIGUE": _gen_llm("LEARN-FATIGUE"),
+                "LEARN-DECAY": _gen_llm("LEARN-DECAY"),
+                "LEARN-QA": _gen_llm("LEARN-QA"),
             },
         }
         for sub_map in specialist_llm_clients_by_worker.values():

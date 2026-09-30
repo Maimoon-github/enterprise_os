@@ -625,3 +625,70 @@ async def test_default_ollama_qwen_coder_7b_wiring() -> None:
     assert metadata["configured_model"] == "qwen2.5-coder:7b"
     assert metadata["is_local"] is True
     assert metadata["estimated_cost_usd"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_ollama_dual_model_orchestration_and_coding_isolation() -> None:
+    """Verify single-model deterministic invocation:
+    qwen2.5:7b for IE and qwen2.5-coder:7b for coding.
+    """
+    from app.integrations.llm import (
+        DEFAULT_OLLAMA_CODER_MODEL,
+        DEFAULT_OLLAMA_INTELLIGENCE_MODEL,
+        create_coder_client,
+        create_intelligence_client,
+    )
+
+    # 1. Dual model constants verification
+    assert DEFAULT_OLLAMA_INTELLIGENCE_MODEL == "qwen2.5:7b"
+    assert DEFAULT_OLLAMA_CODER_MODEL == "qwen2.5-coder:7b"
+
+    # 2. Intelligence Engine client targeting qwen2.5:7b
+    ie_transport = _build_mock_chat_transport("Strategic directive plan")
+    ie_http = httpx.AsyncClient(transport=ie_transport)
+    ie_client = create_intelligence_client(client=ie_http)
+    assert ie_client.agent_identity == "INTELLIGENCE_ENGINE"
+    assert ie_client.model_identity == "qwen2.5:7b"
+    assert ie_client.settings.is_local is True
+
+    ie_content, ie_meta = await ie_client.complete_with_metadata("Plan campaign strategy")
+    assert ie_content == "Strategic directive plan"
+    assert ie_meta["configured_model"] == "qwen2.5:7b"
+    assert ie_meta["model_identity"] == "qwen2.5:7b"
+    assert ie_meta["is_local"] is True
+
+    # 3. Development / Coding client targeting qwen2.5-coder:7b
+    coder_transport = _build_mock_chat_transport("def execute(): pass")
+    coder_http = httpx.AsyncClient(transport=coder_transport)
+    coder_client = create_coder_client(agent_identity="W_DEV", client=coder_http)
+    assert coder_client.agent_identity == "W_DEV"
+    assert coder_client.model_identity == "qwen2.5-coder:7b"
+    assert coder_client.settings.is_local is True
+
+    coder_content, coder_meta = await coder_client.complete_with_metadata("Write function")
+    assert coder_content == "def execute(): pass"
+    assert coder_meta["configured_model"] == "qwen2.5-coder:7b"
+    assert coder_meta["model_identity"] == "qwen2.5-coder:7b"
+
+    # 4. Dev specialist sub-agent targeting qwen2.5-coder:7b
+    dev_code_client = create_coder_client(agent_identity="DEV-CODE", client=coder_http)
+    assert dev_code_client.agent_identity == "DEV-CODE"
+    assert dev_code_client.model_identity == "qwen2.5-coder:7b"
+
+    # 5. Verify explicit model_identity is never overridden by settings.model_name
+    custom_settings = LlmSettings(
+        provider="ollama",
+        base_url="http://localhost:11434/v1",
+        model_name="fallback-model",
+    )
+    isolated_client = LlmClient(
+        custom_settings,
+        client=ie_http,
+        agent_identity="INTELLIGENCE_ENGINE",
+        model_identity="qwen2.5:7b",
+    )
+    assert isolated_client.model_identity == "qwen2.5:7b"
+    _, isolated_meta = await isolated_client.complete_with_metadata("Test prompt")
+    assert isolated_meta["configured_model"] == "qwen2.5:7b"
+    assert isolated_meta["model_identity"] == "qwen2.5:7b"
+

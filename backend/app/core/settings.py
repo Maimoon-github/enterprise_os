@@ -56,6 +56,14 @@ class LlmSettings(BaseSettings):
         description="Base URL for OpenAI-compatible completions (e.g. http://localhost:11434/v1).",
     )
     model_name: str = Field(default="unset")
+    intelligence_model_name: str | None = Field(
+        default=None,
+        description="Model identifier for Intelligence Engine and orchestrator reasoning (e.g. qwen2.5:7b).",
+    )
+    coder_model_name: str | None = Field(
+        default=None,
+        description="Model identifier for Development Worker and coding specialists (e.g. qwen2.5-coder:7b).",
+    )
     request_timeout_seconds: int = Field(default=60, ge=1)
     cost_per_million_input_tokens: float = Field(default=0.0, ge=0.0)
     cost_per_million_output_tokens: float = Field(default=0.0, ge=0.0)
