@@ -49,6 +49,7 @@ from app.security.authorization_boundary import AuthorizationBoundary, CallerIde
 from app.services.memory_promotion import MemoryPromotionService
 from app.services.provenance import ProvenanceRecorder
 from app.services.task_state import TaskStateService
+from sqlalchemy.ext.asyncio import AsyncSession
 from tests.conftest import FakeProvenanceRepository
 
 
@@ -58,7 +59,13 @@ class _FakeMemoryRepository(MemoryRepository):
     def __init__(self) -> None:
         self.promoted_records: list[MemoryRecord] = []
 
-    async def promote(self, record: MemoryRecord, min_confidence: float = 0.6) -> None:
+    async def promote(
+        self,
+        record: MemoryRecord,
+        min_confidence: float = 0.6,
+        *,
+        session: AsyncSession | None = None,
+    ) -> None:
         if record.confidence < min_confidence:
             raise ValueError(
                 f"Memory record confidence {record.confidence:.2f} is below threshold {min_confidence:.2f}"
@@ -68,14 +75,19 @@ class _FakeMemoryRepository(MemoryRepository):
     async def list_by_tenant(
         self,
         tenant_id: str,
+        *,
         category: str | None = None,
         namespace: str | None = None,
+        is_active: bool | None = None,
+        session: AsyncSession | None = None,
     ) -> list[MemoryRecord]:
         recs = [r for r in self.promoted_records if r.tenant_id == tenant_id]
-        if category:
+        if category is not None:
             recs = [r for r in recs if r.category == category]
-        if namespace:
+        if namespace is not None:
             recs = [r for r in recs if r.namespace == namespace]
+        if is_active is not None:
+            recs = [r for r in recs if r.is_active == is_active]
         return recs
 
     def all(self) -> list[MemoryRecord]:
@@ -512,7 +524,7 @@ async def test_w_learn_build_promotion_proposal() -> None:
         tenant_id="tenant-alpha",
         task_id="task-t31",
         model_type=AttributionModelType.LINEAR,
-        channel_weights=[AttributionWeight(channel="meta", weight_percentage=60.0)],
+        channel_weights=[AttributionWeight(channel="meta", weight=60.0)],
         proposed_learning_deltas=["Allocate +15% budget to Meta evening peak."],
         confidence=ConfidenceInterval(point_estimate=0.86, lower_bound=0.76, upper_bound=0.91),
         data_quality=DataQualityIndicator(total_events=50, attribution_coverage=1.0),

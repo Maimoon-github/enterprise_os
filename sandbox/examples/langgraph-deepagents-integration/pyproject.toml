@@ -3,7 +3,7 @@ name = "aio-deepagents"
 version = "0.1.0"
 description = "An example project integrating LangGraph and DeepAgents with aio-sandbox."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0.0",
     "httpx[socks]>=0.27.2",

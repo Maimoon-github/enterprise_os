@@ -1,0 +1,9 @@
+{
+  "venvPath": "/home/maimoon-amin/miniconda3/envs",
+  "venv": "enterprise_os",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "extraPaths": [
+    "backend"
+  ]
+}

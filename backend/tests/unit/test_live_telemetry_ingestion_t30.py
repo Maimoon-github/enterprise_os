@@ -49,6 +49,7 @@ from app.services.provenance import ProvenanceRecorder
 from app.services.task_state import TaskStateService
 from app.services.telemetry import TelemetryNormalizer
 from app.services.telemetry_engine import OmnichannelTelemetryEngine
+from sqlalchemy.ext.asyncio import AsyncSession
 from tests.conftest import FakeProvenanceRepository
 
 
@@ -59,24 +60,53 @@ class _InMemoryTelemetryRepository(TelemetryRepository):
         self._store: dict[str, TelemetryEvent] = {}
         self.should_fail = should_fail
 
-    async def record(self, event: TelemetryEvent) -> None:
+    async def record(
+        self, event: TelemetryEvent, *, session: AsyncSession | None = None
+    ) -> TelemetryEvent:
         if self.should_fail:
             raise RepositoryError("Simulated database connection failure during write.")
         self._store[event.event_id] = event
+        return event
 
-    async def get(self, record_id: str) -> TelemetryEvent | None:
-        return self._store.get(record_id)
+    async def get(
+        self,
+        record_id: str,
+        *,
+        tenant_id: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> TelemetryEvent | None:
+        event = self._store.get(record_id)
+        if event is not None and tenant_id is not None and event.tenant_id != tenant_id:
+            return None
+        return event
 
-    async def get_by_idempotency_key(self, tenant_id: str, idempotency_key: str) -> TelemetryEvent | None:
+    async def get_by_idempotency_key(
+        self,
+        tenant_id: str,
+        idempotency_key: str,
+        *,
+        session: AsyncSession | None = None,
+    ) -> TelemetryEvent | None:
         for event in self._store.values():
             if event.tenant_id == tenant_id and event.idempotency_key == idempotency_key:
                 return event
         return None
 
-    async def list_by_tenant(self, tenant_id: str) -> list[TelemetryEvent]:
+    async def list_by_tenant(
+        self,
+        tenant_id: str,
+        *,
+        session: AsyncSession | None = None,
+    ) -> list[TelemetryEvent]:
         return [e for e in self._store.values() if e.tenant_id == tenant_id]
 
-    async def list_by_type(self, tenant_id: str, event_type: str) -> list[TelemetryEvent]:
+    async def list_by_type(
+        self,
+        tenant_id: str,
+        event_type: str,
+        *,
+        session: AsyncSession | None = None,
+    ) -> list[TelemetryEvent]:
         return [
             e
             for e in self._store.values()
