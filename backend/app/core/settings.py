@@ -18,7 +18,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class DatabaseSettings(BaseSettings):
     """PostgreSQL/pgvector/TimescaleDB connection boundary configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="DB_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="DB_", env_file=".env", extra="ignore")
 
     dsn: str = Field(
         default="postgresql+asyncpg://localhost:5432/governed_backend",
@@ -44,7 +44,7 @@ class DatabaseSettings(BaseSettings):
 class LlmSettings(BaseSettings):
     """Provider-neutral AI model boundary configuration with local-model priority."""
 
-    model_config = SettingsConfigDict(env_prefix="LLM_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env", extra="ignore")
 
     provider: str = Field(
         default="unset",
@@ -74,7 +74,7 @@ class LlmSettings(BaseSettings):
 class SandboxSettings(BaseSettings):
     """Configuration for Sandbox Control Plane and agent_sandbox boundary."""
 
-    model_config = SettingsConfigDict(env_prefix="SANDBOX_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SANDBOX_", env_file=".env", extra="ignore")
 
     environment: str | None = Field(default=None)
     endpoint: str | None = Field(default=None)
@@ -94,7 +94,7 @@ class SandboxSettings(BaseSettings):
 class CmsSettings(BaseSettings):
     """Headless CMS integration boundary configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="CMS_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="CMS_", env_file=".env", extra="ignore")
 
     base_url: str | None = Field(default=None)
     api_key: str | None = Field(default=None, repr=False)
@@ -103,7 +103,7 @@ class CmsSettings(BaseSettings):
 class AdsSettings(BaseSettings):
     """Paid-media platform adapter configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="ADS_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="ADS_", env_file=".env", extra="ignore")
 
     meta_access_token: str | None = Field(default=None, repr=False)
     google_access_token: str | None = Field(default=None, repr=False)
@@ -114,7 +114,7 @@ class AdsSettings(BaseSettings):
 class SocialSettings(BaseSettings):
     """Organic social-channel adapter configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="SOCIAL_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SOCIAL_", env_file=".env", extra="ignore")
 
     instagram_access_token: str | None = Field(default=None, repr=False)
     x_access_token: str | None = Field(default=None, repr=False)
@@ -125,7 +125,7 @@ class SocialSettings(BaseSettings):
 class SecuritySettings(BaseSettings):
     """Cryptographic and authorization configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="SECURITY_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SECURITY_", env_file=".env", extra="ignore")
 
     signing_public_key_pem: str | None = Field(default=None, repr=False)
     require_signed_dispatch: bool = Field(default=True)
@@ -134,7 +134,7 @@ class SecuritySettings(BaseSettings):
 class TelemetrySettings(BaseSettings):
     """Omnichannel Telemetry Engine and listener configuration."""
 
-    model_config = SettingsConfigDict(env_prefix="TELEMETRY_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="TELEMETRY_", env_file=".env", extra="ignore")
 
     webhook_signing_secret: str | None = Field(default=None, repr=False)
     max_payload_bytes: int = Field(default=262144, ge=1024)

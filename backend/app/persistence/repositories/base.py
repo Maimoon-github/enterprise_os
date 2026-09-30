@@ -43,11 +43,12 @@ class BaseJsonRepository(Generic[ModelT]):
         if not tenant_id or not isinstance(tenant_id, str) or not tenant_id.strip():
             raise RepositoryError("Tenant ID cannot be empty.")
         try:
+            import re
             from sqlalchemy import text
 
+            clean_tenant = re.sub(r"[^a-zA-Z0-9_\-]", "", tenant_id)
             await session.execute(
-                text("SET LOCAL app.current_tenant = :tenant_id"),
-                {"tenant_id": tenant_id},
+                text(f"SET LOCAL app.current_tenant = '{clean_tenant}'"),
             )
         except Exception:
             # Fall back safely on non-PostgreSQL dialects or unit-test mocks

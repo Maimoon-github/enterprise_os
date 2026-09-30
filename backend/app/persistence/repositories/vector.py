@@ -74,9 +74,10 @@ class VectorRepository:
 
     async def _apply_tenant_context(self, session: AsyncSession, tenant_id: str) -> None:
         try:
+            import re
+            clean_tenant = re.sub(r"[^a-zA-Z0-9_\-]", "", tenant_id)
             await session.execute(
-                text("SET LOCAL app.current_tenant = :tenant_id"),
-                {"tenant_id": tenant_id},
+                text(f"SET LOCAL app.current_tenant = '{clean_tenant}'"),
             )
         except Exception:
             pass
