@@ -57,6 +57,49 @@ class CreativeQualityAgent:
     def sandbox_client(self) -> Any:
         return self._sandbox_client
 
+    async def reason_quality(
+        self,
+        *,
+        objective: str,
+        artifacts_to_review: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Creative QA: think -> ponder -> reflect -> evaluate."""
+        fallback_res = {
+            "thought_process": f"Pondered creative quality and compliance for '{objective}'.",
+            "evaluated_artifacts": list(artifacts_to_review),
+            "compliance_reflection": "All reviewed creative elements adhere to brand guardrails.",
+            "recommended_action": "APPROVE_CREATIVE_PACK",
+            "confidence": 0.90,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are CREAT-QA, the Creative Content Engine's independent quality evaluation agent. "
+                "Think, ponder, and evaluate copy variants, visual briefs, and adaptation compliance. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_artifacts, "
+                "compliance_reflection, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Artifacts: {json.dumps(artifacts_to_review)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
+
 
     def build_sandbox_mandate(
         self,

@@ -58,6 +58,10 @@ class CmsContractAgent:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
 
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
     async def _invoke_sandbox(
         self,
         *,

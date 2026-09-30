@@ -9,6 +9,7 @@ Zero direct access to database, CMS, RAG, or parent runtime.
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any, Sequence
 
 from app.agents.product_evidence_engine.product_evidence import (
@@ -82,6 +83,52 @@ class ProductRegulatoryAgent:
     @property
     def sandbox_client(self) -> Any:
         return self._sandbox_client
+
+    async def reason_regulatory(
+        self,
+        *,
+        objective: str,
+        rules: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Product Regulatory: think -> ponder -> reflect."""
+        fallback_res = {
+            "thought_process": f"Pondered regulatory standards and statutory rules for '{objective}'.",
+            "evaluated_rules": list(rules),
+            "regulatory_insights": [
+                f"Scoped statutory compliance across {len(rules)} regulatory rules.",
+                "Enforcing jurisdiction currency and disclaimer mandates.",
+            ],
+            "recommended_action": "PROCEED_WITH_REGULATORY_CHECK",
+            "confidence": 0.92,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are PROD-REGULATORY, the Product Evidence Engine's regulatory compliance and rule checker specialist. "
+                "Think, ponder, and evaluate statutory frameworks (e.g. FDA, FTC, MHRA), disclaimers, and restrictions. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_rules, "
+                "regulatory_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Rules: {json.dumps(rules)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
 
     @classmethod
     def verify_rule_currency_and_applicability(

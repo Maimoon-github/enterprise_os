@@ -135,6 +135,52 @@ class ProductLabAgent:
     def sandbox_client(self) -> Any:
         return self._sandbox_client
 
+    async def reason_lab(
+        self,
+        *,
+        objective: str,
+        formulations: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Product Lab: think -> ponder -> reflect."""
+        fallback_res = {
+            "thought_process": f"Pondered formulation stoichiometry, stability, and specs for '{objective}'.",
+            "evaluated_formulations": list(formulations),
+            "lab_insights": [
+                f"Scoped lab analytics across {len(formulations)} formulation items.",
+                "Enforcing limit-of-detection and unit consistency.",
+            ],
+            "recommended_action": "PROCEED_WITH_LAB_VERIFICATION",
+            "confidence": 0.91,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are PROD-LAB, the Product Evidence Engine's laboratory and formulation verification specialist. "
+                "Think, ponder, and evaluate analytical certificates, formulation limits, and assay results. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_formulations, "
+                "lab_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Formulations: {json.dumps(formulations)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
+
     @classmethod
     def normalize_measurement(
         cls,

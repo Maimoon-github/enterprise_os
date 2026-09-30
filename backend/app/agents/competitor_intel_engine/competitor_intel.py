@@ -32,6 +32,80 @@ class CompetitorIntelAgent(BoundedWorkerAgent):
 
     capability = SandboxCapability.COMP
 
+    def __init__(
+        self,
+        sandbox_client: Any = None,
+        llm_client: Any = None,
+        *,
+        discovery_agent: Any = None,
+        advertising_agent: Any = None,
+        pricing_agent: Any = None,
+        search_agent: Any = None,
+        positioning_agent: Any = None,
+        synthesis_agent: Any = None,
+        specialist_llm_clients: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(sandbox_client, llm_client=llm_client)
+        from app.agents.competitor_intel_engine.subagents import (
+            CompetitorAdvertisingAgent,
+            CompetitorDiscoveryAgent,
+            CompetitorPositioningAgent,
+            CompetitorPricingAgent,
+            CompetitorSearchIntelAgent,
+            CompetitorSynthesisAgent,
+        )
+        sub_clients = specialist_llm_clients or {}
+
+        def _resolve_sub_llm(ident: str) -> Any:
+            if ident in sub_clients:
+                return sub_clients[ident]
+            key_alt = ident.lower().replace("-", "_").replace("w_comp.", "").replace("comp_", "")
+            if key_alt in sub_clients:
+                return sub_clients[key_alt]
+            if llm_client is not None and hasattr(llm_client, "settings"):
+                return llm_client.__class__(
+                    llm_client.settings,
+                    agent_identity=ident,
+                    model_identity=getattr(llm_client, "model_identity", None),
+                    default_temperature=getattr(llm_client, "default_temperature", None),
+                    default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+                )
+            return llm_client
+
+        self.discovery_agent = discovery_agent or CompetitorDiscoveryAgent(
+            llm_client=_resolve_sub_llm("COMP-DISCOVERY")
+        )
+        self.advertising_agent = advertising_agent or CompetitorAdvertisingAgent(
+            llm_client=_resolve_sub_llm("COMP-ADS")
+        )
+        self.pricing_agent = pricing_agent or CompetitorPricingAgent(
+            llm_client=_resolve_sub_llm("COMP-PRICE")
+        )
+        self.search_agent = search_agent or CompetitorSearchIntelAgent(
+            llm_client=_resolve_sub_llm("COMP-SEARCH")
+        )
+        self.positioning_agent = positioning_agent or CompetitorPositioningAgent(
+            llm_client=_resolve_sub_llm("COMP-POSITION")
+        )
+        self.synthesis_agent = synthesis_agent or CompetitorSynthesisAgent(
+            llm_client=_resolve_sub_llm("COMP-SYNTH")
+        )
+
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Competitor Intel specialist sub-agents."""
+        return {
+            "COMP-DISCOVERY": self.discovery_agent,
+            "COMP-ADS": self.advertising_agent,
+            "COMP-PRICE": self.pricing_agent,
+            "COMP-PRICING": self.pricing_agent,
+            "COMP-SEARCH": self.search_agent,
+            "COMP-POSITION": self.positioning_agent,
+            "COMP-POSITIONING": self.positioning_agent,
+            "COMP-SYNTH": self.synthesis_agent,
+            "COMP-SYNTHESIS": self.synthesis_agent,
+        }
+
     def build_payload(self, grant: TaskGrant, context: dict[str, object]) -> dict[str, str]:
         """Formulate legacy baseline payload if invoked via base execute path."""
         competitor = str(context.get("competitor", "CompetitorCorp"))

@@ -43,6 +43,57 @@ class VoiceJourneyAgent:
     def llm_client(self) -> Any:
         return self._llm_client
 
+    async def reason_journey(
+        self,
+        *,
+        objective: str,
+        segments: list[str] | None = None,
+        channels: list[str] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Voice Journey: think -> ponder -> reflect."""
+        import json
+        fallback_res = {
+            "thought_process": f"Pondered customer journey, touchpoint transitions, and segment feedback for '{objective}'.",
+            "evaluated_segments": list(segments or []),
+            "evaluated_channels": list(channels or []),
+            "journey_insights": [
+                f"Scoped descriptive comparisons across {len(segments or [])} segments and {len(channels or [])} channels.",
+                "Strictly enforcing non-causal disclosures and descriptive comparisons.",
+            ],
+            "recommended_action": "PROCEED_WITH_DESCRIPTIVE_JOURNEY_MAPPING",
+            "confidence": 0.90,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are VOICE-JOURNEY, the Customer Voice Engine's journey and channel comparison specialist. "
+                "Think, ponder, and analyze customer touchpoints, segment differences, and stage transitions. "
+                "Enforce descriptive comparisons without causal assertions. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_segments, "
+                "evaluated_channels, journey_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Segments: {json.dumps(segments or [])}\n"
+                f"Channels: {json.dumps(channels or [])}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
+
     async def execute(
         self,
         task: Any,

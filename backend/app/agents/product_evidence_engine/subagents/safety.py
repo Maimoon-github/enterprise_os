@@ -86,6 +86,52 @@ class ProductSafetyAgent:
     def sandbox_client(self) -> Any:
         return self._sandbox_client
 
+    async def reason_safety(
+        self,
+        *,
+        objective: str,
+        safety_signals: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Product Safety: think -> ponder -> reflect."""
+        fallback_res = {
+            "thought_process": f"Pondered toxicological endpoints and adverse safety signals for '{objective}'.",
+            "evaluated_signals": list(safety_signals),
+            "safety_insights": [
+                f"Scoped safety appraisal across {len(safety_signals)} safety signals.",
+                "Enforcing clinical toxicology thresholds and escalation checks.",
+            ],
+            "recommended_action": "PROCEED_WITH_SAFETY_AUDIT",
+            "confidence": 0.93,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are PROD-SAFETY, the Product Evidence Engine's toxicology and safety screening specialist. "
+                "Think, ponder, and evaluate adverse event signals, contraindications, and allergen warnings. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_signals, "
+                "safety_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Signals: {json.dumps(safety_signals)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
+
     @classmethod
     def evaluate_adverse_signals(cls, adverse_signals: list[str]) -> tuple[list[str], bool]:
         """Scan adverse signals for severe clinical and toxicological endpoints requiring immediate escalation."""

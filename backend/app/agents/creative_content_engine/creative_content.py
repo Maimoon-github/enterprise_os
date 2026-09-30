@@ -88,6 +88,19 @@ class CreativeContentAgent(BoundedWorkerAgent):
     def workflow(self) -> CreativeContentWorkflow:
         return self._workflow
 
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Creative specialist sub-agents."""
+        wf = self._workflow
+        return {
+            "CREAT-RESEARCH": getattr(wf, "research_agent", None),
+            "CREAT-CONCEPT": getattr(wf, "concept_agent", None),
+            "CREAT-COPY": getattr(wf, "copy_agent", None),
+            "CREAT-VISUAL": getattr(wf, "visual_agent", None),
+            "CREAT-ADAPT": getattr(wf, "adaptation_agent", None),
+            "CREAT-QA": getattr(wf, "qa_agent", None),
+        }
+
     def build_payload(self, grant: TaskGrant, context: dict[str, Any]) -> dict[str, str]:
         """Reject sandbox payload construction: W_CREAT has zero sandbox capability."""
         raise PolicyViolationError(

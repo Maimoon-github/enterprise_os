@@ -70,17 +70,59 @@ class DevelopmentAgent(BoundedWorkerAgent):
         self,
         sandbox_client: SandboxClient,
         llm_client: Any = None,
+        *,
+        planning_agent: DevelopmentPlanningAgent | None = None,
+        cms_agent: CmsContractAgent | None = None,
+        ui_agent: UiLayoutAgent | None = None,
+        code_agent: CodeImplementationAgent | None = None,
+        verify_agent: VerificationAgent | None = None,
+        security_agent: SecurityReviewAgent | None = None,
+        release_agent: ReleaseOpsAgent | None = None,
+        subagent_llm_clients: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(sandbox_client, llm_client=llm_client)
         self._identity = DevelopmentEngineIdentity()
         self._status = DevelopmentEngineStatus()
-        self._planning_agent = DevelopmentPlanningAgent(sandbox_client, llm_client=llm_client)
-        self._cms_agent = CmsContractAgent(sandbox_client, llm_client=llm_client)
-        self._ui_agent = UiLayoutAgent(sandbox_client, llm_client=llm_client)
-        self._code_agent = CodeImplementationAgent(sandbox_client, llm_client=llm_client)
-        self._verify_agent = VerificationAgent(sandbox_client, llm_client=llm_client)
-        self._security_agent = SecurityReviewAgent(sandbox_client, llm_client=llm_client)
-        self._release_agent = ReleaseOpsAgent(sandbox_client, llm_client=llm_client)
+
+        # Resolve isolated LLM client per specialist sub-agent
+        sub_clients = subagent_llm_clients or {}
+
+        def _resolve_sub_llm(ident: str) -> Any:
+            if ident in sub_clients:
+                return sub_clients[ident]
+            if ident.lower().replace("-", "_") in sub_clients:
+                return sub_clients[ident.lower().replace("-", "_")]
+            if llm_client is not None and hasattr(llm_client, "settings"):
+                return llm_client.__class__(
+                    llm_client.settings,
+                    agent_identity=ident,
+                    model_identity=getattr(llm_client, "model_identity", None),
+                    default_temperature=getattr(llm_client, "default_temperature", None),
+                    default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+                )
+            return llm_client
+
+        self._planning_agent = planning_agent or DevelopmentPlanningAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-PLAN")
+        )
+        self._cms_agent = cms_agent or CmsContractAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-CMS")
+        )
+        self._ui_agent = ui_agent or UiLayoutAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-UI")
+        )
+        self._code_agent = code_agent or CodeImplementationAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-CODE")
+        )
+        self._verify_agent = verify_agent or VerificationAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-VERIFY")
+        )
+        self._security_agent = security_agent or SecurityReviewAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-SEC")
+        )
+        self._release_agent = release_agent or ReleaseOpsAgent(
+            sandbox_client, llm_client=_resolve_sub_llm("DEV-REL")
+        )
 
     @property
     def identity(self) -> DevelopmentEngineIdentity:
@@ -126,6 +168,19 @@ class DevelopmentAgent(BoundedWorkerAgent):
     def release_agent(self) -> ReleaseOpsAgent:
         """Sub-agent responsible for release packaging and delivery (DEV-REL)."""
         return self._release_agent
+
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Development specialist sub-agents."""
+        return {
+            "DEV-PLAN": self._planning_agent,
+            "DEV-CMS": self._cms_agent,
+            "DEV-UI": self._ui_agent,
+            "DEV-CODE": self._code_agent,
+            "DEV-VERIFY": self._verify_agent,
+            "DEV-SEC": self._security_agent,
+            "DEV-REL": self._release_agent,
+        }
 
 
     def get_identity(self) -> DevelopmentEngineIdentity:

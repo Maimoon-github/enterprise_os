@@ -54,6 +54,7 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
         fatigue_agent: Any = None,
         decay_agent: Any = None,
         qa_agent: Any = None,
+        specialist_llm_clients: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(sandbox_client, llm_client)
         from app.agents.learning_performance_engine.subagents import (
@@ -64,12 +65,78 @@ class LearningPerformanceAgent(BoundedWorkerAgent):
             LearningQualityAgent,
             LearningTelemetryAgent,
         )
-        self._telemetry_agent = telemetry_agent or LearningTelemetryAgent(sandbox_client)
-        self._attribution_agent = attribution_agent or LearningAttributionAgent(sandbox_client)
-        self._incrementality_agent = incrementality_agent or LearningIncrementalityAgent(sandbox_client)
-        self._fatigue_agent = fatigue_agent or LearningFatigueAgent(sandbox_client)
-        self._decay_agent = decay_agent or LearningDecayAgent(sandbox_client)
-        self._qa_agent = qa_agent or LearningQualityAgent(sandbox_client)
+        sub_clients = specialist_llm_clients or {}
+
+        def _resolve_sub_llm(ident: str) -> Any:
+            if ident in sub_clients:
+                return sub_clients[ident]
+            key_alt = ident.lower().replace("-", "_").replace("w_learn.", "").replace("learn_", "")
+            if key_alt in sub_clients:
+                return sub_clients[key_alt]
+            if llm_client is not None and hasattr(llm_client, "settings"):
+                return llm_client.__class__(
+                    llm_client.settings,
+                    agent_identity=ident,
+                    model_identity=getattr(llm_client, "model_identity", None),
+                    default_temperature=getattr(llm_client, "default_temperature", None),
+                    default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+                )
+            return llm_client
+
+        self._telemetry_agent = telemetry_agent or LearningTelemetryAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("LEARN-TELEMETRY")
+        )
+        self._attribution_agent = attribution_agent or LearningAttributionAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("LEARN-ATTRIBUTION")
+        )
+        self._incrementality_agent = incrementality_agent or LearningIncrementalityAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("LEARN-INCREMENTALITY")
+        )
+        self._fatigue_agent = fatigue_agent or LearningFatigueAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("LEARN-FATIGUE")
+        )
+        self._decay_agent = decay_agent or LearningDecayAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("LEARN-DECAY")
+        )
+        self._qa_agent = qa_agent or LearningQualityAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("LEARN-QA")
+        )
+
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Learning & Performance specialist sub-agents."""
+        return {
+            "LEARN-TELEMETRY": self._telemetry_agent,
+            "LEARN-ATTRIBUTION": self._attribution_agent,
+            "LEARN-INCREMENTALITY": self._incrementality_agent,
+            "LEARN-FATIGUE": self._fatigue_agent,
+            "LEARN-DECAY": self._decay_agent,
+            "LEARN-QA": self._qa_agent,
+        }
+
+    @property
+    def telemetry_agent(self) -> Any:
+        return self._telemetry_agent
+
+    @property
+    def attribution_agent(self) -> Any:
+        return self._attribution_agent
+
+    @property
+    def incrementality_agent(self) -> Any:
+        return self._incrementality_agent
+
+    @property
+    def fatigue_agent(self) -> Any:
+        return self._fatigue_agent
+
+    @property
+    def decay_agent(self) -> Any:
+        return self._decay_agent
+
+    @property
+    def qa_agent(self) -> Any:
+        return self._qa_agent
 
     def _normalize_context(
         self, grant: TaskGrant, context: dict[str, object]

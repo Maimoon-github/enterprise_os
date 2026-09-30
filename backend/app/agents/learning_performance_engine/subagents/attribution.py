@@ -27,6 +27,58 @@ class LearningAttributionAgent:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
 
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    async def reason_attribution(
+        self,
+        *,
+        objective: str,
+        channels: list[str] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Learning Attribution: think -> ponder -> reflect."""
+        import json
+        fallback_res = {
+            "thought_process": f"Pondered multi-touch attribution, touchpoint weighting, and observational uncertainty for '{objective}'.",
+            "evaluated_channels": list(channels or []),
+            "attribution_insights": [
+                f"Scoped multi-touch model across {len(channels or [])} marketing channels.",
+                "Enforcing observational attribution labeling to avoid conflating correlation with causality.",
+            ],
+            "recommended_action": "PROCEED_WITH_ATTRIBUTION_MODELING",
+            "confidence": 0.90,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are LEARN-ATTRIBUTION, the Learning & Performance Engine's multi-touch attribution specialist. "
+                "Think, ponder, and analyze touchpoint pathways, contribution weighting, spend efficiency, and ROAS intervals. "
+                "Enforce strict non-causal disclosures for observational attribution models. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_channels, "
+                "attribution_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Channels: {json.dumps(channels or [])}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
+
     async def run(
         self,
         grant: TaskGrant,

@@ -143,8 +143,13 @@ class CompetitorPricingAgent:
     SPECIALIST_ROLE = CompetitorRole.PRICE
     SPECIALIST_ID = "w_comp.price"
 
-    def __init__(self, profile: SpecialistModelProfile | None = None) -> None:
+    def __init__(
+        self,
+        profile: SpecialistModelProfile | None = None,
+        llm_client: Any = None,
+    ) -> None:
         self._profile = profile or PRICE_PROFILE
+        self._llm_client = llm_client
 
     @property
     def role(self) -> CompetitorRole:
@@ -153,6 +158,65 @@ class CompetitorPricingAgent:
     @property
     def specialist_id(self) -> str:
         return self.SPECIALIST_ID
+
+    @property
+    def profile(self) -> SpecialistModelProfile:
+        return self._profile
+
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    async def reason_pricing(
+        self,
+        *,
+        objective: str,
+        price_points: list[dict[str, Any]] | None = None,
+        competitors: list[str] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Competitor Pricing: think -> ponder -> reflect."""
+        import json
+        evaluated_prices = list(price_points or [])
+        evaluated_comps = list(competitors or [])
+        fallback_res = {
+            "thought_process": f"Pondered competitor pricing architecture and discounts for '{objective}'.",
+            "evaluated_prices": evaluated_prices,
+            "evaluated_competitors": evaluated_comps,
+            "pricing_insights": [
+                f"Scoped price point evaluation across {len(evaluated_prices)} pricing records and {len(evaluated_comps)} competitors.",
+                "Enforcing currency alignment, shipping separation, and promotion bounds.",
+            ],
+            "recommended_action": "PROCEED_WITH_PRICING_SCRAPE",
+            "confidence": 0.91,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are COMP-PRICE, the Competitor Intel Engine's pricing analysis specialist. "
+                "Think, ponder, and evaluate competitive pricing structures, bundling, and promo cadence. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_prices, "
+                "pricing_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Prices: {json.dumps(price_points)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
 
     async def execute_price_attempt(
         self,

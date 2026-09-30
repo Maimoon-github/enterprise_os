@@ -50,6 +50,10 @@ class DevelopmentPlanningAgent:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
 
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
     async def _reason_with_llm(
         self,
         *,
@@ -102,7 +106,9 @@ class DevelopmentPlanningAgent:
             )
             try:
                 raw_res: Any = None
-                if hasattr(self._llm_client, "generate"):
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw_res, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
                     raw_res = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
                 elif hasattr(self._llm_client, "complete"):
                     raw_res = await self._llm_client.complete(user_prompt, system=system_prompt)
@@ -118,13 +124,36 @@ class DevelopmentPlanningAgent:
                         clean_str = clean_str.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
                     parsed = json.loads(clean_str)
                 if isinstance(parsed, dict):
-                    for k in ("thought_process", "architectural_insights", "risk_assessment", "reflection_notes", "additional_assumptions"):
+                    for k in ("thought_process", "architectural_insights", "risk_assessment", "reflection_notes", "additional_assumptions", "recommended_action", "confidence", "evaluated_tech_stack"):
                         if k in parsed:
                             cognitive_result[k] = parsed[k]
             except Exception:
                 pass
 
         return cognitive_result
+
+    async def reason_plan(
+        self,
+        *,
+        objective: str,
+        tech_stack: list[str] | None = None,
+        component_name: str = "core",
+        target_files: list[str] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Public cognitive reasoning loop for DEV-PLAN: think -> ponder -> reflect."""
+        res = await self._reason_with_llm(
+            objective=objective,
+            task_id="task-plan",
+            component_name=component_name,
+            target_files=target_files or [],
+            context=context or {},
+        )
+        if tech_stack:
+            res["evaluated_tech_stack"] = list(tech_stack)
+        if "recommended_action" not in res:
+            res["recommended_action"] = "PROCEED_WITH_PLAN"
+        return res
 
 
     async def _execute_read_only_analysis(

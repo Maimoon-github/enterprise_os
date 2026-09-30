@@ -57,18 +57,50 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
         journey_agent: Any = None,
         qa_agent: Any = None,
         provenance_recorder: Any = None,
+        *,
+        specialist_llm_clients: dict[str, Any] | None = None,
     ) -> None:
         if sandbox_client is not None:
             raise PolicyViolationError(
                 "W_VOICE coordinator is zero-sandbox and must not receive a SandboxClient."
             )
         super().__init__(sandbox_client=None, llm_client=llm_client)
-        self.discovery_agent = discovery_agent or VoiceDiscoveryAgent()
-        self.themes_agent = themes_agent or VoiceThemesAgent()
-        self.sentiment_agent = sentiment_agent or VoiceSentimentAgent()
-        self.needs_agent = needs_agent or VoiceNeedsAgent()
-        self.journey_agent = journey_agent or VoiceJourneyAgent()
-        self.qa_agent = qa_agent or VoiceQualityAgent()
+        sub_clients = specialist_llm_clients or {}
+
+        def _resolve_sub_llm(ident: str) -> Any:
+            if ident in sub_clients:
+                return sub_clients[ident]
+            key_alt = ident.lower().replace("-", "_").replace("w_voice.", "").replace("voice_", "")
+            if key_alt in sub_clients:
+                return sub_clients[key_alt]
+            if llm_client is not None and hasattr(llm_client, "settings"):
+                return llm_client.__class__(
+                    llm_client.settings,
+                    agent_identity=ident,
+                    model_identity=getattr(llm_client, "model_identity", None),
+                    default_temperature=getattr(llm_client, "default_temperature", None),
+                    default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+                )
+            return llm_client
+
+        self.discovery_agent = discovery_agent or VoiceDiscoveryAgent(
+            llm_client=_resolve_sub_llm("VOICE-DISCOVERY")
+        )
+        self.themes_agent = themes_agent or VoiceThemesAgent(
+            llm_client=_resolve_sub_llm("VOICE-THEMES")
+        )
+        self.sentiment_agent = sentiment_agent or VoiceSentimentAgent(
+            llm_client=_resolve_sub_llm("VOICE-SENTIMENT")
+        )
+        self.needs_agent = needs_agent or VoiceNeedsAgent(
+            llm_client=_resolve_sub_llm("VOICE-NEEDS")
+        )
+        self.journey_agent = journey_agent or VoiceJourneyAgent(
+            llm_client=_resolve_sub_llm("VOICE-JOURNEY")
+        )
+        self.qa_agent = qa_agent or VoiceQualityAgent(
+            llm_client=_resolve_sub_llm("VOICE-QA")
+        )
         self.provenance_recorder = provenance_recorder
 
     @property

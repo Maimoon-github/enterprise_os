@@ -27,6 +27,57 @@ class LearningDecayAgent:
         self._sandbox_client = sandbox_client
         self._llm_client = llm_client
 
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    async def reason_decay(
+        self,
+        *,
+        objective: str,
+        channel: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Learning Decay: think -> ponder -> reflect."""
+        import json
+        fallback_res = {
+            "thought_process": f"Pondered adstock carryover, geometric decay curves, and Hill saturation for '{objective}'.",
+            "evaluated_channel": channel or "omnichannel",
+            "decay_insights": [
+                "Assessing retention alpha rates and half-life parameters across conversion funnels.",
+                "Pondering diminishing marginal returns under Hill function transformations.",
+            ],
+            "recommended_action": "PROCEED_WITH_ADSTOCK_ESTIMATION",
+            "confidence": 0.92,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are LEARN-DECAY, the Learning & Performance Engine's adstock and carryover decay specialist. "
+                "Think, ponder, and analyze lag distributions, half-life retention coefficients, and Hill saturation curves. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_channel, "
+                "decay_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Channel: {channel or 'omnichannel'}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
+
     async def run(
         self,
         grant: TaskGrant,

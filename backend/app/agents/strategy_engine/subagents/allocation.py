@@ -71,6 +71,10 @@ class StrategyAllocationAgent:
     def profile(self) -> SpecialistModelProfile:
         return self._profile
 
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
     @staticmethod
     def _fallback(grant: TaskGrant, context: dict[str, Any]) -> AllocationReasoningOutput:
         objective = (grant.objective or "Develop an evidence-grounded media plan").strip()

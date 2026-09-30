@@ -48,14 +48,48 @@ class StrategyAgent(BoundedWorkerAgent):
         sandbox_client: SandboxClient | None = None,
         llm_client: Any | None = None,
         allocation_agent: StrategyAllocationAgent | None = None,
+        *,
+        allocation_llm_client: Any | None = None,
     ) -> None:
         super().__init__(sandbox_client, llm_client=llm_client)
-        self._allocation_agent = allocation_agent or StrategyAllocationAgent()
+        if allocation_agent is not None:
+            self._allocation_agent = allocation_agent
+            if getattr(self._allocation_agent, "_llm_client", None) is None:
+                if allocation_llm_client is not None:
+                    self._allocation_agent._llm_client = allocation_llm_client
+                elif llm_client is not None and hasattr(llm_client, "settings"):
+                    self._allocation_agent._llm_client = llm_client.__class__(
+                        llm_client.settings,
+                        agent_identity="STRAT-ALLOC",
+                        model_identity=getattr(llm_client, "model_identity", None),
+                        default_temperature=getattr(llm_client, "default_temperature", None),
+                        default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+                    )
+        elif allocation_llm_client is not None:
+            self._allocation_agent = StrategyAllocationAgent(llm_client=allocation_llm_client)
+        elif llm_client is not None and hasattr(llm_client, "settings"):
+            s_alloc_client = llm_client.__class__(
+                llm_client.settings,
+                agent_identity="STRAT-ALLOC",
+                model_identity=getattr(llm_client, "model_identity", None),
+                default_temperature=getattr(llm_client, "default_temperature", None),
+                default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+            )
+            self._allocation_agent = StrategyAllocationAgent(llm_client=s_alloc_client)
+        else:
+            self._allocation_agent = StrategyAllocationAgent(llm_client=llm_client)
 
     @property
     def allocation_agent(self) -> StrategyAllocationAgent:
         """Advisory S_ALLOC media and budget sub-agent."""
         return self._allocation_agent
+
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Strategy specialist sub-agents."""
+        return {
+            "STRAT-ALLOC": self._allocation_agent,
+        }
 
     def _verify_and_normalize_dependencies(
         self, grant: TaskGrant, context: dict[str, object]

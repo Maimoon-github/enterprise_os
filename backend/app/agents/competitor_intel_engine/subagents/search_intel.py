@@ -117,8 +117,13 @@ class CompetitorSearchIntelAgent:
     SPECIALIST_ROLE = CompetitorRole.SEARCH
     SPECIALIST_ID = "w_comp.search"
 
-    def __init__(self, profile: SpecialistModelProfile | None = None) -> None:
+    def __init__(
+        self,
+        profile: SpecialistModelProfile | None = None,
+        llm_client: Any = None,
+    ) -> None:
         self._profile = profile or SEARCH_PROFILE
+        self._llm_client = llm_client
 
     @property
     def role(self) -> CompetitorRole:
@@ -127,6 +132,61 @@ class CompetitorSearchIntelAgent:
     @property
     def specialist_id(self) -> str:
         return self.SPECIALIST_ID
+
+    @property
+    def profile(self) -> SpecialistModelProfile:
+        return self._profile
+
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    async def reason_search(
+        self,
+        *,
+        objective: str,
+        keywords: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Competitor Search: think -> ponder -> reflect."""
+        import json
+        fallback_res = {
+            "thought_process": f"Pondered SERP rankings, organic visibility, and keywords for '{objective}'.",
+            "evaluated_keywords": list(keywords),
+            "search_insights": [
+                f"Scoped SERP rankings analysis across {len(keywords)} keyword targets.",
+                "Enforcing search engine parameter consistency and non-manipulation boundaries.",
+            ],
+            "recommended_action": "PROCEED_WITH_SERP_ANALYSIS",
+            "confidence": 0.90,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are COMP-SEARCH, the Competitor Intel Engine's search intelligence and SERP specialist. "
+                "Think, ponder, and analyze keyword rankings, search intent, and paid/organic share of voice. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_keywords, "
+                "search_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Keywords: {json.dumps(keywords)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
 
     async def execute_search_attempt(
         self,

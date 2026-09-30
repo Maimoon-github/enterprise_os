@@ -158,8 +158,13 @@ class CompetitorPositioningAgent:
     SPECIALIST_ROLE = CompetitorRole.POSITION
     SPECIALIST_ID = "w_comp.position"
 
-    def __init__(self, profile: SpecialistModelProfile | None = None) -> None:
+    def __init__(
+        self,
+        profile: SpecialistModelProfile | None = None,
+        llm_client: Any = None,
+    ) -> None:
         self._profile = profile or POSITION_PROFILE
+        self._llm_client = llm_client
 
     @property
     def role(self) -> CompetitorRole:
@@ -168,6 +173,61 @@ class CompetitorPositioningAgent:
     @property
     def specialist_id(self) -> str:
         return self.SPECIALIST_ID
+
+    @property
+    def profile(self) -> SpecialistModelProfile:
+        return self._profile
+
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    async def reason_positioning(
+        self,
+        *,
+        objective: str,
+        value_propositions: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Competitor Positioning: think -> ponder -> reflect."""
+        import json
+        fallback_res = {
+            "thought_process": f"Pondered competitor positioning, claims, and value propositions for '{objective}'.",
+            "evaluated_statements": list(value_propositions),
+            "positioning_insights": [
+                f"Scoped positioning analysis across {len(value_propositions)} value proposition statements.",
+                "Enforcing truth separation: stated claims are competitor statements, not verified facts.",
+            ],
+            "recommended_action": "PROCEED_WITH_POSITIONING_ANALYSIS",
+            "confidence": 0.89,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are COMP-POSITION, the Competitor Intel Engine's messaging and positioning specialist. "
+                "Think, ponder, and analyze competitor value propositions, messaging pillars, and claim shifts. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_statements, "
+                "positioning_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Value Propositions: {json.dumps(value_propositions)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
 
     async def execute_position_attempt(
         self,

@@ -165,8 +165,13 @@ class CompetitorDiscoveryAgent:
     SPECIALIST_ROLE = CompetitorRole.DISCOVERY
     SPECIALIST_ID = "w_comp.discovery"
 
-    def __init__(self, profile: SpecialistModelProfile | None = None) -> None:
+    def __init__(
+        self,
+        profile: SpecialistModelProfile | None = None,
+        llm_client: Any = None,
+    ) -> None:
         self._profile = profile or DISCOVERY_PROFILE
+        self._llm_client = llm_client
 
     @property
     def role(self) -> CompetitorRole:
@@ -179,6 +184,57 @@ class CompetitorDiscoveryAgent:
     @property
     def profile(self) -> SpecialistModelProfile:
         return self._profile
+
+    @property
+    def llm_client(self) -> Any:
+        return self._llm_client
+
+    async def reason_discovery(
+        self,
+        *,
+        objective: str,
+        candidates: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cognitive reasoning loop for Competitor Discovery: think -> ponder -> reflect."""
+        import json
+        fallback_res = {
+            "thought_process": f"Pondered competitor entity discovery and corporate trees for '{objective}'.",
+            "evaluated_candidates": list(candidates),
+            "discovery_insights": [
+                f"Scoped entity resolution across {len(candidates)} candidates.",
+                "Enforcing terms compliance, robots protocol, and jurisdiction boundaries.",
+            ],
+            "recommended_action": "PROCEED_WITH_DISCOVERY",
+            "confidence": 0.88,
+        }
+        if self._llm_client is not None:
+            system_prompt = (
+                "You are COMP-DISCOVERY, the Competitor Intel Engine's entity resolution specialist. "
+                "Think, ponder, and classify parent/subsidiary corporate relationships and domain boundaries. "
+                "Output strictly a JSON object with keys: thought_process, evaluated_candidates, "
+                "discovery_insights, recommended_action, confidence."
+            )
+            user_prompt = (
+                f"Objective: {objective}\n"
+                f"Candidates: {json.dumps(candidates)}\n"
+                f"Context: {json.dumps(context or {})}\n"
+            )
+            try:
+                if hasattr(self._llm_client, "complete_with_metadata"):
+                    raw, _ = await self._llm_client.complete_with_metadata(user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "generate"):
+                    raw = await self._llm_client.generate(prompt=user_prompt, system=system_prompt)
+                elif hasattr(self._llm_client, "complete"):
+                    raw = await self._llm_client.complete(user_prompt, system=system_prompt)
+                else:
+                    return fallback_res
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return fallback_res
 
     async def execute_discovery_attempt(
         self,

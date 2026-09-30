@@ -103,20 +103,51 @@ def _build_workers(
     creative_workflow: Any = None,
     voice_specialists: dict[str, Any] | None = None,
     voice_llm_client: LlmClient | None = None,
+    worker_llm_clients: dict[WorkerRole, LlmClient] | None = None,
+    specialist_llm_clients_by_worker: dict[WorkerRole, dict[str, LlmClient]] | None = None,
 ) -> dict[WorkerRole, BoundedWorkerAgent]:
-    """Instantiate all seven bounded worker agents with sandbox adapter and optional LLM client."""
+    """Instantiate all seven bounded worker agents with sandbox adapter and dedicated LLM clients."""
 
     workers: dict[WorkerRole, BoundedWorkerAgent] = {}
+    worker_llms = worker_llm_clients or {}
+    specialist_llms = specialist_llm_clients_by_worker or {}
+
     for role, agent_class in _AGENT_CLASSES_BY_ROLE.items():
+        role_llm = worker_llms.get(role)
+        if role_llm is None and llm_client is not None:
+            expected_role_ident = {
+                WorkerRole.DEVELOPMENT: "W_DEV",
+                WorkerRole.STRATEGY: "W_STRAT",
+                WorkerRole.CREATIVE_CONTENT: "W_CREAT",
+                WorkerRole.PRODUCT_EVIDENCE: "W_PROD",
+                WorkerRole.COMPETITOR_INTEL: "W_COMP",
+                WorkerRole.CUSTOMER_VOICE: "W_VOICE",
+                WorkerRole.LEARNING_PERFORMANCE: "W_LEARN",
+            }.get(role, role.value)
+            if getattr(llm_client, "agent_identity", None) == expected_role_ident:
+                role_llm = llm_client
+            elif isinstance(llm_client, LlmClient):
+                role_llm = LlmClient(
+                    llm_client.settings,
+                    agent_identity=expected_role_ident,
+                    model_identity=llm_client.model_identity,
+                    default_temperature=llm_client.default_temperature,
+                    default_max_output_tokens=llm_client.default_max_output_tokens,
+                )
+            else:
+                role_llm = llm_client
+        role_specialists = specialist_llms.get(role)
+
         if role == WorkerRole.CREATIVE_CONTENT:
             workers[role] = CreativeContentAgent(
-                llm_client=llm_client,
+                llm_client=role_llm,
                 workflow=creative_workflow,
             )
             continue
         if role == WorkerRole.CUSTOMER_VOICE:
             workers[role] = CustomerVoiceAgent(
-                llm_client=voice_llm_client or llm_client,
+                llm_client=voice_llm_client or role_llm,
+                specialist_llm_clients=role_specialists,
                 discovery_agent=voice_specialists.get("discovery") if voice_specialists else None,
                 themes_agent=voice_specialists.get("themes") if voice_specialists else None,
                 sentiment_agent=voice_specialists.get("sentiment") if voice_specialists else None,
@@ -127,16 +158,43 @@ def _build_workers(
             continue
         assert get_capability_for_role(role) == agent_class.capability
         if role == WorkerRole.STRATEGY:
+            alloc_llm = (role_specialists or {}).get("STRAT-ALLOC") if role_specialists else None
             allocation_agent = StrategyAllocationAgent(
                 profile=S_ALLOC_PROFILE,
+                llm_client=alloc_llm,
             )
             workers[role] = StrategyAgent(
                 sandbox_client,
-                llm_client=llm_client,
+                llm_client=role_llm,
                 allocation_agent=allocation_agent,
+                allocation_llm_client=alloc_llm,
+            )
+        elif role == WorkerRole.DEVELOPMENT:
+            workers[role] = DevelopmentAgent(
+                sandbox_client,
+                llm_client=role_llm,
+                subagent_llm_clients=role_specialists,
+            )
+        elif role == WorkerRole.PRODUCT_EVIDENCE:
+            workers[role] = ProductEvidenceAgent(
+                sandbox_client,
+                llm_client=role_llm,
+                specialist_llm_clients=role_specialists,
+            )
+        elif role == WorkerRole.COMPETITOR_INTEL:
+            workers[role] = CompetitorIntelAgent(
+                sandbox_client,
+                llm_client=role_llm,
+                specialist_llm_clients=role_specialists,
+            )
+        elif role == WorkerRole.LEARNING_PERFORMANCE:
+            workers[role] = LearningPerformanceAgent(
+                sandbox_client,
+                llm_client=role_llm,
+                specialist_llm_clients=role_specialists,
             )
         else:
-            workers[role] = agent_class(sandbox_client, llm_client=llm_client)
+            workers[role] = agent_class(sandbox_client, llm_client=role_llm)
     return workers
 
 
@@ -185,56 +243,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     rag_dispatcher = RagQueryDispatcher(rag_controller)
 
-    llm_client = LlmClient(settings.llm) if settings.llm.provider != "unset" else None
+    ie_llm: LlmClient | None = None
+    llm_client: LlmClient | None = None
+    worker_llm_clients: dict[WorkerRole, LlmClient] = {}
+    specialist_llm_clients_by_worker: dict[WorkerRole, dict[str, LlmClient]] = {}
+    all_llm_clients: list[LlmClient] = []
 
-    # Wire 7 independent Creative LLM identities: W_CREAT + 6 specialists
     creative_llm_clients: list[LlmClient] = []
     creative_workflow = None
-    w_creat_llm = None
-    sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=provenance_recorder)
-
-    # Wire 7 independent Customer Voice LLM identities: W_VOICE + 6 specialists
     voice_llm_clients: list[LlmClient] = []
     voice_specialists: dict[str, Any] = {}
     w_voice_llm = None
+    sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=provenance_recorder)
 
     if settings.llm.provider != "unset":
-        from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
-        from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
-        from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
-        from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
-        from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
-        from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
-        from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+        # 1. Intelligence Engine (Orchestrator Layer 2) isolated cognitive client
+        ie_llm = LlmClient(settings.llm, agent_identity="INTELLIGENCE_ENGINE")
+        llm_client = ie_llm
+        all_llm_clients.append(ie_llm)
 
-        w_creat_llm = LlmClient(settings.llm, agent_identity="W_CREAT")
-        research_llm = LlmClient(settings.llm, agent_identity="CREAT-RESEARCH")
-        concept_llm = LlmClient(settings.llm, agent_identity="CREAT-CONCEPT")
-        copy_llm = LlmClient(settings.llm, agent_identity="CREAT-COPY")
-        visual_llm = LlmClient(settings.llm, agent_identity="CREAT-VISUAL")
-        adapt_llm = LlmClient(settings.llm, agent_identity="CREAT-ADAPT")
-        qa_llm = LlmClient(settings.llm, agent_identity="CREAT-QA")
-        creative_llm_clients = [
-            w_creat_llm,
-            research_llm,
-            concept_llm,
-            copy_llm,
-            visual_llm,
-            adapt_llm,
-            qa_llm,
-        ]
-
-        creative_workflow = CreativeContentWorkflow(
-            research_agent=CreativeResearchAgent(
-                llm_client=research_llm, sandbox_client=sandbox_client
-            ),
-            concept_agent=CreativeConceptAgent(llm_client=concept_llm),
-            copy_agent=CreativeCopyAgent(llm_client=copy_llm, sandbox_client=sandbox_client),
-            visual_agent=CreativeVisualAgent(llm_client=visual_llm),
-            adaptation_agent=CreativeAdaptationAgent(llm_client=adapt_llm),
-            qa_agent=CreativeQualityAgent(llm_client=qa_llm),
-        )
-
+        # 2. Worker Agents (Layer 5) isolated cognitive clients
         from app.agents.customer_voice_engine.profiles import (
             COORDINATOR_PROFILE,
             DISCOVERY_PROFILE,
@@ -245,6 +273,107 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             THEMES_PROFILE,
             create_voice_llm_client,
         )
+
+        w_dev_llm = LlmClient(settings.llm, agent_identity="W_DEV")
+        w_strat_llm = LlmClient(settings.llm, agent_identity="W_STRAT")
+        w_creat_llm = LlmClient(settings.llm, agent_identity="W_CREAT")
+        w_prod_llm = LlmClient(settings.llm, agent_identity="W_PROD")
+        w_comp_llm = LlmClient(settings.llm, agent_identity="W_COMP")
+        w_voice_llm = create_voice_llm_client(COORDINATOR_PROFILE, base_settings=settings.llm)
+        w_learn_llm = LlmClient(settings.llm, agent_identity="W_LEARN")
+
+        worker_llm_clients = {
+            WorkerRole.DEVELOPMENT: w_dev_llm,
+            WorkerRole.STRATEGY: w_strat_llm,
+            WorkerRole.CREATIVE_CONTENT: w_creat_llm,
+            WorkerRole.PRODUCT_EVIDENCE: w_prod_llm,
+            WorkerRole.COMPETITOR_INTEL: w_comp_llm,
+            WorkerRole.CUSTOMER_VOICE: w_voice_llm,
+            WorkerRole.LEARNING_PERFORMANCE: w_learn_llm,
+        }
+        all_llm_clients.extend(worker_llm_clients.values())
+
+        # 3. Specialist Sub-Agents (Layer 6) isolated cognitive clients (38 sub-agents)
+        specialist_llm_clients_by_worker = {
+            WorkerRole.DEVELOPMENT: {
+                "DEV-PLAN": LlmClient(settings.llm, agent_identity="DEV-PLAN"),
+                "DEV-CMS": LlmClient(settings.llm, agent_identity="DEV-CMS"),
+                "DEV-UI": LlmClient(settings.llm, agent_identity="DEV-UI"),
+                "DEV-CODE": LlmClient(settings.llm, agent_identity="DEV-CODE"),
+                "DEV-VERIFY": LlmClient(settings.llm, agent_identity="DEV-VERIFY"),
+                "DEV-SEC": LlmClient(settings.llm, agent_identity="DEV-SEC"),
+                "DEV-REL": LlmClient(settings.llm, agent_identity="DEV-REL"),
+            },
+            WorkerRole.STRATEGY: {
+                "STRAT-ALLOC": LlmClient(settings.llm, agent_identity="STRAT-ALLOC"),
+            },
+            WorkerRole.CREATIVE_CONTENT: {
+                "CREAT-RESEARCH": LlmClient(settings.llm, agent_identity="CREAT-RESEARCH"),
+                "CREAT-CONCEPT": LlmClient(settings.llm, agent_identity="CREAT-CONCEPT"),
+                "CREAT-COPY": LlmClient(settings.llm, agent_identity="CREAT-COPY"),
+                "CREAT-VISUAL": LlmClient(settings.llm, agent_identity="CREAT-VISUAL"),
+                "CREAT-ADAPT": LlmClient(settings.llm, agent_identity="CREAT-ADAPT"),
+                "CREAT-QA": LlmClient(settings.llm, agent_identity="CREAT-QA"),
+            },
+            WorkerRole.PRODUCT_EVIDENCE: {
+                "PROD-DISCOVERY": LlmClient(settings.llm, agent_identity="PROD-DISCOVERY"),
+                "PROD-APPRAISAL": LlmClient(settings.llm, agent_identity="PROD-APPRAISAL"),
+                "PROD-CLAIMS": LlmClient(settings.llm, agent_identity="PROD-CLAIMS"),
+                "PROD-LAB": LlmClient(settings.llm, agent_identity="PROD-LAB"),
+                "PROD-REGULATORY": LlmClient(settings.llm, agent_identity="PROD-REGULATORY"),
+                "PROD-SAFETY": LlmClient(settings.llm, agent_identity="PROD-SAFETY"),
+            },
+            WorkerRole.COMPETITOR_INTEL: {
+                "COMP-DISCOVERY": LlmClient(settings.llm, agent_identity="COMP-DISCOVERY"),
+                "COMP-ADS": LlmClient(settings.llm, agent_identity="COMP-ADS"),
+                "COMP-PRICING": LlmClient(settings.llm, agent_identity="COMP-PRICING"),
+                "COMP-SEARCH": LlmClient(settings.llm, agent_identity="COMP-SEARCH"),
+                "COMP-POSITIONING": LlmClient(settings.llm, agent_identity="COMP-POSITIONING"),
+                "COMP-SYNTHESIS": LlmClient(settings.llm, agent_identity="COMP-SYNTHESIS"),
+            },
+            WorkerRole.CUSTOMER_VOICE: {
+                "VOICE-DISCOVERY": create_voice_llm_client(DISCOVERY_PROFILE, base_settings=settings.llm),
+                "VOICE-THEMES": create_voice_llm_client(THEMES_PROFILE, base_settings=settings.llm),
+                "VOICE-SENTIMENT": create_voice_llm_client(SENTIMENT_PROFILE, base_settings=settings.llm),
+                "VOICE-NEEDS": create_voice_llm_client(NEEDS_PROFILE, base_settings=settings.llm),
+                "VOICE-JOURNEY": create_voice_llm_client(JOURNEY_PROFILE, base_settings=settings.llm),
+                "VOICE-QA": create_voice_llm_client(QA_PROFILE, base_settings=settings.llm),
+            },
+            WorkerRole.LEARNING_PERFORMANCE: {
+                "LEARN-TELEMETRY": LlmClient(settings.llm, agent_identity="LEARN-TELEMETRY"),
+                "LEARN-ATTRIBUTION": LlmClient(settings.llm, agent_identity="LEARN-ATTRIBUTION"),
+                "LEARN-INCREMENTALITY": LlmClient(settings.llm, agent_identity="LEARN-INCREMENTALITY"),
+                "LEARN-FATIGUE": LlmClient(settings.llm, agent_identity="LEARN-FATIGUE"),
+                "LEARN-DECAY": LlmClient(settings.llm, agent_identity="LEARN-DECAY"),
+                "LEARN-QA": LlmClient(settings.llm, agent_identity="LEARN-QA"),
+            },
+        }
+        for sub_map in specialist_llm_clients_by_worker.values():
+            all_llm_clients.extend(sub_map.values())
+
+        # Creative workflow wiring
+        from app.agents.creative_content_engine.subagents.adaptation import CreativeAdaptationAgent
+        from app.agents.creative_content_engine.subagents.concept import CreativeConceptAgent
+        from app.agents.creative_content_engine.subagents.copy import CreativeCopyAgent
+        from app.agents.creative_content_engine.subagents.quality import CreativeQualityAgent
+        from app.agents.creative_content_engine.subagents.research import CreativeResearchAgent
+        from app.agents.creative_content_engine.subagents.visual import CreativeVisualAgent
+        from app.orchestration.creative_content_workflow import CreativeContentWorkflow
+
+        creat_subs = specialist_llm_clients_by_worker[WorkerRole.CREATIVE_CONTENT]
+        creative_llm_clients = [w_creat_llm, *creat_subs.values()]
+        creative_workflow = CreativeContentWorkflow(
+            research_agent=CreativeResearchAgent(
+                llm_client=creat_subs["CREAT-RESEARCH"], sandbox_client=sandbox_client
+            ),
+            concept_agent=CreativeConceptAgent(llm_client=creat_subs["CREAT-CONCEPT"]),
+            copy_agent=CreativeCopyAgent(llm_client=creat_subs["CREAT-COPY"], sandbox_client=sandbox_client),
+            visual_agent=CreativeVisualAgent(llm_client=creat_subs["CREAT-VISUAL"]),
+            adaptation_agent=CreativeAdaptationAgent(llm_client=creat_subs["CREAT-ADAPT"]),
+            qa_agent=CreativeQualityAgent(llm_client=creat_subs["CREAT-QA"]),
+        )
+
+        # Voice specialists wiring
         from app.agents.customer_voice_engine.subagents import (
             VoiceDiscoveryAgent,
             VoiceJourneyAgent,
@@ -254,39 +383,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             VoiceThemesAgent,
         )
 
-        w_voice_llm = create_voice_llm_client(COORDINATOR_PROFILE, base_settings=settings.llm)
-        disc_llm = create_voice_llm_client(DISCOVERY_PROFILE, base_settings=settings.llm)
-        themes_llm = create_voice_llm_client(THEMES_PROFILE, base_settings=settings.llm)
-        sent_llm = create_voice_llm_client(SENTIMENT_PROFILE, base_settings=settings.llm)
-        needs_llm = create_voice_llm_client(NEEDS_PROFILE, base_settings=settings.llm)
-        journey_llm = create_voice_llm_client(JOURNEY_PROFILE, base_settings=settings.llm)
-        qa_llm = create_voice_llm_client(QA_PROFILE, base_settings=settings.llm)
-
-        voice_llm_clients = [
-            w_voice_llm,
-            disc_llm,
-            themes_llm,
-            sent_llm,
-            needs_llm,
-            journey_llm,
-            qa_llm,
-        ]
-
+        voice_subs = specialist_llm_clients_by_worker[WorkerRole.CUSTOMER_VOICE]
+        voice_llm_clients = [w_voice_llm, *voice_subs.values()]
         voice_specialists = {
-            "discovery": VoiceDiscoveryAgent(llm_client=disc_llm, profile=DISCOVERY_PROFILE),
-            "themes": VoiceThemesAgent(llm_client=themes_llm, profile=THEMES_PROFILE),
-            "sentiment": VoiceSentimentAgent(llm_client=sent_llm, profile=SENTIMENT_PROFILE),
-            "needs": VoiceNeedsAgent(llm_client=needs_llm, profile=NEEDS_PROFILE),
-            "journey": VoiceJourneyAgent(llm_client=journey_llm, profile=JOURNEY_PROFILE),
-            "qa": VoiceQualityAgent(llm_client=qa_llm, profile=QA_PROFILE),
+            "discovery": VoiceDiscoveryAgent(llm_client=voice_subs["VOICE-DISCOVERY"], profile=DISCOVERY_PROFILE),
+            "themes": VoiceThemesAgent(llm_client=voice_subs["VOICE-THEMES"], profile=THEMES_PROFILE),
+            "sentiment": VoiceSentimentAgent(llm_client=voice_subs["VOICE-SENTIMENT"], profile=SENTIMENT_PROFILE),
+            "needs": VoiceNeedsAgent(llm_client=voice_subs["VOICE-NEEDS"], profile=NEEDS_PROFILE),
+            "journey": VoiceJourneyAgent(llm_client=voice_subs["VOICE-JOURNEY"], profile=JOURNEY_PROFILE),
+            "qa": VoiceQualityAgent(llm_client=voice_subs["VOICE-QA"], profile=QA_PROFILE),
         }
 
     workers = _build_workers(
         sandbox_client,
-        llm_client=w_creat_llm or llm_client,
+        llm_client=ie_llm,
         creative_workflow=creative_workflow,
         voice_specialists=voice_specialists,
         voice_llm_client=w_voice_llm,
+        worker_llm_clients=worker_llm_clients,
+        specialist_llm_clients_by_worker=specialist_llm_clients_by_worker,
     )
 
     hitl_coordinator = HitlCoordinator()
@@ -343,7 +458,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         mcp_host=mcp_host,
         provenance_recorder=provenance_recorder,
         workers=workers,
-        llm_client=llm_client,
+        llm_client=ie_llm,
     )
 
     from app.services.attribution_coordinator import AttributionCoordinator
@@ -368,7 +483,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.mcp_host = mcp_host
     app.state.intelligence_engine = intelligence_engine
     app.state.attribution_coordinator = attribution_coordinator
-    app.state.llm_client = llm_client
+    app.state.llm_client = ie_llm
+    app.state.worker_llm_clients = worker_llm_clients
+    app.state.specialist_llm_clients_by_worker = specialist_llm_clients_by_worker
+    app.state.all_llm_clients = all_llm_clients
     app.state.creative_workflow = creative_workflow
     app.state.creative_llm_clients = creative_llm_clients
     app.state.voice_llm_clients = voice_llm_clients
@@ -376,12 +494,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        if llm_client is not None:
-            await llm_client.aclose()
-        for c_client in creative_llm_clients:
-            await c_client.aclose()
-        for v_client in voice_llm_clients:
-            await v_client.aclose()
+        closed_clients: set[Any] = set()
+        for client in all_llm_clients:
+            if client is not None and client not in closed_clients:
+                await client.aclose()
+                closed_clients.add(client)
+        if ie_llm is not None and ie_llm not in closed_clients:
+            await ie_llm.aclose()
+            closed_clients.add(ie_llm)
         for ads_adapter in ads_adapters.values():
             await ads_adapter.aclose()
         for social_adapter in social_adapters.values():

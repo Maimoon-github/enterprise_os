@@ -51,6 +51,77 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
 
     capability = SandboxCapability.VAL
 
+    def __init__(
+        self,
+        sandbox_client: Any = None,
+        llm_client: Any = None,
+        *,
+        discovery_agent: Any = None,
+        appraisal_agent: Any = None,
+        claims_agent: Any = None,
+        product_lab_agent: Any = None,
+        regulatory_agent: Any = None,
+        safety_agent: Any = None,
+        specialist_llm_clients: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(sandbox_client, llm_client=llm_client)
+        from app.agents.product_evidence_engine.subagents import (
+            ProductAppraisalAgent,
+            ProductClaimsAgent,
+            ProductDiscoveryAgent,
+            ProductLabAgent,
+            ProductRegulatoryAgent,
+            ProductSafetyAgent,
+        )
+        sub_clients = specialist_llm_clients or {}
+
+        def _resolve_sub_llm(ident: str) -> Any:
+            if ident in sub_clients:
+                return sub_clients[ident]
+            key_alt = ident.lower().replace("-", "_").replace("w_prod.", "").replace("prod_", "")
+            if key_alt in sub_clients:
+                return sub_clients[key_alt]
+            if llm_client is not None and hasattr(llm_client, "settings"):
+                return llm_client.__class__(
+                    llm_client.settings,
+                    agent_identity=ident,
+                    model_identity=getattr(llm_client, "model_identity", None),
+                    default_temperature=getattr(llm_client, "default_temperature", None),
+                    default_max_output_tokens=getattr(llm_client, "default_max_output_tokens", None),
+                )
+            return llm_client
+
+        self.discovery_agent = discovery_agent or ProductDiscoveryAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("PROD-DISCOVERY")
+        )
+        self.appraisal_agent = appraisal_agent or ProductAppraisalAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("PROD-APPRAISAL")
+        )
+        self.claims_agent = claims_agent or ProductClaimsAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("PROD-CLAIMS")
+        )
+        self.product_lab_agent = product_lab_agent or ProductLabAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("PROD-LAB")
+        )
+        self.regulatory_agent = regulatory_agent or ProductRegulatoryAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("PROD-REGULATORY")
+        )
+        self.safety_agent = safety_agent or ProductSafetyAgent(
+            sandbox_client=sandbox_client, llm_client=_resolve_sub_llm("PROD-SAFETY")
+        )
+
+    @property
+    def specialists(self) -> dict[str, Any]:
+        """Registered Product Evidence specialist sub-agents."""
+        return {
+            "PROD-DISCOVERY": self.discovery_agent,
+            "PROD-APPRAISAL": self.appraisal_agent,
+            "PROD-CLAIMS": self.claims_agent,
+            "PROD-LAB": self.product_lab_agent,
+            "PROD-REGULATORY": self.regulatory_agent,
+            "PROD-SAFETY": self.safety_agent,
+        }
+
     @property
     def sandbox_client(self) -> Any:
         """Accessor for the underlying sandbox client."""
