@@ -20,6 +20,10 @@ from app.core.settings import LlmSettings
 
 ResponseModelT = TypeVar("ResponseModelT", bound=BaseModel)
 
+DEFAULT_OLLAMA_MODEL: str = "qwen2.5-coder:7b"
+DEFAULT_OLLAMA_BASE_URL: str = "http://localhost:11434/v1"
+DEFAULT_OLLAMA_PROVIDER: str = "ollama"
+
 
 class LlmResponseError(RuntimeError):
     """Raised when a model response cannot be converted to the requested schema."""
@@ -28,9 +32,13 @@ class LlmResponseError(RuntimeError):
 class LlmClient:
     """Provider-neutral chat-completion boundary with local-model priority."""
 
+    DEFAULT_MODEL: str = DEFAULT_OLLAMA_MODEL
+    DEFAULT_BASE_URL: str = DEFAULT_OLLAMA_BASE_URL
+    DEFAULT_PROVIDER: str = DEFAULT_OLLAMA_PROVIDER
+
     def __init__(
         self,
-        settings: LlmSettings,
+        settings: LlmSettings | None = None,
         *,
         client: httpx.AsyncClient | None = None,
         agent_identity: str | None = None,
@@ -38,10 +46,19 @@ class LlmClient:
         default_temperature: float | None = None,
         default_max_output_tokens: int | None = None,
     ) -> None:
-        self._settings = settings
-        self._client = client or httpx.AsyncClient(timeout=settings.request_timeout_seconds)
+        self._settings = settings or LlmSettings(
+            provider=self.DEFAULT_PROVIDER,
+            base_url=self.DEFAULT_BASE_URL,
+            model_name=self.DEFAULT_MODEL,
+        )
+        self._client = client or httpx.AsyncClient(timeout=self._settings.request_timeout_seconds)
         self._agent_identity = agent_identity
-        self._model_identity = model_identity or settings.model_name
+        if model_identity:
+            self._model_identity = model_identity
+        elif self._settings.model_name and self._settings.model_name != "unset":
+            self._model_identity = self._settings.model_name
+        else:
+            self._model_identity = self.DEFAULT_MODEL
         self._default_temperature = default_temperature
         self._default_max_output_tokens = default_max_output_tokens
         self._last_metadata: dict[str, Any] = {}
@@ -116,8 +133,13 @@ class LlmClient:
         effective_max_tokens = (
             max_output_tokens if max_output_tokens is not None else self._default_max_output_tokens
         )
+        effective_model = (
+            self._settings.model_name
+            if self._settings.model_name != "unset"
+            else self._model_identity
+        )
         request_body: dict[str, Any] = {
-            "model": self._settings.model_name,
+            "model": effective_model,
             "messages": messages,
         }
         if effective_temp is not None:
@@ -149,7 +171,7 @@ class LlmClient:
             raise LlmResponseError("Malformed completion response from LLM provider")
 
         content = choices[0]["message"].get("content", "")
-        actual_model = body.get("model", self._settings.model_name)
+        actual_model = body.get("model", effective_model)
         usage = body.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
@@ -160,7 +182,7 @@ class LlmClient:
             "agent_identity": self._agent_identity,
             "model_identity": self._model_identity,
             "provider": self._settings.provider,
-            "configured_model": self._settings.model_name,
+            "configured_model": effective_model,
             "actual_model": actual_model,
             "is_local": self._settings.is_local,
             "prompt_tokens": prompt_tokens,
@@ -297,3 +319,34 @@ class LlmClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+def create_default_client(
+    agent_identity: str | None = None,
+    *,
+    model_identity: str | None = None,
+    base_settings: LlmSettings | None = None,
+    client: httpx.AsyncClient | None = None,
+    default_temperature: float | None = None,
+    default_max_output_tokens: int | None = None,
+) -> LlmClient:
+    """Create an LlmClient targeting the default local Ollama Qwen 2.5 Coder 7B model.
+
+    This provides a unified, zero-cost, privacy-first local LLM boundary for:
+    - Intelligence Engine (IE)
+    - 7 Layer-5 Worker Agents (W_DEV, W_STRAT, W_CREAT, W_PROD, W_COMP, W_VOICE, W_LEARN)
+    - 38 Layer-6 Specialist Sub-Agents
+    """
+    settings = base_settings or LlmSettings(
+        provider=DEFAULT_OLLAMA_PROVIDER,
+        base_url=DEFAULT_OLLAMA_BASE_URL,
+        model_name=DEFAULT_OLLAMA_MODEL,
+    )
+    return LlmClient(
+        settings=settings,
+        client=client,
+        agent_identity=agent_identity,
+        model_identity=model_identity or DEFAULT_OLLAMA_MODEL,
+        default_temperature=default_temperature,
+        default_max_output_tokens=default_max_output_tokens,
+    )

@@ -566,3 +566,62 @@ async def test_worker_denies_excessive_token_budget() -> None:
 
     with pytest.raises(PolicyViolationError, match="exceeded token budget"):
         await agent.run(grant, {})
+
+
+@pytest.mark.asyncio
+async def test_default_ollama_qwen_coder_7b_wiring() -> None:
+    """Verify that qwen2.5-coder:7b is the default Ollama model for IE, workers, and specialists."""
+    from app.integrations.llm import (
+        DEFAULT_OLLAMA_BASE_URL,
+        DEFAULT_OLLAMA_MODEL,
+        DEFAULT_OLLAMA_PROVIDER,
+        create_default_client,
+    )
+
+    # 1. Constants verification
+    assert DEFAULT_OLLAMA_MODEL == "qwen2.5-coder:7b"
+    assert DEFAULT_OLLAMA_BASE_URL == "http://localhost:11434/v1"
+    assert DEFAULT_OLLAMA_PROVIDER == "ollama"
+
+    # 2. Default LlmClient instantiation without settings
+    client_default = LlmClient()
+    assert client_default.model_identity == "qwen2.5-coder:7b"
+    assert client_default.settings.provider == "ollama"
+    assert client_default.settings.base_url == "http://localhost:11434/v1"
+    assert client_default.settings.is_local is True
+
+    # 3. Intelligence Engine client via factory
+    ie_client = create_default_client(agent_identity="INTELLIGENCE_ENGINE")
+    assert ie_client.agent_identity == "INTELLIGENCE_ENGINE"
+    assert ie_client.model_identity == "qwen2.5-coder:7b"
+    assert ie_client.settings.is_local is True
+
+    # 4. All 7 Layer-5 Worker identities receive default access
+    worker_roles = [
+        "W_DEV", "W_STRAT", "W_CREAT", "W_PROD", "W_COMP", "W_VOICE", "W_LEARN"
+    ]
+    for w_role in worker_roles:
+        w_client = create_default_client(agent_identity=w_role)
+        assert w_client.agent_identity == w_role
+        assert w_client.model_identity == "qwen2.5-coder:7b"
+        assert w_client.settings.is_local is True
+
+    # 5. Specialist sub-agents receive default access
+    specialist_identities = [
+        "DEV-CODE", "DEV-SEC", "STRAT-ALLOC", "CREAT-COPY",
+        "PROD-SAFETY", "COMP-SYNTHESIS", "VOICE-NEEDS", "LEARN-ATTRIBUTION"
+    ]
+    for s_ident in specialist_identities:
+        s_client = create_default_client(agent_identity=s_ident)
+        assert s_client.agent_identity == s_ident
+        assert s_client.model_identity == "qwen2.5-coder:7b"
+
+    # 6. Verify request payload specifies qwen2.5-coder:7b
+    transport = _build_mock_chat_transport("Coder completion")
+    mock_http = httpx.AsyncClient(transport=transport)
+    test_client = create_default_client(agent_identity="DEV-CODE", client=mock_http)
+    content, metadata = await test_client.complete_with_metadata("Write a bash script")
+    assert content == "Coder completion"
+    assert metadata["configured_model"] == "qwen2.5-coder:7b"
+    assert metadata["is_local"] is True
+    assert metadata["estimated_cost_usd"] == 0.0
