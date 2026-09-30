@@ -364,3 +364,27 @@ async def test_high_impact_action_without_hitl_approval_is_denied() -> None:
 
     with pytest.raises(ApprovalRequiredError, match="has not been reviewed"):
         await outbound.execute(directive)
+
+
+@pytest.mark.asyncio
+async def test_genuine_ollama_qwen_coder_live_connectivity() -> None:
+    """Verify live connectivity and reasoning against the local Ollama Qwen 2.5 Coder instance."""
+    from app.integrations.llm.client import create_default_client
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as check_client:
+            res = await check_client.get("http://localhost:11434/v1/models")
+            if res.status_code != 200:
+                pytest.skip("Ollama server not reachable")
+    except Exception:
+        pytest.skip("Ollama server not running on localhost:11434")
+
+    client = create_default_client(agent_identity="LIVE_OLLAMA_VERIFIER")
+    try:
+        content, meta = await client.complete_with_metadata("Return the word VERIFIED.")
+        assert len(content.strip()) > 0
+        assert meta["configured_model"] == "qwen2.5-coder:7b"
+        assert meta["is_local"] is True
+        assert meta["estimated_cost_usd"] == 0.0
+    finally:
+        await client.aclose()
