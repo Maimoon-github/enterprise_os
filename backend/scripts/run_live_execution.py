@@ -15,10 +15,7 @@ Executes the genuine live control-plane flow:
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
 import time
-from datetime import UTC, datetime
 
 from app.agents.development import DevelopmentAgent
 from app.core.settings import get_settings
@@ -44,9 +41,7 @@ from app.persistence.repositories.provenance import ProvenanceRepository
 from app.persistence.repositories.task_state import TaskStateRepository
 from app.persistence.repositories.telemetry import TelemetryRepository
 from app.persistence.repositories.vector import VectorRepository
-from app.schemas.agent_contracts import ConfidenceInterval, EvidenceEnvelope
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
-from app.schemas.sandbox import SandboxCapability, SandboxInvocationMandate, SandboxResourceLimits
 from app.schemas.task_state import CanonicalTaskState, TaskStatus
 from app.security.authorization_boundary import AuthorizationBoundary
 from app.security.cryptographic_validator import CryptographicValidator
@@ -78,7 +73,10 @@ async def run_live_execution() -> None:
     db = Database(settings.database)
     await db.create_all()
     health = await db.healthcheck()
-    print(f"      PostgreSQL Status: {health.get('status')} (Latency: {health.get('latency_ms')}ms)")
+    print(
+        f"      PostgreSQL Status: {health.get('status')} "
+        f"(Latency: {health.get('latency_ms')}ms)"
+    )
     assert health.get("status") == "healthy", "Database healthcheck failed!"
 
     operational_repo = OperationalRepository(db.session_factory)
@@ -105,7 +103,9 @@ async def run_live_execution() -> None:
         provenance_recorder=prov_recorder,
     )
     hybrid_retriever = HybridRetriever(data_gateway=data_gateway)
-    rag_controller = RagController(hybrid_retriever, FreshnessPolicy(), SchemaValidator(), data_gateway=data_gateway)
+    rag_controller = RagController(
+        hybrid_retriever, FreshnessPolicy(), SchemaValidator(), data_gateway=data_gateway
+    )
     rag_dispatcher = RagQueryDispatcher(rag_controller)
     brand_resolver = BrandPersonaResolver(memory_repository=memory_repo, data_gateway=data_gateway)
     context_assembler = ContextAssembler(rag_dispatcher, brand_resolver)
@@ -124,6 +124,7 @@ async def run_live_execution() -> None:
     from app.main import _build_workers
     workers = _build_workers(sandbox_client, llm_client=worker_llm)
     dev_agent = workers[WorkerRole.DEVELOPMENT]
+    assert isinstance(dev_agent, DevelopmentAgent)
 
     hitl_coordinator = HitlCoordinator()
     crypto = CryptographicValidator(None)
@@ -151,10 +152,14 @@ async def run_live_execution() -> None:
     directive = Directive(
         directive_id=directive_id,
         tenant_id=tenant_id,
-        objective="Generate a production-ready responsive landing page layout for Enterprise OS Q4 Launch",
+        objective=(
+            "Generate a production-ready responsive landing page layout for Enterprise OS Q4 Launch"
+        ),
         budget_cap=10000.0,
         risk_ceiling=RiskLevel.LOW,
-        scope=TenantScope(tenant_id=tenant_id, brand_ids=["brand-enterprise"], allowed_channels=["web"]),
+        scope=TenantScope(
+            tenant_id=tenant_id, brand_ids=["brand-enterprise"], allowed_channels=["web"]
+        ),
     )
     await operational_repo.save_directive(directive)
     print(f"      Directive Saved: {directive.directive_id} for tenant '{directive.tenant_id}'")
@@ -218,7 +223,10 @@ async def run_live_execution() -> None:
         new_status=TaskStatus.COMPLETED,
         note="Evidence synthesized and verified",
     )
-    print(f"      Canonical Task State transitioned -> COMPLETED (version {completed_state.version})")
+    print(
+        "      Canonical Task State transitioned -> COMPLETED "
+        f"(version {completed_state.version})"
+    )
 
     # Record terminal audit record in PostgreSQL
     await prov_recorder.record(
