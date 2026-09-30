@@ -205,25 +205,57 @@ export default function SandboxPortalPage() {
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
                 <div className="flex justify-between font-mono">
                   <span className="font-bold text-indigo-400">W_DEV (Development)</span>
-                  <span className="text-emerald-400">S_CODE micro-tool</span>
+                  <span className="text-emerald-400 font-semibold">S_CODE micro-tool</span>
                 </div>
                 <p className="text-slate-400">AST parsing, ESLint execution, TypeScript compilation, and unit test runners.</p>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
                 <div className="flex justify-between font-mono">
-                  <span className="font-bold text-cyan-400">W_COMP (Compliance)</span>
-                  <span className="text-emerald-400">S_SCRAPE micro-tool</span>
+                  <span className="font-bold text-cyan-400">W_COMP (Competitor Intel)</span>
+                  <span className="text-emerald-400 font-semibold">s-comp micro-tool</span>
                 </div>
-                <p className="text-slate-400">DOM extraction, accessibility audits, WCAG 2.1 AA evaluation, and legal claim linters.</p>
+                <p className="text-slate-400">DOM extraction, accessibility audits, WCAG 2.1 AA evaluation, and pricing page scrapers.</p>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
                 <div className="flex justify-between font-mono">
                   <span className="font-bold text-amber-400">W_STRAT (Strategy)</span>
-                  <span className="text-emerald-400">S_ALLOC micro-tool</span>
+                  <span className="text-emerald-400 font-semibold">S_ALLOC micro-tool</span>
                 </div>
-                <p className="text-slate-400">Mathematical portfolio optimization, marginal ROAS matrix computation.</p>
+                <p className="text-slate-400">Mathematical portfolio optimization, channel spending allocation, marginal ROAS computation.</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <div className="flex justify-between font-mono">
+                  <span className="font-bold text-emerald-400">W_PROD (Product & Evidence)</span>
+                  <span className="text-emerald-400 font-semibold">S_VAL micro-tool</span>
+                </div>
+                <p className="text-slate-400">Regulatory claim linters, compliance verification, and clinical citation cross-check.</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <div className="flex justify-between font-mono">
+                  <span className="font-bold text-purple-400">W_CREAT (Creative Content)</span>
+                  <span className="text-emerald-400 font-semibold">S_COPY micro-tool</span>
+                </div>
+                <p className="text-slate-400">Prohibited terms checking, multi-variant copywriting, hook critic, and brand tone validation.</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <div className="flex justify-between font-mono">
+                  <span className="font-bold text-rose-400">W_VOICE (Customer Voice)</span>
+                  <span className="text-emerald-400 font-semibold">S_PARSE micro-tool</span>
+                </div>
+                <p className="text-slate-400">Customer feedback NLP classification, sentiment analysis, and objection graphs.</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <div className="flex justify-between font-mono">
+                  <span className="font-bold text-blue-400">W_LEARN (Learning & Performance)</span>
+                  <span className="text-emerald-400 font-semibold">S_ATTR micro-tool</span>
+                </div>
+                <p className="text-slate-400">Multi-touch attribution models, marginal decay curves, and heuristic performance adjustment.</p>
               </div>
             </div>
           </div>
