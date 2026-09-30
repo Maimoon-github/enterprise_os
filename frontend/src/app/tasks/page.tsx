@@ -4,17 +4,16 @@ import React, { useEffect, useState } from "react";
 import {
   Kanban,
   CheckCircle2,
-  Clock,
-  Play,
-  AlertTriangle,
   RotateCcw,
   ArrowRight,
-  Shield,
-  Layers,
-  Sparkles,
+  Zap,
+  Box,
+  ExternalLink,
 } from "lucide-react";
 import { api, MOCK_TASKS } from "@/lib/api";
-import { CanonicalTaskState, TaskStatus, WorkerRole } from "@/lib/types";
+import { CanonicalTaskState, TaskStatus } from "@/lib/types";
+import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
+import { useToast } from "@/components/ui/Toast";
 
 const COLUMNS: { id: TaskStatus; title: string; color: string; borderColor: string }[] = [
   { id: "pending", title: "Pending Clearance", color: "text-slate-400", borderColor: "border-slate-800" },
@@ -27,41 +26,47 @@ const COLUMNS: { id: TaskStatus; title: string; color: string; borderColor: stri
 export default function TasksPage() {
   const [tasks, setTasks] = useState<CanonicalTaskState[]>(MOCK_TASKS);
   const [selectedTask, setSelectedTask] = useState<CanonicalTaskState | null>(null);
+  const [settings] = useState<EnterpriseSettings>(getStoredSettings());
+  const { addToast } = useToast();
+
+  const fetchTasks = async () => {
+    const data = await api.getTasks();
+    if (data && data.length > 0) setTasks(data);
+  };
 
   useEffect(() => {
-    const fetchTasks = async () => {
-      const data = await api.getTasks();
-      if (data && data.length > 0) setTasks(data);
-    };
     fetchTasks();
   }, []);
 
-  const handleAdvanceStatus = (taskId: string, nextStatus: TaskStatus) => {
-    setTasks((prev) =>
-      prev.map((t) => {
-        if (t.task_id === taskId) {
-          return {
-            ...t,
-            status: nextStatus,
-            version: t.version + 1,
-            updated_at: new Date().toISOString(),
-          };
-        }
-        return t;
-      })
-    );
-    if (selectedTask?.task_id === taskId) {
-      setSelectedTask((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: nextStatus,
-              version: prev.version + 1,
-              updated_at: new Date().toISOString(),
-            }
-          : null
-      );
+  const handleAdvanceStatus = async (taskId: string, nextStatus: TaskStatus) => {
+    try {
+      const updated = await api.advanceTaskStatus(taskId, nextStatus);
+      await fetchTasks();
+      if (selectedTask?.task_id === taskId) {
+        setSelectedTask(updated);
+      }
+      addToast({
+        type: "success",
+        title: `Task ${taskId} → ${nextStatus.toUpperCase()}`,
+        message: `Version v${updated.version} checkpointed in CTS state machine.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: "error",
+        title: "Transition Error",
+        message: err.message,
+      });
     }
+  };
+
+  const handleBatchAdvanceAll = async () => {
+    const res = await api.runAllPendingTasks();
+    await fetchTasks();
+    addToast({
+      type: "success",
+      title: "Batch Task Execution Complete",
+      message: res.message,
+    });
   };
 
   return (
@@ -78,9 +83,25 @@ export default function TasksPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300">
-          <span>Active Tasks:</span>
-          <span className="font-bold text-cyan-400">{tasks.length}</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleBatchAdvanceAll}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 transition-all"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>1-Click Advance All</span>
+          </button>
+
+          <a
+            href={settings.sandboxWebsiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/80 text-amber-300 text-xs font-semibold transition-all font-mono"
+          >
+            <Box className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>Sandbox Site (:3001)</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
       </div>
 
@@ -136,7 +157,7 @@ export default function TasksPage() {
                       Dir: {task.directive_id}
                     </div>
 
-                    {/* Quick Move Action */}
+                    {/* Quick Move Single-Click Action */}
                     <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
                       <span className="text-slate-500 font-mono">
                         {task.updated_at ? new Date(task.updated_at).toLocaleTimeString() : "--"}
@@ -148,31 +169,49 @@ export default function TasksPage() {
                             e.stopPropagation();
                             handleAdvanceStatus(task.task_id, "granted");
                           }}
-                          className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 font-semibold"
+                          className="px-2 py-0.5 rounded bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 font-mono text-[10px] flex items-center gap-1 transition-all"
                         >
-                          Grant <ArrowRight className="w-3 h-3" />
+                          <span>Grant</span>
+                          <ArrowRight className="w-2.5 h-2.5" />
                         </button>
                       )}
+
                       {task.status === "granted" && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleAdvanceStatus(task.task_id, "in_progress");
                           }}
-                          className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-semibold"
+                          className="px-2 py-0.5 rounded bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800 font-mono text-[10px] flex items-center gap-1 transition-all"
                         >
-                          Execute <ArrowRight className="w-3 h-3" />
+                          <span>Execute</span>
+                          <ArrowRight className="w-2.5 h-2.5" />
                         </button>
                       )}
+
                       {task.status === "in_progress" && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleAdvanceStatus(task.task_id, "completed");
                           }}
-                          className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold"
+                          className="px-2 py-0.5 rounded bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 font-mono text-[10px] flex items-center gap-1 transition-all"
                         >
-                          Verify <CheckCircle2 className="w-3 h-3" />
+                          <span>Complete</span>
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+
+                      {task.status === "held" && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAdvanceStatus(task.task_id, "granted");
+                          }}
+                          className="px-2 py-0.5 rounded bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800 font-mono text-[10px] flex items-center gap-1 transition-all"
+                        >
+                          <span>Release</span>
+                          <RotateCcw className="w-2.5 h-2.5" />
                         </button>
                       )}
                     </div>
@@ -184,70 +223,42 @@ export default function TasksPage() {
         })}
       </div>
 
-      {/* Selected Task Details Drawer / Modal */}
+      {/* Task Detail Inspector */}
       {selectedTask && (
-        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur-md space-y-4">
+        <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-3">
-              <span className="text-base font-bold font-mono text-cyan-400">
-                {selectedTask.task_id}
-              </span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                Version {selectedTask.version}
-              </span>
-              <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
-                Status: {selectedTask.status}
+            <div className="flex items-center gap-2">
+              <Kanban className="w-4 h-4 text-cyan-400" />
+              <span className="font-mono text-sm font-bold text-white">{selectedTask.task_id}</span>
+              <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-950 text-indigo-300 border border-slate-800">
+                v{selectedTask.version}
               </span>
             </div>
-
             <button
               onClick={() => setSelectedTask(null)}
-              className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800"
+              className="text-xs text-slate-400 hover:text-white"
             >
-              Close
+              Close Inspector
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-mono">
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-slate-500">Worker Role</span>
-              <div className="text-cyan-400 font-bold">{selectedTask.worker_role}</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block">Worker Role</span>
+              <span className="text-cyan-400 font-semibold">{selectedTask.worker_role}</span>
             </div>
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-slate-500">Checkpoint ID</span>
-              <div className="text-slate-300">{selectedTask.checkpoint_id || "Unset"}</div>
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block">Status</span>
+              <span className="text-emerald-400 font-semibold uppercase">{selectedTask.status}</span>
             </div>
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
-              <span className="text-slate-500">Assigned Worker</span>
-              <div className="text-indigo-400">{selectedTask.assigned_worker_id || "Auto Dispatch"}</div>
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block">Checkpoint</span>
+              <span className="text-slate-200 truncate block">{selectedTask.checkpoint_id || "--"}</span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3 pt-2">
-            <button
-              onClick={() => handleAdvanceStatus(selectedTask.task_id, "granted")}
-              className="px-3 py-1.5 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-800 hover:bg-cyan-900 text-xs font-medium"
-            >
-              Set GRANTED
-            </button>
-            <button
-              onClick={() => handleAdvanceStatus(selectedTask.task_id, "in_progress")}
-              className="px-3 py-1.5 rounded-lg bg-indigo-950 text-indigo-300 border border-indigo-800 hover:bg-indigo-900 text-xs font-medium"
-            >
-              Set IN_PROGRESS
-            </button>
-            <button
-              onClick={() => handleAdvanceStatus(selectedTask.task_id, "completed")}
-              className="px-3 py-1.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 text-xs font-medium"
-            >
-              Set COMPLETED
-            </button>
-            <button
-              onClick={() => handleAdvanceStatus(selectedTask.task_id, "held")}
-              className="px-3 py-1.5 rounded-lg bg-amber-950 text-amber-300 border border-amber-800 hover:bg-amber-900 text-xs font-medium"
-            >
-              Set HELD
-            </button>
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <span className="text-slate-500 block">Directive ID</span>
+              <span className="text-indigo-400 truncate block">{selectedTask.directive_id}</span>
+            </div>
           </div>
         </div>
       )}

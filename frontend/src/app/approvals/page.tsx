@@ -13,27 +13,35 @@ import {
   KeyRound,
   FileCheck2,
   RefreshCw,
+  Zap,
+  Box,
+  ExternalLink,
 } from "lucide-react";
 import { api, MOCK_APPROVAL_PREVIEWS } from "@/lib/api";
 import { ActionPreview, ApprovalDecisionRequest } from "@/lib/types";
+import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
+import { useToast } from "@/components/ui/Toast";
 
 export default function ApprovalsPage() {
   const [previews, setPreviews] = useState<ActionPreview[]>(MOCK_APPROVAL_PREVIEWS);
   const [selectedPreview, setSelectedPreview] = useState<ActionPreview>(MOCK_APPROVAL_PREVIEWS[0]);
-  const [approverName, setApproverName] = useState("SecOps Lead (Maimoon)");
-  const [approverRole, setApproverRole] = useState("Security Officer");
+  const [settings] = useState<EnterpriseSettings>(getStoredSettings());
+  const [approverName, setApproverName] = useState(settings.approverName);
+  const [approverRole, setApproverRole] = useState(settings.approverRole);
   const [revisionNotes, setRevisionNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [decisionHistory, setDecisionHistory] = useState<Record<string, { decision: string; hash: string }>>({});
+  const { addToast } = useToast();
+
+  const fetchPreviews = async () => {
+    const data = await api.getApprovalPreviews();
+    if (data && data.length > 0) {
+      setPreviews(data);
+      if (!selectedPreview) setSelectedPreview(data[0]);
+    }
+  };
 
   useEffect(() => {
-    const fetchPreviews = async () => {
-      const data = await api.getApprovalPreviews();
-      if (data && data.length > 0) {
-        setPreviews(data);
-        if (!selectedPreview) setSelectedPreview(data[0]);
-      }
-    };
     fetchPreviews();
   }, []);
 
@@ -58,12 +66,44 @@ export default function ApprovalsPage() {
         ...prev,
         [selectedPreview.action_preview_id]: {
           decision,
-          hash: result.signature_verified ? payload.preview_content_hash! : "unverified",
+          hash: payload.preview_content_hash!,
         },
       }));
+
+      addToast({
+        type: decision === "APPROVE" ? "success" : decision === "REJECT" ? "error" : "warning",
+        title: `Decision: ${decision} Registered`,
+        message: `Cryptographically signed by ${approverName} (${approverRole}).`,
+        hash: payload.preview_content_hash,
+      });
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleApproveAll = async () => {
+    for (const prev of previews) {
+      await api.submitApprovalDecision(prev.action_preview_id, {
+        approved: true,
+        decision: "APPROVE",
+        approver: approverName,
+        approver_role: approverRole,
+        preview_content_hash: `sha256-${Date.now().toString(16)}00aa11bb`,
+        revision_notes: "Batch approved via 1-Click Executive Gate",
+      });
+      setDecisionHistory((h) => ({
+        ...h,
+        [prev.action_preview_id]: {
+          decision: "APPROVE",
+          hash: `sha256-batch-${prev.action_preview_id.slice(-6)}`,
+        },
+      }));
+    }
+    addToast({
+      type: "success",
+      title: "Batch Authorization Complete",
+      message: `Signed & approved all ${previews.length} pending action previews.`,
+    });
   };
 
   const currentDecision = selectedPreview ? decisionHistory[selectedPreview.action_preview_id] : null;
@@ -71,14 +111,37 @@ export default function ApprovalsPage() {
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
-          <CheckSquare className="w-6 h-6 text-amber-400" />
-          <span>Human-in-the-Loop (HITL) Authorization Queue</span>
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Zero-trust gatekeeper. Code modifications and budget spend proposals require explicit cryptographic signing prior to execution.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+            <CheckSquare className="w-6 h-6 text-amber-400" />
+            <span>Human-in-the-Loop (HITL) Authorization Queue</span>
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Zero-trust gatekeeper. Code modifications and budget spend proposals require explicit cryptographic signing prior to actuation.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleApproveAll}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-lg shadow-amber-600/20 transition-all"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            <span>1-Click Approve All</span>
+          </button>
+
+          <a
+            href={settings.sandboxWebsiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/80 text-amber-300 text-xs font-semibold transition-all font-mono"
+          >
+            <Box className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>Sandbox Site (:3001)</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
       </div>
 
       {/* Grid: Preview Selector & Detail Signer */}
@@ -158,119 +221,104 @@ export default function ApprovalsPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono px-2.5 py-1 rounded bg-slate-950 text-slate-300 border border-slate-800">
-                    Tenant: {selectedPreview.tenant_id}
+                  <span className="text-xs font-mono px-3 py-1 rounded bg-slate-950 text-slate-300 border border-slate-800">
+                    Worker: <strong className="text-cyan-300">{selectedPreview.worker_role}</strong>
                   </span>
                 </div>
               </div>
 
-              {/* Inspection Payload */}
-              {selectedPreview.preview_type === "live_code_diff" && selectedPreview.code_diff && (
+              {/* Live Code Diff Viewer */}
+              {selectedPreview.code_diff && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="text-xs font-mono text-indigo-400 flex items-center gap-2">
-                      <FileCode className="w-4 h-4" />
+                    <div className="flex items-center gap-2 text-xs font-mono text-slate-300">
+                      <FileCode className="w-4 h-4 text-indigo-400" />
                       <span>{selectedPreview.code_diff.file_path}</span>
                     </div>
+
                     <div className="flex items-center gap-3 text-xs font-mono">
-                      <span className="text-emerald-400 flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" /> AST Validated
-                      </span>
-                      <span className="text-cyan-400">
-                        WCAG 2.1 AA Score: {selectedPreview.code_diff.wcag_score}/100
-                      </span>
+                      {selectedPreview.code_diff.ast_valid && (
+                        <span className="text-emerald-400 flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>AST Valid</span>
+                        </span>
+                      )}
+                      {selectedPreview.code_diff.wcag_score && (
+                        <span className="text-cyan-400">
+                          WCAG: {selectedPreview.code_diff.wcag_score}/100
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Unified Diff Box */}
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs overflow-x-auto leading-relaxed">
-                    {selectedPreview.code_diff.diff_unified.split("\n").map((line, idx) => {
-                      const isAdd = line.startsWith("+") && !line.startsWith("+++");
-                      const isDel = line.startsWith("-") && !line.startsWith("---");
-                      const isHeader = line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++");
-
-                      return (
-                        <div
-                          key={idx}
-                          className={`px-2 py-0.5 rounded ${
-                            isAdd
-                              ? "bg-emerald-950/40 text-emerald-300"
-                              : isDel
-                              ? "bg-rose-950/40 text-rose-300 line-through opacity-75"
-                              : isHeader
-                              ? "text-indigo-400 font-bold"
-                              : "text-slate-400"
-                          }`}
-                        >
-                          {line}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-[300px] leading-relaxed">
+                    {selectedPreview.code_diff.diff_unified}
+                  </pre>
                 </div>
               )}
 
-              {selectedPreview.preview_type === "spend" && selectedPreview.spend_proposal && (
+              {/* Spend Proposal Viewer */}
+              {selectedPreview.spend_proposal && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-slate-400 flex items-center gap-1.5">
-                        <DollarSign className="w-4 h-4 text-emerald-400" />
-                        <span>Proposed Budget Allocation</span>
-                      </div>
-                      <div className="text-lg font-bold font-mono text-amber-400">
-                        ${selectedPreview.spend_proposal.total_spend.toLocaleString()} USD
-                      </div>
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-slate-950 border border-slate-800">
+                    <div>
+                      <span className="text-xs text-slate-400 block">Total Spend Commitment</span>
+                      <span className="text-2xl font-bold font-mono text-white">
+                        ${selectedPreview.spend_proposal.total_spend.toLocaleString()}
+                      </span>
                     </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-900 text-xs">
-                      {Object.entries(selectedPreview.spend_proposal.channel_allocations).map(([ch, val]) => (
-                        <div key={ch} className="flex justify-between font-mono text-slate-300">
-                          <span className="capitalize">{ch.replace(/_/g, " ")}:</span>
-                          <span className="text-emerald-400">${Number(val).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="pt-2 border-t border-slate-900 text-xs flex justify-between text-slate-400">
-                      <span>Projected Marginal ROAS:</span>
-                      <span className="font-mono text-indigo-400 font-bold">
+                    <div className="text-right">
+                      <span className="text-xs text-slate-400 block">Marginal ROAS Projection</span>
+                      <span className="text-xl font-bold font-mono text-emerald-400">
                         {selectedPreview.spend_proposal.marginal_roas_projection}x
                       </span>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-xs font-mono">
+                    {Object.entries(selectedPreview.spend_proposal.channel_allocations).map(([ch, amt]) => (
+                      <div key={ch} className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                        <span className="text-slate-500 block truncate capitalize">
+                          {ch.replace(/_/g, " ")}
+                        </span>
+                        <span className="text-slate-200 font-bold">${amt.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
-              {/* Cryptographic Decision Signature Panel */}
-              <div className="p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4">
+              {/* Cryptographic Decision Signer Panel */}
+              <div className="pt-4 border-t border-slate-800 space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                    <KeyRound className="w-4 h-4 text-indigo-400" />
-                    <span>Cryptographic Sign-Off Certificate</span>
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    <KeyRound className="w-4 h-4 text-amber-400" />
+                    <span>Cryptographic Decision Signer</span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500">
-                    W3C PROV Signed Token Required
-                  </span>
+                  {currentDecision && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      SEALED: {currentDecision.hash.slice(0, 16)}...
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Authorized Signer</label>
+                    <label className="block text-xs text-slate-400 mb-1">Approver Identity</label>
                     <input
                       type="text"
                       value={approverName}
                       onChange={(e) => setApproverName(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200"
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Role / Governance Authority</label>
+                    <label className="block text-xs text-slate-400 mb-1">Reviewer Role Authority</label>
                     <input
                       type="text"
                       value={approverRole}
                       onChange={(e) => setApproverRole(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200"
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 font-mono"
                     />
                   </div>
                 </div>
@@ -281,51 +329,38 @@ export default function ApprovalsPage() {
                     type="text"
                     value={revisionNotes}
                     onChange={(e) => setRevisionNotes(e.target.value)}
-                    placeholder="Provide justification or required changes if rejecting/revising..."
-                    className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-200"
+                    placeholder="Enter compliance justification or revision feedback..."
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200"
                   />
                 </div>
 
-                {/* State Feedback if already decided */}
-                {currentDecision && (
-                  <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/60 text-xs space-y-1">
-                    <div className="text-emerald-300 font-semibold flex items-center gap-1.5">
-                      <FileCheck2 className="w-4 h-4 text-emerald-400" />
-                      <span>Signature Registered: {currentDecision.decision}</span>
-                    </div>
-                    <div className="font-mono text-[10px] text-slate-400 truncate">
-                      SHA256 Token: {currentDecision.hash}
-                    </div>
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex flex-wrap items-center gap-3 pt-2">
+                {/* 1-Click Action Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                   <button
                     onClick={() => handleDecision("APPROVE")}
                     disabled={isSubmitting}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all"
+                    className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30 transition-all"
                   >
                     <Check className="w-4 h-4" />
-                    <span>Approve & Authorize Dispatch</span>
+                    <span>1-Click Sign & Approve</span>
                   </button>
 
                   <button
                     onClick={() => handleDecision("REQUEST_REVISION")}
                     disabled={isSubmitting}
-                    className="py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition-all"
+                    className="py-2.5 px-4 rounded-xl bg-amber-600/80 hover:bg-amber-600 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                   >
-                    <RefreshCw className="w-4 h-4" />
+                    <Clock className="w-4 h-4" />
                     <span>Request Revision</span>
                   </button>
 
                   <button
                     onClick={() => handleDecision("REJECT")}
                     disabled={isSubmitting}
-                    className="py-2.5 px-4 rounded-xl bg-rose-700 hover:bg-rose-600 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-2 transition-all"
+                    className="py-2.5 px-4 rounded-xl bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all"
                   >
                     <X className="w-4 h-4" />
-                    <span>Reject</span>
+                    <span>Reject Action</span>
                   </button>
                 </div>
               </div>

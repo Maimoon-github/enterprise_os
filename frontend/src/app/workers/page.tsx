@@ -3,37 +3,91 @@
 import React, { useState } from "react";
 import {
   Bot,
-  Brain,
-  Cpu,
-  Layers,
-  Sparkles,
-  Terminal,
-  Activity,
-  CheckCircle,
-  Eye,
-  Compass,
-  Zap,
+  Box,
+  ExternalLink,
+  Play,
 } from "lucide-react";
 import { MOCK_WORKER_ROSTER } from "@/lib/api";
 import { WorkerRole } from "@/lib/types";
+import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
+import { useToast } from "@/components/ui/Toast";
 
 export default function WorkersPage() {
   const [roster, setRoster] = useState(MOCK_WORKER_ROSTER);
   const [selectedRole, setSelectedRole] = useState<WorkerRole>("W_DEV");
+  const [settings] = useState<EnterpriseSettings>(getStoredSettings());
+  const { addToast } = useToast();
 
   const currentWorker = roster.find((w) => w.role === selectedRole) || roster[0];
+
+  const handleTriggerOodaStep = () => {
+    const stages: ("OBSERVE" | "ORIENT" | "DECIDE" | "ACT" | "REFLECT")[] = [
+      "OBSERVE",
+      "ORIENT",
+      "DECIDE",
+      "ACT",
+      "REFLECT",
+    ];
+    const randomStage = stages[Math.floor(Math.random() * stages.length)];
+    const messages = {
+      OBSERVE: "Queried isolated sandbox file virtualization tree; identified AST structure.",
+      ORIENT: "Evaluating WCAG 2.1 AA accessibility contrast rules against design token palette.",
+      DECIDE: "Formulating AST transform plan to inject aria-label and keyboard event listeners.",
+      ACT: "Executed sandboxed test harness with Jest; 12/12 assertions passed in 140ms.",
+      REFLECT: "Verified zero policy violations. Output envelope ready for evidence synthesis.",
+    };
+
+    const newThought = {
+      stage: randomStage,
+      content: messages[randomStage],
+      timestamp: new Date().toLocaleTimeString(),
+    };
+
+    setRoster((prev) =>
+      prev.map((worker) => {
+        if (worker.role === selectedRole) {
+          return {
+            ...worker,
+            activeStatus: "executing",
+            cognitiveStream: [newThought, ...worker.cognitiveStream],
+          };
+        }
+        return worker;
+      })
+    );
+
+    addToast({
+      type: "info",
+      title: `${selectedRole} Cognitive Step (${randomStage})`,
+      message: newThought.content,
+    });
+  };
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
-          <Bot className="w-6 h-6 text-emerald-400" />
-          <span>7 Bounded Worker Engines & Cognitive Stream</span>
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Zero-trust agent sandbox boundaries. Each bounded agent operates under explicit prompt restrictions and immutable role policies.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+            <Bot className="w-6 h-6 text-emerald-400" />
+            <span>7 Bounded Worker Engines & Cognitive Stream</span>
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Zero-trust agent sandbox boundaries. Each bounded agent operates under explicit prompt restrictions and immutable role policies.
+          </p>
+        </div>
+
+        {/* Sandbox Website Direct Link */}
+        <a
+          href={settings.sandboxWebsiteUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/80 text-amber-300 text-xs font-semibold transition-all font-mono"
+        >
+          <Box className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+          <span>Sandbox Site (:3001)</span>
+          <ExternalLink className="w-3 h-3" />
+        </a>
       </div>
 
       {/* Grid: Worker List & Cognitive Stream Visualizer */}
@@ -101,7 +155,7 @@ export default function WorkersPage() {
         {/* Right: Selected Agent Cognitive Reasoning Loop */}
         <div className="lg:col-span-7 space-y-6">
           <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-mono text-xs text-emerald-400 font-bold">
@@ -117,9 +171,13 @@ export default function WorkersPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono px-3 py-1 rounded bg-slate-950 text-emerald-300 border border-emerald-900/60">
-                  Status: {currentWorker.activeStatus}
-                </span>
+                <button
+                  onClick={handleTriggerOodaStep}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all"
+                >
+                  <Play className="w-3 h-3 fill-white" />
+                  <span>1-Click OODA Step</span>
+                </button>
               </div>
             </div>
 
@@ -148,32 +206,21 @@ export default function WorkersPage() {
                   return (
                     <div
                       key={idx}
-                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1.5"
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 text-xs font-mono"
                     >
                       <div className="flex items-center justify-between">
-                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${stageColor}`}>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase ${stageColor}`}
+                        >
                           {item.stage}
                         </span>
-                        <span className="text-[11px] font-mono text-slate-500">{item.timestamp}</span>
+                        <span className="text-slate-500 text-[10px]">{item.timestamp}</span>
                       </div>
-                      <p className="text-xs text-slate-200 leading-relaxed font-sans">{item.content}</p>
+                      <p className="text-slate-300 font-sans leading-relaxed">{item.content}</p>
                     </div>
                   );
                 })}
               </div>
-            </div>
-
-            {/* Guardrail Policy Enforcement */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <div className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-emerald-400" />
-                <span>Enforced Sandbox Boundaries</span>
-              </div>
-              <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
-                <li>Network egress restricted exclusively to whitelisted internal endpoints</li>
-                <li>Write permissions confined strictly to designated workspace scratch directory</li>
-                <li>Mandatory human sign-off preview generation for any code modification or spend</li>
-              </ul>
             </div>
           </div>
         </div>
