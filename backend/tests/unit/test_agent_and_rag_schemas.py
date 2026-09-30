@@ -427,6 +427,9 @@ def test_w_learn_and_s_attr_contracts() -> None:
         applicable_window_end=datetime.now(UTC),
     )
     assert candidate.status == "candidate"
+    assert estimate.point_estimate is not None
+    assert estimate.uncertainty.lower_bound is not None
+    assert estimate.uncertainty.upper_bound is not None
     assert estimate.uncertainty.lower_bound <= estimate.point_estimate <= estimate.uncertainty.upper_bound
 
 
