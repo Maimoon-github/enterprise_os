@@ -586,8 +586,9 @@ class OutboundGateway:
         )
 
         self._idempotency_records[idempotency_key] = (payload_hash, dispatch.signature, readiness)
-        if getattr(dispatch, "nonce", None):
-            self._used_nonces.add(dispatch.nonce)
+        nonce_val = getattr(dispatch, "nonce", None)
+        if nonce_val:
+            self._used_nonces.add(str(nonce_val))
 
         if self._provenance_recorder:
             scrubbed = scrub_sensitive_payload(dispatch.payload)

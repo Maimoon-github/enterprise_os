@@ -165,7 +165,7 @@ class SandboxClient:
         if self._settings is None or not self._settings.endpoint:
             return None
         try:
-            import agent_sandbox
+            import agent_sandbox  # type: ignore[import-untyped]
 
             base_url = self._settings.endpoint
             headers = {}
@@ -421,6 +421,9 @@ class SandboxClient:
             )
         except Exception as exc:  # noqa: BLE001 - sandbox internals are opaque by design
             duration_ms = (time.perf_counter() - start_time) * 1000.0
+            error_details = str(exc)
+            if not isinstance(exc, SandboxInvocationError) and self._settings and self._settings.endpoint:
+                error_details = f"AIO sandbox is unavailable at endpoint '{self._settings.endpoint}': {exc}"
 
             # Audit record: failed stage (Fail-Closed)
             if self._provenance_recorder is not None:
@@ -437,7 +440,7 @@ class SandboxClient:
                         exit_code=1,
                         duration_ms=duration_ms,
                         command=mandate.operation,
-                        error_details=str(exc),
+                        error_details=error_details,
                         egress_grant_id=mandate.egress_grant.grant_id if mandate.egress_grant else None,
                         started_at=start_dt,
                         ended_at=datetime.now(UTC),
@@ -463,7 +466,7 @@ class SandboxClient:
                 capability=mandate.capability,
                 status=SandboxExecutionStatus.FAILED,
                 success=False,
-                error=str(exc),
+                error=error_details,
                 execution_duration_ms=round(duration_ms, 2),
                 execution_metadata=execution_metadata,
                 provenance=self._build_provenance(mandate, "failed"),

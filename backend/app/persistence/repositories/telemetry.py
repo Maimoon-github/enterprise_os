@@ -282,7 +282,8 @@ class TelemetryRepository(BaseJsonRepository[TelemetryEvent]):
             or str(uuid.uuid4())
         )
 
-        minimized_payload = rec_dict.get("payload") if isinstance(rec_dict.get("payload"), dict) else rec_dict
+        raw_payload = rec_dict.get("payload")
+        minimized_payload: dict[str, Any] = dict(raw_payload) if isinstance(raw_payload, dict) else dict(rec_dict)
 
         # Deterministic content hash covering minimized payload and semantic fields
         content_bytes = json.dumps(minimized_payload, sort_keys=True, default=str).encode("utf-8")

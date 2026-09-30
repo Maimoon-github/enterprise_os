@@ -15,7 +15,7 @@ import os
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from mcp import ClientSession
 from openai import AzureOpenAI, OpenAI
@@ -95,7 +95,7 @@ class BaseAgentLoop(ABC):
     async def run(
         self,
         prompt: str,
-        tools: List[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Execute agent loop.
@@ -124,10 +124,10 @@ class AzureOpenAIAgentLoop(BaseAgentLoop):
         self,
         mcp_session: ClientSession,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
-        azure_endpoint: str = None,
-        azure_api_key: str = None,
-        azure_deployment: str = None,
-        azure_api_version: str = None,
+        azure_endpoint: Optional[str] = None,
+        azure_api_key: Optional[str] = None,
+        azure_deployment: Optional[str] = None,
+        azure_api_version: Optional[str] = None,
         max_iterations: int = 50,
     ):
         """
@@ -144,17 +144,21 @@ class AzureOpenAIAgentLoop(BaseAgentLoop):
         """
         super().__init__(mcp_session, system_prompt)
 
-        self.azure_endpoint = azure_endpoint or os.getenv(
-            "AZURE_OPENAI_ENDPOINT", "https://your-endpoint.openai.azure.com"
+        self.azure_endpoint = str(
+            azure_endpoint
+            or os.getenv("AZURE_OPENAI_ENDPOINT")
+            or "https://your-endpoint.openai.azure.com"
         )
-        self.azure_api_key = azure_api_key or os.getenv(
-            "AZURE_OPENAI_API_KEY", "your-api-key"
+        self.azure_api_key = str(
+            azure_api_key or os.getenv("AZURE_OPENAI_API_KEY") or "your-api-key"
         )
-        self.azure_deployment = azure_deployment or os.getenv(
-            "AZURE_OPENAI_DEPLOYMENT", "gpt-4"
+        self.azure_deployment = str(
+            azure_deployment or os.getenv("AZURE_OPENAI_DEPLOYMENT") or "gpt-4"
         )
-        self.azure_api_version = azure_api_version or os.getenv(
-            "AZURE_OPENAI_API_VERSION", "2024-02-15-preview"
+        self.azure_api_version = str(
+            azure_api_version
+            or os.getenv("AZURE_OPENAI_API_VERSION")
+            or "2024-02-15-preview"
         )
         self.max_iterations = max_iterations
 
@@ -167,7 +171,7 @@ class AzureOpenAIAgentLoop(BaseAgentLoop):
     async def run(
         self,
         prompt: str,
-        tools: List[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Execute Azure OpenAI agent loop.
@@ -179,12 +183,12 @@ class AzureOpenAIAgentLoop(BaseAgentLoop):
         Returns:
             Tuple of (response_text, tool_metrics)
         """
-        messages = [
+        messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": prompt},
         ]
 
-        tool_metrics = {}
+        tool_metrics: Dict[str, Any] = {}
         iteration = 0
 
         while iteration < self.max_iterations:
@@ -201,7 +205,7 @@ class AzureOpenAIAgentLoop(BaseAgentLoop):
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
 
-            response = self.client.chat.completions.create(**kwargs)
+            response = self.client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
             message = response.choices[0].message
 
             # Add assistant message to conversation
@@ -268,6 +272,7 @@ class AzureOpenAIAgentLoop(BaseAgentLoop):
                 tool_start_ts = time.time()
 
                 # Execute tool with error handling
+                tool_result: Any
                 try:
                     tool_result = await self.mcp_session.call_tool(tool_name, tool_args)
                     tool_duration = time.time() - tool_start_ts
@@ -348,11 +353,11 @@ class OpenAIAgentLoop(BaseAgentLoop):
         self,
         mcp_session: ClientSession,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
-        api_key: str = None,
-        base_url: str = None,
-        model: str = None,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
         max_iterations: int = 50,
-        temperature: float = None,
+        temperature: Optional[float] = None,
     ):
         """
         Initialize OpenAI-compatible agent loop.
@@ -392,7 +397,7 @@ class OpenAIAgentLoop(BaseAgentLoop):
     def _effective_temperature(self) -> float | None:
         """Return temperature, clamped if the model requires it."""
         temp = self.temperature
-        if temp is not None and _TEMPERATURE_POSITIVE_MODELS.search(self.model):
+        if temp is not None and self.model and _TEMPERATURE_POSITIVE_MODELS.search(self.model):
             temp = max(temp, 0.01)
         return temp
 
@@ -408,7 +413,7 @@ class OpenAIAgentLoop(BaseAgentLoop):
     async def run(
         self,
         prompt: str,
-        tools: List[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Execute the agent loop.
@@ -420,14 +425,14 @@ class OpenAIAgentLoop(BaseAgentLoop):
         Returns:
             Tuple of (response_text, tool_metrics)
         """
-        messages = [
+        messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": prompt},
         ]
 
         tool_metrics: Dict[str, Any] = {}
         iteration = 0
-        strip_think = bool(_THINKING_TAG_MODELS.search(self.model))
+        strip_think = bool(self.model and _THINKING_TAG_MODELS.search(self.model))
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -446,7 +451,7 @@ class OpenAIAgentLoop(BaseAgentLoop):
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
 
-            response = self.client.chat.completions.create(**kwargs)
+            response = self.client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
             message = response.choices[0].message
 
             content = message.content or ""
@@ -512,6 +517,7 @@ class OpenAIAgentLoop(BaseAgentLoop):
                 print(f"   Arguments: {json.dumps(tool_args, ensure_ascii=False)}")
                 tool_start_ts = time.time()
 
+                tool_result: Any
                 try:
                     tool_result = await self.mcp_session.call_tool(tool_name, tool_args)
                     tool_duration = time.time() - tool_start_ts
@@ -576,7 +582,7 @@ class LangGraphAgentLoop(BaseAgentLoop):
         self,
         mcp_session: ClientSession,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
-        langgraph_url: str = None,
+        langgraph_url: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -595,7 +601,7 @@ class LangGraphAgentLoop(BaseAgentLoop):
     async def run(
         self,
         prompt: str,
-        tools: List[Dict[str, Any]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Execute LangGraph agent loop.

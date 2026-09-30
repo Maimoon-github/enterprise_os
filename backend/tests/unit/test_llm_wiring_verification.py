@@ -456,7 +456,7 @@ async def test_all_seven_workers_bounded_llm_inference(
 
     agent = agent_class(DummySandboxClient(), llm_client=llm)
     grant = _make_sample_grant(role, capability)
-    context: dict[str, Any] = {"staged_cms_models": [{"model_id": "m1"}], "tenant_id": "tenant-alpha"}
+    context = {"staged_cms_models": [{"model_id": "m1"}], "tenant_id": "tenant-alpha"}
 
     envelope = await agent.run(grant, context)
 

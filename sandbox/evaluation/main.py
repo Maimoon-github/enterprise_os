@@ -25,12 +25,8 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-try:
-    from mcp import ClientSession  # type: ignore[import-not-found, import-untyped]
-    from mcp.client.streamable_http import streamablehttp_client  # type: ignore[import-not-found, import-untyped]
-except ImportError:
-    ClientSession = Any  # type: ignore[misc, assignment]
-    streamablehttp_client = None  # type: ignore[assignment]
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
 from dotenv import load_dotenv
 
 from agent_loop import AzureOpenAIAgentLoop, OpenAIAgentLoop, BaseAgentLoop
@@ -57,7 +53,7 @@ MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8080/mcp")
 MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", "5"))
 
 # Global MCP Session
-_mcp_session: ClientSession = None
+_mcp_session: ClientSession | None = None
 _mcp_streams = None
 
 
@@ -66,7 +62,7 @@ _mcp_streams = None
 # ============================================================================
 
 
-async def init_global_mcp_session(server_url: str) -> ClientSession:
+async def init_global_mcp_session(server_url: str) -> ClientSession | None:
     """Initialize global MCP session once."""
     global _mcp_session, _mcp_streams
 
@@ -75,7 +71,7 @@ async def init_global_mcp_session(server_url: str) -> ClientSession:
 
     try:
         _mcp_streams = streamablehttp_client(server_url)
-        read_stream, write_stream, _ = await _mcp_streams.__aenter__()
+        read_stream, write_stream = await _mcp_streams.__aenter__()
         _mcp_session = ClientSession(read_stream, write_stream)
         await _mcp_session.__aenter__()
         await _mcp_session.initialize()
@@ -139,9 +135,9 @@ async def get_mcp_tools() -> List[Dict[str, Any]]:
                 "function": {
                     "name": tool.name,
                     "description": tool.description or "",
-                    "parameters": tool.inputSchema
-                    if hasattr(tool, "inputSchema")
-                    else {"type": "object", "properties": {}, "required": []},
+                    "parameters": getattr(tool, "input_schema", None)
+                    or getattr(tool, "inputSchema", None)
+                    or {"type": "object", "properties": {}, "required": []},
                 },
             }
             azure_tools.append(azure_tool)
@@ -478,10 +474,10 @@ async def upload_test_files_to_sandbox(eval_file: Path) -> bool:
 
 async def run_evaluation(
     eval_path: str,
-    mcp_server_url: str = None,
+    mcp_server_url: str | None = None,
     agent_type: str = "azure",
-    openai_base_url: str = None,
-    openai_model: str = None,
+    openai_base_url: str | None = None,
+    openai_model: str | None = None,
 ) -> str:
     """
     Run evaluation with tools from MCP server.
@@ -518,6 +514,7 @@ async def run_evaluation(
         print(f"✅ Retrieved {len(tools)} tools from MCP server")
 
     # Initialize agent loop
+    agent: BaseAgentLoop
     if agent_type == "openai":
         agent_kwargs: Dict[str, Any] = {"mcp_session": _mcp_session}
         if openai_base_url:
@@ -526,7 +523,7 @@ async def run_evaluation(
             agent_kwargs["model"] = openai_model
         agent = OpenAIAgentLoop(**agent_kwargs)
     else:
-        agent = AzureOpenAIAgentLoop(mcp_session=_mcp_session)
+        agent = AzureOpenAIAgentLoop(mcp_session=_mcp_session)  # type: ignore[arg-type]
     print(f"🤖 Using agent: {agent.__class__.__name__}")
 
     try:
