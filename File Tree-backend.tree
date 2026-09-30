@@ -336,6 +336,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   ├── 📁 unit/
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 test_action_preview_verification.py
+│   │   ├── 🐍 test_agent_and_rag_schemas.py
 │   │   ├── 🐍 test_attribution_decay_roas_t31.py
 │   │   ├── 🐍 test_audit_lineage_validator_t33.py
 │   │   ├── 🐍 test_context_assembly_and_brand_persona.py
@@ -344,6 +345,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_development_verification.py
 │   │   ├── 🐍 test_evidence_consolidation_verification.py
 │   │   ├── 🐍 test_evidence_synthesis.py
+│   │   ├── 🐍 test_full_cognitive_llm_isolation.py
 │   │   ├── 🐍 test_governed_mcp_data_gateway.py
 │   │   ├── 🐍 test_hitl_gate.py
 │   │   ├── 🐍 test_hitl_signoff_verification.py

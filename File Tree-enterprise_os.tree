@@ -80,6 +80,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 📄 Governed_Project_Tracker.xlsx
 │   │   ├── 📝 Project Plan Essentials-Governed Multi-Brand Agentic System.md
 │   │   └── 🌐 flowchart.drawio.html
+│   ├── 📁 layer 9 - Audit Trail/
+│   │   ├── 📝 research findings.md
+│   │   └── 📝 task plan.md
 │   ├── 📁 raw_code/
 │   │   ├── 🐍 agent_local_state.py
 │   │   ├── 🐍 agentic_rag.py
@@ -112,10 +115,74 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 📄 eDerma_MIOS_flowchart.drawio
 │   │   ├── 📄 eDerma_MIOS_flowchart.vsdx
 │   │   └── 📄 ederma-governed-agentic-flowchart.mmd
+│   ├── 📁 strategy-engine-implementation/
+│   │   ├── 📁 backend/
+│   │   │   └── 📁 app/
+│   │   │       ├── 📁 agents/
+│   │   │       │   ├── 📁 strategy_engine/
+│   │   │       │   │   ├── 📁 subagents/
+│   │   │       │   │   │   ├── 🐍 __init__.py
+│   │   │       │   │   │   ├── 🐍 allocation.py
+│   │   │       │   │   │   ├── 🐍 funnel.py
+│   │   │       │   │   │   └── 🐍 roadmap.py
+│   │   │       │   │   ├── 🐍 __init__.py
+│   │   │       │   │   ├── 🐍 ports.py
+│   │   │       │   │   ├── 🐍 profiles.py
+│   │   │       │   │   └── 🐍 strategy.py
+│   │   │       │   └── 🐍 __init__.py
+│   │   │       ├── 📁 integrations/
+│   │   │       │   ├── 📁 sandbox/
+│   │   │       │   │   ├── 🐍 __init__.py
+│   │   │       │   │   ├── 🐍 capabilities.py
+│   │   │       │   │   ├── 🐍 client.py
+│   │   │       │   │   └── 🐍 s_alloc_core.py
+│   │   │       │   └── 🐍 __init__.py
+│   │   │       ├── 📁 schemas/
+│   │   │       │   ├── 🐍 __init__.py
+│   │   │       │   └── 🐍 strategy.py
+│   │   │       └── 🐍 __init__.py
+│   │   ├── 📁 docs/
+│   │   │   ├── 📝 DESIGN.md
+│   │   │   ├── 📝 INTEGRATION.md
+│   │   │   ├── 📝 VALIDATION.md
+│   │   │   ├── 📄 production-gate.txt
+│   │   │   └── 📄 test-results.txt
+│   │   ├── 📁 sandbox/
+│   │   │   └── 📁 docker/
+│   │   │       └── 📁 hardened/
+│   │   │           └── 📁 skills/
+│   │   │               └── 📁 s-alloc/
+│   │   │                   ├── 📁 scripts/
+│   │   │                   │   └── 🐍 run.py
+│   │   │                   ├── 🐳 Dockerfile
+│   │   │                   └── 📝 SKILL.md
+│   │   ├── 📁 tests/
+│   │   │   ├── 📁 integration/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 test_live_strategy.py
+│   │   │   │   └── 🐍 test_strategy_integration.py
+│   │   │   ├── 📁 strategy_engine/
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 test_allocation.py
+│   │   │   │   ├── 🐍 test_contracts.py
+│   │   │   │   ├── 🐍 test_ie_roundtrip.py
+│   │   │   │   ├── 🐍 test_provenance.py
+│   │   │   │   ├── 🐍 test_runtime_cli.py
+│   │   │   │   └── 🐍 test_sandbox_security.py
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 live_contract.py
+│   │   │   └── 🐍 support.py
+│   │   ├── 📁 tools/
+│   │   │   └── 🐍 validate.py
+│   │   ├── 📝 README.md
+│   │   ├── 📄 SHA256SUMS.txt
+│   │   ├── 📄 TREE.txt
+│   │   └── ⚙️ pyproject.toml
 │   ├── 📝 Architecture_Map_Hierarchy.md
 │   ├── 📝 Core Architectural Invariant.md
 │   ├── 📝 Final Architecture Flowchart.md
 │   ├── 📄 flowchat.txt
+│   ├── 📦 strategy-engine-implementation.zip
 │   └── 📦 worker agents.zip
 ├── 📁 backend/
 │   ├── 📁 app/
@@ -451,6 +518,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 📁 unit/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_action_preview_verification.py
+│   │   │   ├── 🐍 test_agent_and_rag_schemas.py
 │   │   │   ├── 🐍 test_attribution_decay_roas_t31.py
 │   │   │   ├── 🐍 test_audit_lineage_validator_t33.py
 │   │   │   ├── 🐍 test_context_assembly_and_brand_persona.py
@@ -459,6 +527,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_development_verification.py
 │   │   │   ├── 🐍 test_evidence_consolidation_verification.py
 │   │   │   ├── 🐍 test_evidence_synthesis.py
+│   │   │   ├── 🐍 test_full_cognitive_llm_isolation.py
 │   │   │   ├── 🐍 test_governed_mcp_data_gateway.py
 │   │   │   ├── 🐍 test_hitl_gate.py
 │   │   │   ├── 🐍 test_hitl_signoff_verification.py
