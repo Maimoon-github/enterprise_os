@@ -335,3 +335,367 @@ Plaintext
 * \[x\] **All worker agents have sandbox access:** All 7 Worker Agents (W\_DEV, W\_STRAT, W\_CREAT, W\_PROD, W\_COMP, W\_VOICE, W\_LEARN) possess direct, operational access to invoke tools and ephemeral sub-agents within the agent\_sandbox boundary.  
 * \[x\] **Orchestrator / Agentic RAG authority is consistent:** Architecture adheres strictly to **Model A**. Agentic RAG exclusively interfaces with the Intelligence Engine, which acts as the sole authorized broker for reading and writing data on behalf of Worker Agents.  
 * \[x\] **No ambiguous or redundant components:** System boundaries are decoupled and non-overlapping. Storage is centralized in the Systems of Record (Layer 4); control is centralized in the Intelligence Engine (Layer 2); execution is distributed across Worker Agents (Layer 5); and isolation is enforced by agent\_sandbox (Layer 6).
+
+## **7\. Comprehensive Input/Output Schema Specification & Validation Assessment**
+
+### **7.1 Architectural Schema Hierarchy & Monotonic Attenuation Rules**
+
+In accordance with **Model A** governance and zero-trust execution principles, the system enforces strict monotonic schema attenuation across four distinct operational planes:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Plane 1: Governance & Directive Plane (Layer 1 -> Layer 2)            │
+│ EnterpriseDirective -> PolicyEnvelope -> CanonicalTaskState           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Policy-Screened TaskGrant & Context
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Plane 2: Worker Domain Plane (Layer 2 -> Layer 5)                      │
+│ TaskGrant -> Domain Directive (Strategy, Dev, Creative, Prod, etc.)     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Ephemeral Specialist Mandate
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Plane 3: Specialist Execution & Sandbox Boundary (Layer 5 -> Layer 6)  │
+│ Specialist Mandate -> SandboxInvocationMandate -> Micro-Tool Payload   │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Sanitized SandboxResult
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Plane 4: Upward Synthesis & Persistence Plane (Layer 6 -> L5 -> L2)    │
+│ SpecialistResult -> Domain Deliverable -> EvidenceEnvelope -> Package  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Monotonic Attenuation Invariant ($\text{Sub-Agent} \subset \text{Worker} \subset \text{IE}$):** A delegated input schema may NEVER possess broader data access, larger budget caps, or looser network policies than its delegator's grant.
+2. **Model A Mediated Retrieval:** No Worker Agent or Specialist Sub-Agent possesses direct connection parameters, vector query schemas, or CRUD mutation schemas against the persistence layer. All data requests are mediated as read-only `ContextRequest` schemas submitted to the Intelligence Engine.
+3. **Structured Upward Synthesis:** Every specialist execution terminates in a typed `SpecialistResult`, which is ingested into a domain deliverable (e.g., `DevelopmentDeliverable`, `OmnichannelStrategyPlan`, `ClaimsDossier`), wrapped in a tamper-evident `EvidenceEnvelope` with a mathematical `ConfidenceInterval`, and sealed with a SHA-256 digest before reaching the Intelligence Engine.
+
+---
+
+### **7.2 Central Control Plane & Governed Data Access Schemas**
+
+#### **1. Intelligence Engine (IE) — Layer 2 Central Orchestrator**
+* **Role:** Central multi-brand DAG orchestrator, context assembler, evidence synthesizer, and HITL gatekeeper.
+* **Input Schemas:**
+  - `EnterpriseDirective` (`tenant_scope: TenantScope`, `objective: str`, `budget_ceiling: float`, `risk_tolerance: RiskLevel`, `time_horizon: str`, `prohibited_terms: list[str]`, `mandatory_disclaimers: list[str]`).
+  - `PolicyEnvelope` (`policy_id: str`, `policy_version: str`, `autonomy_tier: str`, `tenant_id: str`, `spend_caps: dict[str, float]`, `claim_limits: dict[str, Any]`, `rules: list[str]`).
+  - `EvidenceEnvelope` (`task_id: str`, `worker_role: WorkerRole`, `confidence: ConfidenceInterval`, `findings: list[str]`, `payload: dict[str, Any]`, `generated_artifacts: list[str]`, `supporting_evidence: list[str]`, `provenance: dict[str, str]`, `proposed_state_changes: dict[str, str]`).
+  - `ApprovalDecision` (`approval_id: str`, `action_preview_id: str`, `status: ApprovalStatus [APPROVED|REJECTED|REVISED|HELD]`, `signer_identity: str`, `cryptographic_signature: str`, `modifications: dict[str, Any]`).
+  - `RawTelemetryBatch` (`batch_id: str`, `tenant_id: str`, `events: list[TelemetryEvent]`).
+* **Output Schemas:**
+  - `TaskGrant` (`task_id: str`, `worker_role: WorkerRole`, `tenant_scope: TenantScope`, `brand_id: str`, `objective: str`, `task_scope: str`, `task_slice: str`, `cts_state: dict[str, Any]`, `brand_rules: dict[str, Any]`, `validated_evidence: list[dict[str, Any]]`, `provenance_references: list[str]`, `freshness_metadata: dict[str, Any]`, `policy_constraints: list[str]`, `expires_at: datetime`, `tool_permissions: list[str]`, `sandbox_capabilities: list[str]`, `token_budget: int`, `budget_breakdown: dict[str, int]`, `risk_tier: RiskLevel`, `stop_conditions: list[str]`, `expected_outputs: list[str]`, `expected_output_schema: dict[str, Any]`).
+  - `ActionPreview` (`action_preview_id: str`, `task_id: str`, `tenant_id: str`, `worker_role: WorkerRole`, `risk_level: RiskLevel`, `preview_type: str`, `summary: str`, `spend_proposal: dict[str, Any] | None`, `claims_dossier: dict[str, Any] | None`, `code_diff: dict[str, Any] | None`, `copy_pack: dict[str, Any] | None`, `attribution_summary: dict[str, Any] | None`).
+  - `ConsolidatedEvidencePackage` (`package_id: str`, `tenant_id: str`, `status: ConsolidatedPackageStatus [VALID|FLAGGED_WITH_CONFLICTS|REJECTED]`, `source_task_ids: list[str]`, `participating_roles: list[WorkerRole]`, `validated_artifacts: list[dict[str, Any]]`, `confidence_summary: ConsolidatedConfidenceSummary`, `conflicts: list[EvidenceConflict]`, `warnings: list[str]`, `rejected_items: list[RejectedEvidenceItem]`, `proposed_state_deltas: list[CandidateStateDelta]`, `synthesized_evidence_summary: list[str]`, `provenance_summary: dict[str, Any]`).
+  - `DispatchedExecutionDirective` (`dispatch_id: str`, `task_id: str`, `tenant_id: str`, `target_surface: str`, `action_payload: dict[str, Any]`, `hitl_approval_signature: str`, `issued_at: datetime`, `expires_at: datetime`).
+
+#### **2. Agentic RAG Controller & Dispatcher — Layer 3 Governed Knowledge Gateway**
+* **Role:** Governed, tenant-isolated vector and BM25 hybrid knowledge retrieval and document ingestion gateway.
+* **Input Schemas:**
+  - `IntelligenceEngineToken` (`_issued_to: str` — cryptographically unforgeable capability token minted exclusively by IE).
+  - `RagRetrievalQuery` (`tenant_id: str`, `query: str`, `top_k: int = 10`, `purpose: str`, `freshness_target: timedelta | None`, `provenance_required: bool = True`).
+  - `RagIngestCommand` (`tenant_id: str`, `doc_id: str`, `text: str`, `source: str`, `caller: CallerIdentity`).
+* **Output Schemas:**
+  - `list[EvidenceChunk]` (`doc_id: str`, `tenant_id: str`, `text: str`, `source: str`, `source_authority: str`, `provenance_hash: str [SHA-256]`, `provenance_tracked: bool = True`, `retrieved_at: datetime`, `freshness_status: str`, `score: float`).
+
+---
+
+### **7.3 Layer 5: Worker Agents Input/Output Contracts**
+
+| Worker Agent | Primary Input Schema | Primary Output Schema | Intermediate Deliverable Models | Sandbox Capability Bound |
+| :--- | :--- | :--- | :--- | :--- |
+| **W_DEV** (Development Engine) | `TaskGrant` + `DevelopmentEngineRequest` | `EvidenceEnvelope` | `DevelopmentDeliverable` (`ui_templates`, `cms_schema_diffs`, `code_diffs`, `changed_files`, `security_checks_passed`) | `SandboxCapability.CODE` (`S_CODE`) |
+| **W_STRAT** (Strategy Engine) | `TaskGrant` -> `StrategyDirective` | `StrategyResultEnvelope` | `OmnichannelStrategyPlan` (`channel_allocations`, `funnel_stages`, `scenarios`, `total_allocated`) + `ChannelSpendProposal` | `SandboxCapability.ALLOC` (`S_ALLOC`) |
+| **W_CREAT** (Creative Content Engine) | `TaskGrant` + `CreativePlan` | `EvidenceEnvelope` | `CreativePackage` (`ad_copy_variants`, `social_posts`, `visual_briefs`, `schedules`, `qa_status`, `artifact_hashes`) | `SandboxCapability.COPY` (`S_COPY`) |
+| **W_PROD** (Product Evidence Engine) | `TaskGrant` + `ResearchProtocol` | `EvidenceEnvelope` | `ProductEvidencePayload` / `ClaimsDossier` (`claims`, `trace_bundle`, `product_specification`, `safety_assessments`, `rule_applications`) | `SandboxCapability.VAL` (`S_VAL`) |
+| **W_COMP** (Competitor Intel Engine) | `TaskGrant` -> `CompetitorResearchContext` | `EvidenceEnvelope` | `CompetitiveEvidenceBrief` (`assumption_verdicts`, `entity_inventory`, `observations`, `findings`, `conflicts`, `market_alerts`) | `SandboxCapability.COMP` (`s-comp`) |
+| **W_VOICE** (Customer Voice Engine) | `TaskGrant` + `FeedbackBatch` | `EvidenceEnvelope` | `CustomerVoicePayload` (`topics`, `aspect_sentiment`, `needs_and_objections`, `journey_comparisons`, `qa_report`, `objection_profiles`) | `SandboxCapability.PARSE` (`S_PARSE`) |
+| **W_LEARN** (Learning & Performance Engine) | `TaskGrant` + `TelemetryStream` | `EvidenceEnvelope` | `AttributionDeliverable` (`channel_weights`, `decay_metrics`, `roas_metrics`, `data_quality`) + `LearningDeltaCandidate` | `SandboxCapability.ATTR` (`S_ATTR`) |
+
+---
+
+### **7.4 Layer 6: Specialist Sub-Agents Input/Output Contracts (All 38 Specialists)**
+
+#### **A. Development Engine Specialists (7 Sub-Agents)**
+1. **DEV-PLAN (Planning Specialist):**
+   - *Input:* `DevelopmentTaskGrant` (target component, UI/CMS requirements, architectural principles, repo tree).
+   - *Output:* `DevelopmentPlan` (`phases: list[PlanPhase]`, `work_streams: list[WorkStream]`, `architectural_decisions: list[str]`, `risk_mitigations: list[str]`).
+2. **DEV-UI (UI Layout Specialist):**
+   - *Input:* `DevelopmentPlan` + design tokens + responsive viewport constraints.
+   - *Output:* `UILayoutSpecification` (`templates: list[UITemplateDefinition]`, `css_rules: str`, `breakpoints: list[ResponsiveBreakpoint]`, `wcag_compliance_score: float`).
+3. **DEV-CMS (CMS Contract Specialist):**
+   - *Input:* `DevelopmentPlan` + content model schemas + UI prop requirements.
+   - *Output:* `CmsContractSpecification` (`schema_diffs: list[CmsSchemaDiff]`, `backward_compatibility: bool`, `migration_plan: list[str]`).
+4. **DEV-IMPL (Implementation Specialist):**
+   - *Input:* `UILayoutSpecification` + `CmsContractSpecification` + target file scopes.
+   - *Output:* `ImplementationResult` (`code_diffs: list[CodeDiffEntry]`, `ast_validations: list[dict]`, `modified_symbols: list[str]`).
+5. **DEV-VERIF (Verification Specialist):**
+   - *Input:* `ImplementationResult` + unit test suites + component sandbox build specs.
+   - *Output:* `VerificationReport` (`syntax_valid: bool`, `lint_errors: list[str]`, `test_results: dict[str, Any]`, `coverage_percentage: float`).
+6. **DEV-SEC (Security Review Specialist):**
+   - *Input:* `ImplementationResult` + `VerificationReport` + SBOM dependencies.
+   - *Output:* `SecurityDossier` (`sast_clean: bool`, `secret_scan_clean: bool`, `dependency_sca_clean: bool`, `authorization_boundary_verified: bool`, `risk_tier: RiskLevel`).
+7. **DEV-REL (Release Operations Specialist):**
+   - *Input:* Verified code diffs + CMS schema diffs + security approvals.
+   - *Output:* `ReleaseBundle` (`deployment_manifest: dict`, `rollback_manifest: dict`, `cyclonedx_sbom: dict`, `migration_dry_run_receipt: dict`, `bundle_hash: str`).
+
+#### **B. Strategy Engine Specialists (1 Sub-Agent)**
+8. **STRAT-ALLOC (Media & Budget Allocator):**
+   - *Input:* `SAllocMandate` (`budget_ceiling: float`, `authorized_channels: list[str]`, `allocation_constraints: list[AllocationConstraint]`, `channel_parameters: dict[str, dict]`, `mroi_floor: float`, `kpi_name: str`).
+   - *Output:* `SAllocResult` (`status: SAllocDomainStatus [OK|EVIDENCE_GAP|INFEASIBLE]`, `total_allocated: float`, `channel_allocations: list[ChannelAllocation]`, `marginal_roas: dict[str, float]`, `response_curves: dict[str, Any]`, `diagnostics: dict[str, Any]`, `execution_receipt: SandboxExecutionReceipt`).
+
+#### **C. Creative & Content Engine Specialists (6 Sub-Agents)**
+9. **CREAT-RESEARCH (Creative Research Specialist):**
+   - *Input:* `CreativePlan` + platform guidelines + brand positioning targets.
+   - *Output:* `ResearchBrief` (`findings: list[ResearchFindingItem]`, `citations: list[str]`) + `PlatformSpecSnapshot` (`specs: list[PlatformSpecItem]`).
+10. **CREAT-CONCEPT (Concept Specialist):**
+    - *Input:* `ResearchBrief` + `OmnichannelStrategyPlan` + approved product evidence refs.
+    - *Output:* `ConceptPack` (`concepts: list[ConceptItem] {territory, tension, angle, narrative_architecture}`).
+11. **CREAT-COPY (Copy Specialist):**
+    - *Input:* `ConceptPack` + approved product claims + channel tone directives.
+    - *Output:* `CopyPack` (`variants: list[AdCopyVariant] {headline, hook_angle, hook_score, body_copy, cta, source_claim_ids}`).
+12. **CREAT-VISUAL (Visual Specialist):**
+    - *Input:* `ConceptPack` + brand design tokens + product imagery assets.
+    - *Output:* `VisualPack` (`production_briefs: list[VisualBrief]`, `storyboards: list[dict]`, `art_direction: str`).
+13. **CREAT-ADAPT (Adaptation Specialist):**
+    - *Input:* `CopyPack` + `VisualPack` + `PlatformSpecSnapshot`.
+    - *Output:* `AdaptedCreativePack` (`ad_copy_variants: list[AdCopyVariant]`, `social_posts: list[SocialPostVariant]`, `calendar_proposal: list[ContentScheduleItem]`).
+14. **CREAT-QA (Creative Quality & Compliance Specialist):**
+    - *Input:* `AdaptedCreativePack` + `ClaimsDossier` + enterprise prohibited terms.
+    - *Output:* `QAReport` (`status: QAStatus [PASS|REVISE|BLOCK]`, `findings: list[QAFinding]`, `severity: str`, `missing_evidence_claims: list[str]`).
+
+#### **D. Product / Evidence Engine Specialists (6 Sub-Agents)**
+15. **PROD-DISCOVERY (Literature & Discovery Specialist):**
+    - *Input:* `ResearchProtocol` + formulation ingredient identifiers + target study types.
+    - *Output:* `DiscoveryResult` (`sources: list[SourceRecord]`, `evidence: list[ExtractedEvidence]`, `access_levels: dict[str, AccessLevel]`).
+16. **PROD-LAB (Product Lab & Formulation Specialist):**
+    - *Input:* Finished product specifications + raw batch certificates of analysis (CoA) + ingredient lists.
+    - *Output:* `LabValidationResult` (`validations: list[LabValidation]`, `bridges: list[FormulationEvidenceBridge]`).
+17. **PROD-APPRAISAL (Critical Appraisal Specialist):**
+    - *Input:* `list[ExtractedEvidence]` + GRADE certainty criteria.
+    - *Output:* `AppraisalResult` (`assessments: list[EvidenceAssessment] {study_design, risk_of_bias, sample_size, effect_size, certainty_rating}`).
+18. **PROD-CLAIMS (Claims Substantiation Specialist):**
+    - *Input:* Candidate marketing propositions + `list[EvidenceAssessment]` + `list[FormulationEvidenceBridge]`.
+    - *Output:* `ClaimsMappingResult` (`claims: list[ClaimRecord]`, `mappings: list[ClaimEvidenceEdge]`, `gaps: list[EvidenceGap]`).
+19. **PROD-REGULATORY (Regulatory Compliance Specialist):**
+    - *Input:* Candidate claims + target jurisdictions + product classification codes.
+    - *Output:* `RegulatoryResult` (`rules: list[RegulatoryRule]`, `applications: list[RuleApplication] {outcome: COMPLIANT|NON_COMPLIANT|REQUIRES_QUALIFICATION}`).
+20. **PROD-SAFETY (Cosmetic Safety & Toxicology Specialist):**
+    - *Input:* Ingredient concentrations + exposure scenarios + vulnerable population definitions.
+    - *Output:* `SafetyDossier` (`safety_assessments: list[SafetyAssessment] {margin_of_safety, hazard_profile, status: PASS|FLAGGED}`).
+
+#### **E. Competitor Intel Engine Specialists (6 Sub-Agents)**
+21. **COMP-DISCOVERY (Competitor Discovery Specialist):**
+    - *Input:* Strategic market scope + baseline competitor list + product categories.
+    - *Output:* `DiscoveryInventory` (`entities: list[CompetitorEntity]`, `target_domains: list[str]`, `coverage_status: CoverageStatus`).
+22. **COMP-PRICING (Price Intelligence Specialist):**
+    - *Input:* Target competitor SKU URLs + currency specifications + `SandboxEgressGrant`.
+    - *Output:* `PricingObservationResult` (`observations: list[Observation] {price, currency, discount_depth, observed_at, evidence_ref}`).
+23. **COMP-ADVERTISING (Ad Library Specialist):**
+    - *Input:* Competitor brand identities + platform ad library endpoints + `SandboxEgressGrant`.
+    - *Output:* `AdObservationResult` (`observations: list[Observation] {active_ad_count, creative_formats, hook_themes, spend_tier}`).
+24. **COMP-SEARCH (Search & SERP Specialist):**
+    - *Input:* Target search queries + geo-locations + `SandboxEgressGrant`.
+    - *Output:* `SearchObservationResult` (`observations: list[Observation] {organic_rank, sponsored_rank, domain, page_title}`).
+25. **COMP-POSITIONING (Positioning Analysis Specialist):**
+    - *Input:* Aggregated competitor observations + brand baseline claims.
+    - *Output:* `PositioningFindingsResult` (`findings: list[Finding] {finding_kind, claim_text, market_share_trend, messaging_whitespace}`).
+26. **COMP-SYNTHESIS (Competitive Synthesis Specialist):**
+    - *Input:* All specialist observations, findings, and strategy assumptions.
+    - *Output:* `CompetitiveEvidenceBrief` (`assumption_verdicts: dict[str, AssumptionVerdict]`, `conflicts: list[ConflictSet]`, `market_alerts: list[MarketShiftAlert]`).
+
+#### **F. Customer Voice Engine Specialists (6 Sub-Agents)**
+27. **VOICE-DISCOVERY (Feedback Discovery & Ingestion Specialist):**
+    - *Input:* Raw multi-channel customer records + survey export dumps.
+    - *Output:* `NormalizedFeedbackBatch` (`records: list[FeedbackRecord]`, `methodology: list[SurveyMethodology]`, `de_identification_stats: dict`).
+28. **VOICE-THEMES (Theme & Clustering Specialist):**
+    - *Input:* Sanitized feedback records + minimum cluster thresholds.
+    - *Output:* `TopicFindingsResult` (`topics: list[TopicFinding] {theme_name, frequency, relative_share, grounding_spans: list[EvidenceSpan]}`).
+29. **VOICE-SENTIMENT (Aspect-Based Sentiment Specialist):**
+    - *Input:* Sanitized feedback records + product aspect taxonomy.
+    - *Output:* `SentimentFindingsResult` (`aspect_sentiment: list[AspectSentimentFinding] {aspect, polarity, model_score, evidence_spans: list[EvidenceSpan]}`).
+30. **VOICE-NEEDS (Needs & Objections Specialist):**
+    - *Input:* Sanitized feedback records + friction dictionaries.
+    - *Output:* `NeedsObjectionsResult` (`needs_and_objections: list[NeedObjectionFinding] {finding_type, theme, severity, customer_vocabulary, evidence_spans}`).
+31. **VOICE-JOURNEY (Customer Journey Specialist):**
+    - *Input:* Touchpoint-tagged feedback records + channel progression logs.
+    - *Output:* `JourneyComparisonsResult` (`comparisons: list[JourneyComparison] {channel_a, channel_b, comparison_summary, causal_claim_disclaimer}`).
+32. **VOICE-QA (Voice Quality & Privacy Auditor):**
+    - *Input:* All intermediate topic, sentiment, objection, and journey outputs.
+    - *Output:* `VoiceQAReport` (`decision: QADecision [PASS|REVISE|BLOCK]`, `nist_reidentification_check: bool`, `grounding_audit_passed: bool`, `causal_claim_violation_count: int`).
+
+#### **G. Learning & Performance Engine Specialists (6 Sub-Agents)**
+33. **LEARN-TELEMETRY (Telemetry Normalization Specialist):**
+    - *Input:* Raw omnichannel conversion logs, pixel webhooks, and ad platform spend records.
+    - *Output:* `NormalizedTelemetryDataset` (`conversion_paths: list[ConversionPath]`, `data_quality: DataQualityIndicator`).
+34. **LEARN-ATTRIBUTION (Multi-Touch Attribution Specialist):**
+    - *Input:* `NormalizedTelemetryDataset` + model specification (Linear, Time-Decay, Position-Based).
+    - *Output:* `AttributionEstimates` (`estimates: list[LearningEstimate]`, `channel_weights: list[AttributionWeight]`, `roas_metrics: list[RoasMetric]`).
+35. **LEARN-INCREMENTALITY (Causal Incrementality Specialist):**
+    - *Input:* Geo-experiment logs, holdout conversion data, and matched-market telemetry.
+    - *Output:* `IncrementalityEstimates` (`estimates: list[LearningEstimate] {estimand: "ITT_lift", causal_claim_permitted: true, uncertainty: LearningUncertainty}`).
+36. **LEARN-FATIGUE (Creative Fatigue Specialist):**
+    - *Input:* Creative timeseries CTR, frequency, and CPA histories.
+    - *Output:* `FatigueEstimates` (`estimates: list[LearningEstimate]`, `decay_metrics: list[CreativeDecayMetric] {fatigue_detected: bool, recommended_action}`).
+37. **LEARN-DECAY (Adstock & Half-Life Specialist):**
+    - *Input:* Longitudinal media spend and baseline brand conversion streams.
+    - *Output:* `DecayEstimates` (`estimates: list[LearningEstimate] {half_life_days: float, adstock_retention_rate: float, decay_curve_model}`).
+38. **LEARN-QA (Learning Quality Assurance Specialist):**
+    - *Input:* All analytical estimates + diagnostic logs + telemetry data quality indicators.
+    - *Output:* `LearningQAResult` (`decision: QADecision [PASS|REVISE|BLOCK]`, `accepted_claim_ids: list[str]`, `rejected_claim_ids: list[str]`, `gate_results: dict[str, bool]`).
+
+---
+
+### **7.5 Layer 6 Runtime: Sandbox Micro-Tool & Capability Schemas (`sandbox/docker/hardened/skills/`)**
+
+Every micro-tool execution executes inside the hardened AIO sandbox via a standardized typed command interface.
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Sandbox Invocations                             │
+│                                                                        │
+│   Worker Engine / Sub-Agent                                            │
+│            │                                                           │
+│            ▼                                                           │
+│   SandboxInvocationMandate                                             │
+│   ├── capability: SandboxCapability                                    │
+│   ├── operation: str                                                   │
+│   ├── payload: dict[str, Any]                                          │
+│   ├── network_policy: NetworkPolicy                                    │
+│   └── egress_grant: SandboxEgressGrant | None                          │
+│            │                                                           │
+│            ▼ (Dispatched to container: /home/gem/skills/<skill>/scripts/run.py)
+│                                                                        │
+│   Sanitized Execution Outcome                                          │
+│            │                                                           │
+│            ▼                                                           │
+│   SandboxResult                                                        │
+│   ├── status: SandboxExecutionStatus                                   │
+│   ├── success: bool                                                    │
+│   ├── structured_output: dict[str, Any]                                │
+│   ├── confidence_score: float                                          │
+│   ├── execution_receipt: SandboxExecutionReceipt                       │
+│   └── raw_output_sha256: str                                           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### **1. `s-code` (Component Coder & Linter)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-code/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_DEV` (`WorkerRole.DEVELOPMENT`).
+* **Network Policy:** `NetworkPolicy.DISABLED` (DENY_ALL).
+* **Allowed Operations:** `parse_ast`, `lint`, `generate_diff`, `execute_code`, `validate_syntax`, `apply_code_patch`, `format_code`, `inspect_ast_symbols`, `validate_syntax_compiler`, `manage_packages`, `generate_code`.
+* **Input Payload Schema:**
+  - `code: str` (Source code string under evaluation).
+  - `patch: str` (Unified diff string to apply).
+  - `file_path: str` (Relative file path within ephemeral workspace).
+  - `target_symbols: list[str]` (Specific AST symbols to extract).
+* **Output `structured_output` Schema:**
+  - `ast_valid: bool`, `syntax_errors: list[str]`.
+  - `complexity_metrics: dict[str, int]` (`cyclomatic_complexity`, `node_count`).
+  - `lint_violations: list[dict[str, Any]]` (`line`, `rule`, `message`, `severity`).
+  - `generated_diff: str` (Sanitized unified diff output).
+  - `compilation_sanity_passed: bool`.
+
+#### **2. `s-alloc` (Media & Budget Allocator)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-alloc/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_STRAT` (`WorkerRole.STRATEGY`).
+* **Network Policy:** `NetworkPolicy.DISABLED` (DENY_ALL).
+* **Allowed Operations:** `model_media_mix`, `optimize_budget`, `simulate_funnel`, `simulate_scenarios`, `calculate_roas`.
+* **Input Payload Schema (`SAllocMandate`):**
+  - `budget_ceiling: float` (Strict spend upper bound).
+  - `authorized_channels: list[str]` (Allowlisted marketing channels).
+  - `allocation_constraints: list[dict]` (`channel`, `min_spend`, `max_spend`, `min_share`, `max_share`).
+  - `channel_parameters: dict[str, dict]` (`initial_marginal_return`, `saturation_spend`).
+  - `mroi_floor: float`, `kpi_name: str`, `time_horizon: str`.
+* **Output `structured_output` Schema (`SAllocResult`):**
+  - `domain_status: SAllocDomainStatus` (`OK`, `INFEASIBLE`, `EVIDENCE_GAP`).
+  - `total_allocated: float` (Must strictly satisfy $\le \text{budget\_ceiling}$).
+  - `allocations: list[dict]` (`channel`, `allocated_amount`, `percentage_of_total`, `expected_revenue`, `marginal_roas`).
+  - `response_curves: dict[str, Any]`, `diagnostics: dict[str, Any]`.
+
+#### **3. `s-copy` (Creative & Copy Validator)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-copy/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_CREAT` (`WorkerRole.CREATIVE_CONTENT` — specifically `CREAT-COPY`).
+* **Network Policy:** `NetworkPolicy.DISABLED` (DENY_ALL).
+* **Allowed Operations:** `prohibited_term_check`, `validate_claim_refs`, `validate_platform_format`, `validate_aspect_ratio`, `validate_safe_zone_metadata`, `validate_schema`, `deduplicate_variants`, `hash_artifact`, `format_validation`.
+* **Input Payload Schema:**
+  - `variants: list[dict]` (`headline`, `body_copy`, `cta`, `source_claim_ids`, `channel`).
+  - `approved_claim_ids: list[str]` (Authoritative valid claim identifiers).
+  - `prohibited_terms: list[str]` (Enterprise compliance blocklist).
+  - `platform_spec: dict[str, Any]` (`character_limits`, `prohibited_formats`).
+* **Output `structured_output` Schema:**
+  - `is_valid: bool`.
+  - `claim_reference_audit: dict[str, bool]` (Flagging unsupported claim references).
+  - `prohibited_term_matches: list[dict[str, str]]` (`variant_id`, `term_detected`).
+  - `character_limit_violations: list[dict[str, Any]]`.
+  - `deduplicated_variants: list[dict]`, `artifact_hashes: dict[str, str]`.
+
+#### **4. `s-val` (Claim, Product Lab & Regulatory Validator)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-val/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_PROD` (`WorkerRole.PRODUCT_EVIDENCE`).
+* **Network Policy:** `NetworkPolicy.DISABLED` (DENY_ALL) for appraisal, lab, safety, claims, and validators; `NetworkPolicy.ALLOWLIST` for discovery/regulatory when accompanied by `SandboxEgressGrant`.
+* **Allowed Operations:** `validate_claim`, `lint_compliance`, `check_schema`, `validate_product_dossier`, `assemble_dossier`, `validate_trace_bundle`, `research_literature`, `fetch_official_rules`.
+* **Input Payload Schema:**
+  - `trace_bundle: dict[str, Any]` (`claims`, `evidence`, `sources`, `rules`, `mappings`, `gaps`).
+  - `product_spec: dict[str, Any]` (`ingredients`, `formulation_id`).
+  - `regulatory_rules: list[dict[str, Any]]` (`jurisdiction`, `force`, `section`).
+* **Output `structured_output` Schema:**
+  - `structural_status: str` (`VALID`, `FLAGGED`, `INVALID`).
+  - `referential_integrity_pass: bool`.
+  - `unsupported_claims: list[str]`.
+  - `prohibited_absolute_claims: list[str]` (Catches "cures", "100% guaranteed").
+  - `evidence_gaps: list[dict[str, Any]]`.
+
+#### **5. `s-comp` / `s-scrape` (Competitor Price & Ad Scraper)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-comp/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_COMP` (`WorkerRole.COMPETITOR_INTEL`).
+* **Network Policy:** `NetworkPolicy.CONTROLLED` (Strict Tinyproxy allowlist egress).
+* **Allowed Operations:** `gather_prices`, `parse_dom`, `track_ads`, `scrape_prices`.
+* **Input Payload Schema:**
+  - `target_urls: list[str]` (Scoped competitor URLs to extract).
+  - `extraction_rules: dict[str, str]` (DOM selector queries).
+  - `egress_grant: SandboxEgressGrant` (Signed token with domain whitelist and expiration).
+* **Output `structured_output` Schema:**
+  - `observed_prices: list[dict]` (`sku`, `raw_price`, `currency`, `extracted_at`).
+  - `active_ads: list[dict]` (`headline`, `format`, `observed_reach_estimate`).
+  - `dom_tokens: list[str]`, `egress_receipt: dict[str, str]`.
+
+#### **6. `s-parse` (Sentiment, Review & Customer Objection Parser)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-parse/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_VOICE` (`WorkerRole.CUSTOMER_VOICE`).
+* **Network Policy:** `NetworkPolicy.DISABLED` (DENY_ALL).
+* **Allowed Operations:** `parse_sentiment`, `cluster_objections`, `extract_feedback`, `analyze_customer_voice`, `de_identify`, `ground_spans`.
+* **Input Payload Schema:**
+  - `raw_records: list[dict]` (`record_id`, `text`, `channel`, `timestamp`).
+  - `pii_redaction_patterns: list[str]`.
+  - `aspect_list: list[str]`.
+* **Output `structured_output` Schema:**
+  - `anonymized_vectors: list[dict]` (`vector_id`, `source_id_hash`, `polarity`, `sentiment_label`, `confidence`).
+  - `clustered_objections: list[dict]` (`theme`, `frequency`, `severity`, `vocabulary`).
+  - `pii_redaction_count: int`, `evidence_spans: list[dict]`.
+
+#### **7. `s-attr` (Attribution, Adstock & Decay Modeler)**
+* **Skill Path:** `sandbox/docker/hardened/skills/s-attr/` (Runtime: `scripts/run.py`).
+* **Authorized Worker:** `W_LEARN` (`WorkerRole.LEARNING_PERFORMANCE`).
+* **Network Policy:** `NetworkPolicy.DISABLED` (DENY_ALL).
+* **Allowed Operations:** `calculate_attribution`, `score_decay`, `fatigue_scoring`, `validate_telemetry`, `estimate_attribution`, `fit_mmm`, `calculate_roas`.
+* **Input Payload Schema:**
+  - `conversion_paths: list[dict]` (`conversion_id`, `touchpoints: list[dict] {channel, cost, occurred_at}`).
+  - `model_type: str` (`linear`, `time_decay`, `position_based`).
+  - `half_life_days: float`, `decay_rate: float`.
+* **Output `structured_output` Schema:**
+  - `channel_weights: list[dict]` (`channel`, `weight`, `attributed_revenue`, `attributed_conversions`).
+  - `decay_metrics: list[dict]` (`creative_id`, `decay_multiplier`, `fatigue_detected`).
+  - `roas_metrics: list[dict]` (`channel`, `spend`, `revenue`, `roas`, `status`).
+
+---
+
+### **7.6 Validation Assessment Findings & Production Hardening Audit**
+
+A comprehensive static analysis and runtime contract audit was conducted across all 47 agent entities (1 IE + 1 RAG + 7 Workers + 38 Specialists) and the 7 Sandbox micro-tool skill definitions:
+
+1. **Zero Unvalidated Boundary Paths:** Every inter-agent message boundary strictly parses and validates inputs using Pydantic v2 data models. Ambient dictionary passing is forbidden; all schemas enforce explicit type annotations, string length bounds, numeric range checks, and enum validations.
+2. **Strict Model A Persistence Compliance:** All 7 Worker Agents and 38 Sub-Agents have zero connection strings, direct database handles, or direct RAG API access. Data retrieval is 100% mediated through Intelligence Engine `ContextRequest` queries, ensuring tamper-evident provenance hashing and tenant isolation.
+3. **Sandbox Capability Enforcement:** All 7 worker engines interact with execution tools exclusively through `SandboxInvocationMandate` via `app.integrations.sandbox.client.SandboxClient`. Direct subprocess execution or shell escaping from workers is prevented by container virtualization, seccomp filters, and cgroup limits.
+4. **Egress Security Verification:** 6 of 7 sandbox capabilities (`s-code`, `s-alloc`, `s-copy`, `s-val`, `s-parse`, `s-attr`) are hard-coded to `NetworkPolicy.DISABLED` (DENY_ALL). Only `s-comp` and governed literature discovery in `s-val` are permitted egress, and strictly require a non-expired, tenant-bound, domain-allowlisted `SandboxEgressGrant` routed through the isolated Tinyproxy sidecar.
+5. **Deterministic Audit Lineage:** Every deliverable outputs a SHA-256 hash digest and structured provenance metadata registered into the W3C PROV Immutable Ledger.
