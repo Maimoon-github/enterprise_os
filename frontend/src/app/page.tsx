@@ -15,6 +15,7 @@ import {
   Sparkles,
   Bot,
   ExternalLink,
+  Box,
 } from "lucide-react";
 import { api, MOCK_APPROVAL_PREVIEWS } from "@/lib/api";
 import { Directive, CanonicalTaskState, ActionPreview, IntelligenceResult } from "@/lib/types";
@@ -413,6 +414,28 @@ export default function MissionControlDashboard() {
             <Link
               href="/workers"
               className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 transition-all"
+            >
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+
+          {/* Quick Sandbox Environment Link */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-950/30 via-slate-900/60 to-slate-950 border border-amber-900/40 backdrop-blur-md flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="text-sm font-semibold text-white flex items-center gap-2">
+                <Box className="w-4 h-4 text-amber-400" />
+                <span>AIO Agent Sandbox Portal</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800">
+                  :3001
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Isolated browser, shell, filesystem & synced website documentation
+              </p>
+            </div>
+            <Link
+              href="/sandbox"
+              className="p-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/20 transition-all"
             >
               <ArrowRight className="w-4 h-4" />
             </Link>

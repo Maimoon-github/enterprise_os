@@ -80,6 +80,8 @@ export const Header = () => {
                   ? "QWEN 7B"
                   : svc.name.includes("FastAPI")
                   ? "API"
+                  : svc.name.includes("Portal") || svc.port === 3001
+                  ? "SANDBOX WEB"
                   : "SANDBOX"}
               </span>
               {svc.latency_ms ? (
@@ -88,6 +90,18 @@ export const Header = () => {
             </div>
           ))}
         </div>
+
+        {/* Sandbox Website Quick Synced Link */}
+        <a
+          href="http://localhost:3001"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open Synced Sandbox Website"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/80 text-xs text-amber-300 transition-all font-mono"
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          <span>SANDBOX :3001</span>
+        </a>
 
         {/* Live Indicator */}
         <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-indigo-950/60 border border-indigo-800/80 text-xs text-indigo-300">

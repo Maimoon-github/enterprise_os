@@ -13,6 +13,7 @@ import {
   Activity,
   Cpu,
   Layers,
+  Box,
 } from "lucide-react";
 
 interface NavItem {
@@ -47,6 +48,13 @@ const NAV_ITEMS: NavItem[] = [
     name: "CTS State Machine",
     href: "/tasks",
     icon: Kanban,
+  },
+  {
+    name: "AIO Sandbox Portal",
+    href: "/sandbox",
+    icon: Box,
+    badge: "Live :3001",
+    badgeColor: "bg-amber-950 text-amber-400 border-amber-800",
   },
   {
     name: "Bounded Workers",
