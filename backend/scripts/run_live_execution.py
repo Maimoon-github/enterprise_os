@@ -14,7 +14,9 @@ Executes the genuine live control-plane flow:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+import sys
 import time
 
 from app.agents.development import DevelopmentAgent
@@ -56,7 +58,12 @@ from app.services.rag.schema_validator import SchemaValidator
 from app.services.task_state import TaskStateService
 
 
-async def run_live_execution() -> None:
+async def run_live_execution(
+    *,
+    objective: str | None = None,
+    continuous: bool = False,
+    tenant_id: str = "tenant-enterprise-live",
+) -> None:
     settings = get_settings()
     print("=" * 70)
     print("  ENTERPRISE OS — LIVE GOVERNED PIPELINE EXECUTION")
@@ -69,7 +76,7 @@ async def run_live_execution() -> None:
     print("-" * 70)
 
     # 1. Connect to live PostgreSQL
-    print("[1/8] Initializing live PostgreSQL schema and repositories...")
+    print("[1/4] Initializing live PostgreSQL schema and repositories...")
     db = Database(settings.database)
     await db.create_all()
     health = await db.healthcheck()
@@ -92,7 +99,7 @@ async def run_live_execution() -> None:
     task_state_service = TaskStateService(task_state_repo, task_state_machine, prov_recorder)
 
     # 2. Setup Data Gateway and RAG
-    print("[2/8] Setting up governed RAG and Context Assembler...")
+    print("[2/4] Setting up governed RAG and Context Assembler...")
     data_gateway = DataGateway(
         vector_repo,
         AuthorizationBoundary(ScopeEvaluator()),
@@ -111,7 +118,7 @@ async def run_live_execution() -> None:
     context_assembler = ContextAssembler(rag_dispatcher, brand_resolver)
 
     # 3. Connect to Live Ollama LLM
-    print(f"[3/8] Connecting to Live Ollama ({settings.llm.model_name})...")
+    print(f"[3/4] Connecting to Live Ollama ({settings.llm.model_name})...")
     ie_llm = LlmClient(settings.llm, agent_identity="INTELLIGENCE_ENGINE")
     worker_llm = LlmClient(settings.llm, agent_identity="W_DEV")
 
@@ -120,6 +127,7 @@ async def run_live_execution() -> None:
     print(f"      Live LLM Ping: {ping_resp.strip()[:40]} (model: {meta.get('configured_model')})")
 
     # 4. Initialize Sandbox and all 7 Bounded Workers
+    print("[4/4] Initializing Sandbox Client and 7 Bounded Workers...")
     sandbox_client = SandboxClient(settings.sandbox, provenance_recorder=prov_recorder)
     from app.main import _build_workers
     workers = _build_workers(sandbox_client, llm_client=worker_llm)
@@ -145,121 +153,207 @@ async def run_live_execution() -> None:
         llm_client=ie_llm,
     )
 
-    # 5. Formulate & Persist Owner Directive
-    print("[4/8] Creating and persisting Owner Directive...")
-    tenant_id = "tenant-enterprise-live"
-    directive_id = f"dir-{int(time.time())}"
-    directive = Directive(
-        directive_id=directive_id,
-        tenant_id=tenant_id,
-        objective=(
-            "Generate a production-ready responsive landing page layout for Enterprise OS Q4 Launch"
-        ),
-        budget_cap=10000.0,
-        risk_ceiling=RiskLevel.LOW,
-        scope=TenantScope(
-            tenant_id=tenant_id, brand_ids=["brand-enterprise"], allowed_channels=["web"]
-        ),
-    )
-    await operational_repo.save_directive(directive)
-    print(f"      Directive Saved: {directive.directive_id} for tenant '{directive.tenant_id}'")
-
-    # 6. Intelligence Engine Cognitive Planning via Live Ollama
-    print("[5/8] Intelligence Engine generating plan with live Ollama reasoning...")
-    t0 = time.perf_counter()
-    plan_result = await ie.plan_directive(directive, available_workers=list(WorkerRole))
-    t_plan = time.perf_counter() - t0
-    print(f"      Plan generated in {t_plan:.2f}s | Confidence: {plan_result.confidence:.2f}")
-    print(f"      Objective Interpretation: {plan_result.objective_interpretation}")
-    print(f"      Intent: {plan_result.intent}")
-    print(f"      Rationale: {plan_result.rationale_summary}")
-    print(f"      Plan Steps ({len(plan_result.plan)}):")
-    for s in plan_result.plan:
-        print(f"        - [{s.step_id}] ({s.recommended_worker}): {s.description}")
-
-    # 7. Create Canonical Task State in PostgreSQL
-    print("[6/8] Minting Canonical Task State in PostgreSQL...")
-    task_id = f"task-dev-{int(time.time())}"
-    task_state = CanonicalTaskState(
-        task_id=task_id,
-        directive_id=directive.directive_id,
-        worker_role=WorkerRole.DEVELOPMENT,
-        status=TaskStatus.PENDING,
-    )
-    await task_state_service.save_state(tenant_id, task_state)
-    print(f"      Task State persisted: {task_state.task_id} (Status: {task_state.status.value})")
-
-    # 8. Worker Reasoning & Execution
-    print("[7/8] Executing Worker Reasoning loop & bounded delivery...")
-    t1 = time.perf_counter()
-    reasoning = await dev_agent.reason_orchestration(
-        objective=directive.objective,
-        active_subagent="DEV-UI",
-        task_id=task_id,
-        current_state={"phase": "LAYOUT_CREATION"},
-    )
-    t_reason = time.perf_counter() - t1
-    print(f"      W_DEV Cognitive Reasoning completed in {t_reason:.2f}s:")
-    print(f"        Thought:    {reasoning.get('orchestration_thought')}")
-    print(f"        Reflection: {reasoning.get('lifecycle_reflection')}")
-    print(f"        Action:     {reasoning.get('recommended_next_action')}")
-
-    # Transition task state: PENDING -> GRANTED -> IN_PROGRESS -> COMPLETED
-    granted_state = await task_state_service.transition(
-        tenant_id=tenant_id,
-        current_state=task_state,
-        new_status=TaskStatus.GRANTED,
-        note="Task grant authorized by policy",
-    )
-    in_progress_state = await task_state_service.transition(
-        tenant_id=tenant_id,
-        current_state=granted_state,
-        new_status=TaskStatus.IN_PROGRESS,
-        note="Worker reasoning and execution started",
-    )
-    completed_state = await task_state_service.transition(
-        tenant_id=tenant_id,
-        current_state=in_progress_state,
-        new_status=TaskStatus.COMPLETED,
-        note="Evidence synthesized and verified",
-    )
-    print(
-        "      Canonical Task State transitioned -> COMPLETED "
-        f"(version {completed_state.version})"
+    cycle = 1
+    default_objective = (
+        "Generate a production-ready responsive landing page layout for Enterprise OS Q4 Launch"
     )
 
-    # Record terminal audit record in PostgreSQL
-    await prov_recorder.record(
-        tenant_id=tenant_id,
-        entity_id=task_id,
-        activity="live_workflow_execution",
-        agent="W_DEV",
-        metadata={
-            "directive_id": directive.directive_id,
-            "task_id": task_id,
-            "plan_steps_count": len(plan_result.plan),
-            "worker_role": WorkerRole.DEVELOPMENT.value,
-            "llm_model": settings.llm.model_name,
-            "status": "COMPLETED",
-        },
+    try:
+        while True:
+            current_objective = objective
+            if current_objective is None:
+                if sys.stdin.isatty() or continuous:
+                    print("\n" + "=" * 70)
+                    print(f"  CYCLE #{cycle} — ENTERPRISE OS CONTINUOUS LIVE CONTROL PLANE")
+                    print("=" * 70)
+                    print("Enter an enterprise directive / objective to execute live.")
+                    print("Press [Enter] for default objective, or type 'exit' / 'quit' to stop.")
+                    try:
+                        user_input = await asyncio.to_thread(input, "\n[Directive Input] > ")
+                    except (EOFError, KeyboardInterrupt):
+                        print("\nExiting continuous loop...")
+                        break
+                    user_input = user_input.strip()
+                    if user_input.lower() in ("exit", "quit", "q"):
+                        print("Continuous session ended by user.")
+                        break
+                    current_objective = user_input if user_input else default_objective
+                else:
+                    current_objective = default_objective
+
+            print("\n" + "-" * 70)
+            print(f"  CYCLE #{cycle} EXECUTION STARTING")
+            print("-" * 70)
+
+            # Formulate & Persist Owner Directive
+            print(f"[{cycle}.1] Creating and persisting Owner Directive...")
+            directive_id = f"dir-{int(time.time())}"
+            directive = Directive(
+                directive_id=directive_id,
+                tenant_id=tenant_id,
+                objective=current_objective,
+                budget_cap=10000.0,
+                risk_ceiling=RiskLevel.LOW,
+                scope=TenantScope(
+                    tenant_id=tenant_id, brand_ids=["brand-enterprise"], allowed_channels=["web"]
+                ),
+            )
+            await operational_repo.save_directive(directive)
+            print(
+                f"      Directive Saved: {directive.directive_id} "
+                f"for tenant '{directive.tenant_id}'"
+            )
+            print(f"      Objective: \"{directive.objective}\"")
+
+            # Intelligence Engine Cognitive Planning via Live Ollama
+            print(f"[{cycle}.2] Intelligence Engine generating plan with live Ollama reasoning...")
+            t0 = time.perf_counter()
+            plan_result = await ie.plan_directive(directive, available_workers=list(WorkerRole))
+            t_plan = time.perf_counter() - t0
+            print(
+                f"      Plan generated in {t_plan:.2f}s | "
+                f"Confidence: {plan_result.confidence:.2f}"
+            )
+            print(f"      Objective Interpretation: {plan_result.objective_interpretation}")
+            print(f"      Intent: {plan_result.intent}")
+            print(f"      Rationale: {plan_result.rationale_summary}")
+            print(f"      Plan Steps ({len(plan_result.plan)}):")
+            for s in plan_result.plan:
+                print(f"        - [{s.step_id}] ({s.recommended_worker}): {s.description}")
+
+            # Create Canonical Task State in PostgreSQL
+            print(f"[{cycle}.3] Minting Canonical Task State in PostgreSQL...")
+            task_id = f"task-dev-{int(time.time())}"
+            task_state = CanonicalTaskState(
+                task_id=task_id,
+                directive_id=directive.directive_id,
+                worker_role=WorkerRole.DEVELOPMENT,
+                status=TaskStatus.PENDING,
+            )
+            await task_state_service.save_state(tenant_id, task_state)
+            print(
+                f"      Task State persisted: {task_state.task_id} "
+                f"(Status: {task_state.status.value})"
+            )
+
+            # Worker Reasoning & Execution
+            print(f"[{cycle}.4] Executing Worker Reasoning loop & bounded delivery...")
+            t1 = time.perf_counter()
+            reasoning = await dev_agent.reason_orchestration(
+                objective=directive.objective,
+                active_subagent="DEV-UI",
+                task_id=task_id,
+                current_state={"phase": "LAYOUT_CREATION"},
+            )
+            t_reason = time.perf_counter() - t1
+            print(f"      W_DEV Cognitive Reasoning completed in {t_reason:.2f}s:")
+            print(f"        Thought:    {reasoning.get('orchestration_thought')}")
+            print(f"        Reflection: {reasoning.get('lifecycle_reflection')}")
+            print(f"        Action:     {reasoning.get('recommended_next_action')}")
+
+            # Transition task state: PENDING -> GRANTED -> IN_PROGRESS -> COMPLETED
+            granted_state = await task_state_service.transition(
+                tenant_id=tenant_id,
+                current_state=task_state,
+                new_status=TaskStatus.GRANTED,
+                note="Task grant authorized by policy",
+            )
+            in_progress_state = await task_state_service.transition(
+                tenant_id=tenant_id,
+                current_state=granted_state,
+                new_status=TaskStatus.IN_PROGRESS,
+                note="Worker reasoning and execution started",
+            )
+            completed_state = await task_state_service.transition(
+                tenant_id=tenant_id,
+                current_state=in_progress_state,
+                new_status=TaskStatus.COMPLETED,
+                note="Evidence synthesized and verified",
+            )
+            print(
+                "      Canonical Task State transitioned -> COMPLETED "
+                f"(version {completed_state.version})"
+            )
+
+            # Record terminal audit record in PostgreSQL
+            await prov_recorder.record(
+                tenant_id=tenant_id,
+                entity_id=task_id,
+                activity="live_workflow_execution",
+                agent="W_DEV",
+                metadata={
+                    "directive_id": directive.directive_id,
+                    "task_id": task_id,
+                    "plan_steps_count": len(plan_result.plan),
+                    "worker_role": WorkerRole.DEVELOPMENT.value,
+                    "llm_model": settings.llm.model_name,
+                    "status": "COMPLETED",
+                },
+            )
+
+            # Verify W3C Provenance Audit Chain in PostgreSQL
+            print(f"[{cycle}.5] Verifying immutable W3C PROV audit chain in PostgreSQL...")
+            chain = await prov_repo.chain(tenant_id)
+            print(f"      Provenance chain length: {len(chain)} records")
+            for idx, r in enumerate(chain[-4:], 1):
+                print(
+                    f"        Record #{idx}: {r.activity} by [{r.agent}] "
+                    f"(hash: {r.record_hash[:16]}...)"
+                )
+
+            print("-" * 70)
+            print(f"  CYCLE #{cycle} COMPLETED SUCCESSFULLY!")
+            print("=" * 70)
+
+            cycle += 1
+            if not continuous and (not sys.stdin.isatty() or objective is not None):
+                break
+    finally:
+        # Cleanup connections
+        await ie_llm.aclose()
+        await worker_llm.aclose()
+        await db.dispose()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Continuous Live Control Plane for Enterprise OS."
     )
+    parser.add_argument(
+        "-o",
+        "--objective",
+        type=str,
+        default=None,
+        help="Optional single directive objective to execute.",
+    )
+    parser.add_argument(
+        "-c",
+        "--continuous",
+        action="store_true",
+        default=False,
+        help="Run continuously in an interactive loop awaiting input.",
+    )
+    parser.add_argument(
+        "-t",
+        "--tenant",
+        type=str,
+        default="tenant-enterprise-live",
+        help="Tenant ID for execution.",
+    )
+    args = parser.parse_args()
 
-    # 9. Verify W3C Provenance Audit Chain in PostgreSQL
-    print("[8/8] Verifying immutable W3C PROV audit chain in PostgreSQL...")
-    chain = await prov_repo.chain(tenant_id)
-    print(f"      Provenance chain length: {len(chain)} records")
-    for idx, r in enumerate(chain[-4:], 1):
-        print(f"        Record #{idx}: {r.activity} by [{r.agent}] (hash: {r.record_hash[:16]}...)")
-
-    print("-" * 70)
-    print("  LIVE EXECUTION COMPLETED SUCCESSFULLY!")
-    print("=" * 70)
-
-    # Cleanup connections
-    await ie_llm.aclose()
-    await worker_llm.aclose()
-    await db.dispose()
+    is_continuous = args.continuous or (args.objective is None and sys.stdin.isatty())
+    try:
+        asyncio.run(
+            run_live_execution(
+                objective=args.objective,
+                continuous=is_continuous,
+                tenant_id=args.tenant,
+            )
+        )
+    except KeyboardInterrupt:
+        print("\nSession stopped by user.")
 
 
 if __name__ == "__main__":
-    asyncio.run(run_live_execution())
+    main()
