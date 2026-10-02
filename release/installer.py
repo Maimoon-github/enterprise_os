@@ -10,6 +10,7 @@ import json
 import os
 import shutil
 import sys
+import tarfile
 from pathlib import Path
 from typing import Any
 
