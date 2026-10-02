@@ -4,71 +4,113 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 ────────────────────────────────────────────────────────────────────────────────
 
 ├── 📁 Agentic System Research/
-│   ├── 📁 Competitor Intel Engine/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Creative & Content Engine Research/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Customer Voice Engine/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Development Engine Research/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 1 - Governance, Policy & Authority Plane/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 2 — Central Control Plane/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 3 - Governed Knowledge & Data Access/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 4: Central Enterprise Storage & System of Record/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 5 Worker Agent implementation/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 7 — Egress Perimeter/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer 8 — Public Surfaces & Telemetry Collector/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Layer-6 execution boundary for the Strategy Engine/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Learning & Performance Engine/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Product-Evidence Engine/
-│   │   ├── 📝 Research Findings.md
-│   │   └── 📝 task plan.md
-│   ├── 📁 Strategy Engine Research/
-│   │   ├── 📁 strategy_engine_validated_patch/
+│   ├── 📁 engines/
+│   │   ├── 📁 Competitor Intel Engine/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Creative & Content Engine Research/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Customer Voice Engine/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Development Engine Research/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Learning & Performance Engine/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Product-Evidence Engine/
+│   │   │   ├── 📝 Research Findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Strategy Engine Research/
+│   │   │   ├── 📁 strategy_engine_validated_patch/
+│   │   │   │   ├── 📁 backend/
+│   │   │   │   │   └── 📁 app/
+│   │   │   │   │       └── 📁 agents/
+│   │   │   │   │           └── 📁 strategy_engine/
+│   │   │   │   │               └── 📁 subagents/
+│   │   │   │   │                   ├── 🐍 __init__.py
+│   │   │   │   │                   └── 🐍 allocation.py
+│   │   │   │   ├── 📁 sandbox/
+│   │   │   │   │   └── 📁 docker/
+│   │   │   │   │       └── 📁 hardened/
+│   │   │   │   │           └── 📁 skills/
+│   │   │   │   │               └── 📁 s-alloc/
+│   │   │   │   │                   └── 📝 SKILL.md
+│   │   │   │   ├── 📝 IMPLEMENTATION.md
+│   │   │   │   ├── 🐍 capabilities_s_alloc_snippet.py
+│   │   │   │   ├── 🐍 s_alloc_core.py
+│   │   │   │   ├── 🐍 sandbox_client_s_alloc_snippet.py
+│   │   │   │   └── 🐍 test_s_alloc_core.py
+│   │   │   ├── 📝 research findings.md
+│   │   │   ├── 📦 strategy_engine_validated_patch.zip
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 strategy-engine-implementation/
 │   │   │   ├── 📁 backend/
 │   │   │   │   └── 📁 app/
-│   │   │   │       └── 📁 agents/
-│   │   │   │           └── 📁 strategy_engine/
-│   │   │   │               └── 📁 subagents/
-│   │   │   │                   ├── 🐍 __init__.py
-│   │   │   │                   └── 🐍 allocation.py
+│   │   │   │       ├── 📁 agents/
+│   │   │   │       │   ├── 📁 strategy_engine/
+│   │   │   │       │   │   ├── 📁 subagents/
+│   │   │   │       │   │   │   ├── 🐍 __init__.py
+│   │   │   │       │   │   │   ├── 🐍 allocation.py
+│   │   │   │       │   │   │   ├── 🐍 funnel.py
+│   │   │   │       │   │   │   └── 🐍 roadmap.py
+│   │   │   │       │   │   ├── 🐍 __init__.py
+│   │   │   │       │   │   ├── 🐍 ports.py
+│   │   │   │       │   │   ├── 🐍 profiles.py
+│   │   │   │       │   │   └── 🐍 strategy.py
+│   │   │   │       │   └── 🐍 __init__.py
+│   │   │   │       ├── 📁 integrations/
+│   │   │   │       │   ├── 📁 sandbox/
+│   │   │   │       │   │   ├── 🐍 __init__.py
+│   │   │   │       │   │   ├── 🐍 capabilities.py
+│   │   │   │       │   │   ├── 🐍 client.py
+│   │   │   │       │   │   └── 🐍 s_alloc_core.py
+│   │   │   │       │   └── 🐍 __init__.py
+│   │   │   │       ├── 📁 schemas/
+│   │   │   │       │   ├── 🐍 __init__.py
+│   │   │   │       │   └── 🐍 strategy.py
+│   │   │   │       └── 🐍 __init__.py
+│   │   │   ├── 📁 docs/
+│   │   │   │   ├── 📝 DESIGN.md
+│   │   │   │   ├── 📝 INTEGRATION.md
+│   │   │   │   ├── 📝 VALIDATION.md
+│   │   │   │   ├── 📄 production-gate.txt
+│   │   │   │   └── 📄 test-results.txt
 │   │   │   ├── 📁 sandbox/
 │   │   │   │   └── 📁 docker/
 │   │   │   │       └── 📁 hardened/
 │   │   │   │           └── 📁 skills/
 │   │   │   │               └── 📁 s-alloc/
+│   │   │   │                   ├── 📁 scripts/
+│   │   │   │                   │   └── 🐍 run.py
+│   │   │   │                   ├── 🐳 Dockerfile
 │   │   │   │                   └── 📝 SKILL.md
-│   │   │   ├── 📝 IMPLEMENTATION.md
-│   │   │   ├── 🐍 capabilities_s_alloc_snippet.py
-│   │   │   ├── 🐍 s_alloc_core.py
-│   │   │   ├── 🐍 sandbox_client_s_alloc_snippet.py
-│   │   │   └── 🐍 test_s_alloc_core.py
-│   │   ├── 📝 research findings.md
-│   │   ├── 📦 strategy_engine_validated_patch.zip
-│   │   └── 📝 task plan.md
+│   │   │   ├── 📁 tests/
+│   │   │   │   ├── 📁 integration/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 test_live_strategy.py
+│   │   │   │   │   └── 🐍 test_strategy_integration.py
+│   │   │   │   ├── 📁 strategy_engine/
+│   │   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   │   ├── 🐍 test_allocation.py
+│   │   │   │   │   ├── 🐍 test_contracts.py
+│   │   │   │   │   ├── 🐍 test_ie_roundtrip.py
+│   │   │   │   │   ├── 🐍 test_provenance.py
+│   │   │   │   │   ├── 🐍 test_runtime_cli.py
+│   │   │   │   │   └── 🐍 test_sandbox_security.py
+│   │   │   │   ├── 🐍 __init__.py
+│   │   │   │   ├── 🐍 live_contract.py
+│   │   │   │   └── 🐍 support.py
+│   │   │   ├── 📁 tools/
+│   │   │   │   └── 🐍 validate.py
+│   │   │   ├── 📝 README.md
+│   │   │   ├── 📄 SHA256SUMS.txt
+│   │   │   ├── 📄 TREE.txt
+│   │   │   └── ⚙️ pyproject.toml
+│   │   ├── 📦 strategy-engine-implementation.zip
+│   │   └── 📦 worker agents.zip
 │   ├── 📁 final/
 │   │   ├── 📝 Backend Hierarchy.md
 │   │   ├── 📝 Final-Level Full Architecture.md
@@ -80,9 +122,34 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 📄 Governed_Project_Tracker.xlsx
 │   │   ├── 📝 Project Plan Essentials-Governed Multi-Brand Agentic System.md
 │   │   └── 🌐 flowchart.drawio.html
-│   ├── 📁 layer 9 - Audit Trail/
-│   │   ├── 📝 research findings.md
-│   │   └── 📝 task plan.md
+│   ├── 📁 layers/
+│   │   ├── 📁 Layer 1 - Governance, Policy & Authority Plane/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer 2 — Central Control Plane/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer 3 - Governed Knowledge & Data Access/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer 4: Central Enterprise Storage & System of Record/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer 5 Worker Agent implementation/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer 7 — Egress Perimeter/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer 8 — Public Surfaces & Telemetry Collector/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   ├── 📁 Layer-6 execution boundary for the Strategy Engine/
+│   │   │   ├── 📝 research findings.md
+│   │   │   └── 📝 task plan.md
+│   │   └── 📁 layer 9 - Audit Trail/
+│   │       ├── 📝 research findings.md
+│   │       └── 📝 task plan.md
 │   ├── 📁 raw_code/
 │   │   ├── 🐍 agent_local_state.py
 │   │   ├── 🐍 agentic_rag.py
@@ -115,75 +182,10 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 📄 eDerma_MIOS_flowchart.drawio
 │   │   ├── 📄 eDerma_MIOS_flowchart.vsdx
 │   │   └── 📄 ederma-governed-agentic-flowchart.mmd
-│   ├── 📁 strategy-engine-implementation/
-│   │   ├── 📁 backend/
-│   │   │   └── 📁 app/
-│   │   │       ├── 📁 agents/
-│   │   │       │   ├── 📁 strategy_engine/
-│   │   │       │   │   ├── 📁 subagents/
-│   │   │       │   │   │   ├── 🐍 __init__.py
-│   │   │       │   │   │   ├── 🐍 allocation.py
-│   │   │       │   │   │   ├── 🐍 funnel.py
-│   │   │       │   │   │   └── 🐍 roadmap.py
-│   │   │       │   │   ├── 🐍 __init__.py
-│   │   │       │   │   ├── 🐍 ports.py
-│   │   │       │   │   ├── 🐍 profiles.py
-│   │   │       │   │   └── 🐍 strategy.py
-│   │   │       │   └── 🐍 __init__.py
-│   │   │       ├── 📁 integrations/
-│   │   │       │   ├── 📁 sandbox/
-│   │   │       │   │   ├── 🐍 __init__.py
-│   │   │       │   │   ├── 🐍 capabilities.py
-│   │   │       │   │   ├── 🐍 client.py
-│   │   │       │   │   └── 🐍 s_alloc_core.py
-│   │   │       │   └── 🐍 __init__.py
-│   │   │       ├── 📁 schemas/
-│   │   │       │   ├── 🐍 __init__.py
-│   │   │       │   └── 🐍 strategy.py
-│   │   │       └── 🐍 __init__.py
-│   │   ├── 📁 docs/
-│   │   │   ├── 📝 DESIGN.md
-│   │   │   ├── 📝 INTEGRATION.md
-│   │   │   ├── 📝 VALIDATION.md
-│   │   │   ├── 📄 production-gate.txt
-│   │   │   └── 📄 test-results.txt
-│   │   ├── 📁 sandbox/
-│   │   │   └── 📁 docker/
-│   │   │       └── 📁 hardened/
-│   │   │           └── 📁 skills/
-│   │   │               └── 📁 s-alloc/
-│   │   │                   ├── 📁 scripts/
-│   │   │                   │   └── 🐍 run.py
-│   │   │                   ├── 🐳 Dockerfile
-│   │   │                   └── 📝 SKILL.md
-│   │   ├── 📁 tests/
-│   │   │   ├── 📁 integration/
-│   │   │   │   ├── 🐍 __init__.py
-│   │   │   │   ├── 🐍 test_live_strategy.py
-│   │   │   │   └── 🐍 test_strategy_integration.py
-│   │   │   ├── 📁 strategy_engine/
-│   │   │   │   ├── 🐍 __init__.py
-│   │   │   │   ├── 🐍 test_allocation.py
-│   │   │   │   ├── 🐍 test_contracts.py
-│   │   │   │   ├── 🐍 test_ie_roundtrip.py
-│   │   │   │   ├── 🐍 test_provenance.py
-│   │   │   │   ├── 🐍 test_runtime_cli.py
-│   │   │   │   └── 🐍 test_sandbox_security.py
-│   │   │   ├── 🐍 __init__.py
-│   │   │   ├── 🐍 live_contract.py
-│   │   │   └── 🐍 support.py
-│   │   ├── 📁 tools/
-│   │   │   └── 🐍 validate.py
-│   │   ├── 📝 README.md
-│   │   ├── 📄 SHA256SUMS.txt
-│   │   ├── 📄 TREE.txt
-│   │   └── ⚙️ pyproject.toml
 │   ├── 📝 Architecture_Map_Hierarchy.md
 │   ├── 📝 Core Architectural Invariant.md
 │   ├── 📝 Final Architecture Flowchart.md
-│   ├── 📄 flowchat.txt
-│   ├── 📦 strategy-engine-implementation.zip
-│   └── 📦 worker agents.zip
+│   └── 📄 flowchat.txt
 ├── 📁 backend/
 │   ├── 📁 app/
 │   │   ├── 📁 agents/
@@ -566,6 +568,56 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📝 README.md
 │   └── ⚙️ pyproject.toml
 ├── 📁 ephemeral_workspaces/
+├── 📁 frontend/
+│   ├── 📁 public/
+│   │   ├── 🖼️ file.svg
+│   │   ├── 🖼️ globe.svg
+│   │   ├── 🖼️ next.svg
+│   │   ├── 🖼️ vercel.svg
+│   │   └── 🖼️ window.svg
+│   ├── 📁 src/
+│   │   ├── 📁 app/
+│   │   │   ├── 📁 approvals/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 audit/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 directives/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 sandbox/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 settings/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 tasks/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 telemetry/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📁 workers/
+│   │   │   │   └── 📄 page.tsx
+│   │   │   ├── 📄 favicon.ico
+│   │   │   ├── 🎨 globals.css
+│   │   │   ├── 📄 layout.tsx
+│   │   │   └── 📄 page.tsx
+│   │   └── 📁 components/
+│   │       ├── 📁 layout/
+│   │       │   ├── 📄 Header.tsx
+│   │       │   ├── 📄 Shell.tsx
+│   │       │   └── 📄 Sidebar.tsx
+│   │       ├── 📁 settings/
+│   │       │   └── 📄 SettingsModal.tsx
+│   │       └── 📁 ui/
+│   │           └── 📄 Toast.tsx
+│   ├── ⚙️ .gitignore
+│   ├── 📝 AGENTS.md
+│   ├── 📝 CLAUDE.md
+│   ├── 📝 README.md
+│   ├── 📄 eslint.config.mjs
+│   ├── 📄 next-env.d.ts
+│   ├── 📄 next.config.ts
+│   ├── ⚙️ package-lock.json
+│   ├── ⚙️ package.json
+│   ├── 📄 postcss.config.mjs
+│   ├── ⚙️ tsconfig.json
+│   └── 📄 tsconfig.tsbuildinfo
 ├── 📁 sandbox/
 │   ├── 📁 .github/
 │   │   └── 📁 workflows/
@@ -1904,6 +1956,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 ├── 📄 File Tree-backend.tree
 ├── 📄 File Tree-enterprise_os.tree
 ├── 📄 File Tree-sandbox.tree
+├── ⚙️ pyrightconfig.json
 └── 📄 scaffold.sh
 
 ────────────────────────────────────────────────────────────────────────────────

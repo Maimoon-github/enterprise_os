@@ -52,6 +52,11 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/sandbox
 │   │   └── ⚙️ docker-compose.hardened.yaml
 │   └── ⚙️ .gitkeep
 ├── 📁 evaluation/
+│   ├── 📁 .pytest_cache/
+│   │   ├── 📁 v/
+│   │   ├── ⚙️ .gitignore
+│   │   ├── 📄 CACHEDIR.TAG
+│   │   └── 📝 README.md
 │   ├── 📁 dataset/
 │   │   ├── 📝 README.md
 │   │   ├── ⚙️ evaluation_basic.xml
@@ -873,6 +878,13 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/sandbox
 │   │   ├── ⚙️ tsconfig.json
 │   │   └── 📄 vitest.config.ts
 │   ├── 📁 python/
+│   │   ├── 📁 agent_sandbox.egg-info/
+│   │   │   ├── 📄 PKG-INFO
+│   │   │   ├── 📄 SOURCES.txt
+│   │   │   ├── 📄 dependency_links.txt
+│   │   │   ├── 📄 not-zip-safe
+│   │   │   ├── 📄 requires.txt
+│   │   │   └── 📄 top_level.txt
 │   │   ├── ⚙️ .gitignore
 │   │   ├── 📄 MANIFEST.in
 │   │   ├── 📝 README.md
