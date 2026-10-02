@@ -1,0 +1,89 @@
+name: Enterprise OS Authoritative Release Pipeline & Clean-Room Production Certification
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  clean-room-release-gate:
+    name: Clean-Room Release Gate & Certification
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: governed_backend
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Source Tree
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install System Dependencies (Bubblewrap, Systemd)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap systemd libsystemd-dev
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./backend[dev,sandbox]"
+
+      - name: Install Frontend Dependencies & Playwright Browsers
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Authoritative Release Pipeline & Certification
+        env:
+          DATABASE_DSN: postgresql+asyncpg://postgres:postgres@localhost:5432/governed_backend
+        run: |
+          python release/pipeline.py --version ${{ github.ref_name || '1.0.0-rc1' }}
+
+      - name: Upload Certified Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: enterprise-os-release-bundle
+          path: |
+            dist/*.tar.gz
+            dist/*.sbom.json
+            dist/*.provenance.json
+            dist/*.manifest.json
+            dist/*.sig
+            dist/*.pem
+            dist/*.certification_report.json
+          if-no-files-found: error
