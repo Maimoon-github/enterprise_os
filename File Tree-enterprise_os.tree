@@ -3,6 +3,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 
 ────────────────────────────────────────────────────────────────────────────────
 
+├── 📁 .github/
+│   └── 📁 workflows/
+│       └── ⚙️ enterprise_os_release.yml
 ├── 📁 Agentic System Research/
 │   ├── 📁 engines/
 │   │   ├── 📁 Competitor Intel Engine/
@@ -636,6 +639,17 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📄 postcss.config.mjs
 │   ├── ⚙️ tsconfig.json
 │   └── 📄 tsconfig.tsbuildinfo
+├── 📁 release/
+│   ├── 📁 keys/
+│   ├── 🐍 __init__.py
+│   ├── 🐍 dependency_locker.py
+│   ├── 🐍 installer.py
+│   ├── 🐍 pipeline.py
+│   ├── 🐍 provenance.py
+│   ├── 🐍 rollback.py
+│   ├── 🐍 sbom_generator.py
+│   ├── 🐍 signer.py
+│   └── 🐍 smoke_test.py
 ├── 📁 sandbox/
 │   ├── 📁 .github/
 │   │   └── 📁 workflows/
@@ -1977,6 +1991,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── ⚙️ pnpm-lock.yaml
 │   └── ⚙️ pnpm-workspace.yaml
 ├── 📁 sandbox_workspace/
+├── 📁 scripts/
+│   └── 📄 run_release_gate.sh
 ├── ⚙️ .gitignore
 ├── 📄 File Tree - frontend
 ├── 📄 File Tree-backend.tree
