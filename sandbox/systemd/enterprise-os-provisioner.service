@@ -8,29 +8,38 @@ Requires=enterprise-os-provisioner.socket
 Type=simple
 User=enterprise-os-sandbox
 Group=enterprise-os-sandbox
-WorkingDirectory=/home/maimoon-amin/Antigravity code/enterprise_os
-Environment=PYTHONPATH=/home/maimoon-amin/Antigravity code/enterprise_os/backend
-ExecStart=/home/maimoon-amin/miniconda3/envs/enterprise_os/bin/python -m app.integrations.sandbox.provisioner_daemon --systemd-activation --socket /run/enterprise_os/provisioner.sock --strict-bwrap
+SupplementaryGroups=maimoon-amin
+WorkingDirectory=/home/maimoon-amin/enterprise_os
+Environment=PYTHONPATH=/home/maimoon-amin/enterprise_os/backend
+ExecStart=/home/maimoon-amin/miniconda3/envs/enterprise_os/bin/python -m app.integrations.sandbox.provisioner_daemon --systemd-activation --socket /run/enterprise_os/provisioner.sock --strict-bwrap --require-distinct-identity
 
 Restart=on-failure
 RestartSec=2s
 TimeoutStopSec=10s
+UMask=0027
 
 # Security Hardening Directives (systemd.exec)
 # 1. Eliminate privilege escalation vectors
 NoNewPrivileges=true
+RestrictSUIDSGID=true
 
-# 2. Strict read-only filesystem protection
+# 2. Strict read-only filesystem protection with controlled run paths
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
+ReadWritePaths=/run/enterprise_os /tmp
 PrivateDevices=true
 PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+RemoveIPC=true
+RestrictRealtime=true
 
 # 3. Dedicated cgroup delegation for specialist scopes
 ProtectControlGroups=false
-Delegate=yes
+Delegate=cpu memory pids
 
 # 4. Zero ambient capabilities (unprivileged user namespaces only; NO CAP_SYS_ADMIN)
 CapabilityBoundingSet=
@@ -45,3 +54,4 @@ LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target
+

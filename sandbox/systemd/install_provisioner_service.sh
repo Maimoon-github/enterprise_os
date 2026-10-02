@@ -34,6 +34,19 @@ fi
 # Add backend user to sandbox group for socket accessibility
 usermod -a -G enterprise-os-sandbox enterprise-os-backend
 
+# Ensure sandbox user can read workspace files under host user group
+HOST_USER=$(id -un 1000 2>/dev/null || echo "maimoon-amin")
+if getent group "$HOST_USER" >/dev/null 2>&1; then
+    usermod -a -G "$HOST_USER" enterprise-os-sandbox
+    echo "Added enterprise-os-sandbox to supplementary group: $HOST_USER"
+fi
+
+# Ensure space-free symlink for systemd path safety
+if [ ! -L "/home/$HOST_USER/enterprise_os" ]; then
+    ln -s "/home/$HOST_USER/Antigravity code/enterprise_os" "/home/$HOST_USER/enterprise_os"
+    echo "Created workspace symlink: /home/$HOST_USER/enterprise_os"
+fi
+
 # 2. Configure runtime socket directory (/run/enterprise_os)
 RUNTIME_DIR="/run/enterprise_os"
 mkdir -p "$RUNTIME_DIR"

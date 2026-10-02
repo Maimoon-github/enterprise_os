@@ -305,13 +305,20 @@ class SocketIdentityPolicy:
         allowed_gids: set[int] | None = None,
         allow_same_user: bool = True,
         allow_root: bool = True,
+        require_distinct_user: bool = False,
     ) -> None:
         self.allowed_uids = set(allowed_uids or ())
         self.allowed_gids = set(allowed_gids or ())
         self.allow_same_user = allow_same_user
         self.allow_root = allow_root
+        self.require_distinct_user = require_distinct_user
 
-        # Read from environment variables if set
+        # Environment variable overrides
+        env_distinct = os.environ.get("ENTERPRISE_OS_REQUIRE_DISTINCT_USER")
+        if env_distinct and env_distinct.strip().lower() in ("1", "true", "yes"):
+            self.require_distinct_user = True
+            self.allow_same_user = False
+
         env_uids = os.environ.get("ENTERPRISE_OS_ALLOWED_UIDS")
         if env_uids:
             for part in env_uids.split(","):
@@ -326,25 +333,44 @@ class SocketIdentityPolicy:
                 if part.isdigit():
                     self.allowed_gids.add(int(part))
 
+        # Auto-lookup system identities if present
+        try:
+            import pwd
+            backend_user = pwd.getpwnam("enterprise-os-backend")
+            self.allowed_uids.add(backend_user.pw_uid)
+        except (KeyError, ImportError, Exception):
+            pass
+
+        try:
+            import grp
+            sandbox_group = grp.getgrnam("enterprise-os-sandbox")
+            self.allowed_gids.add(sandbox_group.gr_gid)
+        except (KeyError, ImportError, Exception):
+            pass
+
     def authorize(self, peer_uid: int, peer_gid: int) -> tuple[bool, str]:
         """Authorize connecting client by peer UID and GID."""
-        # 1. Root UID 0 if allowed
+        # 1. Distinct user boundary check: reject if caller UID matches daemon UID
+        if self.require_distinct_user and peer_uid == os.getuid():
+            return False, f"Peer UID {peer_uid} matches provisioner server UID; production boundary requires distinct user identity"
+
+        # 2. Root UID 0 if allowed
         if peer_uid == 0 and self.allow_root:
             return True, "Authorized as root"
 
-        # 2. Server UID if same-user allowed (development/local mode)
-        if self.allow_same_user and peer_uid == os.getuid():
+        # 3. Server UID if same-user allowed (development/local mode)
+        if self.allow_same_user and not self.require_distinct_user and peer_uid == os.getuid():
             return True, "Authorized as server identity (local development mode)"
 
-        # 3. Explicitly authorized UIDs (e.g. enterprise-os-backend user)
+        # 4. Explicitly authorized UIDs (e.g. enterprise-os-backend user)
         if peer_uid in self.allowed_uids:
             return True, f"Authorized peer UID {peer_uid}"
 
-        # 4. Explicitly authorized GIDs (e.g. enterprise-os-sandbox shared group)
+        # 5. Explicitly authorized GIDs (e.g. enterprise-os-sandbox shared group)
         if peer_gid in self.allowed_gids:
             return True, f"Authorized peer GID {peer_gid}"
 
-        # 5. Supplementary group membership inspection
+        # 6. Supplementary group membership inspection
         try:
             import grp
             import pwd
@@ -453,6 +479,179 @@ def _compile_seccomp_bpf(policy_path: Path) -> Path | None:
         return None
 
 
+class DelegatedCgroupManager:
+    """Manages dedicated delegated cgroup v2 subtree for the provisioner daemon.
+
+    In production under systemd with Delegate=cpu memory pids:
+    1. Moves daemon PID to a leaf cgroup (daemon/) to satisfy the cgroup v2
+       "no internal processes" constraint.
+    2. Enables controllers (+cpu +memory +pids) in cgroup.subtree_control.
+    3. Dynamically creates isolated child attempt cgroups (sbx-<attempt>-<exec>)
+       with hardware memory.max, memory.swap.max=0, pids.max, and cpu.max limits.
+    4. Attaches specialist child processes directly via preexec_fn writing cgroup.procs.
+    5. Cleans up attempt cgroups on completion via cgroup.kill and rmdir.
+    """
+
+    def __init__(self, cgroup_root: Path | None = None) -> None:
+        self.cgroup_root: Path | None = cgroup_root
+        self.daemon_cgroup: Path | None = None
+        self.available_controllers: set[str] = set()
+        self.enabled_controllers: set[str] = set()
+        self.active: bool = False
+        self._lock = threading.Lock()
+        self._initialize()
+
+    def _discover_cgroup_root(self) -> Path | None:
+        """Discover the cgroup v2 root path for the current process."""
+        proc_cgroup = Path("/proc/self/cgroup")
+        if not proc_cgroup.exists():
+            return None
+        try:
+            content = proc_cgroup.read_text(encoding="utf-8").strip()
+            for line in content.splitlines():
+                parts = line.split("::")
+                if len(parts) == 2:
+                    rel = parts[1].strip().lstrip("/")
+                    candidate = Path("/sys/fs/cgroup") / rel
+                    if candidate.exists() and os.access(candidate, os.W_OK):
+                        return candidate
+        except Exception as exc:
+            logger.debug("Failed to discover cgroup root from /proc/self/cgroup: %s", exc)
+        return None
+
+    def _initialize(self) -> None:
+        """Initialize delegation by moving daemon to leaf cgroup and enabling controllers."""
+        if self.cgroup_root is None:
+            self.cgroup_root = self._discover_cgroup_root()
+
+        if self.cgroup_root is None or not self.cgroup_root.exists():
+            logger.debug("Cgroup v2 delegation root not available or not writable.")
+            return
+
+        controllers_file = self.cgroup_root / "cgroup.controllers"
+        if not controllers_file.exists():
+            logger.debug("Cgroup v2 controllers file missing at %s", controllers_file)
+            return
+
+        try:
+            self.available_controllers = set(controllers_file.read_text(encoding="utf-8").split())
+            desired = {"cpu", "memory", "pids"}.intersection(self.available_controllers)
+            if not desired:
+                logger.debug("None of desired controllers (cpu, memory, pids) available in %s", self.cgroup_root)
+                return
+
+            # 1. Clean up stale attempt cgroups from prior runs
+            for child in self.cgroup_root.iterdir():
+                if child.is_dir() and child.name.startswith("sbx-"):
+                    self._cleanup_cgroup_dir(child)
+
+            # 2. Leaf migration: move daemon to daemon/ leaf to satisfy no-internal-processes rule
+            self.daemon_cgroup = self.cgroup_root / "daemon"
+            self.daemon_cgroup.mkdir(parents=True, exist_ok=True)
+
+            procs_file = self.cgroup_root / "cgroup.procs"
+            daemon_procs = self.daemon_cgroup / "cgroup.procs"
+            if procs_file.exists():
+                procs = procs_file.read_text(encoding="utf-8").split()
+                with open(daemon_procs, "w", encoding="utf-8") as f:
+                    for p in procs:
+                        f.write(f"{p}\n")
+                        f.flush()
+
+            # 3. Enable subtree controllers on the delegated root
+            subtree_ctrl = self.cgroup_root / "cgroup.subtree_control"
+            cmd = " ".join(f"+{c}" for c in desired)
+            subtree_ctrl.write_text(cmd, encoding="utf-8")
+
+            # Read back active controllers
+            self.enabled_controllers = {c.lstrip("+") for c in subtree_ctrl.read_text(encoding="utf-8").split()}
+            self.active = bool(self.enabled_controllers)
+            logger.info(
+                "Delegated cgroup v2 active at %s with controllers: %s",
+                self.cgroup_root,
+                self.enabled_controllers,
+            )
+        except Exception as exc:
+            logger.warning("Failed to initialize delegated cgroup v2 subtree at %s: %s", self.cgroup_root, exc)
+            self.active = False
+
+    def _cleanup_cgroup_dir(self, cgroup_dir: Path) -> None:
+        """Kill processes in a cgroup and remove the directory."""
+        try:
+            kill_file = cgroup_dir / "cgroup.kill"
+            if kill_file.exists():
+                with contextlib.suppress(Exception):
+                    kill_file.write_text("1", encoding="utf-8")
+            else:
+                procs_file = cgroup_dir / "cgroup.procs"
+                if procs_file.exists():
+                    for pid_str in procs_file.read_text(encoding="utf-8").split():
+                        with contextlib.suppress(Exception):
+                            os.kill(int(pid_str), signal.SIGKILL)
+
+            # Drain check
+            procs_file = cgroup_dir / "cgroup.procs"
+            for _ in range(20):
+                if not procs_file.exists() or not procs_file.read_text(encoding="utf-8").strip():
+                    break
+                time.sleep(0.02)
+            try:
+                cgroup_dir.rmdir()
+            except OSError:
+                # In non-cgroupfs filesystems (e.g. mock unit tests), recursively remove test files
+                shutil.rmtree(cgroup_dir, ignore_errors=True)
+        except Exception as exc:
+            logger.debug("Failed to clean cgroup dir %s: %s", cgroup_dir, exc)
+
+    @contextlib.contextmanager
+    def create_attempt_scope(
+        self,
+        stage_attempt_id: str,
+        execution_id: str,
+        memory_mb: int,
+        cpu_cores: float,
+        pids_limit: int = 128,
+    ):
+        """Context manager yielding attempt cgroup path and preexec function, or (None, None) if inactive."""
+        if not self.active or self.cgroup_root is None:
+            yield None, None
+            return
+
+        import re
+        safe_attempt = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", stage_attempt_id)
+        safe_exec = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", execution_id[:8])
+        attempt_name = f"sbx-{safe_attempt}-{safe_exec}"
+        attempt_dir = self.cgroup_root / attempt_name
+        attempt_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            # Apply resource constraints
+            if "memory" in self.enabled_controllers:
+                mem_bytes = int(memory_mb) * 1024 * 1024
+                (attempt_dir / "memory.max").write_text(str(mem_bytes), encoding="utf-8")
+                swap_max = attempt_dir / "memory.swap.max"
+                if swap_max.exists():
+                    swap_max.write_text("0", encoding="utf-8")
+
+            if "pids" in self.enabled_controllers:
+                (attempt_dir / "pids.max").write_text(str(int(pids_limit)), encoding="utf-8")
+
+            if "cpu" in self.enabled_controllers:
+                cpu_quota = int(cpu_cores * 100000)
+                (attempt_dir / "cpu.max").write_text(f"{cpu_quota} 100000", encoding="utf-8")
+
+            def _preexec_attach() -> None:
+                try:
+                    procs_file = attempt_dir / "cgroup.procs"
+                    with open(procs_file, "w", encoding="utf-8") as f:
+                        f.write(str(os.getpid()))
+                except Exception as err:
+                    sys.stderr.write(f"Cgroup preexec attach warning: {err}\n")
+
+            yield attempt_dir, _preexec_attach
+        finally:
+            self._cleanup_cgroup_dir(attempt_dir)
+
+
 class SandboxProvisionerEngine:
     """Out-of-process engine that builds and manages physical sandbox runtimes."""
 
@@ -462,6 +661,7 @@ class SandboxProvisionerEngine:
         strict_bwrap: bool = False,
         replay_state_path: Path | None = None,
         preferred_bwrap_path: str | Path | None = None,
+        cgroup_root: Path | None = None,
     ) -> None:
         self._repo_root = repo_root or _locate_repo_root()
         self._skills_base = self._repo_root / "sandbox" / "docker" / "hardened" / "skills"
@@ -473,6 +673,9 @@ class SandboxProvisionerEngine:
             strict_version=strict_bwrap,
         )
         self._systemd_run_path = shutil.which("systemd-run")
+
+        # Cgroup v2 delegation manager
+        self._cgroup_manager = DelegatedCgroupManager(cgroup_root=cgroup_root)
 
         # Persistent replay state management
         self._replay_manager = ReplayStateManager(state_file_path=replay_state_path)
@@ -774,176 +977,189 @@ class SandboxProvisionerEngine:
 
         python_bin = "/usr/bin/python3" if Path("/usr/bin/python3").exists() else (sys.executable or "/usr/bin/python3")
 
-        # 1. Hardware Cgroup v2 Scope per Attempt
-        wrap_prefix: list[str] = []
-        if self._systemd_run_path:
-            unit_name = f"sbx-{mandate.stage_attempt_id}-{mandate.execution_id[:8]}"
-            mem_mb = mandate.resource_limits.memory_mb
-            cpu_quota = int(mandate.resource_limits.cpu_cores * 100)
-            pids_limit = int(getattr(mandate.resource_limits, "pids_limit", 128))
-            wrap_prefix = [
-                self._systemd_run_path,
-                "--user",
-                "--scope",
-                f"--unit={unit_name}",
-                "-p",
-                f"MemoryMax={mem_mb}M",
-                "-p",
-                "MemorySwapMax=0",
-                "-p",
-                f"CPUQuota={cpu_quota}%",
-                "-p",
-                f"TasksMax={pids_limit}",
-            ]
-
-        # 2. Strict Minimal Filesystem Mounts & Namespace Hardening
-        bwrap_cmd: list[str] = [
-            str(self._bwrap_path),
-            # Read-only standard Linux runtime paths
-            "--ro-bind",
-            "/usr",
-            "/usr",
-            "--ro-bind",
-            "/lib",
-            "/lib",
-            "--ro-bind-try",
-            "/lib64",
-            "/lib64",
-            "--ro-bind-try",
-            "/bin",
-            "/bin",
-            "--ro-bind-try",
-            "/etc/alternatives",
-            "/etc/alternatives",
-            "--ro-bind-try",
-            "/etc/ssl",
-            "/etc/ssl",
-            # Isolated Linux namespaces: User, PID, Mount, Net, IPC, UTS
-            "--unshare-user",
-            # Namespace Hardening: Disable further use of user namespaces inside sandbox
-            "--disable-userns",
-            "--unshare-ipc",
-            "--unshare-pid",
-            "--unshare-net",
-            "--unshare-uts",
-            "--proc",
-            "/proc",
-            "--dev",
-            "/dev",
-            # Ephemeral private in-memory tmpfs
-            "--tmpfs",
-            "/tmp",
-            "--tmpfs",
-            "/workspace",
-            # Least-privilege skill mount: Mounts strictly the single designated skill
-            "--ro-bind",
-            str(skill_mount),
-            f"/home/gem/skills/{skill_name}",
-        ]
-
-        # Minimal math delegate for S_ALLOC only (single file, read-only)
-        if mandate.capability == SandboxCapability.ALLOC:
-            s_alloc_core = self._repo_root / "backend" / "app" / "integrations" / "sandbox" / "s_alloc_core.py"
-            if s_alloc_core.exists():
-                bwrap_cmd.extend(["--ro-bind", str(s_alloc_core), "/workspace/s_alloc_core.py"])
-
-        bwrap_cmd.extend([
-            "--bind",
-            str(staging_dir),
-            "/workspace/staging",
-            "--setenv",
-            "PYTHONPATH",
-            "/workspace",
-            "--setenv",
-            "HOME",
-            "/tmp",
-            "--setenv",
-            "LC_ALL",
-            "C.UTF-8",
-            "--setenv",
-            "LANG",
-            "C.UTF-8",
-            "--setenv",
-            "NO_PROXY",
-            "*",
-        ])
-
-        # 3. Kernel Seccomp BPF Filter Enforcement
-        bpf_path = _compile_seccomp_bpf(self._seccomp_profile)
-        bpf_fd = None
-        pass_fds: list[int] = []
-        if bpf_path and bpf_path.exists():
-            bpf_fd = open(bpf_path, "rb")
-            pass_fds.append(bpf_fd.fileno())
-            bwrap_cmd.extend(["--seccomp", str(bpf_fd.fileno())])
-
-        runner_file = staging_dir / "runner.py"
-        runner_file.write_text(
-            "import os, json, sys, subprocess, ctypes\n"
-            "userns_blocked = True\n"
-            "try:\n"
-            "    libc = ctypes.CDLL(None)\n"
-            "    res = libc.unshare(0x10000000)\n"  # CLONE_NEWUSER
-            "    userns_blocked = (res != 0)\n"
-            "except Exception:\n"
-            "    userns_blocked = True\n"
-            "ns = {\n"
-            "    'pid': os.readlink('/proc/self/ns/pid') if os.path.exists('/proc/self/ns/pid') else '',\n"
-            "    'mnt': os.readlink('/proc/self/ns/mnt') if os.path.exists('/proc/self/ns/mnt') else '',\n"
-            "    'net': os.readlink('/proc/self/ns/net') if os.path.exists('/proc/self/ns/net') else '',\n"
-            "    'ipc': os.readlink('/proc/self/ns/ipc') if os.path.exists('/proc/self/ns/ipc') else '',\n"
-            "    'uts': os.readlink('/proc/self/ns/uts') if os.path.exists('/proc/self/ns/uts') else '',\n"
-            "    'cgroup': open('/proc/self/cgroup').read().strip() if os.path.exists('/proc/self/cgroup') else '',\n"
-            "    'seccomp': next((l.split()[-1] for l in open('/proc/self/status') if l.startswith('Seccomp:')), '0'),\n"
-            "    'no_new_privs': next((l.split()[-1] for l in open('/proc/self/status') if l.startswith('NoNewPrivs:')), '0'),\n"
-            "    'userns_disabled': userns_blocked,\n"
-            "}\n"
-            "with open('/workspace/staging/ns_info.json', 'w') as f_ns:\n"
-            "    f_ns.write(json.dumps(ns))\n"
-            f"skill_script = '/home/gem/skills/{skill_name}/scripts/run.py'\n"
-            "with open('/workspace/staging/input.json', 'r') as fin, open('/workspace/staging/output.json', 'w') as fout:\n"
-            f"    proc = subprocess.run(['{python_bin}', skill_script], stdin=fin, stdout=fout, stderr=subprocess.PIPE, text=True)\n"
-            "if proc.returncode != 0:\n"
-            "    sys.stderr.write(proc.stderr)\n"
-            "    sys.exit(proc.returncode)\n",
-            encoding="utf-8",
+        # 1. Hardware Cgroup v2 Scope per Attempt (Native delegation or systemd-run fallback)
+        cgroup_scope = self._cgroup_manager.create_attempt_scope(
+            stage_attempt_id=mandate.stage_attempt_id,
+            execution_id=mandate.execution_id,
+            memory_mb=mandate.resource_limits.memory_mb,
+            cpu_cores=mandate.resource_limits.cpu_cores,
+            pids_limit=getattr(mandate.resource_limits, "pids_limit", 128),
         )
 
-        run_cmd = wrap_prefix + bwrap_cmd + [python_bin, "/workspace/staging/runner.py"]
+        with cgroup_scope as (attempt_cgroup_dir, preexec_fn):
+            wrap_prefix: list[str] = []
+            if attempt_cgroup_dir is None and self._systemd_run_path:
+                unit_name = f"sbx-{mandate.stage_attempt_id}-{mandate.execution_id[:8]}"
+                mem_mb = mandate.resource_limits.memory_mb
+                cpu_quota = int(mandate.resource_limits.cpu_cores * 100)
+                pids_limit = int(getattr(mandate.resource_limits, "pids_limit", 128))
+                wrap_prefix = [
+                    self._systemd_run_path,
+                    "--user",
+                    "--scope",
+                    f"--unit={unit_name}",
+                    "-p",
+                    f"MemoryMax={mem_mb}M",
+                    "-p",
+                    "MemorySwapMax=0",
+                    "-p",
+                    f"CPUQuota={cpu_quota}%",
+                    "-p",
+                    f"TasksMax={pids_limit}",
+                ]
 
-        timeout = mandate.timeout_seconds or 120
-        try:
-            exec_proc = subprocess.run(
-                run_cmd,
-                pass_fds=pass_fds,
-                capture_output=True,
-                text=True,
-                timeout=float(timeout),
+            # 2. Strict Minimal Filesystem Mounts & Namespace Hardening
+            bwrap_cmd: list[str] = [
+                str(self._bwrap_path),
+                # Read-only standard Linux runtime paths
+                "--ro-bind",
+                "/usr",
+                "/usr",
+                "--ro-bind",
+                "/lib",
+                "/lib",
+                "--ro-bind-try",
+                "/lib64",
+                "/lib64",
+                "--ro-bind-try",
+                "/bin",
+                "/bin",
+                "--ro-bind-try",
+                "/etc/alternatives",
+                "/etc/alternatives",
+                "--ro-bind-try",
+                "/etc/ssl",
+                "/etc/ssl",
+                # Isolated Linux namespaces: User, PID, Mount, Net, IPC, UTS
+                "--unshare-user",
+                # Namespace Hardening: Disable further use of user namespaces inside sandbox
+                "--disable-userns",
+                "--unshare-ipc",
+                "--unshare-pid",
+                "--unshare-net",
+                "--unshare-uts",
+                "--proc",
+                "/proc",
+                "--dev",
+                "/dev",
+                # Ephemeral private in-memory tmpfs
+                "--tmpfs",
+                "/tmp",
+                "--tmpfs",
+                "/workspace",
+                # Least-privilege skill mount: Mounts strictly the single designated skill
+                "--ro-bind",
+                str(skill_mount),
+                f"/home/gem/skills/{skill_name}",
+            ]
+
+            # Minimal math delegate for S_ALLOC only (single file, read-only)
+            if mandate.capability == SandboxCapability.ALLOC:
+                s_alloc_core = self._repo_root / "backend" / "app" / "integrations" / "sandbox" / "s_alloc_core.py"
+                if s_alloc_core.exists():
+                    bwrap_cmd.extend(["--ro-bind", str(s_alloc_core), "/workspace/s_alloc_core.py"])
+
+            bwrap_cmd.extend([
+                "--bind",
+                str(staging_dir),
+                "/workspace/staging",
+                "--setenv",
+                "PYTHONPATH",
+                "/workspace",
+                "--setenv",
+                "HOME",
+                "/tmp",
+                "--setenv",
+                "LC_ALL",
+                "C.UTF-8",
+                "--setenv",
+                "LANG",
+                "C.UTF-8",
+                "--setenv",
+                "NO_PROXY",
+                "*",
+            ])
+
+            # 3. Kernel Seccomp BPF Filter Enforcement
+            bpf_path = _compile_seccomp_bpf(self._seccomp_profile)
+            bpf_fd = None
+            pass_fds: list[int] = []
+            if bpf_path and bpf_path.exists():
+                bpf_fd = open(bpf_path, "rb")
+                pass_fds.append(bpf_fd.fileno())
+                bwrap_cmd.extend(["--seccomp", str(bpf_fd.fileno())])
+
+            runner_file = staging_dir / "runner.py"
+            runner_file.write_text(
+                "import os, json, sys, subprocess, ctypes\n"
+                "userns_blocked = True\n"
+                "try:\n"
+                "    libc = ctypes.CDLL(None)\n"
+                "    res = libc.unshare(0x10000000)\n"  # CLONE_NEWUSER
+                "    userns_blocked = (res != 0)\n"
+                "except Exception:\n"
+                "    userns_blocked = True\n"
+                "ns = {\n"
+                "    'pid': os.readlink('/proc/self/ns/pid') if os.path.exists('/proc/self/ns/pid') else '',\n"
+                "    'mnt': os.readlink('/proc/self/ns/mnt') if os.path.exists('/proc/self/ns/mnt') else '',\n"
+                "    'net': os.readlink('/proc/self/ns/net') if os.path.exists('/proc/self/ns/net') else '',\n"
+                "    'ipc': os.readlink('/proc/self/ns/ipc') if os.path.exists('/proc/self/ns/ipc') else '',\n"
+                "    'uts': os.readlink('/proc/self/ns/uts') if os.path.exists('/proc/self/ns/uts') else '',\n"
+                "    'cgroup': open('/proc/self/cgroup').read().strip() if os.path.exists('/proc/self/cgroup') else '',\n"
+                "    'seccomp': next((l.split()[-1] for l in open('/proc/self/status') if l.startswith('Seccomp:')), '0'),\n"
+                "    'no_new_privs': next((l.split()[-1] for l in open('/proc/self/status') if l.startswith('NoNewPrivs:')), '0'),\n"
+                "    'userns_disabled': userns_blocked,\n"
+                "}\n"
+                "with open('/workspace/staging/ns_info.json', 'w') as f_ns:\n"
+                "    f_ns.write(json.dumps(ns))\n"
+                f"skill_script = '/home/gem/skills/{skill_name}/scripts/run.py'\n"
+                "with open('/workspace/staging/input.json', 'r') as fin, open('/workspace/staging/output.json', 'w') as fout:\n"
+                f"    proc = subprocess.run(['{python_bin}', skill_script], stdin=fin, stdout=fout, stderr=subprocess.PIPE, text=True)\n"
+                "if proc.returncode != 0:\n"
+                "    sys.stderr.write(proc.stderr)\n"
+                "    sys.exit(proc.returncode)\n",
+                encoding="utf-8",
             )
-        finally:
-            if bpf_fd is not None:
-                bpf_fd.close()
 
-        ns_evidence: dict[str, Any] = {}
-        if ns_info_file.exists():
-            with contextlib.suppress(Exception):
-                ns_evidence = json.loads(ns_info_file.read_text(encoding="utf-8"))
+            run_cmd = wrap_prefix + bwrap_cmd + [python_bin, "/workspace/staging/runner.py"]
 
-        if exec_proc.returncode != 0:
-            raise SandboxExecutionError(
-                f"Specialist '{mandate.capability.value}' physical container exited with code {exec_proc.returncode}: {exec_proc.stderr}"
-            )
+            timeout = mandate.timeout_seconds or 120
+            try:
+                exec_proc = subprocess.run(
+                    run_cmd,
+                    pass_fds=pass_fds,
+                    capture_output=True,
+                    text=True,
+                    timeout=float(timeout),
+                    preexec_fn=preexec_fn,
+                )
+            finally:
+                if bpf_fd is not None:
+                    bpf_fd.close()
 
-        if not output_file.exists():
-            raise SandboxExecutionError(f"Specialist '{mandate.capability.value}' produced no output file.")
+            ns_evidence: dict[str, Any] = {}
+            if ns_info_file.exists():
+                with contextlib.suppress(Exception):
+                    ns_evidence = json.loads(ns_info_file.read_text(encoding="utf-8"))
 
-        raw_output_text = output_file.read_text(encoding="utf-8")
-        try:
-            parsed = json.loads(raw_output_text)
-        except Exception as exc:
-            raise SandboxExecutionError(f"Failed to parse output JSON from specialist: {exc}") from exc
+            if attempt_cgroup_dir is not None and not ns_evidence.get("cgroup"):
+                ns_evidence["cgroup"] = str(attempt_cgroup_dir)
 
-        return parsed, ns_evidence
+            if exec_proc.returncode != 0:
+                raise SandboxExecutionError(
+                    f"Specialist '{mandate.capability.value}' physical container exited with code {exec_proc.returncode}: {exec_proc.stderr}"
+                )
+
+            if not output_file.exists():
+                raise SandboxExecutionError(f"Specialist '{mandate.capability.value}' produced no output file.")
+
+            raw_output_text = output_file.read_text(encoding="utf-8")
+            try:
+                parsed = json.loads(raw_output_text)
+            except Exception as exc:
+                raise SandboxExecutionError(f"Failed to parse output JSON from specialist: {exc}") from exc
+
+            return parsed, ns_evidence
 
 
 class SandboxProvisionerServer:
@@ -1148,6 +1364,7 @@ def main() -> None:
     parser.add_argument("--systemd-activation", action="store_true", help="Enable systemd socket activation on FD 3")
     parser.add_argument("--allowed-uids", default=None, help="Comma-separated allowed client UIDs for SO_PEERCRED")
     parser.add_argument("--allowed-gids", default=None, help="Comma-separated allowed client GIDs for SO_PEERCRED")
+    parser.add_argument("--require-distinct-identity", action="store_true", help="Reject caller if UID matches daemon UID (enforces cross-user production boundary)")
     parser.add_argument("--strict-bwrap", action="store_true", help="Require bubblewrap >= 0.12.0 fail-closed")
     parser.add_argument("--state-file", default=None, help="Path to replay state persistence file")
     args = parser.parse_args()
@@ -1157,7 +1374,11 @@ def main() -> None:
     allowed_uids = {int(x.strip()) for x in args.allowed_uids.split(",") if x.strip().isdigit()} if args.allowed_uids else None
     allowed_gids = {int(x.strip()) for x in args.allowed_gids.split(",") if x.strip().isdigit()} if args.allowed_gids else None
 
-    identity_policy = SocketIdentityPolicy(allowed_uids=allowed_uids, allowed_gids=allowed_gids)
+    identity_policy = SocketIdentityPolicy(
+        allowed_uids=allowed_uids,
+        allowed_gids=allowed_gids,
+        require_distinct_user=args.require_distinct_identity,
+    )
 
     engine = SandboxProvisionerEngine(
         strict_bwrap=args.strict_bwrap,
