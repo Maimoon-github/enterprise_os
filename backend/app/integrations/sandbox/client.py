@@ -28,6 +28,7 @@ from app.integrations.sandbox.capabilities import (
     validate_tool_access,
 )
 from app.integrations.sandbox.micro_tools import dispatch_micro_tool
+from app.integrations.sandbox.provisioner import SandboxProvisioner, get_sandbox_provisioner
 from app.integrations.sandbox.sandbox_policy import SandboxControlPlane
 from app.schemas.sandbox import (
     NetworkPolicy,
@@ -144,6 +145,7 @@ class SandboxClient:
         settings: SandboxSettings | None = None,
         provenance_recorder: ProvenanceRecorder | None = None,
         control_plane: SandboxControlPlane | None = None,
+        provisioner: SandboxProvisioner | None = None,
     ) -> None:
         self._settings = settings
         self._provenance_recorder = provenance_recorder
@@ -151,6 +153,9 @@ class SandboxClient:
         self._active_sessions: dict[str, dict[str, Any]] = {}
         self._control_plane = control_plane or SandboxControlPlane(
             base_dir=getattr(settings, "workspace_base_dir", None) if settings else None
+        )
+        self._provisioner = provisioner or (
+            get_sandbox_provisioner() if (settings and getattr(settings, "use_physical_provisioner", False)) else None
         )
 
     @property
@@ -571,35 +576,47 @@ class SandboxClient:
             mandate.payload.get("s_alloc_mandate_digest")
             or hashlib.sha256(json.dumps(mandate.payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
         )
-        exec_receipt = SandboxExecutionReceipt(
-            runtime_id=f"runtime-{mandate.execution_id}",
-            container_id=f"c-{mandate.execution_id[:12]}",
-            image_digest="sha256:d8c83df2357b98d197621c17830cbdfc63b860b73dfeb46487e8e4533dae5d95",
-            runtime_version="1.11.0",
-            profile_version="v1",
-            network_mode=mandate.network_policy.value,
-            seccomp_profile="worker-seccomp.json",
-            read_only_root=True,
-            effective_cpu_cores=mandate.resource_limits.cpu_cores,
-            effective_memory_mb=mandate.resource_limits.memory_mb,
-            effective_pids_limit=getattr(mandate.resource_limits, "pids_limit", 1024),
-            started_at=start_dt,
-            terminated_at=datetime.now(UTC),
-            exit_code=0,
-            termination_reason="completed",
-            sanitation_version="v1",
-            input_digest=input_digest,
-            output_digest=sanitized_hash,
-        )
-        teardown_receipt = SandboxTeardownReceipt(
-            sandbox_id=session_id,
-            attempt_id=mandate.stage_attempt_id,
-            status="CLEAN",
-            workspace_scrubbed=True,
-            credentials_revoked=True,
-            runtime_destroyed=True,
-            destroyed_at=datetime.now(UTC),
-        )
+        if "_execution_receipt" in raw_result and raw_result["_execution_receipt"] is not None:
+            exec_receipt = raw_result["_execution_receipt"]
+            teardown_receipt = raw_result.get("_teardown_receipt") or SandboxTeardownReceipt(
+                sandbox_id=session_id,
+                attempt_id=mandate.stage_attempt_id,
+                status="CLEAN",
+                workspace_scrubbed=True,
+                credentials_revoked=True,
+                runtime_destroyed=True,
+                destroyed_at=datetime.now(UTC),
+            )
+        else:
+            exec_receipt = SandboxExecutionReceipt(
+                runtime_id=f"runtime-{mandate.execution_id}",
+                container_id=f"c-{mandate.execution_id[:12]}",
+                image_digest="sha256:d8c83df2357b98d197621c17830cbdfc63b860b73dfeb46487e8e4533dae5d95",
+                runtime_version="1.11.0",
+                profile_version="v1",
+                network_mode=mandate.network_policy.value,
+                seccomp_profile="worker-seccomp.json",
+                read_only_root=True,
+                effective_cpu_cores=mandate.resource_limits.cpu_cores,
+                effective_memory_mb=mandate.resource_limits.memory_mb,
+                effective_pids_limit=getattr(mandate.resource_limits, "pids_limit", 1024),
+                started_at=start_dt,
+                terminated_at=datetime.now(UTC),
+                exit_code=0,
+                termination_reason="completed",
+                sanitation_version="v1",
+                input_digest=input_digest,
+                output_digest=sanitized_hash,
+            )
+            teardown_receipt = SandboxTeardownReceipt(
+                sandbox_id=session_id,
+                attempt_id=mandate.stage_attempt_id,
+                status="CLEAN",
+                workspace_scrubbed=True,
+                credentials_revoked=True,
+                runtime_destroyed=True,
+                destroyed_at=datetime.now(UTC),
+            )
 
         domain_status = structured_output.get("domain_status") or sanitized_output.get("domain_status")
         is_alloc_success = True
@@ -710,6 +727,19 @@ class SandboxClient:
             raise SandboxInvocationError(
                 f"AIO sandbox is unavailable for {mandate.specialist_id or mandate.capability.value} specialist execution. Backend-process fallback is strictly prohibited (fail-closed)."
             )
+
+        if self._provisioner is not None:
+            res = self._provisioner.execute(mandate)
+            if not res.success:
+                raise SandboxInvocationError(res.error or "Physical sandbox provisioner execution failed.")
+            raw_res: dict[str, Any] = dict(res.sanitized_output)
+            if res.structured_output:
+                raw_res.update(res.structured_output)
+            if res.execution_receipt is not None:
+                raw_res["_execution_receipt"] = res.execution_receipt
+            if res.teardown_receipt is not None:
+                raw_res["_teardown_receipt"] = res.teardown_receipt
+            return raw_res
 
         remote_configured = (self._settings is not None and bool(self._settings.endpoint)) or (self._sandbox is not None)
         remote_client = self._get_sandbox()

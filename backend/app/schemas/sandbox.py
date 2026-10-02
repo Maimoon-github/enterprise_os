@@ -472,6 +472,10 @@ class SandboxExecutionReceipt(BaseModel):
     sanitation_version: str = "v1"
     input_digest: str = Field(..., min_length=1)
     output_digest: str = Field(..., min_length=1)
+    pid_namespace: str = ""
+    mount_namespace: str = ""
+    net_namespace: str = ""
+    cgroup_path: str = ""
 
 
 class SandboxTeardownReceipt(BaseModel):

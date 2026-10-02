@@ -1955,8 +1955,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── ⚙️ docker-compose.yaml
 │   ├── ⚙️ package.json
 │   ├── ⚙️ pnpm-lock.yaml
-│   ├── ⚙️ pnpm-workspace.yaml
-│   └── 🐍 server.py
+│   └── ⚙️ pnpm-workspace.yaml
 ├── 📁 sandbox_workspace/
 ├── ⚙️ .gitignore
 ├── 📄 File Tree - frontend
