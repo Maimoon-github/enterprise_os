@@ -18,8 +18,9 @@ import {
   Box,
   ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
 import { api, MOCK_DIRECTIVES } from "@/lib/api";
-import { Directive, PlanStep, IntelligenceResult } from "@/lib/types";
+import { Directive, PlanStep, IntelligenceResult, CanonicalTaskState } from "@/lib/types";
 import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
 import { useToast } from "@/components/ui/Toast";
 
@@ -61,6 +62,8 @@ export default function DirectivesPage() {
   const [budget, setBudget] = useState(25000);
   const [risk, setRisk] = useState<"low" | "medium" | "high">("medium");
   const [isPlanning, setIsPlanning] = useState(false);
+  const [isExecutingDag, setIsExecutingDag] = useState(false);
+  const [directiveTasks, setDirectiveTasks] = useState<CanonicalTaskState[]>([]);
   const [settings] = useState<EnterpriseSettings>(getStoredSettings());
   const { addToast } = useToast();
 
@@ -72,9 +75,28 @@ export default function DirectivesPage() {
     }
   };
 
+  const fetchDirectiveTasks = async (dirId: string) => {
+    try {
+      const tasks = await api.getTasks(dirId);
+      setDirectiveTasks(tasks || []);
+    } catch {
+      setDirectiveTasks([]);
+    }
+  };
+
   useEffect(() => {
     fetchDirs();
   }, []);
+
+  useEffect(() => {
+    if (selectedDirective?.directive_id) {
+      fetchDirectiveTasks(selectedDirective.directive_id);
+      const interval = setInterval(() => {
+        fetchDirectiveTasks(selectedDirective.directive_id);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [selectedDirective?.directive_id]);
 
   const handleCreateDirective = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -100,6 +122,28 @@ export default function DirectivesPage() {
       });
     } finally {
       setIsPlanning(false);
+    }
+  };
+
+  const handleExecuteDag = async () => {
+    if (!selectedDirective?.directive_id) return;
+    setIsExecutingDag(true);
+    try {
+      const res = await api.executeDirective(selectedDirective.directive_id);
+      await fetchDirectiveTasks(selectedDirective.directive_id);
+      addToast({
+        type: "success",
+        title: "Directive DAG Executed",
+        message: res.message || `Orchestrated ${res.tasks_created?.length || 4} tasks across workers.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: "error",
+        title: "DAG Execution Error",
+        message: err.message,
+      });
+    } finally {
+      setIsExecutingDag(false);
     }
   };
 
@@ -130,17 +174,15 @@ export default function DirectivesPage() {
           </p>
         </div>
 
-        {/* Sandbox Website Direct Link */}
-        <a
-          href={`${settings.sandboxWebsiteUrl}/guide/start/introduction`}
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Sandbox Direct Action */}
+        <Link
+          href="/sandbox"
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/80 text-amber-300 text-xs font-semibold transition-all font-mono"
         >
           <Box className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-          <span>Sandbox Guide (:3001)</span>
-          <ExternalLink className="w-3 h-3" />
-        </a>
+          <span>AIO Sandbox Daemon (:18091)</span>
+          <ArrowRight className="w-3 h-3" />
+        </Link>
       </div>
 
       {/* Preset 1-Click Template Selector */}
@@ -294,13 +336,25 @@ export default function DirectivesPage() {
           {selectedDirective && (
             <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md space-y-6">
               <div className="border-b border-slate-800 pb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-xs text-indigo-400 font-semibold">
-                    {selectedDirective.directive_id}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    Tenant: {selectedDirective.tenant_id}
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-indigo-400 font-semibold">
+                      {selectedDirective.directive_id}
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      Tenant: {selectedDirective.tenant_id}
+                    </span>
+                  </div>
+
+                  {/* 1-Click DAG Execution Button */}
+                  <button
+                    onClick={handleExecuteDag}
+                    disabled={isExecutingDag}
+                    className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition-all font-mono"
+                  >
+                    <Play className={`w-3.5 h-3.5 ${isExecutingDag ? "animate-spin" : "fill-current"}`} />
+                    <span>{isExecutingDag ? "Orchestrating DAG..." : "Execute DAG (Live)"}</span>
+                  </button>
                 </div>
                 <h2 className="text-base font-bold text-white">
                   {selectedDirective.objective}
@@ -329,45 +383,98 @@ export default function DirectivesPage() {
                     </div>
                   </div>
 
+                  {/* Live DAG Progress Bar */}
+                  {directiveTasks.length > 0 && (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400 font-mono">Live CTS Orchestration Progress</span>
+                        <span className="text-emerald-400 font-mono font-bold">
+                          {directiveTasks.filter((t) => t.status === "completed").length} / {directiveTasks.length} Completed
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-800">
+                        <div
+                          className="bg-gradient-to-r from-indigo-500 to-emerald-500 h-full transition-all duration-500 rounded-full"
+                          style={{
+                            width: `${(directiveTasks.filter((t) => t.status === "completed").length / directiveTasks.length) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* DAG Plan Steps */}
                   <div className="space-y-3">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 block">
-                      Deterministic Execution Pipeline (DAG)
-                    </span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 block">
+                        Deterministic Execution Pipeline (DAG)
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        Two-pass dependency resolution with forward references
+                      </span>
+                    </div>
 
                     <div className="space-y-3 relative before:absolute before:left-4 before:top-4 before:bottom-4 before:w-0.5 before:bg-slate-800">
-                      {currentIntelligence.plan?.map((step: PlanStep, idx: number) => (
-                        <div key={step.step_id} className="relative pl-9 space-y-1">
-                          {/* Step Marker */}
-                          <div className="absolute left-2 top-3 w-4 h-4 -ml-0.5 rounded-full bg-slate-950 border-2 border-indigo-500 flex items-center justify-center text-[9px] font-mono text-indigo-300">
-                            {idx + 1}
-                          </div>
+                      {currentIntelligence.plan?.map((step: PlanStep, idx: number) => {
+                        const taskForStep = directiveTasks.find(
+                          (t) =>
+                            t.task_id.toLowerCase().includes(step.step_id.toLowerCase()) ||
+                            t.task_id.endsWith(`-${idx + 1}`)
+                        );
+                        const status = taskForStep?.status || "pending";
 
-                          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-mono text-xs font-bold text-white">
-                                {step.step_id}
-                              </span>
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-semibold">
-                                {step.recommended_worker || "UNASSIGNED"}
-                              </span>
+                        const statusColors: Record<string, string> = {
+                          completed: "bg-emerald-950 text-emerald-300 border-emerald-800",
+                          in_progress: "bg-indigo-950 text-indigo-300 border-indigo-800 animate-pulse",
+                          granted: "bg-cyan-950 text-cyan-300 border-cyan-800",
+                          held: "bg-amber-950 text-amber-300 border-amber-800",
+                          pending: "bg-slate-900 text-slate-400 border-slate-800",
+                        };
+
+                        return (
+                          <div key={step.step_id} className="relative pl-9 space-y-1">
+                            {/* Step Marker */}
+                            <div className={`absolute left-2 top-3 w-4 h-4 -ml-0.5 rounded-full bg-slate-950 border-2 ${
+                              status === "completed"
+                                ? "border-emerald-500 text-emerald-300"
+                                : status === "in_progress"
+                                ? "border-indigo-400 text-indigo-300 animate-ping"
+                                : "border-slate-600 text-slate-400"
+                            } flex items-center justify-center text-[9px] font-mono`}>
+                              {idx + 1}
                             </div>
 
-                            <p className="text-xs text-slate-300 leading-relaxed">
-                              {step.description}
-                            </p>
-
-                            <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400">
-                              <span>Output: {step.expected_output}</span>
-                              {step.dependencies?.length > 0 && (
-                                <span className="text-amber-400">
-                                  Depends on: {step.dependencies.join(", ")}
+                            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 hover:border-slate-700 transition-colors">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs font-bold text-white">
+                                    {step.step_id}
+                                  </span>
+                                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase font-semibold ${statusColors[status] || statusColors.pending}`}>
+                                    {status.replace("_", " ")}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-semibold">
+                                  {step.recommended_worker || "UNASSIGNED"}
                                 </span>
-                              )}
+                              </div>
+
+                              <p className="text-xs text-slate-300 leading-relaxed">
+                                {step.description}
+                              </p>
+
+                              <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-400 gap-2">
+                                <span>Output: {step.expected_output}</span>
+                                {step.dependencies?.length > 0 && (
+                                  <span className="text-amber-400">
+                                    Depends on: {step.dependencies.join(", ")}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

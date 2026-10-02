@@ -9,6 +9,14 @@ from app.schemas.task_state import CanonicalTaskState
 router = APIRouter()
 
 
+@router.get("", response_model=list[CanonicalTaskState])
+async def list_all_tasks(request: Request) -> list[CanonicalTaskState]:
+    """Return all persisted canonical task states."""
+
+    task_state_repository = request.app.state.task_state_repository
+    return await task_state_repository.list_all()
+
+
 @router.get("/{task_id}", response_model=CanonicalTaskState)
 async def get_task(task_id: str, request: Request) -> CanonicalTaskState:
     """Return the canonical task state for ``task_id``."""

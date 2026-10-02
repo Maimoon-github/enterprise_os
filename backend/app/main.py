@@ -621,6 +621,7 @@ def create_app() -> FastAPI:
     async def _configuration_error_handler(_: Request, exc: ConfigurationError) -> JSONResponse:
         return _error_response(500, exc)
 
+    @app.get("/health", tags=["ops"])
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:
         return {"status": "ok"}

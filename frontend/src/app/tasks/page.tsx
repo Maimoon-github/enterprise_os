@@ -10,6 +10,7 @@ import {
   Box,
   ExternalLink,
 } from "lucide-react";
+import Link from "next/link";
 import { api, MOCK_TASKS } from "@/lib/api";
 import { CanonicalTaskState, TaskStatus } from "@/lib/types";
 import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
@@ -26,17 +27,20 @@ const COLUMNS: { id: TaskStatus; title: string; color: string; borderColor: stri
 export default function TasksPage() {
   const [tasks, setTasks] = useState<CanonicalTaskState[]>(MOCK_TASKS);
   const [selectedTask, setSelectedTask] = useState<CanonicalTaskState | null>(null);
+  const [selectedDirectiveFilter, setSelectedDirectiveFilter] = useState<string>("ALL");
   const [settings] = useState<EnterpriseSettings>(getStoredSettings());
   const { addToast } = useToast();
 
   const fetchTasks = async () => {
-    const data = await api.getTasks();
+    const data = await api.getTasks(selectedDirectiveFilter === "ALL" ? undefined : selectedDirectiveFilter);
     if (data && data.length > 0) setTasks(data);
   };
 
   useEffect(() => {
     fetchTasks();
-  }, []);
+    const timer = setInterval(fetchTasks, 3000);
+    return () => clearInterval(timer);
+  }, [selectedDirectiveFilter]);
 
   const handleAdvanceStatus = async (taskId: string, nextStatus: TaskStatus) => {
     try {
@@ -69,6 +73,11 @@ export default function TasksPage() {
     });
   };
 
+  const uniqueDirectives = Array.from(new Set(tasks.map((t) => t.directive_id).filter(Boolean)));
+  const displayedTasks = selectedDirectiveFilter === "ALL"
+    ? tasks
+    : tasks.filter((t) => t.directive_id === selectedDirectiveFilter);
+
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -83,32 +92,42 @@ export default function TasksPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Directive Filter */}
+          <select
+            value={selectedDirectiveFilter}
+            onChange={(e) => setSelectedDirectiveFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-slate-300 focus:outline-none focus:border-cyan-500"
+          >
+            <option value="ALL">All Directives ({tasks.length} tasks)</option>
+            {uniqueDirectives.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+
           <button
             onClick={handleBatchAdvanceAll}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 transition-all"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 transition-all font-mono"
           >
             <Zap className="w-3.5 h-3.5" />
             <span>1-Click Advance All</span>
           </button>
 
-          <a
-            href={settings.sandboxWebsiteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href="/sandbox"
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-950/40 hover:bg-amber-950/70 border border-amber-800/80 text-amber-300 text-xs font-semibold transition-all font-mono"
           >
             <Box className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>Sandbox Site (:3001)</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
+            <span>AIO Sandbox Daemon (:18091)</span>
+            <ArrowRight className="w-3 h-3" />
+          </Link>
         </div>
       </div>
 
       {/* Kanban Board Columns */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {COLUMNS.map((col) => {
-          const colTasks = tasks.filter((t) => t.status === col.id);
+          const colTasks = displayedTasks.filter((t) => t.status === col.id);
 
           return (
             <div

@@ -92,6 +92,13 @@ class TaskStateRepository(BaseJsonRepository[CanonicalTaskState]):
                     raise
         return False
 
+    async def list_all(self, tenant_id: str | None = None) -> list[CanonicalTaskState]:
+        """Return every task state persisted in the repository."""
+        async with self._session_factory() as session:
+            rows = await session.execute(select(self._table.c.document))
+            states = [CanonicalTaskState.model_validate(doc) for (doc,) in rows.all()]
+        return states
+
     async def list_by_directive(self, directive_id: str) -> list[CanonicalTaskState]:
         """Return every task state associated with ``directive_id``."""
 

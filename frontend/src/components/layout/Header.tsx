@@ -8,6 +8,7 @@ import {
   Sliders,
   ExternalLink,
   Box,
+  ArrowRight,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { SystemServiceStatus } from "@/lib/types";
@@ -100,7 +101,7 @@ export const Header = () => {
                     ? "QWEN 7B"
                     : svc.name.includes("FastAPI")
                     ? "API :8000"
-                    : "SANDBOX WEB :3001"}
+                    : "SANDBOX :18091"}
                 </span>
                 {svc.latency_ms ? (
                   <span className="text-[10px] opacity-75 font-mono">{svc.latency_ms}ms</span>
@@ -109,19 +110,17 @@ export const Header = () => {
             ))}
           </div>
 
-          {/* DIRECT LINK TO SANDBOX FRONT-END WEBSITE (Prominent in Header) */}
-          <a
-            href={settings.sandboxWebsiteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Launch live Sandbox Front-End Website (sandbox/website)"
+          {/* LINK TO SANDBOX ENGINE */}
+          <Link
+            href="/sandbox"
+            title="Launch live AIO Sandbox Engine (:18091)"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white text-xs font-semibold shadow-md shadow-amber-600/20 transition-all group"
           >
             <Box className="w-3.5 h-3.5 text-white animate-pulse" />
-            <span className="hidden sm:inline font-mono">SANDBOX WEBSITE</span>
-            <span className="sm:hidden font-mono">:3001</span>
-            <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-          </a>
+            <span className="hidden sm:inline font-mono">SANDBOX DAEMON</span>
+            <span className="sm:hidden font-mono">:18091</span>
+            <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
 
           {/* System Settings & Customization Button */}
           <button

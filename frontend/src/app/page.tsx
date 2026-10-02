@@ -257,57 +257,43 @@ export default function MissionControlDashboard() {
               <Layers className="w-3.5 h-3.5" />
             </Link>
 
-            <a
-              href={settings.sandboxWebsiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white text-xs font-semibold shadow-lg shadow-amber-600/30 flex items-center gap-2 transition-all group"
+            <Link
+              href="/sandbox"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white text-xs font-semibold shadow-lg shadow-amber-600/30 flex items-center gap-2 transition-all font-mono"
             >
-              <span>Launch Sandbox Website</span>
-              <ExternalLink className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-            </a>
+              <span>Launch Sandbox Control Center</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
 
-        {/* Quick Deep-Links to Website Sections */}
+        {/* Quick Deep-Links to Sandbox Capabilities */}
         <div className="pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-3 text-xs">
-          <span className="text-slate-400 font-medium">Quick Documentation Jumps:</span>
-          <a
-            href={`${settings.sandboxWebsiteUrl}/guide/start/introduction`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <span className="text-slate-400 font-medium">Native Sandbox Tools:</span>
+          <Link
+            href="/sandbox"
             className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-amber-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
           >
-            <span>📘 Architecture Guide</span>
-            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-          </a>
-          <a
-            href={`${settings.sandboxWebsiteUrl}/api`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-amber-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
+            <span>🛠️ 7 Enterprise Micro-Tools</span>
+          </Link>
+          <Link
+            href="/sandbox"
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-cyan-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
           >
-            <span>⚡ Scalar OpenAPI Docs</span>
-            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-          </a>
-          <a
-            href={`${settings.sandboxWebsiteUrl}/daemon/start/introduction`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-amber-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
+            <span>💻 POSIX Shell Terminal</span>
+          </Link>
+          <Link
+            href="/sandbox"
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-indigo-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
           >
-            <span>⚙️ Daemon & Network</span>
-            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-          </a>
-          <a
-            href={`${settings.sandboxWebsiteUrl}/blog/index`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-amber-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
+            <span>🐍 Python / Node Interpreter</span>
+          </Link>
+          <Link
+            href="/sandbox"
+            className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-emerald-300 hover:text-white flex items-center gap-1 font-mono text-[11px]"
           >
-            <span>📰 Release Changelog</span>
-            <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-          </a>
+            <span>📁 Ephemeral Workspace</span>
+          </Link>
         </div>
       </div>
 

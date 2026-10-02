@@ -1,9 +1,12 @@
 {
-  "venvPath": "/home/maimoon-amin/miniconda3/envs",
-  "venv": "enterprise_os",
+  "venvPath": ".",
+  "venv": ".venv",
   "pythonVersion": "3.11",
   "pythonPlatform": "Linux",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
   "extraPaths": [
-    "backend"
+    "backend",
+    ".venv/lib/python3.11/site-packages"
   ]
 }

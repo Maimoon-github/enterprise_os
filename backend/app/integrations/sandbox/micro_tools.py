@@ -2651,6 +2651,7 @@ def execute_s_code(
     }
 
 from app.integrations.sandbox.s_copy_core import execute_s_copy
+from app.integrations.sandbox.s_alloc_core import execute_s_alloc
 
 
 
@@ -2698,7 +2699,10 @@ def execute_s_val(payload: dict[str, Any]) -> dict[str, str]:
             except Exception:
                 evidence_pool = [{"content": raw_evidence, "doc_id": "ev-0"}]
         elif isinstance(raw_evidence, list):
-            evidence_pool = raw_evidence
+            evidence_pool = [
+                item if isinstance(item, dict) else {"content": str(item), "doc_id": f"ev-{i}"}
+                for i, item in enumerate(raw_evidence)
+            ]
 
     # 3. Parse Formulation / Specifications
     raw_formulation = payload.get("formulation", payload.get("specifications", payload.get("product_specification")))
