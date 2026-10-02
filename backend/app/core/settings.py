@@ -98,6 +98,8 @@ class SandboxSettings(BaseSettings):
     max_memory_mb: int = Field(default=4096, ge=128, le=8192)
     max_cpu_cores: float = Field(default=2.0, ge=0.1, le=4.0)
     use_physical_provisioner: bool = Field(default=False)
+    provisioner_socket_path: str = Field(default="/tmp/enterprise_os_provisioner.sock")
+    provisioner_auth_token: str = Field(default="enterprise_os_sandbox_secure_token", repr=False)
 
 
 

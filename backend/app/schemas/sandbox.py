@@ -203,6 +203,9 @@ class SandboxInvocationMandate(BaseModel):
     worker_role: WorkerRole | None = None
     worker_id: str = ""
     tenant_id: str = "default"
+    directive_id: str = ""
+    lease_id: str = ""
+    lease_expires_at: datetime | None = None
     capability: SandboxCapability
     specialist_agent: str = ""
     specialist_id: str = ""
@@ -475,7 +478,12 @@ class SandboxExecutionReceipt(BaseModel):
     pid_namespace: str = ""
     mount_namespace: str = ""
     net_namespace: str = ""
+    ipc_namespace: str = ""
+    uts_namespace: str = ""
     cgroup_path: str = ""
+    seccomp_status: str = "2"
+    isolation_primitive: str = "linux_namespace_sandbox"
+    no_new_privs: bool = True
 
 
 class SandboxTeardownReceipt(BaseModel):

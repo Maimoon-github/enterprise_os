@@ -155,7 +155,12 @@ class SandboxClient:
             base_dir=getattr(settings, "workspace_base_dir", None) if settings else None
         )
         self._provisioner = provisioner or (
-            get_sandbox_provisioner() if (settings and getattr(settings, "use_physical_provisioner", False)) else None
+            get_sandbox_provisioner(
+                socket_path=getattr(settings, "provisioner_socket_path", None),
+                auth_token=getattr(settings, "provisioner_auth_token", None),
+            )
+            if (settings and getattr(settings, "use_physical_provisioner", False))
+            else None
         )
 
     @property
