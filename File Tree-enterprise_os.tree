@@ -597,15 +597,19 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🎨 globals.css
 │   │   │   ├── 📄 layout.tsx
 │   │   │   └── 📄 page.tsx
-│   │   └── 📁 components/
-│   │       ├── 📁 layout/
-│   │       │   ├── 📄 Header.tsx
-│   │       │   ├── 📄 Shell.tsx
-│   │       │   └── 📄 Sidebar.tsx
-│   │       ├── 📁 settings/
-│   │       │   └── 📄 SettingsModal.tsx
-│   │       └── 📁 ui/
-│   │           └── 📄 Toast.tsx
+│   │   ├── 📁 components/
+│   │   │   ├── 📁 layout/
+│   │   │   │   ├── 📄 Header.tsx
+│   │   │   │   ├── 📄 Shell.tsx
+│   │   │   │   └── 📄 Sidebar.tsx
+│   │   │   ├── 📁 settings/
+│   │   │   │   └── 📄 SettingsModal.tsx
+│   │   │   └── 📁 ui/
+│   │   │       └── 📄 Toast.tsx
+│   │   └── 📁 lib/
+│   │       ├── 📄 api.ts
+│   │       ├── 📄 settings.ts
+│   │       └── 📄 types.ts
 │   ├── ⚙️ .gitignore
 │   ├── 📝 AGENTS.md
 │   ├── 📝 CLAUDE.md
@@ -1951,8 +1955,11 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── ⚙️ docker-compose.yaml
 │   ├── ⚙️ package.json
 │   ├── ⚙️ pnpm-lock.yaml
-│   └── ⚙️ pnpm-workspace.yaml
+│   ├── ⚙️ pnpm-workspace.yaml
+│   └── 🐍 server.py
+├── 📁 sandbox_workspace/
 ├── ⚙️ .gitignore
+├── 📄 File Tree - frontend
 ├── 📄 File Tree-backend.tree
 ├── 📄 File Tree-enterprise_os.tree
 ├── 📄 File Tree-sandbox.tree

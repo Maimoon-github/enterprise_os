@@ -1,0 +1,58 @@
+File Tree: frontend
+Root path: /home/maimoon-amin/Antigravity code/enterprise_os/frontend
+
+────────────────────────────────────────────────────────────────────────────────
+
+├── 📁 public/
+│   ├── 🖼️ file.svg
+│   ├── 🖼️ globe.svg
+│   ├── 🖼️ next.svg
+│   ├── 🖼️ vercel.svg
+│   └── 🖼️ window.svg
+├── 📁 src/
+│   ├── 📁 app/
+│   │   ├── 📁 approvals/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 audit/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 directives/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 sandbox/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 settings/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 tasks/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 telemetry/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📁 workers/
+│   │   │   └── 📄 page.tsx
+│   │   ├── 📄 favicon.ico
+│   │   ├── 🎨 globals.css
+│   │   ├── 📄 layout.tsx
+│   │   └── 📄 page.tsx
+│   ├── 📁 components/
+│   │   ├── 📁 layout/
+│   │   │   ├── 📄 Header.tsx
+│   │   │   ├── 📄 Shell.tsx
+│   │   │   └── 📄 Sidebar.tsx
+│   │   ├── 📁 settings/
+│   │   │   └── 📄 SettingsModal.tsx
+│   │   └── 📁 ui/
+│   │       └── 📄 Toast.tsx
+│   └── 📁 lib/
+│       ├── 📄 api.ts
+│       ├── 📄 settings.ts
+│       └── 📄 types.ts
+├── ⚙️ .gitignore
+├── 📝 AGENTS.md
+├── 📝 CLAUDE.md
+├── 📝 README.md
+├── 📄 eslint.config.mjs
+├── 📄 next.config.ts
+├── ⚙️ package-lock.json
+├── ⚙️ package.json
+├── 📄 postcss.config.mjs
+└── ⚙️ tsconfig.json
+
+────────────────────────────────────────────────────────────────────────────────
