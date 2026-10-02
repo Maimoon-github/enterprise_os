@@ -104,7 +104,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 __init__.py
 │   │   ├── 🐍 exceptions.py
 │   │   ├── 🐍 logging.py
-│   │   └── 🐍 settings.py
+│   │   ├── 🐍 settings.py
+│   │   └── 🐍 trace_context.py
 │   ├── 📁 integrations/
 │   │   ├── 📁 ads/
 │   │   │   ├── 🐍 __init__.py
@@ -287,6 +288,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   └── 🐍 test_verification_agent.py
 │   ├── 📁 integration/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_cgroup_delegation_and_identity.py
 │   │   ├── 🐍 test_creative_integration.py
 │   │   ├── 🐍 test_customer_voice_integration.py
 │   │   ├── 🐍 test_development_integration.py
@@ -295,11 +297,13 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_layer8_security.py
 │   │   ├── 🐍 test_llm_live_e2e.py
 │   │   ├── 🐍 test_model_a_data_access.py
+│   │   ├── 🐍 test_operational_certification.py
 │   │   ├── 🐍 test_outbound_after_approval.py
 │   │   ├── 🐍 test_phase5_governance_certification.py
 │   │   ├── 🐍 test_physical_sandbox_provisioner.py
 │   │   ├── 🐍 test_product_evidence_integration.py
 │   │   ├── 🐍 test_provenance_persistence.py
+│   │   ├── 🐍 test_real_postgresql_persistence_and_restart.py
 │   │   ├── 🐍 test_security_boundaries_negative.py
 │   │   ├── 🐍 test_strategy_integration.py
 │   │   ├── 🐍 test_telemetry_learning_loop.py

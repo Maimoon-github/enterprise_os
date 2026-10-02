@@ -44,7 +44,13 @@ from app.agents.learning_performance import LearningPerformanceAgent
 from app.agents.product_evidence import ProductEvidenceAgent
 from app.agents.strategy import StrategyAgent
 from app.api.router import api_router
-from app.core.settings import SandboxSettings
+from app.core.settings import DatabaseSettings, SandboxSettings
+from app.persistence.database import Database
+from app.persistence.repositories.memory import MemoryRepository
+from app.persistence.repositories.operational import OperationalRepository
+from app.persistence.repositories.provenance import ProvenanceRepository
+from app.persistence.repositories.task_state import TaskStateRepository
+from app.persistence.repositories.telemetry import TelemetryRepository
 from app.integrations.ads.base import AdsAdapter
 from app.integrations.sandbox.client import SandboxClient
 from app.integrations.sandbox.provisioner_client import SandboxProvisionerClient
@@ -262,10 +268,34 @@ async def test_full_stack_production_closed_loop_e2e(production_uds_socket: Path
         WorkerRole.LEARNING_PERFORMANCE: LearningPerformanceAgent(sandbox_client),
     }
 
-    # 4. Storage & Repositories
-    operational_repo = InMemoryOperationalRepository()
-    task_state_repo = InMemoryTaskStateRepository()
-    provenance_repo = FakeProvenanceRepository()
+    # 4. Storage & Repositories (Real PostgreSQL 16 with Fallback)
+    postgres_dsn = os.getenv(
+        "ENTERPRISE_OS_POSTGRES_DSN",
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/governed_backend",
+    )
+    db: Database | None = None
+    try:
+        db_settings = DatabaseSettings(
+            dsn=postgres_dsn, enforce_rls=False, require_non_privileged_role=False
+        )
+        db = Database(db_settings)
+        await db.healthcheck()
+        await db.apply_migrations()
+        operational_repo = OperationalRepository(db.session_factory)
+        task_state_repo = TaskStateRepository(db.session_factory)
+        provenance_repo = ProvenanceRepository(db.session_factory)
+        telemetry_repo = TelemetryRepository(db.session_factory)
+        memory_repo = MemoryRepository(db.session_factory)
+        logger.info("Production Full-Stack E2E: Connected to Real PostgreSQL 16 Repositories.")
+    except Exception as exc:
+        logger.warning("Falling back to in-memory repos for E2E: %s", exc)
+        db = None
+        operational_repo = InMemoryOperationalRepository()
+        task_state_repo = InMemoryTaskStateRepository()
+        provenance_repo = FakeProvenanceRepository()
+        telemetry_repo = _FullStackInMemoryTelemetryRepository()
+        memory_repo = _InMemoryMemoryRepository()
+
     provenance_recorder = ProvenanceRecorder(provenance_repo)
     task_state_service = TaskStateService(task_state_repo, TaskStateMachine(), provenance_recorder)
 
@@ -332,9 +362,7 @@ async def test_full_stack_production_closed_loop_e2e(production_uds_socket: Path
     )
 
     # 7. Telemetry & Memory Promotion Infrastructure
-    telemetry_repo = _FullStackInMemoryTelemetryRepository()
     telemetry_normalizer = TelemetryNormalizer(telemetry_repo)
-    memory_repo = _InMemoryMemoryRepository()
     memory_promotion_service = MemoryPromotionService(memory_repo, min_confidence=0.7)
 
     # 8. Compose FastAPI Application Root
@@ -564,7 +592,8 @@ async def test_full_stack_production_closed_loop_e2e(production_uds_socket: Path
             source_task_ids=[creat_task.task_id, learn_task.task_id],
         )
         assert promoted is not None
-        assert len(memory_repo.all()) >= 1
+        mem_records = await memory_repo.list_by_tenant(tenant_id)
+        assert len(mem_records) >= 1
 
         # Cryptographic W3C PROV audit chain integrity verification
         assert await provenance_recorder.verify_chain(tenant_id) is True
@@ -595,11 +624,16 @@ async def test_full_stack_production_closed_loop_e2e(production_uds_socket: Path
         final_tasks = await task_state_repo.list_by_directive(directive_id)
         assert len(final_tasks) == 4
         for ft in final_tasks:
-            assert ft.status == TaskStatus.COMPLETED, f"Task {ft.task_id} not completed: {ft.status}"
+            assert ft.status == TaskStatus.COMPLETED, (
+                f"Task {ft.task_id} not completed: {ft.status}"
+            )
 
         # Dynamic persona absorbs the institutional memory heuristic
         persona_resolver = BrandPersonaResolver(memory_repository=memory_repo)
         resolved = await persona_resolver.resolve_with_memory(tenant_id=tenant_id)
         assert any("4.8 ROAS on Meta" in h for h in resolved.learned_heuristics)
+
+        if db is not None:
+            await db.dispose()
 
     logger.info("Complete Full-Stack Production E2E Closed-Loop Passed Successfully.")

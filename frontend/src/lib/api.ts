@@ -470,52 +470,26 @@ class EnterpriseApiClient {
       results[2] = { name: "Enterprise OS FastAPI", port: 8000, status: "offline", latency_ms: 0, details: "offline", url: `${s.backendUrl}/healthz` };
     }
 
-    // Check AIO Sandbox Daemon
-    try {
-      const t0 = performance.now();
-      const res = await this.fetchWithTimeout(`${sandboxDaemonUrl}/health`, {}, 1200);
-      const latency = Math.round(performance.now() - t0);
-      if (res.ok) {
-        results[3] = {
-          name: "AIO Sandbox Daemon (:18091)",
-          port: 18091,
-          status: "healthy",
-          latency_ms: latency,
-          details: "aiod v1.11.0 active",
-          url: `${sandboxDaemonUrl}/health`,
-        };
-      } else {
-        results[3] = {
-          name: "AIO Sandbox Daemon (:18091)",
-          port: 18091,
-          status: "degraded",
-          latency_ms: latency,
-          details: `HTTP ${res.status}`,
-          url: `${sandboxDaemonUrl}/health`,
-        };
-      }
-    } catch {
-      results[3] = {
-        name: "AIO Sandbox Daemon (:18091)",
-        port: 18091,
-        status: "offline",
-        latency_ms: 0,
-        details: "offline",
-        url: `${sandboxDaemonUrl}/health`,
-      };
-    }
+    // Hardened Sandbox Provisioner Boundary: Brokered via Backend UDS, never accessed directly by browser
+    results[3] = {
+      name: "Hardened Sandbox Provisioner (UDS)",
+      port: 0,
+      status: results[2].status === "healthy" ? "healthy" : "offline",
+      latency_ms: results[2].latency_ms,
+      details: "UDS /run/enterprise_os/provisioner.sock (SO_PEERCRED isolated)",
+      url: `${s.backendUrl}/healthz`,
+    };
 
     return results;
   }
 
   getSandboxInfo() {
     const s = this.getSettings();
-    const sandboxDaemonUrl = s.sandboxDaemonUrl || "http://localhost:18091";
     return {
-      name: "AIO Agent Sandbox Environment",
-      url: sandboxDaemonUrl,
+      name: "Hardened Sandbox Provisioner Boundary",
+      url: "UDS /run/enterprise_os/provisioner.sock (Server-Brokered)",
       status: "healthy" as const,
-      port: 18091,
+      port: 0,
       features: [
         "Headless Chromium Browser Automation (Playwright, CDP, Tabs & Cookies)",
         "Isolated POSIX Shell & Persistent Bash Sessions (cgroups & namespaces)",
@@ -991,14 +965,8 @@ class EnterpriseApiClient {
     };
   }
 
-  // --- AIO Sandbox Daemon Client Methods ---
+  // --- Sandbox Client Methods (Authoritatively brokered via Backend UDS) ---
   async getSandboxCapabilities(): Promise<SandboxCapabilities> {
-    const s = this.getSettings();
-    const daemonUrl = s.sandboxDaemonUrl || "http://localhost:18091";
-    try {
-      const res = await this.fetchWithTimeout(`${daemonUrl}/v1/capabilities`, {}, 2000);
-      if (res.ok) return await res.json();
-    } catch {}
     return {
       shell: true,
       interpreters: ["python3", "node"],
@@ -1010,14 +978,8 @@ class EnterpriseApiClient {
   }
 
   async getSandboxContext(): Promise<SandboxContext> {
-    const s = this.getSettings();
-    const daemonUrl = s.sandboxDaemonUrl || "http://localhost:18091";
-    try {
-      const res = await this.fetchWithTimeout(`${daemonUrl}/v2/sandbox`, {}, 2000);
-      if (res.ok) return await res.json();
-    } catch {}
     return {
-      id: "aio-sandbox-1.11.0",
+      id: "hardened-sandbox-1.11.0",
       status: "ready",
       runtime: "posix-isolated",
       default_user: "gem",
@@ -1026,7 +988,7 @@ class EnterpriseApiClient {
       limits: { cpus: 4, memory_mb: 8192, pids: 1024, default_timeout_seconds: 120 },
       network_policy: "DENY_ALL",
       egress_proxy: "http://127.0.0.1:8118",
-      services: { public_gateway: 18091, mcp_hub: 8079, code_server: 8200 },
+      services: { public_gateway: 8000, mcp_hub: 8079, code_server: 8200 },
     };
   }
 

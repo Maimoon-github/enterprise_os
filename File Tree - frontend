@@ -3,6 +3,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/frontend
 
 ────────────────────────────────────────────────────────────────────────────────
 
+├── 📁 e2e/
+│   └── 📄 governed_directive_browser_e2e.spec.ts
 ├── 📁 public/
 │   ├── 🖼️ file.svg
 │   ├── 🖼️ globe.svg
@@ -52,6 +54,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/frontend
 ├── 📄 next.config.ts
 ├── ⚙️ package-lock.json
 ├── ⚙️ package.json
+├── 📄 playwright.config.ts
 ├── 📄 postcss.config.mjs
 └── ⚙️ tsconfig.json
 

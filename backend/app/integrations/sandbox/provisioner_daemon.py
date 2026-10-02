@@ -626,14 +626,14 @@ class DelegatedCgroupManager:
         try:
             # Apply resource constraints
             if "memory" in self.enabled_controllers:
-                mem_bytes = int(memory_mb) * 1024 * 1024
+                mem_bytes = memory_mb * 1024 * 1024
                 (attempt_dir / "memory.max").write_text(str(mem_bytes), encoding="utf-8")
                 swap_max = attempt_dir / "memory.swap.max"
                 if swap_max.exists():
                     swap_max.write_text("0", encoding="utf-8")
 
             if "pids" in self.enabled_controllers:
-                (attempt_dir / "pids.max").write_text(str(int(pids_limit)), encoding="utf-8")
+                (attempt_dir / "pids.max").write_text(str(pids_limit), encoding="utf-8")
 
             if "cpu" in self.enabled_controllers:
                 cpu_quota = int(cpu_cores * 100000)

@@ -256,7 +256,15 @@ class Database:
                 if version in already_applied:
                     continue
                 content = sql_file.read_text(encoding="utf-8")
-                await conn.exec_driver_sql(content)
+                try:
+                    raw_conn = await conn.get_raw_connection()
+                    if hasattr(raw_conn, "driver_connection") and hasattr(raw_conn.driver_connection, "execute"):
+                        await raw_conn.driver_connection.execute(content)
+                    else:
+                        await conn.exec_driver_sql(content)
+                except Exception:
+                    await conn.exec_driver_sql(content)
+
                 await conn.execute(
                     text("INSERT INTO schema_migrations (version) VALUES (:version)"),
                     {"version": version},

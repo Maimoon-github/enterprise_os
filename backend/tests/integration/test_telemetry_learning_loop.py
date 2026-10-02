@@ -8,11 +8,11 @@ from typing import Any
 import pytest
 
 from app.agents.learning_performance import LearningPerformanceAgent
-from app.persistence.repositories.memory import MemoryRepository
+from app.persistence.repositories.memory import MemoryRecord, MemoryRepository
 from app.persistence.repositories.telemetry import TelemetryRepository
 from app.schemas.agent_contracts import TaskGrant
 from app.schemas.governance import TenantScope, WorkerRole
-from app.schemas.telemetry import TelemetryEventType
+from app.schemas.telemetry import TelemetryEvent, TelemetryEventType
 from app.services.memory_promotion import MemoryPromotionService
 from app.services.telemetry import TelemetryNormalizer
 from tests.conftest import FakeSandboxClient
@@ -23,12 +23,21 @@ class _InMemoryTelemetryRepository(TelemetryRepository):
 
     # Intentionally bypasses DB init; every inherited method is overridden below.
     def __init__(self) -> None:
-        self._store: dict[str, Any] = {}
+        self._store: dict[str, TelemetryEvent] = {}
 
-    async def record(self, event) -> None:  # type: ignore[override]
+    async def record(
+        self, event: TelemetryEvent, *, session: Any = None
+    ) -> TelemetryEvent:
         self._store[event.event_id] = event
+        return event
 
-    async def list_by_type(self, tenant_id: str, event_type: str) -> list:  # type: ignore[override]
+    async def list_by_type(
+        self,
+        tenant_id: str,
+        event_type: str,
+        *,
+        session: Any = None,
+    ) -> list[TelemetryEvent]:
         return [
             event
             for event in self._store.values()
@@ -41,25 +50,36 @@ class _InMemoryMemoryRepository(MemoryRepository):
 
     # Intentionally bypasses DB init; every inherited method is overridden below.
     def __init__(self) -> None:
-        self._store: dict[str, Any] = {}
+        self._store: dict[str, MemoryRecord] = {}
 
-    async def promote(self, record: Any, min_confidence: float = 0.6) -> None:  # type: ignore[override]
+    async def promote(
+        self,
+        record: MemoryRecord,
+        min_confidence: float = 0.6,
+        *,
+        session: Any = None,
+    ) -> None:
         self._store[record.memory_id] = record
 
     async def list_by_tenant(
         self,
         tenant_id: str,
+        *,
         category: str | None = None,
         namespace: str | None = None,
-    ) -> list[Any]:
+        is_active: bool | None = None,
+        session: Any = None,
+    ) -> list[MemoryRecord]:
         records = [r for r in self._store.values() if getattr(r, "tenant_id", None) == tenant_id]
-        if category:
+        if category is not None:
             records = [r for r in records if getattr(r, "category", None) == category]
-        if namespace:
+        if namespace is not None:
             records = [r for r in records if getattr(r, "namespace", None) == namespace]
+        if is_active is not None:
+            records = [r for r in records if getattr(r, "is_active", None) == is_active]
         return records
 
-    def all(self) -> list:
+    def all(self) -> list[MemoryRecord]:
         return list(self._store.values())
 
 

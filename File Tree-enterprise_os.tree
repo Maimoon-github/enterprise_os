@@ -288,7 +288,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 exceptions.py
 │   │   │   ├── 🐍 logging.py
-│   │   │   └── 🐍 settings.py
+│   │   │   ├── 🐍 settings.py
+│   │   │   └── 🐍 trace_context.py
 │   │   ├── 📁 integrations/
 │   │   │   ├── 📁 ads/
 │   │   │   │   ├── 🐍 __init__.py
@@ -471,6 +472,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   └── 🐍 test_verification_agent.py
 │   │   ├── 📁 integration/
 │   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 test_cgroup_delegation_and_identity.py
 │   │   │   ├── 🐍 test_creative_integration.py
 │   │   │   ├── 🐍 test_customer_voice_integration.py
 │   │   │   ├── 🐍 test_development_integration.py
@@ -479,11 +481,13 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_layer8_security.py
 │   │   │   ├── 🐍 test_llm_live_e2e.py
 │   │   │   ├── 🐍 test_model_a_data_access.py
+│   │   │   ├── 🐍 test_operational_certification.py
 │   │   │   ├── 🐍 test_outbound_after_approval.py
 │   │   │   ├── 🐍 test_phase5_governance_certification.py
 │   │   │   ├── 🐍 test_physical_sandbox_provisioner.py
 │   │   │   ├── 🐍 test_product_evidence_integration.py
 │   │   │   ├── 🐍 test_provenance_persistence.py
+│   │   │   ├── 🐍 test_real_postgresql_persistence_and_restart.py
 │   │   │   ├── 🐍 test_security_boundaries_negative.py
 │   │   │   ├── 🐍 test_strategy_integration.py
 │   │   │   ├── 🐍 test_telemetry_learning_loop.py
@@ -574,6 +578,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   └── ⚙️ pyproject.toml
 ├── 📁 ephemeral_workspaces/
 ├── 📁 frontend/
+│   ├── 📁 e2e/
+│   │   └── 📄 governed_directive_browser_e2e.spec.ts
 │   ├── 📁 public/
 │   │   ├── 🖼️ file.svg
 │   │   ├── 🖼️ globe.svg
@@ -615,6 +621,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │       ├── 📄 api.ts
 │   │       ├── 📄 settings.ts
 │   │       └── 📄 types.ts
+│   ├── 📁 test-results/
+│   │   └── ⚙️ .last-run.json
 │   ├── ⚙️ .gitignore
 │   ├── 📝 AGENTS.md
 │   ├── 📝 CLAUDE.md
@@ -624,6 +632,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📄 next.config.ts
 │   ├── ⚙️ package-lock.json
 │   ├── ⚙️ package.json
+│   ├── 📄 playwright.config.ts
 │   ├── 📄 postcss.config.mjs
 │   ├── ⚙️ tsconfig.json
 │   └── 📄 tsconfig.tsbuildinfo
