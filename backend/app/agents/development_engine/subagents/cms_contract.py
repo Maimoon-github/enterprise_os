@@ -627,7 +627,7 @@ class CmsContractAgent:
                 f"JSON Schema Draft 2020-12 contract generated with {len(target_schema.fields)} properties",
                 f"OpenAPI 3.1 and GraphQL SDL contracts compiled cleanly for '{target_schema.model_name}'",
                 f"Migration strategy '{migration_plan.strategy}' verified with {len(migration_plan.steps)} forward steps",
-                f"Simulated forward and rollback runs completed cleanly in sandbox",
+                "Simulated forward and rollback runs completed cleanly in sandbox",
             ],
         )
 

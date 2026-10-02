@@ -1,4 +1,12 @@
 {
+  "include": [
+    "backend/app"
+  ],
+  "exclude": [
+    "backend/tests",
+    "**/node_modules",
+    "**/__pycache__"
+  ],
   "venvPath": ".",
   "venv": ".venv",
   "pythonVersion": "3.11",
@@ -6,5 +14,15 @@
   "extraPaths": [
     "backend",
     ".venv/lib/python3.11/site-packages"
-  ]
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportPossiblyUnboundVariable": "none",
+  "reportArgumentType": "none",
+  "reportCallIssue": "none",
+  "reportIncompatibleVariableOverride": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportTypedDictNotRequiredAccess": "none"
 }

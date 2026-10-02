@@ -258,8 +258,9 @@ class Database:
                 content = sql_file.read_text(encoding="utf-8")
                 try:
                     raw_conn = await conn.get_raw_connection()
-                    if hasattr(raw_conn, "driver_connection") and hasattr(raw_conn.driver_connection, "execute"):
-                        await raw_conn.driver_connection.execute(content)
+                    driver_conn = getattr(raw_conn, "driver_connection", None)
+                    if driver_conn is not None and hasattr(driver_conn, "execute"):
+                        await driver_conn.execute(content)
                     else:
                         await conn.exec_driver_sql(content)
                 except Exception:

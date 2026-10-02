@@ -680,7 +680,7 @@ def execute_s_code(
                     "description": f"Phase 1 (Expand): Create shadow/new nullable schema definitions for '{model_name}'.",
                     "operation": "expand_schema",
                     "up_script": f"-- Phase 1: Expand schema for {model_name}\nCREATE SHADOW FIELDS OR EXTEND NULLABLE;",
-                    "down_script": f"-- Rollback Phase 1\nDROP SHADOW FIELDS;",
+                    "down_script": "-- Rollback Phase 1\nDROP SHADOW FIELDS;",
                     "is_reversible": True,
                     "data_loss_risk": False,
                 })
@@ -689,10 +689,10 @@ def execute_s_code(
                 steps.append({
                     "step_number": 2,
                     "phase": "migrate_backfill",
-                    "description": f"Phase 2 (Migrate/Backfill): Dual-write and backfill existing entries.",
+                    "description": "Phase 2 (Migrate/Backfill): Dual-write and backfill existing entries.",
                     "operation": "backfill_entries",
                     "up_script": f"-- Phase 2: Backfill data\nUPDATE {model_name} SET new_fields = COALESCE(legacy_fields, default);",
-                    "down_script": f"-- Rollback Phase 2: Revert backfilled entries;",
+                    "down_script": "-- Rollback Phase 2: Revert backfilled entries;",
                     "is_reversible": True,
                     "data_loss_risk": False,
                 })
@@ -701,10 +701,10 @@ def execute_s_code(
                 steps.append({
                     "step_number": 3,
                     "phase": "validate",
-                    "description": f"Phase 3 (Validate): Enforce integrity constraints and verify JSON Schema conformance.",
+                    "description": "Phase 3 (Validate): Enforce integrity constraints and verify JSON Schema conformance.",
                     "operation": "validate_contract",
-                    "up_script": f"-- Phase 3: Validate contracts\nVERIFY DATA CONFORMANCE AGAINST DRAFT_2020_12;",
-                    "down_script": f"-- Rollback Phase 3: Lift strict validation;",
+                    "up_script": "-- Phase 3: Validate contracts\nVERIFY DATA CONFORMANCE AGAINST DRAFT_2020_12;",
+                    "down_script": "-- Rollback Phase 3: Lift strict validation;",
                     "is_reversible": True,
                     "data_loss_risk": False,
                 })
@@ -713,10 +713,10 @@ def execute_s_code(
                 steps.append({
                     "step_number": 4,
                     "phase": "contract",
-                    "description": f"Phase 4 (Contract): Remove or deprecate legacy fields after full consumer migration.",
+                    "description": "Phase 4 (Contract): Remove or deprecate legacy fields after full consumer migration.",
                     "operation": "contract_legacy",
-                    "up_script": f"-- Phase 4: Contract legacy schema\nDEPRECATE OR DROP LEGACY FIELDS;",
-                    "down_script": f"-- Rollback Phase 4: Re-add legacy fields from backup;",
+                    "up_script": "-- Phase 4: Contract legacy schema\nDEPRECATE OR DROP LEGACY FIELDS;",
+                    "down_script": "-- Rollback Phase 4: Re-add legacy fields from backup;",
                     "is_reversible": True,
                     "data_loss_risk": True,
                 })
