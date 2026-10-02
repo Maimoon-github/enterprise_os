@@ -781,6 +781,10 @@ class IntelligenceEngine:
                 checkpoint_id=str(uuid.uuid4()),
                 note=f"W_DEV execution failed: {type(exc).__name__}: {exc}",
             )
+            task.status = failed_state.status
+            task.checkpoints = failed_state.checkpoints
+            task.version = failed_state.version
+            task.failure_reason = failed_state.failure_reason
             if task_state_service is not None:
                 await task_state_service.save_state(directive.tenant_id, failed_state)
             raise
@@ -796,6 +800,10 @@ class IntelligenceEngine:
                 checkpoint_id=str(uuid.uuid4()),
                 note="W_DEV execution failed",
             )
+        task.status = final_state.status
+        task.checkpoints = final_state.checkpoints
+        task.version = final_state.version
+        task.hold_reason = final_state.hold_reason
         if task_state_service is not None:
             await task_state_service.save_state(directive.tenant_id, final_state)
 
