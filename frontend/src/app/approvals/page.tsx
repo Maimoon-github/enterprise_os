@@ -168,7 +168,7 @@ export default function ApprovalsPage() {
         approver_role: approverRole,
         tenant_id: selectedPreview.tenant_id,
         revision_notes: revisionNotes || undefined,
-        preview_content_hash: `sha256-${Date.now().toString(16)}abcd998877`,
+        preview_content_hash: selectedPreview.preview_content_hash,
       };
 
       await api.submitApprovalDecision(selectedPreview.action_preview_id, payload);
@@ -177,7 +177,7 @@ export default function ApprovalsPage() {
         ...prev,
         [selectedPreview.action_preview_id]: {
           decision,
-          hash: payload.preview_content_hash!,
+          hash: payload.preview_content_hash || selectedPreview.preview_content_hash || "sha256-verified",
         },
       }));
 
@@ -199,14 +199,14 @@ export default function ApprovalsPage() {
         decision: "APPROVE",
         approver: approverName,
         approver_role: approverRole,
-        preview_content_hash: `sha256-${Date.now().toString(16)}00aa11bb`,
+        preview_content_hash: prev.preview_content_hash,
         revision_notes: "Batch approved via 1-Click Executive Gate",
       });
       setDecisionHistory((h) => ({
         ...h,
         [prev.action_preview_id]: {
           decision: "APPROVE",
-          hash: `sha256-batch-${prev.action_preview_id.slice(-6)}`,
+          hash: prev.preview_content_hash || "sha256-verified",
         },
       }));
     }
@@ -234,7 +234,6 @@ export default function ApprovalsPage() {
         input_snapshot_hash: selectedDevItem.input_snapshot_hash,
         output_snapshot_hash: selectedDevItem.output_snapshot_hash,
         review_dossier_hash: selectedDevItem.review_dossier_hash,
-        signature: `ed25519-sig-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         revision_notes: devRevisionNotes || undefined,
         machine_policy_allowed: true,
         expires_in_seconds: 7200,

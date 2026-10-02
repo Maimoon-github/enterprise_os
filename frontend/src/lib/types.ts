@@ -113,6 +113,7 @@ export interface ActionPreview {
     call_to_action: string;
     prohibited_terms_checked: boolean;
   } | null;
+  preview_content_hash?: string;
 }
 
 export interface ApprovalDecisionRequest {

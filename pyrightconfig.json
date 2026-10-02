@@ -3,8 +3,6 @@
   "venv": ".venv",
   "pythonVersion": "3.11",
   "pythonPlatform": "Linux",
-  "reportMissingImports": "none",
-  "reportMissingModuleSource": "none",
   "extraPaths": [
     "backend",
     ".venv/lib/python3.11/site-packages"
