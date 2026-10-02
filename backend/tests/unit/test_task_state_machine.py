@@ -196,3 +196,82 @@ def test_task_state_machine_restore_checkpoint(sample_task: CanonicalTaskState) 
     t_failed = machine.transition(restored, TaskStatus.FAILED, checkpoint_id="cp-fail")
     with pytest.raises(InvalidTransitionError, match="terminal checkpoint status"):
         machine.restore_checkpoint(t_failed, checkpoint_id="cp-fail")
+
+
+def test_immutable_state_propagation_pending_to_terminal(sample_task: CanonicalTaskState) -> None:
+    """Verifies PENDING -> GRANTED -> IN_PROGRESS -> COMPLETED immutable state propagation."""
+    machine = TaskStateMachine()
+
+    assert sample_task.status is TaskStatus.PENDING
+    assert sample_task.version == 0
+    assert len(sample_task.checkpoints) == 0
+
+    granted = machine.transition(sample_task, TaskStatus.GRANTED, checkpoint_id="cp-grant", note="Task granted")
+    assert granted.status is TaskStatus.GRANTED
+    assert granted.version == 1
+    assert len(granted.checkpoints) == 1
+    assert granted.checkpoints[0].note == "Task granted"
+    assert sample_task.status is TaskStatus.PENDING  # predecessor unchanged
+
+    in_progress = machine.transition(granted, TaskStatus.IN_PROGRESS, checkpoint_id="cp-prog", note="Execution started")
+    assert in_progress.status is TaskStatus.IN_PROGRESS
+    assert in_progress.version == 2
+    assert len(in_progress.checkpoints) == 2
+    assert granted.status is TaskStatus.GRANTED  # predecessor unchanged
+
+    completed = machine.transition(in_progress, TaskStatus.COMPLETED, checkpoint_id="cp-done", note="Execution completed")
+    assert completed.status is TaskStatus.COMPLETED
+    assert completed.version == 3
+    assert len(completed.checkpoints) == 3
+    assert in_progress.status is TaskStatus.IN_PROGRESS  # predecessor unchanged
+    assert [cp.status for cp in completed.checkpoints] == [
+        TaskStatus.GRANTED,
+        TaskStatus.IN_PROGRESS,
+        TaskStatus.COMPLETED,
+    ]
+
+
+def test_discarded_transition_regression_held_and_failed(sample_task: CanonicalTaskState) -> None:
+    """Regression test ensuring transition results for HELD and FAILED are captured, not discarded."""
+    machine = TaskStateMachine()
+
+    granted = machine.transition(sample_task, TaskStatus.GRANTED, checkpoint_id="cp-1")
+    in_progress = machine.transition(granted, TaskStatus.IN_PROGRESS, checkpoint_id="cp-2")
+
+    # Terminal failure transition
+    failed = machine.transition(in_progress, TaskStatus.FAILED, checkpoint_id="cp-fail", note="Fatal worker error")
+    assert failed is not in_progress
+    assert failed.status is TaskStatus.FAILED
+    assert failed.failure_reason == "Fatal worker error"
+    assert failed.version == 3
+    assert failed.checkpoints[-1].status is TaskStatus.FAILED
+
+    # Held transition from in_progress
+    held = machine.transition(in_progress, TaskStatus.HELD, checkpoint_id="cp-held", note="Waiting on human approval")
+    assert held is not in_progress
+    assert held.status is TaskStatus.HELD
+    assert held.hold_reason == "Waiting on human approval"
+    assert held.version == 3
+    assert held.checkpoints[-1].status is TaskStatus.HELD
+
+
+def test_dag_scheduler_downstream_blocked_when_upstream_held_or_failed() -> None:
+    """Verifies downstream tasks are blocked when upstream task is in HELD or FAILED state."""
+    scheduler = DagScheduler()
+    task_a = _task("a", "d1", [])
+    task_b = _task("b", "d1", [TaskDependency(upstream_task_id="a", downstream_task_id="b")])
+
+    # Upstream held -> downstream must NOT be ready
+    held_a = task_a.model_copy(update={"status": TaskStatus.HELD})
+    ready = scheduler.next_ready_tasks([held_a, task_b])
+    assert [t.task_id for t in ready] == []
+
+    # Upstream failed -> downstream must NOT be ready
+    failed_a = task_a.model_copy(update={"status": TaskStatus.FAILED})
+    ready = scheduler.next_ready_tasks([failed_a, task_b])
+    assert [t.task_id for t in ready] == []
+
+    # Upstream completed -> downstream is ready
+    completed_a = task_a.model_copy(update={"status": TaskStatus.COMPLETED})
+    ready = scheduler.next_ready_tasks([completed_a, task_b])
+    assert [t.task_id for t in ready] == ["b"]

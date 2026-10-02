@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
@@ -33,7 +34,7 @@ def fake_cts_service() -> TaskStateService:
     repo = _FakeTaskStateRepository()
     provenance = ProvenanceRecorder(FakeProvenanceRepository())
     return TaskStateService(
-        repository=repo,  # type: ignore[arg-type]
+        repository=repo,
         state_machine=TaskStateMachine(),
         provenance_recorder=provenance,
         max_retries=2,
@@ -335,5 +336,256 @@ async def test_task_state_repository_cas_fatal_rollback() -> None:
         await repo.compare_and_swap_state("tenant-1", expected_version=0, state=state)
 
     session.rollback.assert_awaited()
+
+
+class _MockWorkerAgent:
+    capability = None
+    allowed_tools: list[str] = []
+
+    def __init__(self, succeeds: bool = True, raises: bool = False) -> None:
+        self.succeeds = succeeds
+        self.raises = raises
+
+    async def run(self, grant: Any, context: Any) -> Any:
+        if self.raises:
+            raise RuntimeError("Simulated worker execution crash")
+        from app.schemas.agent_contracts import ConfidenceInterval, EvidenceEnvelope
+
+        confidence = ConfidenceInterval(
+            point_estimate=0.95 if self.succeeds else 0.0,
+            lower_bound=0.8,
+            upper_bound=1.0,
+        )
+        return EvidenceEnvelope(
+            task_id=grant.task_id,
+            worker_role=grant.worker_role,
+            confidence=confidence,
+            payload={"domain_status": "success" if self.succeeds else "failed"},
+        )
+
+
+def _build_test_engine(workers: dict[WorkerRole, Any], provenance: ProvenanceRecorder | None = None) -> Any:
+    if provenance is None:
+        provenance = ProvenanceRecorder(FakeProvenanceRepository())
+    from app.mcp.host import McpHost
+    from app.orchestration.brand_persona import BrandPersonaResolver
+    from app.orchestration.context_assembly import ContextAssembler
+    from app.orchestration.dag_scheduler import DagScheduler
+    from app.orchestration.evidence_synthesis import EvidenceSynthesizer
+    from app.orchestration.hitl_preview_generator import HitlPreviewGenerator
+    from app.orchestration.intelligence_engine import IntelligenceEngine
+    from app.orchestration.policy_evaluator import PolicyEvaluator
+    from app.orchestration.rag_query_dispatch import RagQueryDispatcher
+    from app.services.hitl import HitlCoordinator
+    from app.services.rag.controller import RagController
+    from app.services.rag.freshness import FreshnessPolicy
+    from app.services.rag.hybrid_retriever import HybridRetriever
+    from app.services.rag.schema_validator import SchemaValidator
+    from tests.conftest import FakeVectorRepository
+
+    v_repo = FakeVectorRepository()
+    rag_ctrl = RagController(HybridRetriever(v_repo), FreshnessPolicy(), SchemaValidator())
+    return IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=TaskStateMachine(),
+        context_assembler=ContextAssembler(RagQueryDispatcher(rag_ctrl), BrandPersonaResolver()),
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=HitlCoordinator(),
+        mcp_host=McpHost(AsyncMock(), AsyncMock()),
+        provenance_recorder=provenance,
+        workers=workers,
+    )
+
+
+@pytest.mark.asyncio
+async def test_background_persistence_and_observable_terminal_state(fake_cts_service: TaskStateService) -> None:
+    """Verifies that DAG background execution persists checkpoints and observable terminal status."""
+    from app.schemas.governance import Directive, TenantScope, RiskLevel
+    directive = Directive(
+        directive_id="dir-test-pers",
+        tenant_id="tenant-pers",
+        scope=TenantScope(tenant_id="tenant-pers"),
+        risk_ceiling=RiskLevel.LOW,
+        budget_cap=5000.0,
+        objective="Verify background persistence",
+    )
+
+    task = CanonicalTaskState(
+        task_id="task-pers-1",
+        directive_id=directive.directive_id,
+        tenant_id=directive.tenant_id,
+        worker_role=WorkerRole.DEVELOPMENT,
+        status=TaskStatus.PENDING,
+    )
+    await fake_cts_service.save_state(directive.tenant_id, task)
+
+    engine = _build_test_engine(
+        workers={WorkerRole.DEVELOPMENT: _MockWorkerAgent(succeeds=True)},
+        provenance=fake_cts_service._provenance_recorder,
+    )
+
+    result = await engine.execute_dag(
+        directive,
+        [task],
+        task_state_service=fake_cts_service,
+    )
+
+    # 1. Returned DagExecutionResult has both envelopes and authoritative task states
+    assert "task-pers-1" in result
+    assert result.task_states["task-pers-1"].status == TaskStatus.COMPLETED
+    assert len(result.task_states["task-pers-1"].checkpoints) == 3
+
+    # 2. Persisted state in repository progressed beyond PENDING to COMPLETED
+    persisted = await fake_cts_service.get_state("task-pers-1")
+    assert persisted.status == TaskStatus.COMPLETED
+    assert [cp.status for cp in persisted.checkpoints] == [
+        TaskStatus.GRANTED,
+        TaskStatus.IN_PROGRESS,
+        TaskStatus.COMPLETED,
+    ]
+    assert persisted.version == 3
+
+
+@pytest.mark.asyncio
+async def test_persistence_failure_blocks_execution() -> None:
+    """Verifies that required persistence failure halts execution and does not advance work."""
+    from app.schemas.governance import Directive, TenantScope, RiskLevel
+    failing_repo = AsyncMock()
+    failing_repo.save_state.side_effect = RuntimeError("Database connection lost during write")
+
+    service = TaskStateService(
+        repository=failing_repo,
+        state_machine=TaskStateMachine(),
+        provenance_recorder=ProvenanceRecorder(FakeProvenanceRepository()),
+    )
+
+    directive = Directive(
+        directive_id="dir-fail-pers",
+        tenant_id="tenant-fail",
+        scope=TenantScope(tenant_id="tenant-fail"),
+        risk_ceiling=RiskLevel.LOW,
+        budget_cap=5000.0,
+        objective="Verify persistence error halts work",
+    )
+    task = CanonicalTaskState(
+        task_id="task-fail-p",
+        directive_id=directive.directive_id,
+        tenant_id=directive.tenant_id,
+        worker_role=WorkerRole.DEVELOPMENT,
+        status=TaskStatus.PENDING,
+    )
+
+    engine = _build_test_engine(
+        workers={WorkerRole.DEVELOPMENT: _MockWorkerAgent(succeeds=True)},
+        provenance=service._provenance_recorder,
+    )
+
+    with pytest.raises(RuntimeError, match="Database connection lost"):
+        await engine.execute_dag(
+            directive,
+            [task],
+            task_state_service=service,
+        )
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_terminal_persistence(fake_cts_service: TaskStateService) -> None:
+    """Verifies that worker execution crash captures FAILED transition and persists it."""
+    from app.schemas.governance import Directive, TenantScope, RiskLevel
+    directive = Directive(
+        directive_id="dir-crash",
+        tenant_id="tenant-crash",
+        scope=TenantScope(tenant_id="tenant-crash"),
+        risk_ceiling=RiskLevel.LOW,
+        budget_cap=5000.0,
+        objective="Verify crash handling",
+    )
+    task = CanonicalTaskState(
+        task_id="task-crash-1",
+        directive_id=directive.directive_id,
+        tenant_id=directive.tenant_id,
+        worker_role=WorkerRole.DEVELOPMENT,
+        status=TaskStatus.PENDING,
+    )
+    await fake_cts_service.save_state(directive.tenant_id, task)
+
+    engine = _build_test_engine(
+        workers={WorkerRole.DEVELOPMENT: _MockWorkerAgent(raises=True)},
+        provenance=fake_cts_service._provenance_recorder,
+    )
+
+    with pytest.raises(RuntimeError, match="Simulated worker execution crash"):
+        await engine.execute_dag(
+            directive,
+            [task],
+            task_state_service=fake_cts_service,
+        )
+
+    # Persisted state must be FAILED with checkpoint note
+    persisted = await fake_cts_service.get_state("task-crash-1")
+    assert persisted.status == TaskStatus.FAILED
+    assert persisted.failure_reason is not None
+    assert "Simulated worker execution crash" in persisted.failure_reason
+    assert persisted.checkpoints[-1].status == TaskStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_downstream_task_blocked_when_upstream_held_in_dag(fake_cts_service: TaskStateService) -> None:
+    """Verifies downstream task blocked and held when upstream dependency fails validation."""
+    from app.core.exceptions import PolicyViolationError
+    from app.schemas.governance import Directive, TenantScope, RiskLevel
+    from app.schemas.task_state import TaskDependency
+    directive = Directive(
+        directive_id="dir-dag-held",
+        tenant_id="tenant-dag",
+        scope=TenantScope(tenant_id="tenant-dag"),
+        risk_ceiling=RiskLevel.LOW,
+        budget_cap=5000.0,
+        objective="Verify blocked DAG dependency",
+    )
+    task1 = CanonicalTaskState(
+        task_id="task-up",
+        directive_id=directive.directive_id,
+        tenant_id=directive.tenant_id,
+        worker_role=WorkerRole.DEVELOPMENT,
+        status=TaskStatus.PENDING,
+    )
+    task2 = CanonicalTaskState(
+        task_id="task-down",
+        directive_id=directive.directive_id,
+        tenant_id=directive.tenant_id,
+        worker_role=WorkerRole.STRATEGY,
+        status=TaskStatus.PENDING,
+        dependencies=[TaskDependency(upstream_task_id="task-up", downstream_task_id="task-down")],
+    )
+    await fake_cts_service.save_state(directive.tenant_id, task1)
+    await fake_cts_service.save_state(directive.tenant_id, task2)
+
+    # Worker for task1 returns zero confidence (fails validation -> HELD)
+    engine = _build_test_engine(
+        workers={
+            WorkerRole.DEVELOPMENT: _MockWorkerAgent(succeeds=False),
+            WorkerRole.STRATEGY: _MockWorkerAgent(succeeds=True),
+        },
+        provenance=fake_cts_service._provenance_recorder,
+    )
+
+    with pytest.raises(PolicyViolationError, match="dependencies are not completed"):
+        await engine.execute_dag(
+            directive,
+            [task1, task2],
+            task_state_service=fake_cts_service,
+        )
+
+    # Upstream is HELD
+    persisted1 = await fake_cts_service.get_state("task-up")
+    assert persisted1.status == TaskStatus.HELD
+
+    # Downstream is also HELD (persisted with note before raising)
+    persisted2 = await fake_cts_service.get_state("task-down")
+    assert persisted2.status == TaskStatus.HELD
+    assert persisted2.hold_reason is not None and "dependencies are not completed" in persisted2.hold_reason
 
 

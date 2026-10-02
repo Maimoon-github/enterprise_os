@@ -73,7 +73,9 @@ async def _run_dag_in_background(
             directive.directive_id,
             len(tasks),
         )
-        envelopes = await intelligence_engine.execute_dag(directive, tasks)
+        envelopes = await intelligence_engine.execute_dag(
+            directive, tasks, task_state_service=task_state_service
+        )
         logger.info(
             "DAG execution completed for directive '%s': %d envelopes",
             directive.directive_id,
@@ -163,26 +165,48 @@ async def execute_directive(
         directive, available_workers=list(WorkerRole)
     )
 
-    # 3. Mint CTS tasks for every plan step
+    # 3. Mint CTS tasks for every plan step using two deterministic passes
+
+    # Pass 1: Validate unique step_ids and allocate every task_id
     step_id_to_task_id: dict[str, str] = {}
+    for step in plan_result.plan:
+        if not step.step_id or not step.step_id.strip():
+            raise PolicyViolationError("Plan step must have a non-empty step_id.")
+        step_id = step.step_id.strip()
+        if step_id in step_id_to_task_id:
+            raise PolicyViolationError(f"Duplicate step_id '{step_id}' found in plan.")
+        step_id_to_task_id[step_id] = f"task-{uuid.uuid4()}"
+
+    # Pass 2: Resolve all declared dependencies from the complete mapping and create/persist CTS tasks
     created_tasks: list[CanonicalTaskState] = []
     task_infos: list[ExecutionTaskInfo] = []
 
     for step in plan_result.plan:
-        task_id = f"task-{uuid.uuid4()}"
-        step_id_to_task_id[step.step_id] = task_id
+        step_id = step.step_id.strip()
+        task_id = step_id_to_task_id[step_id]
 
-        # Resolve DAG dependency edges from step.dependencies (step IDs) to task IDs
         dependencies: list[TaskDependency] = []
         for dep_step_id in step.dependencies:
-            upstream_task_id = step_id_to_task_id.get(dep_step_id)
-            if upstream_task_id:
-                dependencies.append(
-                    TaskDependency(
-                        upstream_task_id=upstream_task_id,
-                        downstream_task_id=task_id,
-                    )
+            dep_clean = dep_step_id.strip() if isinstance(dep_step_id, str) else ""
+            if not dep_clean:
+                raise PolicyViolationError(
+                    f"Malformed empty dependency declared by plan step '{step_id}'."
                 )
+            if dep_clean == step_id:
+                raise PolicyViolationError(
+                    f"Self-dependency detected: step '{step_id}' cannot depend on itself."
+                )
+            if dep_clean not in step_id_to_task_id:
+                raise PolicyViolationError(
+                    f"Unknown dependency '{dep_clean}' declared by plan step '{step_id}'."
+                )
+            upstream_task_id = step_id_to_task_id[dep_clean]
+            dependencies.append(
+                TaskDependency(
+                    upstream_task_id=upstream_task_id,
+                    downstream_task_id=task_id,
+                )
+            )
 
         task_state = CanonicalTaskState(
             task_id=task_id,
@@ -201,7 +225,7 @@ async def execute_directive(
                 directive_id=directive.directive_id,
                 worker_role=(step.recommended_worker or WorkerRole.DEVELOPMENT).value,
                 status=TaskStatus.PENDING.value,
-                step_id=step.step_id,
+                step_id=step_id,
             )
         )
 

@@ -14,7 +14,7 @@ import json
 import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, overload
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -187,6 +187,22 @@ class IntelligenceResult(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     rationale_summary: str
     confidence: float = Field(ge=0.0, le=1.0)
+
+
+class DagExecutionResult(dict[str, EvidenceEnvelope]):
+    """Execution result mapping task_id -> EvidenceEnvelope with attached CanonicalTaskState records."""
+
+    def __init__(
+        self,
+        envelopes: Mapping[str, EvidenceEnvelope] | None = None,
+        task_states: Mapping[str, CanonicalTaskState] | None = None,
+    ) -> None:
+        super().__init__(envelopes or {})
+        self.task_states: dict[str, CanonicalTaskState] = dict(task_states or {})
+
+    @property
+    def tasks(self) -> list[CanonicalTaskState]:
+        return list(self.task_states.values())
 
 
 class IntelligenceEngineError(RuntimeError):
@@ -419,6 +435,7 @@ class IntelligenceEngine:
 
         return grant, context
 
+    @overload
     async def delegate_task(
         self,
         directive: Directive,
@@ -428,7 +445,53 @@ class IntelligenceEngine:
         brand_id: str = "default",
         token_budget: int = 10000,
         completed_upstream_task_ids: set[str] | None = None,
+        task_state_service: Any | None = None,
+        return_task_state: Literal[False] = False,
     ) -> EvidenceEnvelope:
+        ...
+
+    @overload
+    async def delegate_task(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        *,
+        query: str,
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        completed_upstream_task_ids: set[str] | None = None,
+        task_state_service: Any | None = None,
+        return_task_state: Literal[True],
+    ) -> tuple[EvidenceEnvelope, CanonicalTaskState]:
+        ...
+
+    @overload
+    async def delegate_task(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        *,
+        query: str,
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        completed_upstream_task_ids: set[str] | None = None,
+        task_state_service: Any | None = None,
+        return_task_state: bool = False,
+    ) -> EvidenceEnvelope | tuple[EvidenceEnvelope, CanonicalTaskState]:
+        ...
+
+    async def delegate_task(
+        self,
+        directive: Directive,
+        task: CanonicalTaskState,
+        *,
+        query: str,
+        brand_id: str = "default",
+        token_budget: int = 10000,
+        completed_upstream_task_ids: set[str] | None = None,
+        task_state_service: Any | None = None,
+        return_task_state: bool = False,
+    ) -> EvidenceEnvelope | tuple[EvidenceEnvelope, CanonicalTaskState]:
         """Delegate a single bounded task grant to its worker and return its evidence.
 
         Raises ``PolicyViolationError`` if the delegation is not permitted
@@ -444,32 +507,37 @@ class IntelligenceEngine:
             completed_upstream_task_ids=completed_upstream_task_ids,
         )
 
-        if task.status == TaskStatus.PENDING:
-            granted_state = self._task_state_machine.transition(
-                task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
+        current_state = task
+        if current_state.status == TaskStatus.PENDING:
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
             )
-            in_prog_state = self._task_state_machine.transition(
-                granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, current_state)
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
             )
-        elif task.status == TaskStatus.GRANTED:
-            in_prog_state = self._task_state_machine.transition(
-                task, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, current_state)
+        elif current_state.status == TaskStatus.GRANTED:
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
             )
-        else:
-            in_prog_state = task
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, current_state)
 
         start_time = datetime.now(UTC)
         if hasattr(self._provenance_recorder, "record_worker_execution"):
             await self._provenance_recorder.record_worker_execution(
                 tenant_id=directive.tenant_id,
-                task_id=task.task_id,
-                worker_role=task.worker_role,
+                task_id=current_state.task_id,
+                worker_role=current_state.worker_role,
                 lifecycle_stage="started",
                 input_data=grant,
                 started_at=start_time,
             )
 
-        worker = self._workers[task.worker_role]
+        worker = self._workers[current_state.worker_role]
         try:
             envelope = await worker.run(grant, context)
         except Exception as exc:
@@ -478,8 +546,8 @@ class IntelligenceEngine:
             if hasattr(self._provenance_recorder, "record_worker_execution"):
                 await self._provenance_recorder.record_worker_execution(
                     tenant_id=directive.tenant_id,
-                    task_id=task.task_id,
-                    worker_role=task.worker_role,
+                    task_id=current_state.task_id,
+                    worker_role=current_state.worker_role,
                     lifecycle_stage="failed",
                     input_data=grant,
                     output_data={"error": str(exc), "error_type": type(exc).__name__},
@@ -488,6 +556,22 @@ class IntelligenceEngine:
                     ended_at=end_time,
                     metadata={"error": str(exc)},
                 )
+            else:
+                await self._provenance_recorder.record(
+                    tenant_id=directive.tenant_id,
+                    entity_id=current_state.task_id,
+                    activity="worker_execution_failed",
+                    agent=current_state.worker_role.value if hasattr(current_state.worker_role, "value") else str(current_state.worker_role),
+                    metadata={"error": str(exc)},
+                )
+            failed_state = self._task_state_machine.transition(
+                current_state,
+                TaskStatus.FAILED,
+                checkpoint_id=str(uuid.uuid4()),
+                note=f"Worker execution failed: {type(exc).__name__}: {exc}",
+            )
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, failed_state)
             raise
 
         end_time = datetime.now(UTC)
@@ -501,18 +585,21 @@ class IntelligenceEngine:
             and (domain_status is None or domain_status in ("OK", "success"))
         )
         if is_successful:
-            self._task_state_machine.transition(
-                in_prog_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
             )
             lifecycle_stage = "completed"
         else:
-            self._task_state_machine.transition(
-                in_prog_state,
+            current_state = self._task_state_machine.transition(
+                current_state,
                 TaskStatus.HELD,
                 checkpoint_id=str(uuid.uuid4()),
                 note=f"Execution validation failed or zero confidence: domain_status={domain_status}, proposed={proposed_status}",
             )
             lifecycle_stage = "failed"
+
+        if task_state_service is not None:
+            await task_state_service.save_state(directive.tenant_id, current_state)
 
         sb_exec_id = envelope.provenance.get("sandbox_execution_id") or envelope.provenance.get("execution_id")
         prov_meta: dict[str, Any] = {
@@ -531,8 +618,8 @@ class IntelligenceEngine:
         if hasattr(self._provenance_recorder, "record_worker_execution"):
             await self._provenance_recorder.record_worker_execution(
                 tenant_id=directive.tenant_id,
-                task_id=task.task_id,
-                worker_role=task.worker_role,
+                task_id=current_state.task_id,
+                worker_role=current_state.worker_role,
                 lifecycle_stage=lifecycle_stage,
                 input_data=grant,
                 output_data=envelope,
@@ -545,12 +632,14 @@ class IntelligenceEngine:
         else:
             await self._provenance_recorder.record(
                 tenant_id=directive.tenant_id,
-                entity_id=task.task_id,
+                entity_id=current_state.task_id,
                 activity="worker_execution",
-                agent=task.worker_role.value if hasattr(task.worker_role, "value") else str(task.worker_role),
+                agent=current_state.worker_role.value if hasattr(current_state.worker_role, "value") else str(current_state.worker_role),
                 metadata=prov_meta,
             )
 
+        if return_task_state:
+            return envelope, current_state
         return envelope
 
     async def invoke_strategy_worker(
@@ -562,6 +651,7 @@ class IntelligenceEngine:
         brand_id: str = "default",
         token_budget: int = 10000,
         completed_upstream_task_ids: set[str] | None = None,
+        task_state_service: Any | None = None,
     ) -> StrategyResultEnvelope:
         """Bounded Intelligence Engine -> W_STRAT -> Intelligence Engine invocation contract."""
         if task.worker_role != WorkerRole.STRATEGY:
@@ -575,6 +665,7 @@ class IntelligenceEngine:
             brand_id=brand_id,
             token_budget=token_budget,
             completed_upstream_task_ids=completed_upstream_task_ids,
+            task_state_service=task_state_service,
         )
         if isinstance(envelope, StrategyResultEnvelope):
             return envelope
@@ -592,6 +683,7 @@ class IntelligenceEngine:
         target_files: list[str] | None = None,
         component_name: str = "Component",
         component_type: str = "component",
+        task_state_service: Any | None = None,
     ) -> DevelopmentEngineResult:
         """Bounded Intelligence Engine -> W_DEV -> Intelligence Engine invocation contract.
 
@@ -647,49 +739,65 @@ class IntelligenceEngine:
             context=context,
         )
 
-        if task.status == TaskStatus.PENDING:
-            granted_state = self._task_state_machine.transition(
-                task, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
+        current_state = task
+        if current_state.status == TaskStatus.PENDING:
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.GRANTED, checkpoint_id=str(uuid.uuid4())
             )
-            in_prog_state = self._task_state_machine.transition(
-                granted_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, current_state)
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
             )
-        elif task.status == TaskStatus.GRANTED:
-            in_prog_state = self._task_state_machine.transition(
-                task, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, current_state)
+        elif current_state.status == TaskStatus.GRANTED:
+            current_state = self._task_state_machine.transition(
+                current_state, TaskStatus.IN_PROGRESS, checkpoint_id=str(uuid.uuid4())
             )
-        else:
-            in_prog_state = task
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, current_state)
 
         worker = self._workers.get(WorkerRole.DEVELOPMENT)
         if worker is None:
             raise PolicyViolationError("W_DEV is not registered with the Intelligence Engine.")
 
-        if hasattr(worker, "invoke_development"):
-            result = await worker.invoke_development(dev_request)
-        else:
-            envelope = await worker.run(dev_grant, context)
-            result = DevelopmentEngineResult(
-                task_id=task.task_id,
-                engine_id="W_DEV",
-                status="SUCCESS" if envelope.confidence.point_estimate > 0.0 else "FAILED",
-                evidence_envelope=envelope,
-                validation_findings=envelope.findings,
+        try:
+            if hasattr(worker, "invoke_development"):
+                result = await worker.invoke_development(dev_request)
+            else:
+                envelope = await worker.run(dev_grant, context)
+                result = DevelopmentEngineResult(
+                    task_id=task.task_id,
+                    engine_id="W_DEV",
+                    status="SUCCESS" if envelope.confidence.point_estimate > 0.0 else "FAILED",
+                    evidence_envelope=envelope,
+                    validation_findings=envelope.findings,
+                )
+        except Exception as exc:
+            failed_state = self._task_state_machine.transition(
+                current_state,
+                TaskStatus.FAILED,
+                checkpoint_id=str(uuid.uuid4()),
+                note=f"W_DEV execution failed: {type(exc).__name__}: {exc}",
             )
+            if task_state_service is not None:
+                await task_state_service.save_state(directive.tenant_id, failed_state)
+            raise
 
         if result.status == "SUCCESS":
             final_state = self._task_state_machine.transition(
-                in_prog_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
+                current_state, TaskStatus.COMPLETED, checkpoint_id=str(uuid.uuid4())
             )
-            task.status = final_state.status
         else:
             final_state = self._task_state_machine.transition(
-                in_prog_state,
+                current_state,
                 TaskStatus.HELD,
                 checkpoint_id=str(uuid.uuid4()),
                 note="W_DEV execution failed",
             )
-            task.status = final_state.status
+        if task_state_service is not None:
+            await task_state_service.save_state(directive.tenant_id, final_state)
 
         prov_meta: dict[str, Any] = {
             "execution_id": result.evidence_envelope.provenance.get("execution_id"),
@@ -797,7 +905,7 @@ class IntelligenceEngine:
             "accepted": True,
             "status": "ACCEPTED",
             "brief_id": brief.brief_id,
-            "cts_status": task.status.value,
+            "cts_status": final_state.status.value,
             "requires_hitl": requires_hitl,
             "artifact_id": brief.brief_id,
         }
@@ -808,12 +916,13 @@ class IntelligenceEngine:
         tasks: list[CanonicalTaskState],
         *,
         queries: dict[str, str] | None = None,
-    ) -> dict[str, EvidenceEnvelope]:
+        task_state_service: Any | None = None,
+    ) -> DagExecutionResult:
         """Execute a full DAG of tasks for ``directive`` in topological dependency order."""
         queries = queries or {}
         ordered_ids = self._dag_scheduler.topological_order(tasks)
         tasks_by_id = {t.task_id: t for t in tasks}
-        completed_tasks: dict[str, CanonicalTaskState] = {}
+        task_states: dict[str, CanonicalTaskState] = {}
         envelopes: dict[str, EvidenceEnvelope] = {}
 
         for task_id in ordered_ids:
@@ -824,12 +933,29 @@ class IntelligenceEngine:
                 for dep in task.dependencies
                 if dep.downstream_task_id == task_id
             }
-            if not all(uid in completed_tasks and completed_tasks[uid].status == TaskStatus.COMPLETED for uid in upstream_ids):
+            if not all(
+                uid in task_states and task_states[uid].status == TaskStatus.COMPLETED
+                for uid in upstream_ids
+            ):
+                unresolved = [
+                    uid for uid in upstream_ids
+                    if uid not in task_states or task_states[uid].status != TaskStatus.COMPLETED
+                ]
+                note = f"Task {task_id} dependencies are not completed: {unresolved}"
+                held_state = self._task_state_machine.transition(
+                    task,
+                    TaskStatus.HELD,
+                    checkpoint_id=str(uuid.uuid4()),
+                    note=note,
+                )
+                if task_state_service is not None:
+                    await task_state_service.save_state(directive.tenant_id, held_state)
+                task_states[task_id] = held_state
                 raise PolicyViolationError(f"Task {task_id} dependencies are not completed.")
 
             # Inherit CTS state / evidence from upstream tasks
             merged_cts_state = dict(task.cts_state)
-            for uid in completed_tasks:
+            for uid in task_states:
                 up_env = envelopes.get(uid)
                 if up_env and up_env.payload:
                     merged_cts_state.update(up_env.payload)
@@ -837,13 +963,18 @@ class IntelligenceEngine:
                 task = task.model_copy(update={"cts_state": merged_cts_state})
 
             query = queries.get(task_id, f"{task.worker_role.value} execution for {directive.objective}")
-            envelope = await self.delegate_task(
-                directive, task, query=query, completed_upstream_task_ids=set(completed_tasks.keys())
+            envelope, updated_state = await self.delegate_task(
+                directive,
+                task,
+                query=query,
+                completed_upstream_task_ids=set(task_states.keys()),
+                task_state_service=task_state_service,
+                return_task_state=True,
             )
             envelopes[task_id] = envelope
-            completed_tasks[task_id] = task.model_copy(update={"status": TaskStatus.COMPLETED})
+            task_states[task_id] = updated_state
 
-        return envelopes
+        return DagExecutionResult(envelopes=envelopes, task_states=task_states)
 
     def ready_tasks(self, tasks: list[CanonicalTaskState]) -> list[CanonicalTaskState]:
         """Return the subset of ``tasks`` whose dependencies are satisfied."""

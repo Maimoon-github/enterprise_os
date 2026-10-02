@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -666,3 +667,221 @@ async def test_t14_governed_end_to_end_feedback_loop(ed25519_keypair: tuple[str,
     # 7. Approving through HITL resolves preview
     hitl_coordinator.decide(preview.preview_id, approved=True, approver="[email protected]")
     assert hitl_coordinator.is_pending(preview.preview_id) is False
+
+
+@pytest.mark.asyncio
+async def test_governed_directive_two_pass_dag_and_observable_persistence(
+    sample_directive: Directive,
+) -> None:
+    """Verifies:
+
+    1. Two-pass DAG resolution correctly resolves forward references.
+    2. Unknown dependencies, duplicates, and self-dependencies fail explicitly.
+    3. Background execution persists CTS state beyond PENDING to terminal COMPLETED.
+    4. CTS state in repository is fully observable with checkpoints.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from fastapi import BackgroundTasks
+    from app.api.routes.directives import execute_directive
+    from app.core.exceptions import PolicyViolationError
+    from app.orchestration.intelligence_engine import IntelligenceResult, PlanStep
+    from app.services.task_state import TaskStateService
+
+    class _InMemoryTaskRepo:
+        def __init__(self) -> None:
+            self.tasks: dict[str, CanonicalTaskState] = {}
+
+        async def save_state(self, tenant_id: str, state: CanonicalTaskState) -> None:
+            self.tasks[state.task_id] = state
+
+        async def require(self, task_id: str) -> CanonicalTaskState:
+            return self.tasks[task_id]
+
+        async def list_by_directive(self, directive_id: str) -> list[CanonicalTaskState]:
+            return [t for t in self.tasks.values() if t.directive_id == directive_id]
+
+    class _InMemoryOpRepo:
+        def __init__(self, directive: Directive) -> None:
+            self._directive = directive
+
+        async def require(self, directive_id: str) -> Directive:
+            return self._directive
+
+    task_repo = _InMemoryTaskRepo()
+    task_state_machine = TaskStateMachine()
+    provenance_recorder = ProvenanceRecorder(FakeProvenanceRepository())
+    task_state_service = TaskStateService(
+        repository=task_repo,
+        state_machine=task_state_machine,
+        provenance_recorder=provenance_recorder,
+    )
+    op_repo = _InMemoryOpRepo(sample_directive)
+
+    # 1. Test rejection of duplicate step_id
+    dup_plan = IntelligenceResult(
+        request_id="req-dup",
+        objective_interpretation="Duplicate test",
+        intent="plan",
+        rationale_summary="test",
+        confidence=0.9,
+        plan=[
+            PlanStep(step_id="step_a", description="First step", expected_output="out"),
+            PlanStep(step_id="step_a", description="Duplicate step", expected_output="out"),
+        ],
+    )
+    mock_ie_dup = AsyncMock()
+    mock_ie_dup.plan_directive.return_value = dup_plan
+    req_dup = MagicMock()
+    req_dup.app.state.operational_repository = op_repo
+    req_dup.app.state.intelligence_engine = mock_ie_dup
+    req_dup.app.state.task_state_service = task_state_service
+
+    with pytest.raises(PolicyViolationError, match="Duplicate step_id 'step_a'"):
+        await execute_directive(sample_directive.directive_id, req_dup, BackgroundTasks())
+
+    # 2. Test rejection of self-dependency
+    self_dep_plan = IntelligenceResult(
+        request_id="req-self",
+        objective_interpretation="Self dep test",
+        intent="plan",
+        rationale_summary="test",
+        confidence=0.9,
+        plan=[
+            PlanStep(step_id="step_self", description="Self step", dependencies=["step_self"], expected_output="out"),
+        ],
+    )
+    mock_ie_self = AsyncMock()
+    mock_ie_self.plan_directive.return_value = self_dep_plan
+    req_self = MagicMock()
+    req_self.app.state.operational_repository = op_repo
+    req_self.app.state.intelligence_engine = mock_ie_self
+    req_self.app.state.task_state_service = task_state_service
+
+    with pytest.raises(PolicyViolationError, match="Self-dependency detected"):
+        await execute_directive(sample_directive.directive_id, req_self, BackgroundTasks())
+
+    # 3. Test rejection of unknown dependency
+    unknown_dep_plan = IntelligenceResult(
+        request_id="req-unk",
+        objective_interpretation="Unknown dep test",
+        intent="plan",
+        rationale_summary="test",
+        confidence=0.9,
+        plan=[
+            PlanStep(step_id="step_x", description="Step X", dependencies=["non_existent_step"], expected_output="out"),
+        ],
+    )
+    mock_ie_unk = AsyncMock()
+    mock_ie_unk.plan_directive.return_value = unknown_dep_plan
+    req_unk = MagicMock()
+    req_unk.app.state.operational_repository = op_repo
+    req_unk.app.state.intelligence_engine = mock_ie_unk
+    req_unk.app.state.task_state_service = task_state_service
+
+    with pytest.raises(PolicyViolationError, match="Unknown dependency 'non_existent_step'"):
+        await execute_directive(sample_directive.directive_id, req_unk, BackgroundTasks())
+
+    # 4. Test forward-reference plan execution and background persistence
+    # Step 1 ("generate_copy") depends on Step 2 ("propose_strategy"), which appears LATER in the plan!
+    valid_plan = IntelligenceResult(
+        request_id="req-valid",
+        objective_interpretation="Valid forward ref plan",
+        intent="plan",
+        rationale_summary="test",
+        confidence=0.95,
+        plan=[
+            PlanStep(
+                step_id="generate_copy",
+                description="Generate ad copy",
+                recommended_worker=WorkerRole.CREATIVE_CONTENT,
+                dependencies=["propose_strategy"],  # Forward reference!
+                expected_output="Ad copy text",
+            ),
+            PlanStep(
+                step_id="propose_strategy",
+                description="Develop marketing strategy",
+                recommended_worker=WorkerRole.STRATEGY,
+                dependencies=[],
+                expected_output="Strategy plan",
+            ),
+        ],
+    )
+
+    class _AcceptanceMockWorker(BoundedWorkerAgent):
+        capability = None
+        allowed_tools: list[str] = []
+
+        def build_payload(self, grant: Any, context: dict[str, Any]) -> dict[str, str]:
+            return {}
+
+        async def run(self, grant: Any, context: Any) -> Any:
+            from app.schemas.agent_contracts import ConfidenceInterval, EvidenceEnvelope
+            return EvidenceEnvelope(
+                task_id=grant.task_id,
+                worker_role=grant.worker_role,
+                confidence=ConfidenceInterval(point_estimate=0.95, lower_bound=0.8, upper_bound=1.0),
+                payload={"domain_status": "success"},
+            )
+
+    workers: dict[WorkerRole, BoundedWorkerAgent] = {
+        WorkerRole.STRATEGY: _AcceptanceMockWorker(),
+        WorkerRole.CREATIVE_CONTENT: _AcceptanceMockWorker(),
+    }
+
+    v_repo = FakeVectorRepository()
+    v_repo.seed(tenant_id=sample_directive.tenant_id, text="Strategy and creative guidelines")
+    rag_ctrl = RagController(HybridRetriever(v_repo), FreshnessPolicy(), SchemaValidator())
+    real_engine = IntelligenceEngine(
+        policy_evaluator=PolicyEvaluator(),
+        dag_scheduler=DagScheduler(),
+        task_state_machine=task_state_machine,
+        context_assembler=ContextAssembler(RagQueryDispatcher(rag_ctrl), BrandPersonaResolver()),
+        evidence_synthesizer=EvidenceSynthesizer(),
+        hitl_preview_generator=HitlPreviewGenerator(),
+        hitl_coordinator=HitlCoordinator(),
+        mcp_host=McpHost(AsyncMock(), AsyncMock()),
+        provenance_recorder=provenance_recorder,
+        workers=workers,
+    )
+    real_engine.plan_directive = AsyncMock(return_value=valid_plan)  # type: ignore[method-assign]
+
+    req_valid = MagicMock()
+    req_valid.app.state.operational_repository = op_repo
+    req_valid.app.state.intelligence_engine = real_engine
+    req_valid.app.state.task_state_service = task_state_service
+
+    bg_tasks = BackgroundTasks()
+    response = await execute_directive(sample_directive.directive_id, req_valid, bg_tasks)
+
+    assert len(response.tasks_created) == 2
+    step_to_task = {ti.step_id: ti.task_id for ti in response.tasks_created}
+
+    # Verify initial persisted state in repo is PENDING with valid dependencies
+    copy_task = await task_state_service.get_state(step_to_task["generate_copy"])
+    strat_task = await task_state_service.get_state(step_to_task["propose_strategy"])
+    assert copy_task.status == TaskStatus.PENDING
+    assert strat_task.status == TaskStatus.PENDING
+    assert len(copy_task.dependencies) == 1
+    assert copy_task.dependencies[0].upstream_task_id == strat_task.task_id
+
+    # Execute background tasks (runs _run_dag_in_background)
+    for bg_task in bg_tasks.tasks:
+        await bg_task()
+
+    # Verify background execution persisted terminal COMPLETED status and checkpoints
+    updated_strat = await task_state_service.get_state(strat_task.task_id)
+    updated_copy = await task_state_service.get_state(copy_task.task_id)
+
+    assert updated_strat.status == TaskStatus.COMPLETED
+    assert [cp.status for cp in updated_strat.checkpoints] == [
+        TaskStatus.GRANTED,
+        TaskStatus.IN_PROGRESS,
+        TaskStatus.COMPLETED,
+    ]
+
+    assert updated_copy.status == TaskStatus.COMPLETED
+    assert [cp.status for cp in updated_copy.checkpoints] == [
+        TaskStatus.GRANTED,
+        TaskStatus.IN_PROGRESS,
+        TaskStatus.COMPLETED,
+    ]
