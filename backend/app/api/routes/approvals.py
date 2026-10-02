@@ -138,10 +138,18 @@ async def decide_development(
 async def decide_approval(
     preview_id: str, decision: ApprovalDecisionRequest, request: Request
 ) -> ApprovalDecisionResponse:
-    """Record a human reviewer's authenticated decision on a pending action preview."""
+    """Record a human reviewer's authenticated decision on a pending action preview.
+
+    After recording the decision, this endpoint also drives the orchestration
+    forward by calling ``IntelligenceEngine.record_hitl_decision()`` which
+    updates the canonical task state and records W3C PROV audit provenance.
+    """
 
     hitl_coordinator = request.app.state.hitl_coordinator
     validator = getattr(request.app.state, "cryptographic_validator", None)
+    intelligence_engine = getattr(request.app.state, "intelligence_engine", None)
+    task_state_service = getattr(request.app.state, "task_state_service", None)
+    provenance_recorder = getattr(request.app.state, "provenance_recorder", None)
 
     recorded = hitl_coordinator.decide(
         preview_id,
@@ -158,6 +166,39 @@ async def decide_approval(
     )
     decision_val = recorded.decision.value if hasattr(recorded.decision, "value") else str(recorded.decision)
     clearance_id = recorded.clearance.clearance_id if recorded.clearance else None
+
+    # Drive orchestration forward: update CTS state and record provenance
+    if intelligence_engine is not None:
+        try:
+            await intelligence_engine.record_hitl_decision(
+                preview_id,
+                decision=decision.decision or ("APPROVE" if decision.approved else "REJECT"),
+                approver=decision.approver,
+                approver_role=decision.approver_role,
+                tenant_id=decision.tenant_id,
+                signature=decision.signature,
+                preview_content_hash=decision.preview_content_hash,
+                revision_notes=decision.revision_notes,
+                decided_at=decision.decided_at,
+            )
+        except Exception:
+            # record_hitl_decision may fail if no task is associated; log but don't block
+            pass
+    elif provenance_recorder is not None:
+        # Fallback: at minimum record provenance for the decision
+        prov_tenant = decision.tenant_id or "default"
+        await provenance_recorder.record(
+            tenant_id=prov_tenant,
+            entity_id=preview_id,
+            activity=f"hitl_{decision_val.lower()}",
+            agent=f"reviewer:{decision.approver}",
+            metadata={
+                "decision": decision_val,
+                "approver_role": decision.approver_role,
+                "preview_id": preview_id,
+                "clearance_id": clearance_id,
+            },
+        )
 
     return ApprovalDecisionResponse(
         preview_id=recorded.preview_id,

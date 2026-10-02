@@ -537,6 +537,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.creative_workflow = creative_workflow
     app.state.creative_llm_clients = creative_llm_clients
     app.state.voice_llm_clients = voice_llm_clients
+    app.state.cryptographic_validator = crypto_validator
 
     try:
         yield
