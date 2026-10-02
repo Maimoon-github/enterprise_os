@@ -1,0 +1,10 @@
+[Unit]
+Description=Enterprise OS Sandbox Provisioner Activation Socket (User)
+
+[Socket]
+ListenStream=%t/enterprise_os/provisioner.sock
+SocketMode=0660
+DirectoryMode=0770
+
+[Install]
+WantedBy=sockets.target

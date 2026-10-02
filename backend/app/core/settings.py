@@ -9,7 +9,9 @@ variables.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -79,6 +81,23 @@ class LlmSettings(BaseSettings):
         return False
 
 
+def default_provisioner_socket_path() -> str:
+    env_path = os.environ.get("ENTERPRISE_OS_PROVISIONER_SOCKET") or os.environ.get("SANDBOX_PROVISIONER_SOCKET_PATH")
+    if env_path:
+        return env_path
+    prod_path = Path("/run/enterprise_os/provisioner.sock")
+    if prod_path.exists():
+        return str(prod_path)
+    if prod_path.parent.exists() and os.access(prod_path.parent, os.W_OK):
+        return str(prod_path)
+    xdg_runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg_runtime:
+        xdg_path = Path(xdg_runtime) / "enterprise_os" / "provisioner.sock"
+        if xdg_path.exists() or os.access(xdg_runtime, os.W_OK):
+            return str(xdg_path)
+    return str(prod_path)
+
+
 class SandboxSettings(BaseSettings):
     """Configuration for Sandbox Control Plane and agent_sandbox boundary."""
 
@@ -98,7 +117,7 @@ class SandboxSettings(BaseSettings):
     max_memory_mb: int = Field(default=4096, ge=128, le=8192)
     max_cpu_cores: float = Field(default=2.0, ge=0.1, le=4.0)
     use_physical_provisioner: bool = Field(default=False)
-    provisioner_socket_path: str = Field(default="/tmp/enterprise_os_provisioner.sock")
+    provisioner_socket_path: str = Field(default_factory=default_provisioner_socket_path)
     provisioner_auth_token: str = Field(default="enterprise_os_sandbox_secure_token", repr=False)
 
 

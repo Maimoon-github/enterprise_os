@@ -1,0 +1,15 @@
+[Unit]
+Description=Enterprise OS Hardened Sandbox Provisioner Daemon (User)
+After=enterprise-os-provisioner.socket
+Requires=enterprise-os-provisioner.socket
+
+[Service]
+Type=simple
+WorkingDirectory=/home/maimoon-amin/enterprise_os
+Environment=PYTHONPATH=/home/maimoon-amin/enterprise_os/backend
+ExecStart=/home/maimoon-amin/miniconda3/envs/enterprise_os/bin/python -m app.integrations.sandbox.provisioner_daemon --systemd-activation --socket /run/user/1000/enterprise_os/provisioner.sock
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=default.target

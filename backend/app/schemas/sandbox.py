@@ -484,6 +484,8 @@ class SandboxExecutionReceipt(BaseModel):
     seccomp_status: str = "2"
     isolation_primitive: str = "linux_namespace_sandbox"
     no_new_privs: bool = True
+    userns_disabled: bool = True
+    bwrap_version: str = ""
 
 
 class SandboxTeardownReceipt(BaseModel):

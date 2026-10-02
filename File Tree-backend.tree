@@ -127,6 +127,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   │   ├── 🐍 capabilities.py
 │   │   │   ├── 🐍 client.py
 │   │   │   ├── 🐍 micro_tools.py
+│   │   │   ├── 🐍 provisioner.py
+│   │   │   ├── 🐍 provisioner_client.py
+│   │   │   ├── 🐍 provisioner_daemon.py
 │   │   │   ├── 🐍 s_alloc_core.py
 │   │   │   ├── 🐍 s_attr_core.py
 │   │   │   ├── 🐍 s_copy_core.py
@@ -243,6 +246,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 ├── 📁 tests/
 │   ├── 📁 acceptance/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 test_full_stack_production_e2e_run.py
 │   │   └── 🐍 test_governed_end_to_end_flow.py
 │   ├── 📁 competitor_intel_engine/
 │   │   ├── 🐍 __init__.py
@@ -293,6 +297,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_model_a_data_access.py
 │   │   ├── 🐍 test_outbound_after_approval.py
 │   │   ├── 🐍 test_phase5_governance_certification.py
+│   │   ├── 🐍 test_physical_sandbox_provisioner.py
 │   │   ├── 🐍 test_product_evidence_integration.py
 │   │   ├── 🐍 test_provenance_persistence.py
 │   │   ├── 🐍 test_security_boundaries_negative.py

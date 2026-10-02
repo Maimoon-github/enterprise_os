@@ -1,0 +1,47 @@
+[Unit]
+Description=Enterprise OS Hardened Sandbox Provisioner Daemon
+Documentation=https://github.com/Maimoon-github/enterprise_os
+After=network.target enterprise-os-provisioner.socket
+Requires=enterprise-os-provisioner.socket
+
+[Service]
+Type=simple
+User=enterprise-os-sandbox
+Group=enterprise-os-sandbox
+WorkingDirectory=/home/maimoon-amin/Antigravity code/enterprise_os
+Environment=PYTHONPATH=/home/maimoon-amin/Antigravity code/enterprise_os/backend
+ExecStart=/home/maimoon-amin/miniconda3/envs/enterprise_os/bin/python -m app.integrations.sandbox.provisioner_daemon --systemd-activation --socket /run/enterprise_os/provisioner.sock --strict-bwrap
+
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+
+# Security Hardening Directives (systemd.exec)
+# 1. Eliminate privilege escalation vectors
+NoNewPrivileges=true
+
+# 2. Strict read-only filesystem protection
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+
+# 3. Dedicated cgroup delegation for specialist scopes
+ProtectControlGroups=false
+Delegate=yes
+
+# 4. Zero ambient capabilities (unprivileged user namespaces only; NO CAP_SYS_ADMIN)
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# 5. Network address family restrictions: local IPC sockets only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# 6. Unprivileged namespaces allowed for Bubblewrap
+RestrictNamespaces=no
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

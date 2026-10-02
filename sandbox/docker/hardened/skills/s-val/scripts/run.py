@@ -203,6 +203,35 @@ def run_s_val(payload: dict) -> dict:
         typed_findings["exclusions"] = exclusions
         typed_findings["stopping_reason"] = stopping_reason
 
+    dossier_claims = []
+    for idx, c in enumerate(claims_to_check):
+        c_status = "SUPPORTED" if is_compliant else "REQUIRES_REVIEW"
+        dossier_claims.append({
+            "claim_id": f"claim-{idx + 1}",
+            "claim_text": c,
+            "category": "performance",
+            "validation_status": c_status,
+            "confidence": compliance_score,
+            "evidence_references": [f"doc-ev-{idx + 1}"],
+            "violations": violations if not is_compliant else [],
+        })
+
+    claims_dossier_obj = {
+        "dossier_id": f"dossier-{task_id}",
+        "tenant_id": tenant_id,
+        "product_id": str(payload.get("product_id") or "prod-default"),
+        "claims": dossier_claims,
+        "summary_status": "SUPPORTED" if is_compliant else "REQUIRES_REVIEW",
+        "total_claims": len(dossier_claims),
+        "supported_claims": len(dossier_claims) if is_compliant else 0,
+        "rejected_claims": 0 if is_compliant else len(violations),
+        "insufficient_claims": 0,
+        "conflicting_claims": 0,
+        "requires_review_claims": 0 if is_compliant else len(dossier_claims),
+        "overall_confidence": compliance_score,
+        "provenance": {"specialist": "s-val", "task_id": task_id},
+    }
+
     return {
         "status": "success" if is_compliant else "compliance_warning",
         "task_id": task_id,
@@ -215,6 +244,9 @@ def run_s_val(payload: dict) -> dict:
         "violations": json.dumps(violations),
         "typed_findings": json.dumps(typed_findings),
         "verified_dossier": f"Claim: {primary_claim} | Compliance Score: {compliance_score:.2f} | Status: {'APPROVED' if is_compliant else 'FLAGGED'}",
+        "claims_dossier": json.dumps(claims_dossier_obj),
+        "supported_claims": json.dumps(dossier_claims),
+        "approved_claims": json.dumps(dossier_claims),
     }
 
 if __name__ == "__main__":

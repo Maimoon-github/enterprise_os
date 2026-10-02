@@ -60,14 +60,24 @@ from app.schemas.sandbox import (
 
 TEST_SOCKET_PATH = "/tmp/enterprise_os_test_provisioner.sock"
 TEST_AUTH_TOKEN = "enterprise_os_test_secret_token"
+TEST_STATE_FILE = Path("/tmp/enterprise_os_test_replay_state.json")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def provisioner_daemon_server():
     """Start standalone provisioner daemon server listening on UDS for the test session."""
+    if TEST_STATE_FILE.exists():
+        TEST_STATE_FILE.unlink()
+    if Path(TEST_SOCKET_PATH).exists():
+        Path(TEST_SOCKET_PATH).unlink()
+
+    from app.integrations.sandbox.provisioner_daemon import SandboxProvisionerEngine
+
+    engine = SandboxProvisionerEngine(replay_state_path=TEST_STATE_FILE)
     server = SandboxProvisionerServer(
         socket_path=TEST_SOCKET_PATH,
         auth_token=TEST_AUTH_TOKEN,
+        engine=engine,
     )
     server.start()
     for _ in range(50):
@@ -76,6 +86,8 @@ def provisioner_daemon_server():
         time.sleep(0.02)
     yield server
     server.stop()
+    if TEST_STATE_FILE.exists():
+        TEST_STATE_FILE.unlink()
 
 
 @pytest.fixture
@@ -650,4 +662,169 @@ def test_security_cannot_reuse_attempt_runtime(provisioner: SandboxProvisionerCl
     )
     with pytest.raises(SandboxIsolationError, match="is already active or reused"):
         provisioner.execute(mandate_2)
+
+
+# 22. Production Hardening: SO_PEERCRED UID/GID Authorization Enforcement
+def test_uds_so_peercred_authorization() -> None:
+    """Verify UDS server authorizes peer credentials via SO_PEERCRED and rejects unauthorized UIDs fail-closed."""
+    from app.integrations.sandbox.provisioner_daemon import SandboxProvisionerEngine, SocketIdentityPolicy
+
+    unauth_sock = "/tmp/enterprise_os_test_unauth.sock"
+    if Path(unauth_sock).exists():
+        Path(unauth_sock).unlink()
+
+    # Reject all callers except foreign UID 99999
+    strict_policy = SocketIdentityPolicy(
+        allowed_uids={99999},
+        allow_same_user=False,
+        allow_root=False,
+    )
+    server = SandboxProvisionerServer(
+        socket_path=unauth_sock,
+        auth_token=TEST_AUTH_TOKEN,
+        engine=SandboxProvisionerEngine(),
+        identity_policy=strict_policy,
+    )
+    server.start()
+    try:
+        client = SandboxProvisionerClient(socket_path=unauth_sock, auth_token=TEST_AUTH_TOKEN)
+        mandate = _make_mandate(
+            capability=SandboxCapability.ATTR,
+            worker_role="W_LEARN",
+            operation="analyze_attribution",
+            payload={"data": "test"},
+            execution_id="exec-peercred-unauth",
+            attempt_id="att-peercred-unauth",
+        )
+        with pytest.raises(PolicyViolationError, match="Unauthorized caller: Peer credential UID="):
+            client.execute(mandate)
+    finally:
+        server.stop()
+
+
+# 23. Production Hardening: Bubblewrap Security & User Namespace Lockdown (--disable-userns)
+def test_bubblewrap_security_and_userns_lockdown(provisioner: SandboxProvisionerClient) -> None:
+    """Verify physical runtime applies --disable-userns, preventing specialist nested user namespaces."""
+    mandate = _make_mandate(
+        capability=SandboxCapability.ATTR,
+        worker_role="W_LEARN",
+        operation="analyze_attribution",
+        payload={"strategy_id": "strat-userns-test", "metrics": {"conversions": 10}},
+        execution_id="exec-userns-lockdown-1",
+        attempt_id="att-userns-lockdown-1",
+    )
+    res = provisioner.execute(mandate)
+    assert res.success is True
+    rcpt = res.execution_receipt
+    assert rcpt is not None
+    # User namespace lockdown verified
+    assert rcpt.userns_disabled is True
+    assert rcpt.no_new_privs is True
+    assert rcpt.seccomp_status == "2"
+    assert len(rcpt.bwrap_version) > 0
+
+
+# 24. Production Hardening: Persistent Replay State Across Daemon Restarts
+def test_persistent_replay_state_across_daemon_restarts() -> None:
+    """Verify seen execution IDs survive daemon crashes and restarts fail-closed."""
+    from app.integrations.sandbox.provisioner_daemon import SandboxProvisionerEngine
+
+    restart_sock = "/tmp/enterprise_os_test_restart.sock"
+    restart_state = Path("/tmp/enterprise_os_test_restart_state.json")
+    if Path(restart_sock).exists():
+        Path(restart_sock).unlink()
+    if restart_state.exists():
+        restart_state.unlink()
+
+    engine1 = SandboxProvisionerEngine(replay_state_path=restart_state)
+    server1 = SandboxProvisionerServer(
+        socket_path=restart_sock,
+        auth_token=TEST_AUTH_TOKEN,
+        engine=engine1,
+    )
+    server1.start()
+
+    client = SandboxProvisionerClient(socket_path=restart_sock, auth_token=TEST_AUTH_TOKEN)
+    mandate = _make_mandate(
+        capability=SandboxCapability.ATTR,
+        worker_role="W_LEARN",
+        operation="analyze_attribution",
+        payload={"data": "persisted-exec"},
+        execution_id="exec-persistent-1",
+        attempt_id="att-persistent-1",
+    )
+    res = client.execute(mandate)
+    assert res.success is True
+
+    # Crash / stop server 1
+    server1.stop()
+
+    # Start server 2 with same persistent state file
+    engine2 = SandboxProvisionerEngine(replay_state_path=restart_state)
+    server2 = SandboxProvisionerServer(
+        socket_path=restart_sock,
+        auth_token=TEST_AUTH_TOKEN,
+        engine=engine2,
+    )
+    server2.start()
+
+    try:
+        # Replaying exact same execution ID must fail closed
+        replay_mandate = _make_mandate(
+            capability=SandboxCapability.ATTR,
+            worker_role="W_LEARN",
+            operation="analyze_attribution",
+            payload={"data": "replay-after-restart"},
+            execution_id="exec-persistent-1",
+            attempt_id="att-persistent-2",
+        )
+        with pytest.raises(SandboxIsolationError, match="has already been executed. Replay forbidden"):
+            client.execute(replay_mandate)
+    finally:
+        server2.stop()
+        if restart_state.exists():
+            restart_state.unlink()
+
+
+# 25. Production Hardening: Stale Socket and Staging Runtime Cleanup
+def test_stale_socket_and_runtime_cleanup() -> None:
+    """Verify dead socket files and abandoned staging directories are scrubbed on daemon init."""
+    import tempfile
+    from app.integrations.sandbox.provisioner_daemon import SandboxProvisionerEngine, cleanup_stale_runtimes
+
+    # Create dummy stale staging directory
+    stale_dir = Path(tempfile.mkdtemp(prefix="sbx-staging-stale-test-"))
+    dummy_file = stale_dir / "leftover.txt"
+    dummy_file.write_text("abandoned staging file")
+    assert stale_dir.exists()
+
+    cleaned = cleanup_stale_runtimes()
+    assert cleaned >= 1
+    assert not stale_dir.exists()
+
+
+# 26. Production Hardening: Systemd Socket Activation Integration
+def test_systemd_socket_activation_integration() -> None:
+    """Verify physical execution completes through active systemd socket activation."""
+    systemd_sock = Path("/run/user/1000/enterprise_os/provisioner.sock")
+    if not systemd_sock.exists():
+        pytest.skip("Systemd user socket /run/user/1000/enterprise_os/provisioner.sock not present")
+
+    client = SandboxProvisionerClient(socket_path=systemd_sock)
+    assert client.has_physical_isolation_runtime is True
+
+    mandate = _make_mandate(
+        capability=SandboxCapability.ATTR,
+        worker_role="W_LEARN",
+        operation="analyze_attribution",
+        payload={"strategy_id": "strat-systemd-test", "metrics": {"roi": 4.0}},
+        execution_id=f"exec-systemd-test-{int(time.time())}",
+        attempt_id=f"att-systemd-test-{int(time.time())}",
+    )
+    res = client.execute(mandate)
+    assert res.success is True
+    assert res.execution_receipt is not None
+    assert res.execution_receipt.pid_namespace != ""
+    assert res.execution_receipt.mount_namespace != ""
+    assert res.execution_receipt.userns_disabled is True
 

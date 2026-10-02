@@ -894,6 +894,12 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/sandbox
 │   │   ├── 🐍 setup.py
 │   │   └── 📄 uv.lock
 │   └── ⚙️ .gitignore
+├── 📁 systemd/
+│   ├── 📄 enterprise-os-provisioner.service
+│   ├── 📄 enterprise-os-provisioner.socket
+│   ├── 📄 install_provisioner_service.sh
+│   ├── 📄 user-enterprise-os-provisioner.service
+│   └── 📄 user-enterprise-os-provisioner.socket
 ├── 📁 website/
 │   ├── 📁 diagrams/
 │   │   ├── 📝 README.md
@@ -1361,7 +1367,6 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/sandbox
 ├── ⚙️ docker-compose.yaml
 ├── ⚙️ package.json
 ├── ⚙️ pnpm-lock.yaml
-├── ⚙️ pnpm-workspace.yaml
-└── 🐍 server.py
+└── ⚙️ pnpm-workspace.yaml
 
 ────────────────────────────────────────────────────────────────────────────────

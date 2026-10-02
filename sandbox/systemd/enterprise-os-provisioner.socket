@@ -1,0 +1,14 @@
+[Unit]
+Description=Enterprise OS Sandbox Provisioner Activation Socket
+Documentation=https://github.com/Maimoon-github/enterprise_os
+
+[Socket]
+ListenStream=/run/enterprise_os/provisioner.sock
+SocketUser=enterprise-os-backend
+SocketGroup=enterprise-os-sandbox
+SocketMode=0660
+DirectoryMode=0770
+Backlog=64
+
+[Install]
+WantedBy=sockets.target

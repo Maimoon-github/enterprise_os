@@ -541,8 +541,8 @@ class StrategyResultEnvelope(EvidenceEnvelope):
                 )
 
             if self.channel_proposals:
-                total_prop = sum(p.allocated_amount for p in self.channel_proposals)
-                if total_prop > self.strategy_plan.budget_ceiling + 0.01:
+                total_prop = round(sum(p.allocated_amount for p in self.channel_proposals), 2)
+                if total_prop > round(self.strategy_plan.budget_ceiling, 2) + 0.01:
                     raise ValueError(
                         f"Sum of channel spend proposals ({total_prop}) exceeds "
                         f"budget ceiling ({self.strategy_plan.budget_ceiling})"
