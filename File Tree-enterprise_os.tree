@@ -436,6 +436,10 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_full_stack_production_e2e_run.py
 │   │   │   └── 🐍 test_governed_end_to_end_flow.py
+│   │   ├── 📁 adversarial/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 runner.py
+│   │   │   └── 🐍 test_owasp_agentic_top10.py
 │   │   ├── 📁 competitor_intel_engine/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_advertising.py
@@ -640,8 +644,9 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── ⚙️ tsconfig.json
 │   └── 📄 tsconfig.tsbuildinfo
 ├── 📁 release/
-│   ├── 📁 keys/
 │   ├── 🐍 __init__.py
+│   ├── 🐍 attestation_verifier.py
+│   ├── 🐍 clean_machine_harness.py
 │   ├── 🐍 dependency_locker.py
 │   ├── 🐍 installer.py
 │   ├── 🐍 pipeline.py

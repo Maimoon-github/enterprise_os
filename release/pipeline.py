@@ -21,6 +21,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+from release.attestation_verifier import AttestationPolicy, AttestationVerifier
 from release.dependency_locker import DependencyLocker
 from release.installer import CleanRoomInstaller
 from release.provenance import SlsaProvenanceGenerator
@@ -36,12 +37,14 @@ class EnterpriseOsReleasePipeline:
         root_dir: str | Path,
         release_version: str = "1.0.0-rc1",
         staging_dir: str | Path | None = None,
+        allow_dirty: bool = False,
     ) -> None:
         self.root_dir = Path(root_dir).resolve()
         self.release_version = release_version
         self.dist_dir = self.root_dir / "dist"
         self.dist_dir.mkdir(parents=True, exist_ok=True)
         self.staging_dir = Path(staging_dir).resolve() if staging_dir else (self.root_dir / "dist" / "staging_target")
+        self.allow_dirty = allow_dirty
 
     def run_cmd(self, cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
         target_cwd = cwd or self.root_dir
@@ -56,13 +59,16 @@ class EnterpriseOsReleasePipeline:
     def validate_clean_checkout(self) -> dict[str, str]:
         """Verify git status is clean and return commit metadata."""
         status_proc = self.run_cmd(["git", "status", "--porcelain"])
-        dirty_lines = [l for l in status_proc.stdout.splitlines() if not l.startswith("?? dist") and not l.startswith("?? release/keys")]
+        dirty_lines = [l for l in status_proc.stdout.splitlines() if not l.startswith("?? dist")]
         if dirty_lines:
-            raise RuntimeError(f"Cannot build release from dirty git tree:\n" + "\n".join(dirty_lines))
+            if self.allow_dirty:
+                print(f"[WARNING] Building release with dirty tree (allowed via --allow-dirty):\n" + "\n".join(dirty_lines[:5]))
+            else:
+                raise RuntimeError(f"Cannot build release from dirty git tree:\n" + "\n".join(dirty_lines))
 
         commit_sha = self.run_cmd(["git", "rev-parse", "HEAD"]).stdout.strip()
         return {
-            "status": "CLEAN",
+            "status": "DIRTY_DEV_BUILD" if dirty_lines else "CLEAN",
             "commit_sha": commit_sha,
             "version": self.release_version,
         }
@@ -221,9 +227,10 @@ asyncio.run(verify())
         )
         prov_path = self.dist_dir / f"enterprise-os-{self.release_version}.provenance.json"
 
-        # 7. Sign Release Manifest
-        print("--> Cryptographically signing release manifest (Ed25519)...")
+        # 7. Sign Release Manifest with Strict Key Isolation
+        print("--> Auditing key isolation and cryptographically signing release manifest (Ed25519)...")
         signer = ReleaseSigner(self.root_dir, self.release_version)
+        key_audit = signer.validate_key_isolation()
         sign_res = signer.create_and_sign_manifest(
             artifacts=[tar_path, sbom_path, prov_path],
             git_commit=checkout_info["commit_sha"],
@@ -231,12 +238,24 @@ asyncio.run(verify())
         manifest_path = self.dist_dir / f"enterprise-os-{self.release_version}.manifest.json"
         pub_key_path = self.dist_dir / "release_authority_pub.pem"
 
-        # 8. Clean-Room Staging Installation
-        print(f"--> Installing into clean-room staging host target ({self.staging_dir})...")
+        # 8. Clean-Room Staging Installation with Builder Attestation Enforcement
+        print(f"--> Verifying builder attestation and installing into staging target ({self.staging_dir})...")
+        tar_sha256 = hashlib.sha256(tar_path.read_bytes()).hexdigest()
+        policy = AttestationPolicy(
+            expected_repository=os.environ.get("GITHUB_REPOSITORY", "Maimoon-github/enterprise_os"),
+            expected_workflow=".github/workflows/enterprise_os_release.yml",
+            expected_commit=checkout_info["commit_sha"],
+            expected_tag=f"v{self.release_version.lstrip('v')}",
+            expected_artifact_sha256=tar_sha256,
+            require_sigstore_attestation=False,
+            require_ed25519_manifest=True,
+        )
         installer = CleanRoomInstaller(
             release_tar_path=tar_path,
             manifest_path=manifest_path,
             pub_key_path=pub_key_path,
+            provenance_path=prov_path,
+            attestation_policy=policy,
             target_install_dir=self.staging_dir,
         )
         install_receipt = installer.install()
@@ -267,6 +286,7 @@ asyncio.run(verify())
                 "signature": sign_res["signature_path"],
             },
             "quality_gates": quality_gates,
+            "key_isolation": key_audit,
             "installation": install_receipt,
             "smoke_test": smoke_res,
             "rollback_proof": rollback_receipt,
@@ -282,10 +302,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Enterprise OS Release Pipeline")
     parser.add_argument("--version", default="1.0.0-rc1", help="Release version")
     parser.add_argument("--staging-dir", default=None, help="Target staging directory")
+    parser.add_argument("--allow-dirty", action="store_true", help="Allow building from dirty git tree (development only)")
     args = parser.parse_args()
 
     root_dir = Path(__file__).resolve().parent.parent
-    pipeline = EnterpriseOsReleasePipeline(root_dir, release_version=args.version, staging_dir=args.staging_dir)
+    pipeline = EnterpriseOsReleasePipeline(
+        root_dir,
+        release_version=args.version,
+        staging_dir=args.staging_dir,
+        allow_dirty=args.allow_dirty,
+    )
     report = pipeline.run_full_pipeline()
     print("\n" + "=" * 80)
     print(f"ENTERPRISE OS {args.version} PRODUCTION RELEASE PIPELINE: CERTIFIED")
