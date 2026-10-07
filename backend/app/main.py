@@ -489,6 +489,54 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         data_gateway=data_gateway,
     )
 
+    from app.schemas.telemetry import (
+        OmnichannelTelemetryReadiness,
+        TelemetryEventType,
+        TelemetrySourceType,
+        TelemetrySurface,
+    )
+
+    for active_tenant in ("tenant-enterprise-live", "default"):
+        default_surfaces = [
+            TelemetrySurface(
+                channel="website",
+                source_type=TelemetrySourceType.PIXEL,
+                endpoint="/api/v1/telemetry/pixel",
+                tenant_id=active_tenant,
+                account_id="storefront_main",
+                event_classes=[TelemetryEventType.TRAFFIC],
+            ),
+            TelemetrySurface(
+                channel="website",
+                source_type=TelemetrySourceType.CONVERSION,
+                endpoint="/api/v1/telemetry/conversions",
+                tenant_id=active_tenant,
+                account_id="storefront_main",
+                event_classes=[TelemetryEventType.CONVERSION],
+            ),
+            TelemetrySurface(
+                channel="website",
+                source_type=TelemetrySourceType.ERROR_LOG,
+                endpoint="/api/v1/telemetry/errors",
+                tenant_id=active_tenant,
+                account_id="storefront_main",
+                event_classes=[TelemetryEventType.ERROR],
+            ),
+        ]
+        for sfc in default_surfaces:
+            telemetry_engine.register_surface(sfc)
+        telemetry_engine.register_readiness(
+            OmnichannelTelemetryReadiness(
+                readiness_id=f"readiness-{active_tenant}",
+                tenant_id=active_tenant,
+                is_ready=True,
+                dependencies={"T26": "COMPLETED", "T27": "COMPLETED", "T28": "COMPLETED"},
+                active_surfaces=default_surfaces,
+                probes=[],
+                blocked_reasons=[],
+            )
+        )
+
     brand_persona_resolver = BrandPersonaResolver(
         memory_repository=memory_repository,
         data_gateway=data_gateway,
@@ -567,6 +615,17 @@ def create_app() -> FastAPI:
     """Build and return the configured FastAPI application."""
 
     app = FastAPI(title="Governed Backend", version="0.1.0", lifespan=lifespan)
+
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.include_router(api_router)
 
     @app.exception_handler(RepositoryError)

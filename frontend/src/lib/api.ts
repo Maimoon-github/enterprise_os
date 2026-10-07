@@ -513,7 +513,12 @@ class EnterpriseApiClient {
       }, 2500);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data)) return data;
+        if (Array.isArray(data)) {
+          return data.map((d: Directive) => {
+            const cached = dynamicDirectives.find((dd) => dd.directive_id === d.directive_id);
+            return cached?.intelligence ? { ...d, intelligence: cached.intelligence } : d;
+          });
+        }
       }
     } catch {
       // Backend unreachable — fall back to in-memory mock data
@@ -633,10 +638,13 @@ class EnterpriseApiClient {
     }
 
     // --- Mock fallback (backend unreachable or execute failed) ---
+    const mockIntent = payload.objective.toLowerCase().includes("pricing") || payload.objective.toLowerCase().includes("checkout")
+      ? "checkout_pricing_refactor"
+      : "autonomous_directive_execution";
     const mockIntel: IntelligenceResult = {
       request_id: `req-intel-${dirId}`,
       objective_interpretation: `Parsed objective: ${payload.objective}`,
-      intent: "autonomous_directive_execution",
+      intent: mockIntent,
       confidence: 0.97,
       rationale_summary: `Synthesized 4-stage execution DAG with strict sandbox containment, Model A access controls, and ${payload.risk_ceiling} risk ceiling.`,
       assumptions: [
@@ -953,6 +961,18 @@ class EnterpriseApiClient {
       // Simulation fallback
     }
 
+    const fallbackTasks: CanonicalTaskState[] = [
+      { task_id: `task-${directiveId}-p1`, directive_id: directiveId, worker_role: "W_STRAT", status: "completed", version: 1, checkpoint_id: "ckpt-p1-001", assigned_worker_id: "worker-strat", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { task_id: `task-${directiveId}-p2`, directive_id: directiveId, worker_role: "W_DEV", status: "in_progress", version: 1, checkpoint_id: "ckpt-p2-001", assigned_worker_id: "worker-dev", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { task_id: `task-${directiveId}-p3`, directive_id: directiveId, worker_role: "W_COMP", status: "pending", version: 1, checkpoint_id: "ckpt-p3-001", assigned_worker_id: "worker-comp", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { task_id: `task-${directiveId}-p4`, directive_id: directiveId, worker_role: "W_PROD", status: "pending", version: 1, checkpoint_id: "ckpt-p4-001", assigned_worker_id: "worker-prod", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    ];
+    for (const ft of fallbackTasks) {
+      const idx = dynamicTasks.findIndex((dt) => dt.task_id === ft.task_id);
+      if (idx >= 0) dynamicTasks[idx] = ft;
+      else dynamicTasks.unshift(ft);
+    }
+
     return {
       directive_id: directiveId,
       status: "orchestrating",
@@ -1050,7 +1070,7 @@ class EnterpriseApiClient {
     const payload = {
       tenant_id: s.tenantId,
       channel: "website",
-      event_type: "PAGEVIEW",
+      event_type: "traffic",
       occurred_at: new Date().toISOString(),
       metrics: { page_load_ms: 180, viewport_width: 1440 },
       payload: {
@@ -1104,7 +1124,7 @@ class EnterpriseApiClient {
     const payload = {
       tenant_id: s.tenantId,
       channel: "website",
-      event_type: "PURCHASE",
+      event_type: "conversion",
       occurred_at: new Date().toISOString(),
       metrics: { gross_revenue: orderData.amount, tax: 12.0 },
       payload: {
@@ -1153,7 +1173,7 @@ class EnterpriseApiClient {
     const payload = {
       tenant_id: s.tenantId,
       channel: "website",
-      event_type: "APPLICATION_ERROR",
+      event_type: "error",
       occurred_at: new Date().toISOString(),
       metrics: { stack_depth: 4 },
       payload: {

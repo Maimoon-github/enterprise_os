@@ -103,7 +103,11 @@ export default function DirectivesPage() {
 
       await fetchDirs();
       const updated = await api.getDirectives();
-      const newest = updated.find((d) => d.directive_id === res.directive_id) || updated[0];
+      const found = updated.find((d) => d.directive_id === res.directive_id) || updated[0];
+      const newest = {
+        ...found,
+        intelligence: found?.intelligence || res.intelligence,
+      };
       setSelectedDirective(newest);
       setObjective("");
       addToast({
