@@ -293,6 +293,12 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 logging.py
 │   │   │   ├── 🐍 settings.py
 │   │   │   └── 🐍 trace_context.py
+│   │   ├── 📁 disaster_recovery/
+│   │   │   ├── 🐍 __init__.py
+│   │   │   ├── 🐍 postgres_pitr_engine.py
+│   │   │   ├── 🐍 rpo_rto.py
+│   │   │   ├── 🐍 state_integrity_verifier.py
+│   │   │   └── 🐍 wal_archive_vault.py
 │   │   ├── 📁 integrations/
 │   │   │   ├── 📁 ads/
 │   │   │   │   ├── 🐍 __init__.py
@@ -363,6 +369,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   │   └── 🐍 vector.py
 │   │   │   ├── 🐍 __init__.py
 │   │   │   └── 🐍 database.py
+│   │   ├── 📁 recovery/
 │   │   ├── 📁 schemas/
 │   │   │   ├── 📁 development/
 │   │   │   │   ├── 🐍 __init__.py
@@ -477,6 +484,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 test_state_machine.py
 │   │   │   ├── 🐍 test_ui_layout_agent.py
 │   │   │   └── 🐍 test_verification_agent.py
+│   │   ├── 📁 dr/
+│   │   │   └── 🐍 test_postgresql_wal_pitr_recovery.py
 │   │   ├── 📁 integration/
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 test_cgroup_delegation_and_identity.py
@@ -648,6 +657,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 🐍 attestation_verifier.py
 │   ├── 🐍 clean_machine_harness.py
 │   ├── 🐍 dependency_locker.py
+│   ├── 🐍 dr_clean_host_harness.py
 │   ├── 🐍 installer.py
 │   ├── 🐍 pipeline.py
 │   ├── 🐍 provenance.py
