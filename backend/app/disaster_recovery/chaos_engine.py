@@ -34,7 +34,7 @@ import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import asyncpg
 from cryptography.hazmat.primitives import serialization
@@ -74,7 +74,7 @@ from app.orchestration.task_state_machine import TaskStateMachine
 from app.persistence.database import Database
 from app.persistence.repositories.provenance import ProvenanceRepository
 from app.persistence.repositories.telemetry import TelemetryRepository
-from app.schemas.action_preview import ActionPreview, ActionPreviewKind
+from app.schemas.action_preview import ActionPreview, ActionPreviewKind, SpendPreviewDetails
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.provenance import ProvenanceRecord
@@ -1004,7 +1004,7 @@ class EnterpriseOSChaosEngine:
         mock_ads_adapter = MockReconcilingAdsAdapter()
         hitl = HitlCoordinator()
         prov_repo = InMemoryProvenanceRepository()
-        prov_recorder = ProvenanceRecorder(repository=prov_repo)
+        prov_recorder = ProvenanceRecorder(repository=cast(ProvenanceRepository, prov_repo))
 
         # Step 1: HITL Approved
         preview_id = f"prev-chaos-s8-{uuid.uuid4().hex[:6]}"
@@ -1015,10 +1015,10 @@ class EnterpriseOSChaosEngine:
             tenant_id="tenant-s8",
             kind=ActionPreviewKind.SPEND,
             summary="Deploy Meta campaign for certified chaos testing",
-            payload={"campaign_id": "camp-initial", "budget": 500.0, "channel": "meta"},
-            affected_entities=["meta_ads_account"],
+            proposed_action="deploy_campaign",
             spend_amount=1000.0,
             risk_level=RiskLevel.MEDIUM,
+            spend_details=SpendPreviewDetails(channel="meta", allocated_amount=500.0),
         )
         hitl.submit_for_approval(preview)
         hitl.decide(
