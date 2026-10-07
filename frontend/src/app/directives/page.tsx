@@ -1,26 +1,17 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   GitBranch,
   Sparkles,
   ArrowRight,
-  Shield,
-  Layers,
-  CheckCircle,
-  Clock,
   Bot,
-  AlertCircle,
-  FileCode,
-  DollarSign,
   Play,
-  Zap,
   Box,
-  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import { api, MOCK_DIRECTIVES } from "@/lib/api";
-import { Directive, PlanStep, IntelligenceResult, CanonicalTaskState } from "@/lib/types";
+import { PlanStep, IntelligenceResult, CanonicalTaskState } from "@/lib/types";
 import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
 import { useToast } from "@/components/ui/Toast";
 
@@ -67,13 +58,13 @@ export default function DirectivesPage() {
   const [settings] = useState<EnterpriseSettings>(getStoredSettings());
   const { addToast } = useToast();
 
-  const fetchDirs = async () => {
+  const fetchDirs = useCallback(async () => {
     const data = await api.getDirectives();
     if (data && data.length > 0) {
       setDirectives(data);
       if (!selectedDirective) setSelectedDirective(data[0]);
     }
-  };
+  }, [selectedDirective]);
 
   const fetchDirectiveTasks = async (dirId: string) => {
     try {
@@ -86,7 +77,7 @@ export default function DirectivesPage() {
 
   useEffect(() => {
     fetchDirs();
-  }, []);
+  }, [fetchDirs]);
 
   useEffect(() => {
     if (selectedDirective?.directive_id) {

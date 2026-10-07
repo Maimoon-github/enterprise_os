@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   CheckSquare,
   ShieldCheck,
-  AlertTriangle,
   FileCode,
   DollarSign,
   Check,
@@ -13,7 +12,6 @@ import {
   Clock,
   KeyRound,
   FileCheck2,
-  RefreshCw,
   Zap,
   Box,
   ArrowRight,
@@ -144,17 +142,17 @@ export default function ApprovalsPage() {
 
   const { addToast } = useToast();
 
-  const fetchPreviews = async () => {
+  const fetchPreviews = useCallback(async () => {
     const data = await api.getApprovalPreviews();
     if (data && data.length > 0) {
       setPreviews(data);
       if (!selectedPreview) setSelectedPreview(data[0]);
     }
-  };
+  }, [selectedPreview]);
 
   useEffect(() => {
     fetchPreviews();
-  }, []);
+  }, [fetchPreviews]);
 
   const handleDecision = async (decision: "APPROVE" | "REJECT" | "REQUEST_REVISION" | "HOLD") => {
     if (!selectedPreview) return;

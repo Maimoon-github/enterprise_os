@@ -295,3 +295,67 @@ export interface SandboxMicroToolResult {
   error?: string;
 }
 
+// --- Production Observability & SLO Types ---
+export interface ProductionSLO {
+  sli_id: string;
+  name: string;
+  category: "directive" | "sandbox" | "hitl" | "outbound" | "telemetry" | "database_dr" | "observability_pipeline";
+  target_value: number;
+  actual_value: number;
+  comparison: "gte" | "lte";
+  compliant: boolean;
+  unit: string;
+  good_events: number;
+  total_events: number;
+  error_budget_percentage: number;
+  consumed_error_budget_percentage: number;
+  remaining_error_budget_percentage: number;
+  burn_rate_1h: number;
+  burn_rate_6h: number;
+}
+
+export interface ObservabilityPipelineStageInfo {
+  stage: string;
+  name: string;
+  observed: boolean;
+  latency_seconds: number;
+}
+
+export interface ObservabilityCompletenessRecord {
+  directive_id: string;
+  tenant_id: string;
+  root_trace_id: string;
+  stages_seen: string[];
+  missing_stages: string[];
+  orphan_spans_count: number;
+  dropped_telemetry_count: number;
+  cardinality_violations_count: number;
+  complete: boolean;
+  completeness_ratio: number;
+}
+
+// --- Disaster Recovery & Chaos Certification Types ---
+export interface ChaosScenarioSummary {
+  scenario_id: string;
+  order: number;
+  name: string;
+  injected_failure: string;
+  expected_behavior: string;
+  observed_behavior: string;
+  passed: boolean;
+  duration_seconds: number;
+}
+
+export interface DisasterRecoveryMetrics {
+  rpo_actual_seconds: number;
+  rpo_target_seconds: number;
+  rto_actual_seconds: number;
+  rto_target_seconds: number;
+  wal_vault_status: string;
+  segments_count: number;
+  bit_rot_tamper_detected: boolean;
+  fail_closed_verified: boolean;
+  acknowledgement_boundary_mutations: number;
+  reconciliation_guaranteed: boolean;
+}
+

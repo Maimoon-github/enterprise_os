@@ -6,7 +6,6 @@ import {
   ShieldCheck,
   Activity,
   Sliders,
-  ExternalLink,
   Box,
   ArrowRight,
 } from "lucide-react";

@@ -6,29 +6,15 @@ import {
   Cpu,
   Shield,
   Layers,
-  Sparkles,
-  Zap,
   Lock,
-  Server,
-  FileCheck,
   Activity,
   CheckCircle2,
   RefreshCw,
   Sliders,
-  DollarSign,
-  Search,
-  KeyRound,
-  FileText,
-  AlertCircle,
   Database,
-  ArrowRight,
-  Code2,
-  FileCode,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { CanonicalTaskState } from "@/lib/types";
-import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
-import { useToast } from "@/components/ui/Toast";
 
 type SandboxTab = "telemetry" | "specialists" | "governance" | "containment";
 
@@ -133,12 +119,10 @@ const SPECIALIST_SPECS: SpecialistSpec[] = [
 ];
 
 export default function SandboxPortalPage() {
-  const [settings] = useState<EnterpriseSettings>(getStoredSettings());
   const [activeTab, setActiveTab] = useState<SandboxTab>("telemetry");
   const [tasks, setTasks] = useState<CanonicalTaskState[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [selectedSpecialist, setSelectedSpecialist] = useState<SpecialistSpec>(SPECIALIST_SPECS[0]);
-  const { addToast } = useToast();
 
   const loadTasks = async () => {
     setIsLoadingTasks(true);
@@ -507,62 +491,67 @@ export default function SandboxPortalPage() {
       {/* Tab 4: Hardened Container Specs */}
       {activeTab === "containment" && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-          <div className="border-b border-slate-800 pb-4">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Box className="w-5 h-5 text-indigo-400" />
-              Hardened Sandbox Deployment Specification
-            </h2>
-            <p className="text-xs text-slate-400 mt-1">
-              Specification defined in <code className="text-cyan-300">sandbox/docker/hardened/docker-compose.hardened.yaml</code>.
-            </p>
+          <div className="border-b border-slate-800 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Box className="w-5 h-5 text-indigo-400" />
+                Hardened Physical Provisioner & Sandbox Containment
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Out-of-process unprivileged daemon boundary communicating over authenticated <code className="text-cyan-300">/run/enterprise_os/provisioner.sock</code> (mode 0660).
+              </p>
+            </div>
+            <span className="px-3 py-1 rounded-full text-xs font-mono font-semibold uppercase bg-emerald-950 text-emerald-400 border border-emerald-800">
+              Zero Host Fallback • Fail-Closed
+            </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-2">
               <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Cpu className="w-4 h-4 text-cyan-400" /> Cgroup Resource Ceilings
+                <Cpu className="w-4 h-4 text-cyan-400" /> Cgroup v2 Dynamic Scope Manager
               </h4>
               <ul className="text-xs text-slate-400 space-y-1 font-mono">
-                <li>• mem_limit: 4g</li>
-                <li>• cpus: 2.0</li>
-                <li>• pids_limit: 1024</li>
-                <li>• shm_size: 2gb</li>
+                <li>• attempt_scope: per-execution dynamic cgroup</li>
+                <li>• memory_max: 4,096 MB (swap disabled)</li>
+                <li>• cpu_quota: 2.0 cores strict ceiling</li>
+                <li>• pids_max: 1,024 ceiling (fork-bomb immune)</li>
               </ul>
             </div>
 
             <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-2">
               <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Shield className="w-4 h-4 text-emerald-400" /> Seccomp & Privileges
+                <Shield className="w-4 h-4 text-emerald-400" /> Bubblewrap & Namespace Hardening
               </h4>
               <ul className="text-xs text-slate-400 space-y-1 font-mono">
-                <li>• no-new-privileges: true</li>
-                <li>• seccomp: ./seccomp/worker-seccomp.json</li>
-                <li>• cap_drop: ALL</li>
-                <li>• user: 1000:1000 (non-root)</li>
+                <li>• bwrap_version: 0.13.0 (≥ 0.12.0 CVE-2026-87766 defense)</li>
+                <li>• flags: --unshare-user --disable-userns</li>
+                <li>• namespaces: user, pid, net, ipc, uts, mount</li>
+                <li>• fallback_policy: Zero host execution (fails closed)</li>
               </ul>
             </div>
 
             <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-2">
               <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-amber-400" /> Egress Proxy Sidecar
+                <Lock className="w-4 h-4 text-amber-400" /> UDS Peer Credential Authorization
               </h4>
               <ul className="text-xs text-slate-400 space-y-1 font-mono">
-                <li>• proxy_server: http://aio-egress-proxy:8118</li>
-                <li>• default_policy: DENY_ALL</li>
-                <li>• allowlist: allowed-domains.txt</li>
-                <li>• network: sandbox-internal (zero public routing)</li>
+                <li>• socket_path: /run/enterprise_os/provisioner.sock</li>
+                <li>• socket_mode: 0660 (systemd socket activation FD 3)</li>
+                <li>• identity_check: SO_PEERCRED UID/GID verification</li>
+                <li>• shared_secret: HMAC bearer token authorized</li>
               </ul>
             </div>
 
             <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-2">
               <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Database className="w-4 h-4 text-indigo-400" /> Ephemeral Tmpfs Storage
+                <Database className="w-4 h-4 text-indigo-400" /> Ephemeral Tmpfs & Staging Scrubbing
               </h4>
               <ul className="text-xs text-slate-400 space-y-1 font-mono">
-                <li>• /tmp: rw,noexec,nosuid,size=1024m</li>
-                <li>• /workspace: rw,size=2048m</li>
-                <li>• /home/gem/skills: ro (read-only mount)</li>
-                <li>• lifecycle: deterministically scrubbed</li>
+                <li>• staging_dir: sbx-staging-exec-* private directory</li>
+                <li>• scrub_policy: deterministic teardown upon crash/finish</li>
+                <li>• read_only_mounts: /usr, /lib, /bin, skills/</li>
+                <li>• crash_resilience: 0 zombie processes survivor guarantee</li>
               </ul>
             </div>
           </div>

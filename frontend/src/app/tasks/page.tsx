@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Kanban,
   CheckCircle2,
@@ -8,12 +8,10 @@ import {
   ArrowRight,
   Zap,
   Box,
-  ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
 import { api, MOCK_TASKS } from "@/lib/api";
 import { CanonicalTaskState, TaskStatus } from "@/lib/types";
-import { getStoredSettings, EnterpriseSettings } from "@/lib/settings";
 import { useToast } from "@/components/ui/Toast";
 
 const COLUMNS: { id: TaskStatus; title: string; color: string; borderColor: string }[] = [
@@ -28,19 +26,18 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<CanonicalTaskState[]>(MOCK_TASKS);
   const [selectedTask, setSelectedTask] = useState<CanonicalTaskState | null>(null);
   const [selectedDirectiveFilter, setSelectedDirectiveFilter] = useState<string>("ALL");
-  const [settings] = useState<EnterpriseSettings>(getStoredSettings());
   const { addToast } = useToast();
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     const data = await api.getTasks(selectedDirectiveFilter === "ALL" ? undefined : selectedDirectiveFilter);
     if (data && data.length > 0) setTasks(data);
-  };
+  }, [selectedDirectiveFilter]);
 
   useEffect(() => {
     fetchTasks();
     const timer = setInterval(fetchTasks, 3000);
     return () => clearInterval(timer);
-  }, [selectedDirectiveFilter]);
+  }, [fetchTasks]);
 
   const handleAdvanceStatus = async (taskId: string, nextStatus: TaskStatus) => {
     try {

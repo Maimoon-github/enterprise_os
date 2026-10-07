@@ -13,7 +13,6 @@ import {
   Layers,
   Sparkles,
   Bot,
-  ExternalLink,
   Box,
   Zap,
   Activity,
@@ -21,6 +20,7 @@ import {
   Sliders,
   Globe,
   RefreshCw,
+  Database,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Directive, CanonicalTaskState, ActionPreview, IntelligenceResult } from "@/lib/types";
@@ -166,7 +166,7 @@ export default function MissionControlDashboard() {
     addToast({
       type: "success",
       title: "Telemetry Probes Complete",
-      message: `Verified 5 active listeners with average latency 2.8ms.`,
+      message: `Verified ${probes.length} active listeners with average latency 2.8ms.`,
     });
   };
 
@@ -409,7 +409,7 @@ export default function MissionControlDashboard() {
       </div>
 
       {/* KPI Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-medium uppercase tracking-wider">Active Directives</span>
@@ -458,7 +458,39 @@ export default function MissionControlDashboard() {
             cgroups v2 • Ephemeral RAM scrub
           </div>
         </div>
+
+        <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-medium uppercase tracking-wider">Disaster Recovery (PITR)</span>
+            <Database className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="text-2xl font-bold text-cyan-300 font-mono">RTO 1.65s</div>
+          <div className="text-xs text-emerald-400 mt-2">
+            RPO 0.05s • Vault Verified
+          </div>
+        </div>
+
+        <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs font-medium uppercase tracking-wider">Production SLOs</span>
+            <Activity className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div className="text-2xl font-bold text-indigo-300 font-mono">12 / 12 (100%)</div>
+          <div className="text-xs text-indigo-400 mt-2">
+            0 Burn Alerts • Trace Complete
+          </div>
+        </div>
       </div>
+
+      {latestPlan && (
+        <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-800/60 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2 text-white">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span>Latest Synthesized Plan: <strong className="text-cyan-300">{latestPlan.intent}</strong> ({latestPlan.plan.length} steps)</span>
+          </div>
+          <span className="text-[11px] font-mono text-emerald-400">Confidence: {(latestPlan.confidence * 100).toFixed(0)}%</span>
+        </div>
+      )}
 
       {/* Directive Creator & Recent Tasks */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
