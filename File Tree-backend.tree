@@ -108,6 +108,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   └── 🐍 trace_context.py
 │   ├── 📁 disaster_recovery/
 │   │   ├── 🐍 __init__.py
+│   │   ├── 🐍 chaos_engine.py
 │   │   ├── 🐍 postgres_pitr_engine.py
 │   │   ├── 🐍 rpo_rto.py
 │   │   ├── 🐍 state_integrity_verifier.py
@@ -298,6 +299,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os/backend
 │   │   ├── 🐍 test_ui_layout_agent.py
 │   │   └── 🐍 test_verification_agent.py
 │   ├── 📁 dr/
+│   │   ├── 🐍 test_chaos_certification_suite.py
 │   │   └── 🐍 test_postgresql_wal_pitr_recovery.py
 │   ├── 📁 integration/
 │   │   ├── 🐍 __init__.py

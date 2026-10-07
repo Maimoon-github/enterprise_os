@@ -70,3 +70,11 @@ class RepositoryError(GovernedBackendError):
 class RateLimitExceededError(GovernedBackendError):
     """Raised when an outbound actuation attempt exceeds its rate limit."""
 
+
+class AckBoundaryCrashError(GovernedBackendError):
+    """Raised when an unacknowledged failure/crash occurs at the external actuation boundary."""
+
+
+class ReconciliationRequiredError(GovernedBackendError):
+    """Raised when an outbound actuation has an uncertain outcome requiring external reconciliation."""
+

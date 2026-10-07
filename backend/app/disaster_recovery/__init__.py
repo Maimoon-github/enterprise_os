@@ -23,13 +23,27 @@ from app.disaster_recovery.wal_archive_vault import (
     WALSegment,
 )
 
+from app.disaster_recovery.chaos_engine import (
+    GOVERNING_TRACK4_ASSERTION,
+    TRACK_4_GOVERNING_ASSERTION,
+    ChaosCertificationSuiteReceipt,
+    ChaosScenarioId,
+    ChaosScenarioResult,
+    EnterpriseOSChaosEngine,
+)
+
 __all__ = [
     "BaseBackupManifest",
+    "ChaosCertificationSuiteReceipt",
+    "ChaosScenarioId",
+    "ChaosScenarioResult",
     "DisasterRecoveryExecutionReceipt",
     "DisasterRecoveryTargetRegistry",
     "DomainRecoveryMetric",
     "DRCriticality",
+    "EnterpriseOSChaosEngine",
     "EnterpriseOSStateIntegrityVerifier",
+    "GOVERNING_TRACK4_ASSERTION",
     "PostgresPITREngine",
     "RecoveryStatus",
     "RestorePoint",

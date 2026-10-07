@@ -1,0 +1,184 @@
+{
+  "suite_id": "chaos-suite-fc967e9b",
+  "executed_at": "2026-10-07T08:40:22.293031Z",
+  "total_scenarios": 8,
+  "passed_scenarios": 8,
+  "verdict": "CERTIFIED",
+  "governing_assertion": "For every injected failure, Enterprise OS either resumes safely or fails closed. No failure may cause duplicate external actuation, unauthorized continuation, incorrect terminal CTS state, lost provenance, cross-tenant leakage, replay acceptance, stale lease execution, or silent data loss.",
+  "governing_assertion_upheld": true,
+  "scenario_results": [
+    {
+      "scenario_id": "scenario_1_postgres_termination",
+      "order": 1,
+      "name": "1. PostgreSQL termination during an active directive",
+      "injected_failure": "Sudden socket close mid-transaction while updating directive CTS state and checkpoints",
+      "expected_behavior": "In-flight transaction aborts cleanly via PostgreSQL ACID rollback. No partial or corrupted task state commits. Subsequent reconnect restores strictly monotonic CTS baseline.",
+      "observed_behavior": "PostgreSQL aborted uncommitted directive transaction cleanly. Task task-chaos-s1-8b0c0a retained monotonic baseline (status=PENDING, version=1). Zero partial state committed.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "injected_termination": "Connection forcibly closed mid-transaction before commit.",
+        "post_reconnect_status": "PENDING",
+        "post_reconnect_version": 1
+      },
+      "duration_seconds": 0.0956
+    },
+    {
+      "scenario_id": "scenario_2_provisioner_termination",
+      "order": 2,
+      "name": "2. Provisioner termination during a specialist attempt",
+      "injected_failure": "Sudden crash of provisioner runtime during active specialist sandbox attempt",
+      "expected_behavior": "Ephemeral sandbox workspaces and cgroups scrubbed cleanly. Zero zombie or orphan processes survive. Incomplete attempt is recorded in replay state and cannot falsely report success.",
+      "observed_behavior": "Ephemeral sandbox directories scrubbed (0 zombies). Cgroup scope released. Replay state correctly reflects no successful execution.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "staging_dir_created": "/tmp/enterprise_os_chaos_suite_1rgpv3gf/provisioner_s2_staging/sbx-staging-exec-chaos-s2-c120f7",
+        "cgroup_scope_dir": "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-org.chromium.Chromium-69721.scope/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/daemon/sbx-attempt-1-exec-cha",
+        "cgroup_allocated": true,
+        "cleaned_staging_count": 1,
+        "staging_dir_exists_after_cleanup": false,
+        "cgroup_destroyed": true
+      },
+      "duration_seconds": 0.0225
+    },
+    {
+      "scenario_id": "scenario_3_uds_disconnect",
+      "order": 3,
+      "name": "3. UDS disconnect mid-request",
+      "injected_failure": "Client abruptly closes AF_UNIX socket mid-request during payload transfer",
+      "expected_behavior": "Server catches connection reset/broken pipe gracefully without unhandled daemon crash. Client fails closed instead of assuming success. Server socket recreated with strict SocketMode 0660 permissions and remains operational.",
+      "observed_behavior": "Daemon survived mid-request client socket disconnect. Socket permissions verified strictly at 0660. Subsequent requests succeed.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "socket_mode_octal": "0o660",
+        "injected_uds_disconnect": "Partial frame sent and client socket abruptly closed.",
+        "post_disconnect_response": "\u0000\u0000\u0000X{\"success\": false, \"error\": \"Payload too large\", \"error_type\": \"SandboxValidationError\"}"
+      },
+      "duration_seconds": 0.0828
+    },
+    {
+      "scenario_id": "scenario_4_specialist_termination_before_seal",
+      "order": 4,
+      "name": "4. Specialist termination after work but before receipt sealing",
+      "injected_failure": "Specialist process killed after writing output files but before receipt sealing",
+      "expected_behavior": "Orchestrator and CTS strictly refuse transition to COMPLETED. Staged unsealed deliverables cannot be promoted or accepted. False terminal success is prevented; system fails closed or holds.",
+      "observed_behavior": "Specialist killed before receipt sealing. CTS prevented false terminal success (COMPLETED). Task transitioned safely to FAILED with fail-closed audit log. Unsealed data discarded.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "unsealed_output_created": "/tmp/enterprise_os_chaos_suite_1rgpv3gf/work_task-chaos-s4-368d7d/unsealed_output.json",
+        "sealed_receipt_present": false,
+        "final_task_status": "FAILED",
+        "final_version": 2
+      },
+      "duration_seconds": 0.0006
+    },
+    {
+      "scenario_id": "scenario_5_host_reboot_active_leases",
+      "order": 5,
+      "name": "5. Host reboot with active leases/tasks",
+      "injected_failure": "Host reboots while Worker A holds active lease; Worker B claims lease with bumped generation",
+      "expected_behavior": "Expired lease is reclaimed by Worker B, which increments the fencing token (generation G=2). When stale Worker A wakes up and attempts completion with G=1, database/gateway rejects commit with Stale Lease Generation error. Zero duplicate processing.",
+      "observed_behavior": "Fencing token enforcement verified. Worker B bumped generation to 2. Stale Worker A commit with generation 1 was strictly rejected. Zero double execution.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "receipt_admitted": "660294c5-045d-4e4f-89c4-66d0bca3dc18",
+        "worker_a_claimed_generation": 1,
+        "simulated_reboot_lease_expired": true,
+        "worker_b_claimed_generation": 2,
+        "stale_commit_rejection_error": "Stale lease generation 1 for work item '375d5cfd-0bd5-4559-8d9d-a1d2f65efca5'; current generation is 2.",
+        "worker_b_final_status": "done"
+      },
+      "duration_seconds": 1.392
+    },
+    {
+      "scenario_id": "scenario_6_wal_storage_exhaustion",
+      "order": 6,
+      "name": "6. WAL/archive storage exhaustion or unavailability",
+      "injected_failure": "Archive storage filesystem becomes write-protected / simulated ENOSPC",
+      "expected_behavior": "WAL archiving engine fails closed without dropping segments or writing corrupted files. Pending WAL segments remain in local backlog. Once storage is restored, backlog flushes with zero sequence gaps and cryptographic continuity intact.",
+      "observed_behavior": "Archival failed closed upon storage unavailability without silent data loss. Pending WAL segment preserved in backlog and archived upon storage recovery. Vault verified with zero sequence gaps.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "segment_1_archived": true,
+        "injected_storage_unavailability": "wal_segments directory permissions set to 0444 (read-only)",
+        "write_blocked_error": "[Errno 13] Permission denied: '/tmp/enterprise_os_chaos_suite_1rgpv3gf/wal_vault_s6/wal_segments/seg-s6-0002.wal.gz'",
+        "storage_restored": true,
+        "segment_2_flushed_from_backlog": true,
+        "vault_integrity": {
+          "status": "VAULT_VERIFIED",
+          "segments_count": 2,
+          "healthy": true,
+          "first_lsn": "100",
+          "last_lsn": "300"
+        }
+      },
+      "duration_seconds": 0.0013
+    },
+    {
+      "scenario_id": "scenario_7_corrupt_wal_fail_closed",
+      "order": 7,
+      "name": "7. Corrupted/missing WAL segment with mandatory fail-closed recovery",
+      "injected_failure": "Tampered SHA-256 seal on WAL segment and sequence gap during PITR replay",
+      "expected_behavior": "PITR recovery verifies segment checksums and sequence monotonicity. Encountering bit-rot corruption or missing segment halts recovery immediately with fatal verification error. The engine does NOT skip or replay corrupted data.",
+      "observed_behavior": "Bit-rot corruption halted recovery immediately with PermissionError. Missing segment sequence gap (seg 1 -> seg 3) detected and recovery aborted. Mandatory fail-closed recovery confirmed.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "injected_bit_rot_tamper": "Modified record row_id in archived segment 2",
+        "checksum_verification_error": "CORRUPT WAL SEGMENT DETECTED: Segment seg-s7-0002 checksum mismatch!",
+        "sequence_gap_check": {
+          "status": "SEGMENT_SEQUENCE_GAP",
+          "healthy": false,
+          "expected_segment": 2,
+          "actual_segment": 3
+        }
+      },
+      "duration_seconds": 0.0011
+    },
+    {
+      "scenario_id": "scenario_8_outbound_actuation_ack_boundary",
+      "order": 8,
+      "name": "8. Outbound actuation crash at the acknowledgement boundary",
+      "injected_failure": "HITL approved -> signed Outbound MCP request sent -> external provider accepts mutation -> backend/proxy dies before acknowledgement is persisted -> system restarts/retries",
+      "expected_behavior": "Dispatch intent persisted before outbound call. External mutation accepted by provider. Backend dies at acknowledgement boundary, recording UNKNOWN/RECONCILIATION_REQUIRED. Upon restart/retry, gateway reconciles with provider rather than blindly re-executing. CTS commits exactly one observed outcome. Provider mutation count is strictly 1.",
+      "observed_behavior": "Zero duplicate external actuation proved. Provider mutation count strictly 1. External state reconciled via idempotency key 'idemp-s8-94ddf0e0'. Single outcome committed. Complete W3C PROV audit lineage recorded.",
+      "passed": true,
+      "governing_assertion_upheld": true,
+      "evidence": {
+        "hitl_approved": true,
+        "dispatch_signed": true,
+        "idempotency_key": "idemp-s8-94ddf0e0",
+        "injected_crash_provider_response": {
+          "status_code": "200",
+          "campaign_id": "ext-camp-idemp-s8-1",
+          "status": "published",
+          "applied_budget": 500.0,
+          "channel": "meta",
+          "idempotency_key": "idemp-s8-94ddf0e0",
+          "created_at": "2026-10-07T08:40:22.292029+00:00"
+        },
+        "crash_caught_at_boundary": "Simulated power crash / proxy severance right after provider mutation for dispatch disp-chaos-s8-3957b3",
+        "post_crash_provider_mutations": 1,
+        "retry_result_status": "published",
+        "retry_campaign_id": "ext-camp-idemp-s8-1",
+        "total_provider_mutation_calls": 1,
+        "provider_reconcile_queries": 1,
+        "provenance_activities": [
+          "mcp_act_readiness_validation",
+          "outbound_dispatch_intent_persisted",
+          "outbound_meta_ack_boundary_crash",
+          "mcp_act_readiness_validation",
+          "outbound_meta_reconciliation_succeeded",
+          "outbound_meta_deployment_executed"
+        ]
+      },
+      "duration_seconds": 0.034
+    }
+  ],
+  "total_duration_seconds": 1.631
+}

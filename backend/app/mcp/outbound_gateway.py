@@ -18,10 +18,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from app.core.exceptions import (
+    AckBoundaryCrashError,
     ApprovalRequiredError,
     ConfigurationError,
     PolicyViolationError,
     RateLimitExceededError,
+    ReconciliationRequiredError,
     SignatureVerificationError,
 )
 from app.integrations.ads.base import AdsAdapter
@@ -129,6 +131,7 @@ class OutboundGateway:
         task_state_service: TaskStateService | None = None,
         max_concurrency: int = 10,
         max_payload_bytes: int = 1_048_576,
+        chaos_ack_boundary_hook: Any | None = None,
     ) -> None:
         self._hitl = hitl
         self._crypto_validator = crypto_validator
@@ -142,6 +145,7 @@ class OutboundGateway:
         self._task_state_service = task_state_service
         self._max_concurrency = max_concurrency
         self._max_payload_bytes = max_payload_bytes
+        self._chaos_ack_boundary_hook = chaos_ack_boundary_hook
         self._concurrency_semaphore = asyncio.Semaphore(max_concurrency)
         self._used_nonces: set[str] = set()
         self._idempotency_records: dict[str, tuple[str, str, DispatchReadiness]] = {}
@@ -613,16 +617,96 @@ class OutboundGateway:
         readiness = await self.validate_readiness(dispatch)
 
         idempotency_key = dispatch.idempotency_key or dispatch.dispatch_id
+
         if readiness.idempotent_cached and idempotency_key in self._execution_records:
-            # Return cached execution result safely without re-actuating
-            return self._execution_records[idempotency_key]
+            cached_res = self._execution_records[idempotency_key]
+            if cached_res.get("status") not in (
+                "DISPATCH_INTENT", "AMBIGUOUS_TIMEOUT", "UNKNOWN/RECONCILIATION_REQUIRED", "RECONCILIATION_REQUIRED"
+            ):
+                return cached_res
 
         async with self._concurrency_semaphore:
             # Re-check idempotency under semaphore lock
             if idempotency_key in self._execution_records:
                 cached = self._execution_records[idempotency_key]
-                if cached.get("status") not in ("DISPATCH_INTENT", "AMBIGUOUS_TIMEOUT"):
+                if cached.get("status") not in (
+                    "DISPATCH_INTENT", "AMBIGUOUS_TIMEOUT", "UNKNOWN/RECONCILIATION_REQUIRED", "RECONCILIATION_REQUIRED"
+                ):
                     return cached
+
+            adapter = (
+                self._ads_adapters.get(dispatch.channel)
+                or self._social_adapters.get(dispatch.channel)
+                or (self._cms_client if dispatch.channel in ("cms", "website", "web_store") else None)
+            )
+
+            # Check if this is an unacknowledged or interrupted dispatch requiring external reconciliation
+            task_state_pre = None
+            if self._task_state_service and dispatch.task_id:
+                task_state_pre = await self._task_state_service.get_state(dispatch.task_id)
+
+            is_unack = (
+                (idempotency_key in self._execution_records and self._execution_records[idempotency_key].get("status") in (
+                    "DISPATCH_INTENT", "AMBIGUOUS_TIMEOUT", "UNKNOWN/RECONCILIATION_REQUIRED", "RECONCILIATION_REQUIRED"
+                ))
+                or (task_state_pre is not None and task_state_pre.status == TaskStatus.DISPATCHED)
+            )
+
+            if is_unack and adapter is not None and hasattr(adapter, "reconcile"):
+                reconciled = None
+                try:
+                    reconciled = await adapter.reconcile(dispatch.payload, idempotency_key=idempotency_key)
+                except TypeError:
+                    try:
+                        reconciled = await adapter.reconcile(idempotency_key)
+                    except Exception:
+                        reconciled = None
+                except Exception:
+                    reconciled = None
+
+                if reconciled is not None:
+                    # Provider already executed this mutation: commit exactly once without duplicate side-effects
+                    self._execution_records[idempotency_key] = reconciled
+                    if self._task_state_service and dispatch.task_id and task_state_pre:
+                        try:
+                            if dispatch.channel in self._ads_adapters:
+                                task_state_pre.cts_state["paid_campaign"] = reconciled
+                            elif dispatch.channel in self._social_adapters:
+                                task_state_pre.cts_state["social_post"] = reconciled
+                            task_state_pre.cts_state["deployment"] = reconciled
+                            await self._task_state_service.save_state(dispatch.tenant_id, task_state_pre)
+                            if task_state_pre.status != TaskStatus.COMPLETED:
+                                await self._task_state_service.transition(
+                                    dispatch.tenant_id,
+                                    task_state_pre,
+                                    TaskStatus.COMPLETED,
+                                    note=f"Reconciled in-flight dispatch on channel {dispatch.channel} via provider lookup (idempotency: {idempotency_key})",
+                                )
+                        except Exception:
+                            pass
+
+                    if self._provenance_recorder:
+                        scrubbed = scrub_sensitive_payload(reconciled)
+                        await self._provenance_recorder.record(
+                            tenant_id=dispatch.tenant_id,
+                            entity_id=dispatch.dispatch_id,
+                            activity=f"outbound_{dispatch.channel}_reconciliation_succeeded",
+                            agent="mcp_act_boundary",
+                            metadata={
+                                "idempotency_key": idempotency_key,
+                                "channel": dispatch.channel,
+                                "reconciled": True,
+                                "outcome": scrubbed,
+                            },
+                        )
+                        await self._provenance_recorder.record(
+                            tenant_id=dispatch.tenant_id,
+                            entity_id=dispatch.dispatch_id,
+                            activity=f"outbound_{dispatch.channel}_deployment_executed",
+                            agent="mcp_act_boundary",
+                            metadata=scrubbed,
+                        )
+                    return reconciled
 
             # 1. Atomic budget reservation before spend-bearing dispatch
             reserved_amount: float | None = None
@@ -869,6 +953,10 @@ class OutboundGateway:
                     f"No outbound adapter is registered for channel '{dispatch.channel}'."
                 )
 
+            # Chaos crash hook at acknowledgement boundary: simulate sudden process death after provider execution
+            if self._chaos_ack_boundary_hook:
+                await self._chaos_ack_boundary_hook(dispatch, res)
+
             # Store execution record for idempotency
             self._execution_records[idempotency_key] = res
 
@@ -979,6 +1067,40 @@ class OutboundGateway:
                         activity=f"outbound_{dispatch.channel}_timeout_reconciliation_held",
                         agent="mcp_act_boundary",
                         metadata={"error": str(exc), "idempotency_key": idempotency_key, "retained_spend_exposure": reserved_amount},
+                    )
+                raise
+
+            # Check for unacknowledged crash at acknowledgement boundary
+            if isinstance(exc, (AckBoundaryCrashError, ReconciliationRequiredError)) or getattr(exc, "__is_ack_boundary_crash__", False):
+                self._execution_records[idempotency_key] = {
+                    "status": "UNKNOWN/RECONCILIATION_REQUIRED",
+                    "error": str(exc),
+                    "idempotency_key": idempotency_key,
+                    "requires_reconciliation": True,
+                    "retained_spend_exposure": reserved_amount,
+                }
+                if self._task_state_service and dispatch.task_id and task_state:
+                    try:
+                        await self._task_state_service.transition(
+                            dispatch.tenant_id,
+                            task_state,
+                            TaskStatus.HELD,
+                            note=f"Actuation ack boundary crash: {exc}. Held for reconciliation.",
+                        )
+                    except Exception:
+                        pass
+                if self._provenance_recorder:
+                    await self._provenance_recorder.record(
+                        tenant_id=dispatch.tenant_id,
+                        entity_id=dispatch.dispatch_id,
+                        activity=f"outbound_{dispatch.channel}_ack_boundary_crash",
+                        agent="mcp_act_boundary",
+                        metadata={
+                            "error": str(exc),
+                            "idempotency_key": idempotency_key,
+                            "status": "UNKNOWN/RECONCILIATION_REQUIRED",
+                            "retained_spend_exposure": reserved_amount,
+                        },
                     )
                 raise
 
