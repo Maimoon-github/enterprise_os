@@ -10,6 +10,7 @@ purely through configuration, with zero vendor-specific code in callers.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, TypeVar
 
 import httpx
@@ -127,6 +128,7 @@ class LlmClient:
         system: str | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Return (completion_text, metadata) with observable model identity and token usage."""
 
@@ -143,7 +145,9 @@ class LlmClient:
 
         effective_temp = temperature if temperature is not None else self._default_temperature
         effective_max_tokens = (
-            max_output_tokens if max_output_tokens is not None else self._default_max_output_tokens
+            max_output_tokens
+            if max_output_tokens is not None
+            else (self._default_max_output_tokens or 4096)
         )
         effective_model = self._model_identity
         request_body: dict[str, Any] = {
@@ -154,6 +158,10 @@ class LlmClient:
             request_body["temperature"] = effective_temp
         if effective_max_tokens is not None:
             request_body["max_tokens"] = effective_max_tokens
+        if response_format is not None:
+            request_body["response_format"] = response_format
+        if self._settings.is_local:
+            request_body["options"] = {"num_ctx": 16384}
 
         try:
             response = await self._client.post(
@@ -178,7 +186,11 @@ class LlmClient:
         if not choices or not isinstance(choices, list) or "message" not in choices[0]:
             raise LlmResponseError("Malformed completion response from LLM provider")
 
-        content = choices[0]["message"].get("content", "")
+        msg = choices[0]["message"]
+        content = msg.get("content") or ""
+        reasoning = msg.get("reasoning") or ""
+        if not content and reasoning and ("{" in reasoning and "}" in reasoning):
+            content = reasoning
         actual_model = body.get("model", effective_model)
         usage = body.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
@@ -210,6 +222,7 @@ class LlmClient:
         system: str | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> str:
         """Return the model's completion for ``prompt``."""
         content, _ = await self.complete_with_metadata(
@@ -217,6 +230,7 @@ class LlmClient:
             system=system,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_format=response_format,
         )
         return content
 
@@ -227,6 +241,7 @@ class LlmClient:
         system: str | None = None,
         system_prompt: str | None = None,
         user_prompt: str | None = None,
+        response_format: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str:
         """Universal generate method supporting prompt/system and user_prompt/system_prompt."""
@@ -239,6 +254,7 @@ class LlmClient:
             system=effective_system,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_format=response_format,
         )
 
     async def generate_structured(
@@ -249,6 +265,7 @@ class LlmClient:
         response_model: type[ResponseModelT],
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> ResponseModelT:
         """Generate and validate a JSON response against ``response_model``.
 
@@ -269,11 +286,13 @@ class LlmClient:
             f"JSON Schema:\n{schema}"
         )
 
+        effective_format = response_format or {"type": "json_object"}
         content = await self.complete(
             user_prompt,
             system=structured_system,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_format=effective_format,
         )
         payload = self._parse_json_object(content)
 
@@ -281,7 +300,7 @@ class LlmClient:
             return response_model.model_validate(payload)
         except ValidationError as exc:
             raise LlmResponseError(
-                f"LLM response did not satisfy {response_model.__name__}"
+                f"LLM response did not satisfy {response_model.__name__}: {exc}"
             ) from exc
 
     async def generate_structured_with_metadata(
@@ -292,6 +311,7 @@ class LlmClient:
         response_model: type[ResponseModelT],
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
     ) -> tuple[ResponseModelT, dict[str, Any]]:
         """Generate structured output and return (response_model, metadata)."""
         result = await self.generate_structured(
@@ -300,30 +320,61 @@ class LlmClient:
             response_model=response_model,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_format=response_format,
         )
         return result, self.last_metadata
 
     @staticmethod
     def _parse_json_object(content: str) -> dict[str, object]:
-        """Parse one JSON object while tolerating an accidental code fence."""
+        """Parse one JSON object while tolerating code fences and surrounding text."""
 
         text = content.strip()
+        # 1. Direct parse attempt
+        try:
+            payload = json.loads(text)
+            if isinstance(payload, dict):
+                return payload
+        except Exception:
+            pass
+
+        # 2. Extract from markdown code fences ```(?:json)? ... ```
+        fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        if fence_match:
+            try:
+                payload = json.loads(fence_match.group(1))
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                pass
+
+        # 3. Strip full-text fences if entire text was fenced
         if text.startswith("```"):
             lines = text.splitlines()
             if lines:
                 lines = lines[1:]
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
-            text = "\n".join(lines).strip()
+            candidate = "\n".join(lines).strip()
+            try:
+                payload = json.loads(candidate)
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                pass
 
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise LlmResponseError("LLM response was not valid JSON") from exc
+        # 4. Outermost JSON object braces { ... }
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            candidate = text[start : end + 1]
+            try:
+                payload = json.loads(candidate)
+                if isinstance(payload, dict):
+                    return payload
+            except Exception:
+                pass
 
-        if not isinstance(payload, dict):
-            raise LlmResponseError("LLM structured response must be a JSON object")
-        return payload
+        raise LlmResponseError(f"LLM response was not valid JSON: {text[:200]}")
 
     async def aclose(self) -> None:
         await self._client.aclose()

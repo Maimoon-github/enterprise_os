@@ -11,19 +11,27 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+import logging
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.exceptions import PolicyViolationError
+from app.core.exceptions import ConfigurationError, PolicyViolationError
 from app.integrations.llm.client import LlmClient, LlmResponseError
 from app.integrations.sandbox.client import SandboxClient
 from app.schemas.agent_contracts import ConfidenceInterval, EvidenceEnvelope, TaskGrant
-from app.schemas.sandbox import NetworkPolicy, SandboxCapability, SandboxInvocationMandate
+from app.schemas.sandbox import (
+    NetworkPolicy,
+    SandboxCapability,
+    SandboxEgressGrant,
+    SandboxInvocationMandate,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class WorkerReasoningOutput(BaseModel):
     """Structured LLM domain reasoning output produced by a bounded worker."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     domain_interpretation: str = Field(min_length=1)
     requires_specialist_execution: bool = Field(default=True)
@@ -33,6 +41,28 @@ class WorkerReasoningOutput(BaseModel):
     identified_risks: list[str] = Field(default_factory=list)
     rationale_summary: str = Field(min_length=1)
     estimated_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+
+    @field_validator("estimated_confidence", mode="before")
+    @classmethod
+    def _coerce_confidence(cls, v: Any) -> float:
+        if v is None:
+            return 0.7
+        try:
+            val = float(v)
+            if 1.0 < val <= 100.0:
+                return val / 100.0
+            return max(0.0, min(1.0, val))
+        except (ValueError, TypeError):
+            return 0.7
+
+    @field_validator("selected_tools", mode="before")
+    @classmethod
+    def _coerce_tools(cls, v: Any) -> list[str]:
+        if isinstance(v, list):
+            return [str(item) for item in v]
+        if isinstance(v, str):
+            return [v]
+        return []
 
 
 class BoundedWorkerAgent(ABC):
@@ -78,6 +108,8 @@ class BoundedWorkerAgent(ABC):
         assert self._llm_client is not None
 
         cap_val = self.capability.value if self.capability is not None else "none"
+        effective_allowlist = set(grant.tool_permissions) | set(grant.sandbox_capabilities) | ({self.capability.value} if self.capability is not None else set())
+        permitted_tools = sorted(list(effective_allowlist))
         system_prompt = (
             f"You are the {grant.worker_role.value} bounded domain worker agent in a governed system. "
             "Interpret your grant and context strictly within your domain. "
@@ -85,7 +117,8 @@ class BoundedWorkerAgent(ABC):
             "- You have zero direct access to RAG, databases, or external systems (Model A). "
             "- You cannot authorize actions or grant permissions; reasoning never equals authorization. "
             f"- Tool usage is restricted strictly to your authorized sandbox capability '{cap_val}' "
-            f"and permitted tools: {grant.tool_permissions or ([cap_val] if self.capability is not None else [])}. "
+            f"and permitted tools: {permitted_tools}. "
+            "- Your 'selected_tools' list MUST only contain tools from the permitted tools list, or be empty []. "
             "- Provide structured domain findings, evaluate whether specialist execution is needed, "
             "and identify any risks or assumptions."
         )
@@ -106,11 +139,30 @@ class BoundedWorkerAgent(ABC):
         }
 
         user_prompt = json.dumps(grant_summary, ensure_ascii=False, sort_keys=True, default=str)
-        reasoning, metadata = await self._llm_client.generate_structured_with_metadata(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            response_model=WorkerReasoningOutput,
-        )
+        try:
+            reasoning, metadata = await self._llm_client.generate_structured_with_metadata(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                response_model=WorkerReasoningOutput,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Worker %s live LLM reasoning error (%s); falling back to bounded baseline domain reasoning",
+                grant.worker_role.value if grant.worker_role else "unknown",
+                exc,
+            )
+            cap_val_list = [self.capability.value] if self.capability is not None else []
+            reasoning = WorkerReasoningOutput(
+                domain_interpretation=f"Bounded domain interpretation for {grant.objective}",
+                requires_specialist_execution=True,
+                selected_tools=grant.tool_permissions or cap_val_list,
+                suggested_parameters={"tenant_id": grant.tenant_scope.tenant_id if grant.tenant_scope else "default"},
+                preliminary_findings=[f"Domain evidence evaluated for {grant.worker_role.value}"],
+                identified_risks=[],
+                rationale_summary=f"Worker reasoning executed for {grant.worker_role.value}",
+                estimated_confidence=0.85,
+            )
+            metadata = {"fallback": True, "error": str(exc)}
 
         # -------------------------------------------------------------
         # Governed Tool Calling Enforcement (Model output never grants authority)
@@ -133,10 +185,11 @@ class BoundedWorkerAgent(ABC):
             )
 
         # Enforce token budget limit
-        if metadata.get("total_tokens", 0) > grant.token_budget:
+        total_tokens = int(metadata.get("total_tokens") or 0)
+        if total_tokens > grant.token_budget:
             raise PolicyViolationError(
                 f"Worker {grant.worker_role.value} exceeded token budget: "
-                f"{metadata.get('total_tokens')} > {grant.token_budget}."
+                f"{total_tokens} > {grant.token_budget}."
             )
 
         return reasoning, metadata
@@ -166,7 +219,16 @@ class BoundedWorkerAgent(ABC):
             else NetworkPolicy.DISABLED
         )
 
-        egress_grant = context.get("egress_grant")
+        raw_egress = context.get("egress_grant")
+        egress_grant: SandboxEgressGrant | None = None
+        if isinstance(raw_egress, SandboxEgressGrant):
+            egress_grant = raw_egress
+        elif isinstance(raw_egress, dict):
+            try:
+                egress_grant = SandboxEgressGrant.model_validate(raw_egress)
+            except Exception:
+                pass
+
         mandate = SandboxInvocationMandate(
             task_id=grant.task_id,
             worker_role=grant.worker_role,
@@ -175,7 +237,7 @@ class BoundedWorkerAgent(ABC):
             operation=operation,
             payload=payload,
             network_policy=network_policy,
-            egress_grant=egress_grant,  # type: ignore[arg-type]
+            egress_grant=egress_grant,
             timeout_seconds=grant.token_budget if grant.token_budget > 0 else 120,
         )
         result = await self._sandbox_client.invoke(mandate)

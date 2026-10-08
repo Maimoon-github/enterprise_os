@@ -217,7 +217,7 @@ class ProductEvidenceAgent(BoundedWorkerAgent):
         evidence_pool: list[dict[str, Any]] = []
         raw_evidence: list[Any] = list(grant.validated_evidence)
         for key in ("evidence", "laboratory_reports", "certificates"):
-            val = context.get(key)
+            val = context.get(key) or grant.cts_state.get(key)
             if isinstance(val, list):
                 raw_evidence.extend(val)
 

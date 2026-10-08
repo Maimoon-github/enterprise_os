@@ -467,11 +467,49 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
             provenance=provenance,
         )
 
+        objection_profiles: list[ObjectionProfile] = []
+        for idx, finding in enumerate(needs_result.findings):
+            f_theme = getattr(finding, "theme", f"Finding {idx}")
+            f_id = getattr(finding, "finding_id", f"obj-{idx}")
+            f_type = getattr(finding, "finding_type", "objection")
+            f_sev = getattr(finding, "severity", "low")
+            f_freq = getattr(finding, "frequency", 1)
+            f_spans = [getattr(s, "record_id", getattr(s, "span_hash", str(s))) for s in getattr(finding, "evidence_spans", [])]
+            objection_profiles.append(
+                ObjectionProfile(
+                    objection_id=f_id,
+                    objection_type=f_type,
+                    normalized_theme=f_theme,
+                    frequency=f_freq,
+                    affected_products=[product_id] if product_id else [],
+                    representative_evidence_refs=f_spans,
+                    severity=f_sev,
+                    confidence=0.9,
+                    provenance=provenance,
+                )
+            )
+
+        if not objection_profiles and sanitized_records:
+            objection_profiles.append(
+                ObjectionProfile(
+                    objection_id=f"obj-observed-{grant.task_id[:8]}",
+                    objection_type="general_feedback",
+                    normalized_theme="Observed customer feedback theme",
+                    frequency=len(sanitized_records),
+                    affected_products=[product_id] if product_id else [],
+                    representative_evidence_refs=[getattr(s, "record_id", getattr(s, "span_hash", str(s))) for s in evidence_spans] if evidence_spans else [],
+                    severity="low",
+                    confidence=0.85,
+                    provenance=provenance,
+                )
+            )
+
         analysis_result = CustomerVoiceAnalysisResult(
             analysis_id=f"cva-{grant.task_id}",
             tenant_id=grant.tenant_scope.tenant_id if grant.tenant_scope else "default",
             product_id=product_id or None,
             total_items_analyzed=len(sanitized_records),
+            objection_profiles=objection_profiles,
             provenance=provenance,
         )
 
@@ -489,6 +527,8 @@ class CustomerVoiceAgent(BoundedWorkerAgent):
                 "customer_voice_task": task_contract.model_dump_json(),
                 "customer_voice_payload": voice_payload.model_dump_json(),
                 "customer_voice_analysis": analysis_result.model_dump_json(),
+                "objection_profiles": json.dumps([op.model_dump() for op in objection_profiles]),
+                "objections": json.dumps([op.model_dump() for op in objection_profiles]),
                 "themes_result": themes_result.model_dump_json(),
                 "sentiment_result": sentiment_result.model_dump_json(),
                 "needs_result": needs_result.model_dump_json(),

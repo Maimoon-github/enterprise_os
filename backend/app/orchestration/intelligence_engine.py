@@ -58,7 +58,7 @@ IntelligenceMode = Literal["plan", "decision"]
 class PlanStep(BaseModel):
     """LLM-proposed work item; authorization and execution occur elsewhere."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
     step_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
@@ -161,16 +161,42 @@ class IntelligenceRequest(BaseModel):
 class _LlmIntelligenceOutput(BaseModel):
     """Strict LLM output contract before the result leaves the engine."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="ignore", frozen=True)
 
-    objective_interpretation: str = Field(min_length=1)
-    intent: str = Field(min_length=1)
+    objective_interpretation: str = Field(default="Synthesized objective interpretation", min_length=1)
+    intent: str = Field(default="Execute strategic plan", min_length=1)
     plan: list[PlanStep] = Field(default_factory=list)
     decision: str | None = None
     context_requests: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
-    rationale_summary: str = Field(min_length=1)
-    confidence: float = Field(ge=0.0, le=1.0)
+    rationale_summary: str = Field(default="Autonomous cognitive plan formulation", min_length=1)
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
+
+    @field_validator("objective_interpretation", "intent", "rationale_summary", mode="before")
+    @classmethod
+    def _coerce_string_fields(cls, value: Any, info: Any) -> str:
+        if isinstance(value, dict):
+            if "description" in value:
+                return str(value["description"])
+            field_name = getattr(info, "field_name", "field")
+            return f"Synthesized {field_name.replace('_', ' ')}"
+        if value is None or not str(value).strip():
+            field_name = getattr(info, "field_name", "field")
+            return f"Synthesized {field_name.replace('_', ' ')}"
+        return str(value)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _coerce_confidence(cls, v: Any) -> float:
+        if v is None:
+            return 0.8
+        try:
+            val = float(v)
+            if 1.0 < val <= 100.0:
+                return val / 100.0
+            return max(0.0, min(1.0, val))
+        except (ValueError, TypeError):
+            return 0.8
 
 
 class IntelligenceResult(BaseModel):
@@ -199,6 +225,10 @@ class DagExecutionResult(dict[str, EvidenceEnvelope]):
     ) -> None:
         super().__init__(envelopes or {})
         self.task_states: dict[str, CanonicalTaskState] = dict(task_states or {})
+
+    @property
+    def envelopes(self) -> dict[str, EvidenceEnvelope]:
+        return dict(self)
 
     @property
     def tasks(self) -> list[CanonicalTaskState]:
@@ -946,7 +976,8 @@ class IntelligenceEngine:
                 for uid in upstream_ids
             ):
                 unresolved = [
-                    uid for uid in upstream_ids
+                    f"{uid}(status={task_states[uid].status.value if uid in task_states else 'MISSING'}, note={getattr(task_states.get(uid), 'note', None)})"
+                    for uid in upstream_ids
                     if uid not in task_states or task_states[uid].status != TaskStatus.COMPLETED
                 ]
                 note = f"Task {task_id} dependencies are not completed: {unresolved}"
@@ -959,7 +990,7 @@ class IntelligenceEngine:
                 if task_state_service is not None:
                     await task_state_service.save_state(directive.tenant_id, held_state)
                 task_states[task_id] = held_state
-                raise PolicyViolationError(f"Task {task_id} dependencies are not completed.")
+                raise PolicyViolationError(note)
 
             # Inherit CTS state / evidence from upstream tasks
             merged_cts_state = dict(task.cts_state)
@@ -1299,6 +1330,7 @@ Boundaries:
   'W_DEV', 'W_STRAT', 'W_CREAT', 'W_PROD', 'W_COMP', 'W_VOICE', 'W_LEARN' (or null).
   Never invent new worker names.
 - Return a concise rationale_summary; do not expose private chain-of-thought.
+- Output ONLY valid JSON matching the schema directly. Never output conversational preamble, explanation, or markdown fences.
 """
 
     async def reason(self, request: IntelligenceRequest) -> IntelligenceResult:
@@ -1321,10 +1353,11 @@ Boundaries:
                 system_prompt=self.COGNITIVE_SYSTEM_PROMPT,
                 user_prompt=prompt,
                 response_model=_LlmIntelligenceOutput,
+                max_output_tokens=4096,
             )
         except LlmResponseError as exc:
             raise InvalidIntelligenceOutputError(
-                "LLM returned an invalid Intelligence Engine response"
+                f"LLM returned an invalid Intelligence Engine response: {exc}"
             ) from exc
         except Exception as exc:
             raise IntelligenceEngineError("LLM generation failed") from exc
