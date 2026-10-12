@@ -6,7 +6,8 @@ Deterministic state models with Pydantic v2 and LangGraph aggregation.
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, Dict, List, Literal, Optional, TypedDict
+from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 from langchain_core.messages import AnyMessage
 
@@ -27,6 +28,9 @@ class BrandProfile(BaseModel):
     )
     guidelines: Dict[str, Any] = Field(default_factory=dict)
     learned_heuristics: List[str] = Field(default_factory=list)
+
+
+BrandState = BrandProfile
 
 
 class AuditMetrics(BaseModel):

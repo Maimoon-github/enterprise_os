@@ -25,14 +25,26 @@ import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-from dotenv import load_dotenv
+try:
+    from mcp import ClientSession  # type: ignore
+    from mcp.client.streamable_http import streamablehttp_client  # type: ignore
+except ImportError:
+    class ClientSession:  # type: ignore
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except ImportError:
+    pass
 
-from agent_loop import AzureOpenAIAgentLoop, OpenAIAgentLoop, BaseAgentLoop
+from agent_loop import (
+    AzureOpenAIAgentLoop,
+    BaseAgentLoop,
+    LangGraphAgentLoop,
+    OpenAIAgentLoop,
+)
 from dataset_parser import XMLDatasetParser
-
-load_dotenv()
 
 # ============================================================================
 # Configuration
@@ -521,6 +533,8 @@ async def run_evaluation(
         if openai_model:
             agent_kwargs["model"] = openai_model
         agent = OpenAIAgentLoop(**agent_kwargs)
+    elif agent_type == "langgraph":
+        agent = LangGraphAgentLoop(mcp_session=_mcp_session)
     else:
         agent = AzureOpenAIAgentLoop(mcp_session=_mcp_session)
     print(f"🤖 Using agent: {agent.__class__.__name__}")
@@ -665,9 +679,9 @@ async def main():
     parser.add_argument(
         "--agent",
         type=str,
-        choices=["azure", "openai"],
+        choices=["azure", "openai", "langgraph"],
         default="azure",
-        help="Agent backend to use: 'azure' for Azure OpenAI (default), 'openai' for standard OpenAI / compatible APIs (e.g. MiniMax).",
+        help="Agent backend to use: 'azure' for Azure OpenAI (default), 'openai' for standard OpenAI / compatible APIs, 'langgraph' for LangGraph agent loop.",
     )
     parser.add_argument(
         "--openai-base-url",
