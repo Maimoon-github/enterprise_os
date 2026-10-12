@@ -61,6 +61,7 @@ class AgentState(TypedDict, total=False):
     phase: AgentPhase
     brand_profile: Optional[BrandProfile]
     audit_metrics: Optional[AuditMetrics]
+    task_queue: List[Dict[str, Any]]
     human_approved: Optional[bool]
     human_feedback: Optional[str]
     errors: Annotated[List[str], operator.add]
