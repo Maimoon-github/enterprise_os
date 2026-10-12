@@ -509,26 +509,26 @@ _dynamic_imports: typing.Dict[str, str] = {
     "ValidationError": ".types",
     "ValidationErrorLocItem": ".types",
     "WaitAction": ".types",
-    "auth": ".",
-    "bash": ".",
-    "browser": ".",
-    "browser_captcha": ".",
-    "browser_cookies": ".",
-    "browser_network": ".",
-    "browser_page": ".",
-    "browser_state": ".",
-    "browser_tabs": ".",
-    "code": ".",
-    "display": ".",
-    "file": ".",
-    "jupyter": ".",
-    "mcp": ".",
-    "nodejs": ".",
-    "proxy": ".",
-    "sandbox": ".",
-    "shell": ".",
-    "skills": ".",
-    "util": ".",
+    "auth": ".auth",
+    "bash": ".bash",
+    "browser": ".browser",
+    "browser_captcha": ".browser_captcha",
+    "browser_cookies": ".browser_cookies",
+    "browser_network": ".browser_network",
+    "browser_page": ".browser_page",
+    "browser_state": ".browser_state",
+    "browser_tabs": ".browser_tabs",
+    "code": ".code",
+    "display": ".display",
+    "file": ".file",
+    "jupyter": ".jupyter",
+    "mcp": ".mcp",
+    "nodejs": ".nodejs",
+    "proxy": ".proxy",
+    "sandbox": ".sandbox",
+    "shell": ".shell",
+    "skills": ".skills",
+    "util": ".util",
 }
 
 
@@ -538,6 +538,8 @@ def __getattr__(attr_name: str) -> typing.Any:
         raise AttributeError(f"No {attr_name} found in _dynamic_imports for module name -> {__name__}")
     try:
         module = import_module(module_name, __package__)
+        if module_name.startswith(".") and module_name[1:] == attr_name:
+            return module
         result = getattr(module, attr_name)
         return result
     except ImportError as e:
