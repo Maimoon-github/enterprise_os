@@ -3,8 +3,10 @@ services:
     container_name: aio-sandbox
     image: ghcr.io/agent-infra/sandbox:latest
     security_opt:
-      - seccomp:unconfined # In production/CI with custom profile: seccomp=./docker/seccomp-profile.json
+      - seccomp:./docker/seccomp-profile.json
       - no-new-privileges:true
+    volumes:
+      - sandbox_data:/home/gem
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: "unless-stopped"
@@ -18,18 +20,19 @@ services:
     ports:
       - "127.0.0.1:${HOST_PORT:-8080}:8080"
     environment:
+      SANDBOX_API_KEY: ${SANDBOX_API_KEY:-aio-secret-key}
       EGRESS_NETWORK_POLICY: ${EGRESS_NETWORK_POLICY:-DENY_ALL}
       PROXY_SERVER: ${PROXY_SERVER:-http://127.0.0.1:8118}
-      EGRESS_ALLOWLIST: ${EGRESS_ALLOWLIST:-"*.google.com,*.googleapis.com,*.meta.com,*.facebook.com,*.tiktok.com,*.linkedin.com"}
+      EGRESS_ALLOWLIST: ${EGRESS_ALLOWLIST:-"*.google.com,*.googleapis.com,*.meta.com,*.tiktok.com,*.linkedin.com,*.shopify.com"}
       JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
       DNS_OVER_HTTPS_TEMPLATES: ${DNS_OVER_HTTPS_TEMPLATES:-"https://cloudflare-dns.com/dns-query{?dns}"}
       WORKSPACE: ${WORKSPACE:-"/home/gem"}
       HOMEPAGE: ${HOMEPAGE:-}
-      BROWSER_EXTRA_ARGS: ${BROWSER_EXTRA_ARGS:-}
+      BROWSER_EXTRA_ARGS: ${BROWSER_EXTRA_ARGS:---no-sandbox}
       TZ: ${TZ:-Asia/Singapore}
       DISPLAY_WIDTH: ${DISPLAY_WIDTH:-1280}
       DISPLAY_HEIGHT: ${DISPLAY_HEIGHT:-1024}
-      WAIT_PORTS: "8079,8091"
+      WAIT_PORTS: "8091"
       VNC_SERVER_PORT: 5900
       PUBLIC_PORT: 8080
       AUTH_BACKEND_PORT: 8081
@@ -54,3 +57,6 @@ services:
       # Features
       DISABLE_JUPYTER: ${DISABLE_JUPYTER:-false}
       DISABLE_CODE_SERVER: ${DISABLE_CODE_SERVER:-false}
+
+volumes:
+  sandbox_data:
