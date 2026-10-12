@@ -1,0 +1,11 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "reportMissingImports": "none",
+  "extraPaths": [
+    "core",
+    ".venv/lib/python3.11/site-packages"
+  ]
+}
