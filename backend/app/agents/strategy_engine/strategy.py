@@ -712,7 +712,7 @@ class StrategyAgent(BoundedWorkerAgent):
             operation=operation,
             payload=payload,
             network_policy=NetworkPolicy.DISABLED,
-            egress_grant=egress_grant,  # type: ignore[arg-type]
+            egress_grant=egress_grant,
             timeout_seconds=effective_timeout,
         )
         result = await sandbox_client.invoke(mandate)

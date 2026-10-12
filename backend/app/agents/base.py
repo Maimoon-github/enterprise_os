@@ -55,14 +55,32 @@ class WorkerReasoningOutput(BaseModel):
         except (ValueError, TypeError):
             return 0.7
 
-    @field_validator("selected_tools", mode="before")
+    @field_validator("selected_tools", "preliminary_findings", "identified_risks", mode="before")
     @classmethod
-    def _coerce_tools(cls, v: Any) -> list[str]:
+    def _coerce_list(cls, v: Any) -> list[str]:
         if isinstance(v, list):
             return [str(item) for item in v]
         if isinstance(v, str):
-            return [v]
+            s = v.strip()
+            if s.startswith("[") and s.endswith("]"):
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        return [str(item) for item in parsed]
+                except Exception:
+                    pass
+            return [s] if s else []
         return []
+
+    @field_validator("rationale_summary", "domain_interpretation", mode="before")
+    @classmethod
+    def _coerce_str(cls, v: Any) -> str:
+        if isinstance(v, dict):
+            return " ".join(f"{k}: {val}" for k, val in v.items())
+        if isinstance(v, list):
+            return " ".join(str(item) for item in v)
+        s = str(v).strip() if v is not None else ""
+        return s or "Domain reasoning analysis established."
 
 
 class BoundedWorkerAgent(ABC):
@@ -184,8 +202,18 @@ class BoundedWorkerAgent(ABC):
                 f"Bounded to '{current_tenant}'."
             )
 
-        # Enforce token budget limit
-        total_tokens = int(metadata.get("total_tokens") or 0)
+        # Enforce token budget limit (fail closed on malformed non-numeric metadata)
+        raw_tokens = metadata.get("total_tokens")
+        if raw_tokens is not None:
+            try:
+                total_tokens = int(raw_tokens)
+            except (ValueError, TypeError):
+                raise PolicyViolationError(
+                    f"Worker {grant.worker_role.value} reported malformed non-numeric token usage: {raw_tokens!r}."
+                )
+        else:
+            total_tokens = 0
+
         if total_tokens > grant.token_budget:
             raise PolicyViolationError(
                 f"Worker {grant.worker_role.value} exceeded token budget: "

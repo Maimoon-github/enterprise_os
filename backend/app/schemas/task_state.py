@@ -122,6 +122,11 @@ class ProjectCloseoutDossier(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     closed_at: datetime | None = None
 
+    @property
+    def is_fully_closed(self) -> bool:
+        """Return True if project status is CLOSED and stakeholder sign-off is approved."""
+        return self.project_status == "CLOSED" and self.stakeholder_approved
+
 
 # ===========================================================================
 # Development Engine Workflow & Lease Schemas (DE-02)

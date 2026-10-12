@@ -157,7 +157,9 @@ class LlmClient:
         if effective_temp is not None:
             request_body["temperature"] = effective_temp
         if effective_max_tokens is not None:
-            request_body["max_tokens"] = effective_max_tokens
+            request_body["max_tokens"] = (
+                max(effective_max_tokens, 8192) if self._settings.is_local else effective_max_tokens
+            )
         if response_format is not None:
             request_body["response_format"] = response_format
         if self._settings.is_local:

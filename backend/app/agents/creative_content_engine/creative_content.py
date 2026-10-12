@@ -453,7 +453,8 @@ class CreativeContentAgent(BoundedWorkerAgent):
                 "Boundaries: "
                 "- Zero direct access to databases, RAG, or outbound APIs (Model A). "
                 "- Zero sandbox capability. Tool execution occurs in specialist sandboxes. "
-                "- You must not expand channel scope or invent unsupported claims."
+                "- You must not expand channel scope or invent unsupported claims. "
+                "- 'evidence_manifest' MUST be selected strictly from 'approved_claims'."
             )
             grant_summary = {
                 "task_id": grant.task_id,
@@ -474,6 +475,12 @@ class CreativeContentAgent(BoundedWorkerAgent):
                     user_prompt=json.dumps(grant_summary, sort_keys=True),
                     response_model=CreativePlan,
                 )
+                plan_candidate.approved_channels = [
+                    ch for ch in plan_candidate.approved_channels if ch in channels
+                ] or list(channels)
+                plan_candidate.evidence_manifest = [
+                    cid for cid in plan_candidate.evidence_manifest if cid in claim_ids
+                ] or list(claim_ids)
                 plan = plan_candidate
             except Exception:
                 plan = CreativePlan(

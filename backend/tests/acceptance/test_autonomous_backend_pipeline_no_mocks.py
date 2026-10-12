@@ -65,9 +65,15 @@ from app.schemas.action_preview import ActionPreviewKind
 from app.schemas.dispatch import DispatchDirective
 from app.schemas.governance import Directive, RiskLevel, TenantScope, WorkerRole
 from app.schemas.sandbox import NetworkPolicy, ResourceLimits, SandboxCapability, SandboxEgressGrant, SandboxInvocationMandate
-from app.schemas.task_state import CanonicalTaskState, TaskDependency, TaskStatus
+from app.schemas.task_state import (
+    CanonicalTaskState,
+    MilestoneStatus,
+    StakeholderSignOff,
+    TaskDependency,
+    TaskStatus,
+)
 from app.schemas.telemetry import TelemetryEventType
-from app.security.authorization_boundary import AuthorizationBoundary
+from app.security.authorization_boundary import AuthorizationBoundary, CallerIdentity
 from app.security.cryptographic_validator import CryptographicValidator, sign_payload
 from app.security.scope_evaluator import ScopeEvaluator
 from app.services.hitl import HitlCoordinator
@@ -479,6 +485,88 @@ async def test_autonomous_backend_pipeline_no_mocks(uds_provisioner_socket: Path
         assert len(chain) >= 6, f"Expected full audit chain, got {len(chain)} records"
         is_chain_valid = await prov_recorder.verify_chain(tenant_id)
         assert is_chain_valid is True, "W3C PROV hash-chain must maintain cryptographic integrity"
+
+        # =====================================================================
+        # PHASE 5: AUTONOMOUS PROJECT CLOSEOUT (M7 / T34)
+        # Evaluates authoritative dependencies (T32 memory promotion, T33 audit lineage),
+        # Model A boundary, all 7 workers intact, and explicit brand stakeholder sign-off.
+        # =====================================================================
+        task_t30 = CanonicalTaskState(
+            task_id=f"task-t30-{uuid.uuid4()}",
+            directive_id=directive_id_1,
+            tenant_id=tenant_id,
+            worker_role=WorkerRole.LEARNING_PERFORMANCE,
+            status=TaskStatus.COMPLETED,
+            governance_approved=True,
+            cts_state={"tenant_id": tenant_id},
+        )
+        task_t31 = CanonicalTaskState(
+            task_id=f"task-t31-{uuid.uuid4()}",
+            directive_id=directive_id_1,
+            tenant_id=tenant_id,
+            worker_role=WorkerRole.LEARNING_PERFORMANCE,
+            status=TaskStatus.COMPLETED,
+            governance_approved=True,
+            cts_state={"tenant_id": tenant_id},
+        )
+        task_t32 = CanonicalTaskState(
+            task_id=f"task-t32-{uuid.uuid4()}",
+            directive_id=directive_id_1,
+            tenant_id=tenant_id,
+            worker_role=WorkerRole.LEARNING_PERFORMANCE,
+            status=TaskStatus.COMPLETED,
+            governance_approved=True,
+            cts_state={"tenant_id": tenant_id, "t34_ready": True, "promoted_memory_id": promoted.memory_id},
+        )
+        task_t33 = CanonicalTaskState(
+            task_id=f"task-t33-{uuid.uuid4()}",
+            directive_id=directive_id_1,
+            tenant_id=tenant_id,
+            worker_role=WorkerRole.LEARNING_PERFORMANCE,
+            status=TaskStatus.COMPLETED,
+            governance_approved=True,
+            cts_state={"tenant_id": tenant_id, "t34_ready": True, "is_valid": True, "audit_validation_id": "val-t33-live"},
+        )
+        task_t34 = CanonicalTaskState(
+            task_id=f"task-t34-{uuid.uuid4()}",
+            directive_id=directive_id_1,
+            tenant_id=tenant_id,
+            worker_role=WorkerRole.LEARNING_PERFORMANCE,
+            status=TaskStatus.IN_PROGRESS,
+            governance_approved=True,
+            cts_state={"tenant_id": tenant_id},
+        )
+        for t in (task_t30, task_t31, task_t32, task_t33, task_t34):
+            await task_state_service.save_state(tenant_id, t)
+
+        ie_caller = CallerIdentity(
+            subject="intelligence_engine",
+            tenant_scope=TenantScope(tenant_id=tenant_id),
+            risk_ceiling=RiskLevel.HIGH,
+        )
+        stakeholder_approval = StakeholderSignOff(
+            stakeholder_id="stakeholder-brand-owner-live",
+            stakeholder_role="Brand Stakeholder / Portfolio Owner",
+            decision="APPROVED",
+            signature="ed25519-valid-stakeholder-signature",
+            notes="Final acceptance criteria fully satisfied across all omnichannel, sandbox, and learning surfaces.",
+        )
+
+        checkpoint, dossier = await task_state_service.evaluate_m7_checkpoint(
+            tenant_id,
+            t30_task=task_t30,
+            t31_task=task_t31,
+            t32_task=task_t32,
+            t33_task=task_t33,
+            t34_task=task_t34,
+            stakeholder_approval=stakeholder_approval,
+            caller=ie_caller,
+        )
+        assert checkpoint.status == MilestoneStatus.COMPLETE
+        assert dossier.project_status == "CLOSED"
+        assert dossier.is_fully_closed is True
+        assert dossier.stakeholder_approved is True
+        assert len(dossier.blockers) == 0
 
     finally:
         await ie_llm.aclose()

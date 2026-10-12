@@ -175,7 +175,7 @@ class SandboxClient:
         if self._settings is None or not self._settings.endpoint:
             return None
         try:
-            import agent_sandbox  # type: ignore[import-untyped]
+            import agent_sandbox
 
             base_url = self._settings.endpoint
             headers = {}

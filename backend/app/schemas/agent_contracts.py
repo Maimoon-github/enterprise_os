@@ -14,7 +14,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.governance import RiskLevel, TenantScope, WorkerRole
 
@@ -494,6 +494,17 @@ class ConceptItem(BaseModel):
     narrative_architecture: str
     approved_evidence_refs: list[str] = Field(default_factory=list)
     prohibited_claims: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "territory", "audience_tension", "message_angle", "narrative_architecture", mode="before"
+    )
+    @classmethod
+    def _coerce_str(cls, v: Any) -> str:
+        if isinstance(v, dict):
+            return " -> ".join(f"{k}: {val}" for k, val in v.items())
+        if isinstance(v, list):
+            return " -> ".join(str(item) for item in v)
+        return str(v) if v is not None else ""
 
 
 class ConceptPack(CreativeArtifactEnvelope):

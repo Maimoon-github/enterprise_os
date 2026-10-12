@@ -159,10 +159,10 @@ class CreativeConceptAgent:
         for i, t in enumerate(distinct_templates):
             concept_item = ConceptItem(
                 concept_id=f"cpt-{i + 1}",
-                territory=t["territory"],
-                audience_tension=t["audience_tension"],
-                message_angle=t["message_angle"],
-                narrative_architecture=t["narrative_architecture"],
+                territory=t.get("territory", "Operational Strategy"),
+                audience_tension=t.get("audience_tension", "Execution Complexity"),
+                message_angle=t.get("message_angle", "Evidence-grounded efficiency"),
+                narrative_architecture=t.get("narrative_architecture", "Hook -> Tension -> Proof -> CTA"),
                 approved_evidence_refs=evidence_manifest,
                 prohibited_claims=prohibited_claims,
             )
