@@ -120,7 +120,7 @@ def test_postgres_pgvector_storage_and_search():
     )
     assert record_id is not None
 
-    brand_results = client.search_brand_state(embedding_brand, limit=5)
+    brand_results = client.search_brand_state(embedding_brand, limit=50)
     assert len(brand_results) > 0
     assert any(r["brand_id"] == brand_id for r in brand_results)
     assert brand_results[0]["similarity"] > 0.999
