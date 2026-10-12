@@ -75,9 +75,9 @@ class VectorRelationalClient:
                     """,
                     (brand_id, version, json.dumps(profile_data), str(embedding)),
                 )
-                row_id = cur.fetchone()[0]
+                row = cur.fetchone()
                 conn.commit()
-                return str(row_id)
+                return str(row[0]) if row is not None else ""
 
     def search_brand_state(
         self,
@@ -128,9 +128,9 @@ class VectorRelationalClient:
                     """,
                     (task_id, phase, outcome, reflection, json.dumps(metrics), str(embedding)),
                 )
-                row_id = cur.fetchone()[0]
+                row = cur.fetchone()
                 conn.commit()
-                return str(row_id)
+                return str(row[0]) if row is not None else ""
 
     def search_episodic_post_mortems(
         self,

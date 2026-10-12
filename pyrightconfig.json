@@ -6,6 +6,8 @@
   "reportMissingImports": "none",
   "extraPaths": [
     "core",
+    "rag",
+    "sandbox/sdk/python",
     ".venv/lib/python3.11/site-packages"
   ]
 }
