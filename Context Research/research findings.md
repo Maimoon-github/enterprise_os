@@ -1,13 +1,15 @@
 # Autonomous AI Agent Architecture for Personal Branding & eCommerce Growth
 
-## 1. Executive Architecture Overview & Framework Justification
+This architectural blueprint establishes an enterprise-grade autonomous agentic system designed for personal branding, portfolio authority, and eCommerce growth. Built upon **LangGraph** (supported by **LangChain Core**) and integrated with the **AIO Sandbox (`agent-infra/sandbox`)**, the architecture operationalizes cyclic reasoning, deterministic state transitions, checkpointed persistence, and isolated execution.
 
-This architectural blueprint specifies an enterprise-grade autonomous agentic system tailored for personal branding, portfolio authority, and eCommerce growth. Built upon **LangGraph** (supported by **LangChain Core**), the architecture operationalizes cyclic reasoning, deterministic state transitions, checkpointed persistence, and multi-agent coordination.
+---
+
+## 1. System Architecture & Component Mapping
 
 ```
                                   +-------------------------------------------------------------+
                                   |                 PERCEPTION LAYER (INPUT)                    |
-                                  | Webhooks | Storefront Scrapes | Analytics | User Directives |
+                                  | Storefront Scrapes | Analytics (GA4/GSC) | Brand Manifestos |
                                   +------------------------------+------------------------------+
                                                                  |
                                                                  v
@@ -16,68 +18,58 @@ This architectural blueprint specifies an enterprise-grade autonomous agentic sy
 |                                                                                                                               |
 |  +--------------------+         +---------------------------------------------+         +----------------------------------+  |
 |  |   PLANNING & COT   | <=====> |             RE-ACT EXECUTION CORE           | <=====> |          MEMORY SYSTEMS          |  |
-|  |  - Goal Decomp.    |  State  |  - Thought: Context Synthesis               |  State  |  - Short-Term: Ephemeral Window  |  |
-|  |  - 90-Day Mileston.|         |  - Action: Tool Selection & Execution       |         |  - Long-Term: Postgres + Chroma  |  |
-|  |  - Content Pillars |         |  - Observation: Environment Feedback Loop   |         |  - Profile: Brand Identity State |  |
+|  | - Goal Decomp.     |  State  |  - Thought: Context & Positioning Logic     |  State  | - Short-Term: Ephemeral Window   |  |
+|  | - 90-Day Roadmap   |  Sync   |  - Action: Tool Selection & Execution       |  Sync   | - Long-Term: Postgres + pgvector |  |
+|  | - Content Pillars  |         |  - Observation: Environment Feedback Loop   |         | - Brand Profile: Identity State  |  |
 |  +--------------------+         +----------------------+----------------------+         +----------------------------------+  |
 |                                                        |                                                                      |
 +--------------------------------------------------------|----------------------------------------------------------------------+
-                                                         | Tool Calls / Dispatches
+                                                         | Tool Dispatches / RPC
                                                          v
 +-------------------------------------------------------------------------------------------------------------------------------+
-| AIO SANDBOX RUNTIME LAYER (`agent_sandbox` SDK)                                                                               |
+| AIO SANDBOX RUNTIME LAYER (`agent-sandbox` Python SDK)                                                                        |
 |                                                                                                                               |
 |  +------------------------+  +------------------------+  +------------------------+  +----------------------------------+  |
 |  |   BROWSER AUTOMATION   |  |   WORKSPACE & FILES    |  |   CODE & RUNTIMES      |  |    MCP & SKILL REGISTRY          |  |
-|  | - browser_page (DOM)   |  | - file (Audit, Assets) |  | - shell / bash session |  | - mcp (SEO/Analytics Tooling)    |  |
-|  | - browser_network(HAR) |  | - util (Markdown Conv) |  | - code (Data Analysis) |  | - skills (Brand Engine Rules) |  |
+|  | - browser_page (DOM)   |  | - file (Audit, Assets) |  | - shell / bash session |  | - mcp (SEO/Analytics Tooling)|  |
+|  | - browser_network(HAR) |  | - util (Markdown Conv) |  | - code (Data Analysis) |  | - skills (Branding Playbooks) |  |
 |  +------------------------+  +------------------------+  +------------------------+  +----------------------------------+  |
 +--------------------------------------------------------|----------------------------------------------------------------------+
-                                                         | Execution & Safety Gate
+                                                         | Execution & Safety Intercept
                                                          v
                                   +-------------------------------------------------------------+
                                   |               GUARDRAILS & COMMUNICATOR LAYER               |
-                                  | Tone & Fact Check | PII Filter | Human-in-the-Loop Approval |
+                                  | Tone/Voice Verification | Grounding Check | HitL Governance |
                                   +-------------------------------------------------------------+
 
 ```
 
-### Framework Selection: LangGraph
+### 1. Perception Module (Input Layer)
 
-* **Deterministic Control Flow:** Unlike non-deterministic multi-agent loops, LangGraph models the marketing funnel and branding workflows as a directed cyclic graph (`StateGraph`), enforcing explicit verification gates between strategy planning, asset creation, and publishing.
-* **Persistent State & Checkpointing:** Built-in persistence allows the agent to suspend execution for Human-in-the-Loop (HitL) approvals (e.g., ad spend or public content sign-off) and resume seamlessly across multi-week campaign lifecycles.
-* **Granular Error Recovery:** Node-level error handling allows falling back to alternate tools (e.g., fallback from direct API to browser-driven storefront analysis) without corrupting conversational state.
+* **Ingestion Pipelines:** Ingests unstructured assets (founder interviews, case studies, customer reviews), semi-structured data (Google Analytics 4, Search Console, Shopify/WooCommerce product catalogs), and environmental market signals.
+* **Multi-Modal Normalization:** Leverages sandbox utilities (`agent_sandbox.util.convert_to_markdown`) alongside DOM parsers to transform raw webpage hierarchies, product listings, and social metrics into typed Pydantic data schemas: `AudienceProfile`, `StoreAuditSignal`, and `MarketTrendSignal`.
 
----
+### 2. Reasoning Engine (Brain / LLM)
 
-## 2. Core Agentic Components
-
-### Component 1: Perception Module (Input Layer)
-
-* **Ingestion Pipelines:** Ingests unstructured inputs (creator interviews, brand manifestos, customer reviews), semi-structured data (Google Analytics 4 / Search Console exports, Shopify store catalogs), and real-time environmental signals (social trend APIs, competitor website changes).
-* **Multi-Modal Normalization:** Leverages the sandbox utility service (`agent_sandbox.util.convert_to_markdown`) and OCR/DOM parsers to transform raw webpage structures, product pages, and social feeds into structured Pydantic schemas: `AudienceProfile`, `StoreAuditSignal`, and `MarketTrendSignal`.
-
-### Component 2: Reasoning Engine (Brain / LLM)
-
-* **Chain-of-Thought (CoT) Deliberation:** Precedes all strategic decisions with a multi-step analytical monologue that articulates positioning trade-offs, evaluates competitive differentiation, and examines commercial viability before generating outputs.
-* **Reasoning and Acting (Re-Act) Execution:** Employs an interleaved `Thought -> Action -> Observation -> Reflection` cycle to validate external state changes (e.g., verifying that a newly generated landing page passes Core Web Vitals and checkout usability standards prior to marking a milestone complete).
+* **Chain-of-Thought (CoT) Deliberation:** Precedes all strategic decisions with a multi-step analytical monologue evaluating positioning trade-offs, competitive differentiation, and commercial viability before committing actions.
+* **Reasoning and Acting (Re-Act) Execution:** Employs an interleaved `Thought -> Action -> Observation -> Reflection` cycle to validate external state changes (e.g., verifying that a revised landing page resolves Baymard checkout usability issues before marking a task complete).
 * **Dual-Tier Model Routing:**
-* *High-Capacity LLM (e.g., Claude 3.5 Sonnet / GPT-4o):* Orchestration, high-level brand positioning, creative narrative generation, and funnel bottleneck diagnosis.
-* *High-Efficiency LLM (e.g., Claude 3.5 Haiku / GPT-4o-mini):* Real-time social engagement classification, sentiment analysis on product reviews, and token-efficient DOM pruning.
+* *High-Capacity LLM (Claude 3.5 Sonnet / GPT-4o):* Orchestration, high-level brand positioning, creative narrative generation, and funnel bottleneck diagnosis.
+* *High-Efficiency LLM (Claude 3.5 Haiku / GPT-4o-mini):* Real-time engagement classification, review sentiment analysis, and token-efficient DOM pruning.
 
 
 
-### Component 3: Planning Module
+### 3. Planning Module
 
-* **Hierarchical Task Network (HTN):** Deconstructs long-term brand objectives into a three-tiered execution hierarchy:
+* **Hierarchical Task Network (HTN):** Deconstructs branding objectives into a 3-tier hierarchy:
 1. *Macro Strategy:* 90-day growth horizon (Positioning $\to$ Publishing & Testing $\to$ Optimization & Scaling).
-2. *Meso Campaigns:* Funnel-specific sprints (e.g., top-of-funnel thought leadership or bottom-of-funnel retargeting).
-3. *Micro Tasks:* Discrete operational actions (e.g., write a 5-post carousel, audit checkout friction, query GA4 conversion paths).
+2. *Meso Campaigns:* Funnel-specific sprints (Top-of-Funnel thought leadership, Bottom-of-Funnel retargeting).
+3. *Micro Tasks:* Discrete operational actions (e.g., draft a 5-slide carousel, audit checkout friction, query GA4 conversion paths).
 
 
-* **Dynamic Replanning Loop:** Periodically contrasts performance telemetry against expected benchmarks. If qualified website sessions drop below target or customer acquisition cost (CAC) exceeds limits, the planner reallocates budget and triggers brand proposition refinements.
+* **Dynamic Replanning Loop:** Periodically checks performance telemetry against baselines. When qualified website sessions drop below target or customer acquisition cost (CAC) spikes, the planner recalculates budget allocations and initiates value proposition refinements.
 
-### Component 4: Memory Systems
+### 4. Memory Systems
 
 * **Short-Term Memory (Working Context):** Managed via LangGraph state threads and sliding-window scratchpads. Tracks immediate conversational intents, intermediate tool execution outputs, and transient browser DOM states during scraping.
 * **Long-Term Memory (Episodic & Semantic Store):**
@@ -86,32 +78,32 @@ This architectural blueprint specifies an enterprise-grade autonomous agentic sy
 
 
 
-### Component 5: Knowledge Base (RAG System)
+### 5. Knowledge Base (RAG System)
 
-* **Hybrid Retrieval Architecture:** Combines dense semantic vector search (cosine similarity on embedding vectors) with sparse lexical BM25 retrieval, passed through a cross-encoder reranker.
+* **Hybrid Retrieval Architecture:** Combines dense semantic vector search (cosine similarity on embeddings) with sparse lexical BM25 retrieval, passed through a cross-encoder reranker.
 * **Domain Partitions:**
-* *Brand Core:* Brand guidelines, founder biography, product specs, testimonials, and past successful copy.
-* *Playbooks & Research:* Conversion rate optimization (CRO) heuristics (Baymard Institute patterns), platform algorithms (LinkedIn thought-leadership rules, TikTok discovery patterns), and Google Helpful Content guidelines.
+* *Brand Core:* Brand guidelines, founder biography, product specs, testimonials, and past top-performing copy.
+* *Playbooks & Research:* Conversion rate optimization (CRO) heuristics (Baymard Institute checkout standards), platform algorithms (LinkedIn thought-leadership rules, TikTok discovery patterns), and Google Helpful Content guidelines.
 
 
-* **Autonomous Query Formulation:** When drafting content or auditing funnels, the agent dynamically generates decomposed search sub-queries to retrieve relevant proof points and case studies.
+* **Autonomous Query Formulation:** Generates targeted sub-queries to retrieve relevant proof points and case studies when drafting content or auditing funnels.
 
-### Component 6: Action & Tool Integration Layer
+### 6. Action & Tool Integration Layer
 
-Equips the agent with structured tooling conforming to Model Context Protocol (MCP) and Python tool-calling standards:
+Equips the agent with structured tooling conforming to the Model Context Protocol (MCP) and Python tool-calling standards:
 
 * **eCommerce Toolset:** Headless Shopify/WooCommerce API connectors (inventory tracking, collection structure, checkout speed audits).
 * **SEO & Content Tools:** Keyword discovery, page speed testing, and schema validation.
 * **Social Distribution Connectors:** Platform posting APIs (LinkedIn, X, Instagram, YouTube) supporting multi-format payload scheduling.
 * **Analytics Engine:** GA4 Data API and Search Console connectors to extract traffic quality, bounce rates, attribution paths, and ROAS.
 
-### Component 7: Communication & Interaction Layer
+### 7. Communication & Interaction Layer
 
 * **Multi-Channel Orchestration:** Communicates with human stakeholders via unified webhooks (Slack, Email, Discord, Web Dashboard).
-* **Human-in-the-Loop (HitL) Protocol:** Integrates approval interrupts for sensitive actions (e.g., executing public social posts, publishing updated website copy, or adjusting ad spend thresholds).
+* **Human-in-the-Loop (HitL) Protocol:** Enforces approval interrupts for sensitive actions (e.g., executing public social posts, publishing updated website copy, or adjusting ad spend thresholds).
 * **Actionable Reporting Interface:** Translates analytical data into executive summaries detailing CAC, customer lifetime value (CLV), contribution margin, and funnel leakages.
 
-### Component 8: Guardrails, Safety & Continuous Learning Layer
+### 8. Guardrails, Safety & Continuous Learning Layer
 
 * **Deterministic Brand Rule Enforcer:** Validates all generated copy against strict stylistic constraints (forbidden keywords, tone polarity, reading grade level, and accessibility standards).
 * **Anti-Hallucination & Proof Verifier:** Ensures every claim of expertise, product feature, or numerical statistic is explicitly grounded in verified knowledge base chunks before publication.
@@ -119,7 +111,19 @@ Equips the agent with structured tooling conforming to Model Context Protocol (M
 
 ---
 
+## 2. Framework Selection Justification
+
+**LangGraph** was selected over crew-based or conversational chat orchestrators for three core technical reasons:
+
+1. **Deterministic Control Flow:** Unlike non-deterministic multi-agent loops, LangGraph models the marketing funnel and branding workflows as a directed cyclic graph (`StateGraph`), enforcing explicit verification gates between strategy planning, asset creation, and publishing.
+2. **Stateful Checkpointing for HitL:** Built-in persistence (`MemorySaver` / Postgres Checkpointer) allows the agent to suspend execution at sensitive decision points (e.g., ad spend or public content sign-off) and resume execution across multi-week campaign lifecycles.
+3. **Granular Error Recovery:** Node-level error handling allows falling back to alternate tools (e.g., fallback from direct API to browser-driven storefront analysis) without corrupting conversational state.
+
+---
+
 ## 3. Strategic Domain Integration
+
+### Integrated Marketing Funnel & Content Pillar Matrix
 
 ```
 +----------------------------------------------------------------------------------------------------+
@@ -145,33 +149,30 @@ Equips the agent with structured tooling conforming to Model Context Protocol (M
 
 ```
 
-### Content Engine & Distribution Matrix
+### 1-to-N Content Repurposing Pipeline
 
-The agent implements an automated 1-to-N repurposing pipeline:
-
-1. **Core Asset Generation:** A long-form website case study or deep-dive article containing primary proof points.
-2. **Derivative Repurposing:**
-* *LinkedIn:* Process analysis breakdown focusing on business impact and technical decisions.
-* *Instagram/Pinterest:* Visual carousel illustrating before-and-after metrics or aesthetic product showcases.
-* *TikTok / YouTube Shorts:* Script generation focusing on hook-and-demonstration formats.
-* *Email Nurturing:* Direct, permission-based newsletter driving subscribers to the full case study.
+1. **Core Asset Generation:** The agent authors an authoritative, in-depth website case study or technical teardown.
+2. **Platform Derivative Derivation:**
+* **LinkedIn:** Process breakdown emphasizing strategic decisions and measurable business outcomes.
+* **Instagram/Pinterest:** Visual carousel illustrating before-and-after transformations and key metrics.
+* **TikTok / YouTube Shorts:** Script generation with a strong hook, rapid demonstration, and focused CTA.
+* **Email Nurturing:** Concise, value-driven newsletter guiding subscribers directly to the website asset.
 
 
 
 ### Commercial Analytics & Unit Economics
 
-The agent distinguishes vanity metrics from financial health:
+The agent distinguishes vanity metrics from financial health using explicit commercial formulas:
 
 
 $$\text{Net Contribution} = \text{Revenue} - (\text{COGS} + \text{Fulfillment} + \text{Ad Spend} + \text{Platform Fees})$$
 
 $$\text{ROAS} = \frac{\text{Attributed Revenue}}{\text{Advertising Spend}} \quad \Big\vert{} \quad \text{Health Ratio} = \frac{\text{CLV}}{\text{CAC}} \ge 3.0$$
 
-
-Funnel bottlenecks are systematically diagnosed:
+**Funnel Bottleneck Diagnosis Heuristics:**
 
 * *High Reach + Low Website Traffic:* Weak hook, improper audience targeting, or vague call-to-action.
-* *High Traffic + Low Conversions:* Landing page mismatch, lack of credibility proof, slow page speed, or checkout friction.
+* *High Traffic + Low Conversions:* Landing page mismatch, lack of credibility proof, slow page speed, or checkout friction (e.g., hidden shipping costs, mandatory account creation).
 
 ---
 
@@ -217,13 +218,12 @@ from typing import Annotated, Dict, List, Literal, TypedDict
 from pydantic import BaseModel, Field
 import operator
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 # Import AIO Sandbox Python SDK
 from agent_sandbox.client import SandboxClient
-from agent_sandbox.types import ActionData, TypingAction, ClickAction
 
 
 # ---------------------------------------------------------------------------
@@ -262,18 +262,17 @@ class SandboxEnvironmentManager:
 
     def audit_storefront(self, url: str) -> Dict[str, any]:
         """Performs headless browser navigation and extracts page metrics."""
-        # 1. Navigate to target URL
         self.client.browser_page.navigate(url=url)
         self.client.browser_page.wait(time=2.0)
         
-        # 2. Extract DOM & convert to Markdown for token-efficient LLM analysis
+        # Extract DOM & convert to Markdown for token-efficient LLM analysis
         markdown_content = self.client.browser_page.get_markdown()
         
-        # 3. Capture screenshot for visual validation
+        # Capture screenshot for visual validation
         screenshot_bytes = self.client.browser_page.screenshot()
-        self.client.file.write_file(path="/workspace/audit_shot.png", content=screenshot_bytes)
+        self.client.file.write_file(path="/home/gem/audit_shot.png", content=screenshot_bytes)
         
-        # 4. Verify network calls for analytics tags
+        # Verify network calls for analytics tags
         requests = self.client.browser_network.get_requests()
         has_ga4 = any("google-analytics.com" in r.url for r in requests)
         
@@ -297,7 +296,6 @@ def perception_and_audit_node(state: AgentState) -> Dict:
     """Uses AIO Sandbox browser to audit current digital assets."""
     audit_data = sandbox_manager.audit_storefront(url="https://client-brand-store.com")
     
-    # Analyze friction via CoT logic
     friction_notes = []
     if not audit_data["has_analytics"]:
         friction_notes.append("Google Analytics 4 tracking tag missing.")
@@ -323,7 +321,7 @@ def strategic_reasoning_node(state: AgentState) -> Dict:
     thought = (
         f"CoT Analysis: Target audience '{profile.audience}' requires high proof. "
         f"Conversion audit detected: {metrics.cro_friction_points}. "
-        f"Per strategic principle: Fix conversion hurdles before scaling traffic."
+        f"Principle: Fix conversion hurdles before scaling traffic."
     )
     
     next_tasks = [
@@ -344,9 +342,8 @@ def human_approval_gate(state: AgentState) -> Dict:
 def execution_node(state: AgentState) -> Dict:
     """Executes actions across sandbox tools and channels."""
     executed_tasks = state["task_queue"]
-    # Operationalize tasks inside sandbox workspace
     sandbox_manager.client.file.write_file(
-        path="/workspace/published_strategy.md",
+        path="/home/gem/published_strategy.md",
         content="\n".join([f"- {t}" for t in executed_tasks])
     )
     return {
@@ -395,7 +392,7 @@ app = workflow.compile(checkpointer=checkpointer, interrupt_before=["human_gate"
 
 ---
 
-## 5. 90-Day Autonomous Implementation Roadmap & Weekly Operating Rhythm
+## 5. 90-Day Implementation Roadmap & Weekly Operating Rhythm
 
 ```
 +----------------------------------------------------------------------------------------------------+
@@ -421,7 +418,7 @@ app = workflow.compile(checkpointer=checkpointer, interrupt_before=["human_gate"
 
 ### Autonomous Weekly Operating Rhythm
 
-* **Monday (Perception & Planning):** Ingest GA4, Search Console, and social metrics. Run CoT bottleneck diagnosis. Plan weekly distribution queue across the 4 content pillars.
+* **Monday (Perception & Planning):** Ingest GA4, Search Console, and platform metrics via sandbox MCP tools. Run CoT bottleneck diagnosis. Plan weekly distribution queue across the 4 content pillars.
 * **Tuesday–Thursday (Asset Production & Re-Act Validation):** Draft 1 core website asset. Repurpose into 3–5 native social assets. Validate copy against guardrails and verify all claims against the RAG knowledge base.
 * **Friday (Human-in-the-Loop Sign-off & Staging):** Submit staged content and ad spend recommendations to stakeholders via the interactive approval gate.
 * **Saturday–Sunday (Community Engagement & Telemetry):** Ingest audience responses, classify comment intent, flag high-intent sales inquiries, and record episodic memory logs for the next cycle.

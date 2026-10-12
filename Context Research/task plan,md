@@ -1,109 +1,97 @@
-An essential, logically sequenced execution plan for the **Autonomous AI Agent Architecture for Personal Branding & eCommerce Growth**, derived strictly from the architecture blueprints, technical specifications, and strategic implementation frameworks in the source material.
+Below is the logically sequenced execution plan for the **Autonomous AI Agent Architecture for Personal Branding & eCommerce Growth**, structured into 9 sequential tasks with granular sub-tasks derived from the architectural specifications and implementation roadmaps.
 
 ---
 
-### Autonomous AI Agent Execution Plan
+### Execution Plan: Autonomous AI Agent Architecture for Personal Branding & eCommerce Growth
 
 | Task ID | Phase | Task Name | Description | Predecessor | Milestone | Resource / Owner |
 | --- | --- | --- | --- | --- | --- | --- |
-| **TSK-01** | **Phase 1: Architecture & Foundation Setup** | AIO Sandbox Environment & Runtime Provisioning | Configure and validate the core runtime within the AIO sandbox using the `agent_sandbox` SDK.<br>
+| **TSK-01** | Phase 1: Environment Provisioning & Infrastructure Foundation | Provision and Configure AIO Sandbox Runtime Environment | Deploy the unified containerized AIO Sandbox (`ghcr.io/agent-infra/sandbox`) environment and configure network isolation, resource limits, and authentication.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 1.1:** Spin up the unified Docker container configuring shared volumes (`/home/gem`), memory limits (`shm_size: 2gb`, `mem_limit: 8g`, 4 CPUs), and ephemeral tmpfs mounts.<br>
 
-<br>• Initialize `SandboxClient` and connect execution modules (`browser`, `browser_page`, `browser_network`, `file`, `shell`, `code`, `mcp`, `skills`).<br>
+<br>• **Sub-task 1.2:** Enforce egress traffic policies (`EGRESS_NETWORK_POLICY: DENY_ALL`) via Tinyproxy (port 8118) and establish allowlists for marketing/search endpoints.<br>
 
-<br>• Configure sandbox resource monitoring and telemetry logging via `agent_sandbox.sandbox` (Observe).<br>
-
-<br>• Validate isolated script execution and network request capture (HAR exports). | None | Sandbox Runtime Environment Verified | Systems Engineer / Sandbox Administrator |
-| **TSK-02** | **Phase 1: Architecture & Foundation Setup** | LangGraph State Machine & Memory Systems Implementation | Construct the core orchestration graph, working schemas, and multi-tier memory systems.<br>
+<br>• **Sub-task 1.3:** Configure authentication endpoints, API key tokens (`X-AIO-API-Key`), and initialize service daemons (Gateway 8080, CDP 9222, Jupyter 8888, MCP Hub 8079). | None | M1: Hardened Sandbox Runtime Operational | Infrastructure / DevOps Engineer |
+| **TSK-02** | Phase 1: Environment Provisioning & Infrastructure Foundation | Initialize Orchestration State Machine & Persistent Storage Backends | Set up the LangGraph `StateGraph` core, persistence checkpointing, and vector-relational storage layers.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 2.1:** Implement the typed Pydantic state schemas (`BrandProfile`, `AuditMetrics`, `AgentState`) with custom state reducers.<br>
 
-<br>• Define `AgentState` schema containing `BrandProfile`, `AuditMetrics`, `task_queue`, and operational flags.<br>
+<br>• **Sub-task 2.2:** Configure LangGraph persistent state checkpointing (`MemorySaver` / PostgreSQL checkpointer) to support state suspension across multi-turn sessions.<br>
 
-<br>• Implement the cyclic Re-Act execution core with short-term sliding-window context management.<br>
-
-<br>• Provision persistent long-term storage (PostgreSQL + `pgvector` for episodic campaign data; Knowledge Graph for semantic brand identity).<br>
-
-<br>• Attach `MemorySaver` checkpointer to enable persistent state and Human-in-the-Loop (HitL) execution interrupts. | TSK-01 | Agent State Engine & Persistence Active | Lead AI Architect / LangGraph Developer |
-| **TSK-03** | **Phase 1: Architecture & Foundation Setup** | Hybrid Knowledge Base (RAG) & Tool/MCP Integration | Build domain-specific retrieval systems and tool-calling interfaces for external ecosystem execution.<br>
+<br>• **Sub-task 2.3:** Provision PostgreSQL with `pgvector` to house episodic post-mortems and the semantic brand knowledge graph (`BrandState`). | TSK-01 | M2: Graph State Engine & Persistence Verified | AI Architect / Python Lead |
+| **TSK-03** | Phase 2: Knowledge Ingestion & Perception Engine Integration | Integrate Multimodal Perception Pipelines & Hybrid RAG Knowledge Base | Connect sandbox ingestion tools to normalize external inputs and build domain-partitioned retrieval indices.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 3.1:** Implement input pipelines wrapping `agent_sandbox.util.convert_to_markdown` and DOM parsers into typed signals (`AudienceProfile`, `StoreAuditSignal`, `MarketTrendSignal`).<br>
 
-<br>• Deploy hybrid retrieval engine (dense vector embeddings + sparse BM25 + cross-encoder reranker) partitioned into Brand Core and Playbooks/Research.<br>
+<br>• **Sub-task 3.2:** Index brand core materials (manifestos, biographies, product specs, testimonials) into the vector store.<br>
 
-<br>• Integrate Model Context Protocol (MCP) and API connectors for headless eCommerce (Shopify/WooCommerce), SEO analysis, social publishing, and GA4/Search Console.<br>
+<br>• **Sub-task 3.3:** Ingest industry CRO heuristics (Baymard checkout patterns), platform algorithms (LinkedIn thought leadership, TikTok discovery), and Google Helpful Content guidelines.<br>
 
-<br>• Register modular branding skills via `agent_sandbox.skills` (`cro_auditor`, `copy_generator`, `funnel_analyzer`). | TSK-02 | RAG Knowledge Base & Tool Integration Operational | Backend & RAG Engineer |
-| **TSK-04** | **Phase 1: Architecture & Foundation Setup (Days 1–30)** | Autonomous Digital Asset & Checkout Friction Audit | Execute automated inspection of website assets, user experience, and conversion paths.<br>
-
-<br>
-
-<br>**Sub-tasks:**<br>
-
-<br>• Automate headless browser crawling via `agent_sandbox.browser_page` to evaluate DOM structure, mobile usability, and page load performance.<br>
-
-<br>• Conduct eCommerce CRO audits against Baymard usability heuristics (transparent shipping, guest checkout friction, form complexity).<br>
-
-<br>• Verify active analytics tags (GA4, Search Console, Meta Pixel) using `agent_sandbox.browser_network` request inspection. | TSK-03 | Baseline Asset Audit & Usability Report Complete | Autonomous CRO Agent / UX Specialist |
-| **TSK-05** | **Phase 1: Architecture & Foundation Setup (Days 1–30)** | Brand Positioning Formulation & Tracking Configuration | Establish foundational messaging, audience parameters, and complete data instrumentation.<br>
+<br>• **Sub-task 3.4:** Build the hybrid retriever combining dense vector cosine similarity, sparse BM25 lexical search, and cross-encoder reranking. | TSK-02 | M3: Knowledge Base & Perception Parsers Active | AI Engineer / Data Specialist |
+| **TSK-04** | Phase 2: Knowledge Ingestion & Perception Engine Integration | Implement Sandbox Automated Audit & Perception Node (`Days 1–30`) | Implement the automated inspection pipeline using sandbox browser and network inspection services to audit digital storefronts and digital assets.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 4.1:** Develop headless browser automation via `agent_sandbox.browser_page` to navigate target URLs, capture viewports, and evaluate Core Web Vitals and DOM trees.<br>
 
-<br>• Synthesize audience pain points, core value proposition, differentiation, and voice tone into the living `BrandProfile`.<br>
+<br>• **Sub-task 4.2:** Intercept and parse network telemetry using `agent_sandbox.browser_network` to export HAR records and verify GA4 and Meta Pixel tracking tag implementations.<br>
 
-<br>• Define visual/verbal standards, credibility proof requirements (case studies, testimonials), and focused brand promises for key landing pages.<br>
-
-<br>• Configure conversion events, key action tracking in GA4, Search Console indexing, and permission-based email capture mechanisms. | TSK-04 | Brand Positioning Established & Analytics Configured | Brand Strategist / Analytics Engineer |
-| **TSK-06** | **Phase 2: Content Engine & Testing (Days 31–60)** | Autonomous Content Engine & 1-to-N Repurposing Pipeline | Implement the content production workflow structured across the four defined content pillars.<br>
+<br>• **Sub-task 4.3:** Encode Baymard checkout heuristic checks (identifying hidden shipping costs, forced registrations, complex navigation) into automated audit output flags. | TSK-01, TSK-03 | M4: Autonomous Digital Asset & CRO Audit Validated | Full-Stack Agent Developer |
+| **TSK-05** | Phase 3: Reasoning, Planning & Decision Core | Construct Hierarchical Planning & Dual-Tier CoT/Re-Act Reasoning Nodes | Build the strategic reasoning, task decomposition, and dynamic replanning engine.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 5.1:** Implement the Hierarchical Task Network (HTN) planner for Macro (90-day roadmap), Meso (funnel campaigns), and Micro (individual copy/audit tasks) planning.<br>
 
-<br>• Configure the Hierarchical Task Network (HTN) planner to balance publishing effort: 35% Educational, 25% Proof/Demos, 20% Brand Story, 20% Offers/Conversion.<br>
+<br>• **Sub-task 5.2:** Build the Chain-of-Thought (CoT) analytical module for audience positioning trade-offs using high-capacity LLMs (Claude 3.5 Sonnet / GPT-4o).<br>
 
-<br>• Deploy the 1-to-N repurposing engine: generate core deep-dive website assets and derive native platform adaptations (LinkedIn, Instagram, TikTok/YouTube, email).<br>
+<br>• **Sub-task 5.3:** Construct the Re-Act execution loop (`Thought -> Action -> Observation -> Reflection`) using high-efficiency LLMs (Claude 3.5 Haiku / GPT-4o-mini) for tool dispatches and validation.<br>
 
-<br>• Enforce safety guardrails: validate content against deterministic brand style rules, tone polarity filters, and anti-hallucination source grounding. | TSK-05 | Content Repurposing & Guardrail Pipeline Validated | Content Automation Engineer / Copy Strategist |
-| **TSK-07** | **Phase 2: Content Engine & Testing (Days 31–60)** | Multi-Channel Campaign Execution & HitL Orchestration | Launch scheduled campaigns with systematic stakeholder governance and audience feedback handling.<br>
-
-<br>
-
-<br>**Sub-tasks:**<br>
-
-<br>• Execute the weekly operating rhythm (Monday planning, Tuesday–Thursday production, Friday staging, weekend telemetry).<br>
-
-<br>• Route sensitive outbound assets and ad spend thresholds through the LangGraph `human_gate` approval checkpoint.<br>
-
-<br>• Monitor incoming engagement, categorize comment sentiment, identify qualified inbound leads, and trigger nurturing email sequences. | TSK-06 | Multi-Channel Publishing & Lead Capture Active | Marketing Operations Agent / Human Reviewer |
-| **TSK-08** | **Phase 3: Performance Evaluation & Scaling (Days 61–90)** | Commercial Funnel Telemetry & Conversion Bottleneck Optimization | Ingest cross-channel performance metrics to resolve conversion friction and validate commercial contribution.<br>
+<br>• **Sub-task 5.4:** Establish dynamic replanning triggers based on traffic and conversion variance thresholds. | TSK-04 | M5: Autonomous Planning & Strategic Brain Operational | AI Architect / Python Lead |
+| **TSK-06** | Phase 3: Reasoning, Planning & Decision Core | Establish Guardrails, Safety Verifiers & Human-in-the-Loop (HitL) Gates | Embed deterministic brand compliance filters and approval checkpoints prior to outbound action dispatch.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 6.1:** Build a deterministic brand rule checker to validate copy tone, readability scores, forbidden keywords, and accessibility standards.<br>
 
-<br>• Ingest GA4 and platform analytics to calculate Net Contribution, ROAS, CAC, and the CLV-to-CAC health ratio ($\ge 3.0$).<br>
+<br>• **Sub-task 6.2:** Implement an anti-hallucination verification module ensuring all product claims, metrics, and quotes cite ground-truth chunks in the RAG store.<br>
 
-<br>• Run Chain-of-Thought (CoT) diagnostic routines to isolate funnel bottlenecks (e.g., high reach/low traffic vs. high traffic/low conversion).<br>
-
-<br>• Implement automated A/B tests on headline hooks, landing page value propositions, and checkout friction points. | TSK-07 | Conversion Bottlenecks Resolved & ROAS Validated | Analytics Agent / Conversion Optimization Specialist |
-| **TSK-09** | **Phase 3: Performance Evaluation & Scaling (Days 61–90)** | Dynamic Strategy Replanning & Continuous Learning Flywheel | Systematize successful tactics, reallocate marketing resources, and update the long-term knowledge repository.<br>
+<br>• **Sub-task 6.3:** Configure LangGraph interrupt conditions (`interrupt_before=["human_gate"]`) to pause execution and route sensitive actions (ad spend changes, live posts) to Slack/Email webhooks. | TSK-05 | M6: Compliance Guardrails & Approval Gates Enforced | Safety & Governance Engineer |
+| **TSK-07** | Phase 4: Action Execution & Content Engine | Implement Content Engine & 1-to-N Repurposing Distribution Matrix (`Days 31–60`) | Develop the execution nodes and MCP connectors responsible for multi-channel asset creation and publishing across content pillars.<br>
 
 <br>
 
-<br>**Sub-tasks:**<br>
+<br>• **Sub-task 7.1:** Configure the 4 strategic content pillar allocations (35% Educational, 25% Proof/Demos, 20% Brand Story, 20% Offers/Conversion).<br>
 
-<br>• Reallocate content distribution and advertising budget toward top-performing formats, pillars, and acquisition channels.<br>
+<br>• **Sub-task 7.2:** Build the 1-to-N repurposing generator (converting long-form website case studies into LinkedIn breakdowns, Instagram/Pinterest carousels, TikTok video scripts, and email nurturing copy).<br>
 
-<br>• Execute the continuous learning flywheel to extract "Learned Brand Heuristics" from monthly performance data and persist them in long-term memory.<br>
+<br>• **Sub-task 7.3:** Integrate external posting APIs and MCP tool connectors (`agent_sandbox.mcp`) for Shopify, CMS platforms, social distribution networks, and email CRMs.<br>
 
-<br>• Trigger the dynamic replanning loop to set refreshed KPI baselines and macro milestones for the subsequent 90-day cycle. | TSK-08 | Scaled Autonomous Operations & Learning Flywheel Active | Lead AI Architect / Strategic Director |
+<br>• **Sub-task 7.4:** Write generated assets and publishing schedules directly into the persistent workspace (`/home/gem/`) via `agent_sandbox.file`. | TSK-06 | M7: 1-to-N Multi-Channel Publishing Pipeline Live | Marketing Automation / Agent Developer |
+| **TSK-08** | Phase 4: Action Execution & Content Engine | Build Unit Economics, Commercial Attribution & Funnel Optimization Engine (`Days 61–90`) | Integrate analytical computation tools inside the sandbox to calculate commercial viability and diagnose funnel drop-offs.<br>
+
+<br>
+
+<br>• **Sub-task 8.1:** Write and run isolated Python data processing scripts via `agent_sandbox.code` to calculate Net Contribution, ROAS, and the Health Ratio ($\text{CLV}/\text{CAC} \ge 3.0$).<br>
+
+<br>• **Sub-task 8.2:** Implement funnel diagnostic heuristics identifying bottlenecks (e.g., High Reach + Low Traffic $\to$ distribution issue; High Traffic + Low Sales $\to$ landing page/offer mismatch).<br>
+
+<br>• **Sub-task 8.3:** Implement autonomous reallocation logic to scale campaigns delivering positive ROAS and retire underperforming creative assets. | TSK-07 | M8: Commercial Attribution & Unit Economics Engine Active | Data Engineer / Analytics Lead |
+| **TSK-09** | Phase 5: Governance, Evaluation & Learning Flywheel | Integrate Continuous Learning Flywheel & Run End-to-End Evaluation Benchmarks | Establish the continuous improvement loop and run regression benchmark evaluations using the sandbox evaluation harness.<br>
+
+<br>
+
+<br>• **Sub-task 9.1:** Configure monthly episodic memory synthesis to distill winning messaging patterns into "Learned Brand Heuristics" stored in the semantic profile.<br>
+
+<br>• **Sub-task 9.2:** Execute automated test suites via `evaluation/main.py` using XML test tasks (`evaluation_workflow.xml`, `evaluation_browser.xml`, `evaluation_collaboration.xml`).<br>
+
+<br>• **Sub-task 9.3:** Verify system resilience against historical edge cases (e.g., `undo_edit` file state tracking, sandbox token limits, browser evaluation timeouts).<br>
+
+<br>• **Sub-task 9.4:** Operationalize the weekly operating cadence (Monday planning, Tuesday–Thursday production, Friday HitL review, weekend telemetry capture). | TSK-08 | M9: End-to-End System Verified & Operating Rhythm Operational | AI Architect / QA Lead |
