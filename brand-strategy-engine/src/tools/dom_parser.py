@@ -32,13 +32,16 @@ class DOMParser:
                 except json.JSONDecodeError:
                     continue
 
+        canonical_tag = soup.find("link", rel="canonical")
+        canonical_href = ""
+        if canonical_tag and hasattr(canonical_tag, "get"):
+            canonical_href = str(canonical_tag.get("href") or "")
+
         return {
             "title": title,
             "meta_tags": meta_tags,
             "json_ld": json_ld_blocks,
-            "canonical": soup.find("link", rel="canonical").get("href", "")
-            if soup.find("link", rel="canonical")
-            else "",
+            "canonical": canonical_href,
         }
 
     @staticmethod

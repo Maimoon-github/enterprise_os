@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from internal_sandbox.tools.base import BaseTool, CLIResult, ToolError, ToolResult
+from .base import BaseTool, CLIResult, ToolError, ToolResult
 
 Command = Literal["view", "create", "str_replace", "insert"]
 

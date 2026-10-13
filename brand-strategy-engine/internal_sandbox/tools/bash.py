@@ -4,7 +4,7 @@ import asyncio
 import os
 from typing import Any, Dict, Optional
 
-from internal_sandbox.tools.base import BaseTool, CLIResult, ToolError, ToolResult
+from .base import BaseTool, CLIResult, ToolError, ToolResult
 
 
 class _BashSession:
@@ -73,10 +73,12 @@ class _BashSession:
             error = err_buffer.decode(errors="replace")
 
         # Clear stream buffers
-        if hasattr(self._process.stdout, "_buffer"):
-            self._process.stdout._buffer.clear()
-        if hasattr(self._process.stderr, "_buffer"):
-            self._process.stderr._buffer.clear()
+        out_buf = getattr(self._process.stdout, "_buffer", None)
+        if out_buf is not None and hasattr(out_buf, "clear"):
+            out_buf.clear()
+        err_buf = getattr(self._process.stderr, "_buffer", None)
+        if err_buf is not None and hasattr(err_buf, "clear"):
+            err_buf.clear()
 
         return CLIResult(output=output.strip(), error=error.strip())
 

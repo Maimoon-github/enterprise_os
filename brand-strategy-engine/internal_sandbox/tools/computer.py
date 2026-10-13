@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from internal_sandbox.tools.base import BaseTool, ToolError, ToolResult
+from .base import BaseTool, ToolError, ToolResult
 
 ActionType = Literal[
     "key",

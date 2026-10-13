@@ -6,8 +6,8 @@ import os
 import socket
 from typing import Any, Dict, Optional, Tuple
 
-from internal_sandbox.tools.base import ToolError, ToolResult
-from internal_sandbox.tools.computer import ComputerTool
+from .base import ToolError, ToolResult
+from .computer import ComputerTool
 
 
 class VNCClient:

@@ -1,0 +1,24 @@
+{
+  "venvPath": "/home/maimoon-amin/miniconda3/envs",
+  "venv": "strategy_engine",
+  "include": [
+    "brand-strategy-engine/src",
+    "brand-strategy-engine/internal_sandbox",
+    "brand-strategy-engine/tests"
+  ],
+  "extraPaths": [
+    "brand-strategy-engine",
+    "brand-strategy-engine/src",
+    "brand-strategy-engine/internal_sandbox"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "brand-strategy-engine",
+      "extraPaths": [
+        "brand-strategy-engine",
+        "brand-strategy-engine/src",
+        "brand-strategy-engine/internal_sandbox"
+      ]
+    }
+  ]
+}

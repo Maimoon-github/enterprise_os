@@ -78,7 +78,7 @@ def test_metric_validator_excessive_growth_fails():
     )
     passed, reason, lift = MetricValidator.validate_metric(metric)
     assert passed is False
-    assert "Unrealistic growth lift" in reason
+    assert reason is not None and "Unrealistic growth lift" in reason
 
 
 def test_metric_validator_unrecognized_platform_fails():
@@ -90,7 +90,7 @@ def test_metric_validator_unrecognized_platform_fails():
     )
     passed, reason, lift = MetricValidator.validate_metric(metric)
     assert passed is False
-    assert "Unrecognized verification source" in reason
+    assert reason is not None and "Unrecognized verification source" in reason
 
 
 def test_metric_validator_feasible_inverse_reduction():

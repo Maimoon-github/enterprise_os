@@ -1,0 +1,24 @@
+{
+  "venvPath": "/home/maimoon-amin/miniconda3/envs",
+  "venv": "strategy_engine",
+  "include": [
+    "src",
+    "internal_sandbox",
+    "tests"
+  ],
+  "extraPaths": [
+    ".",
+    "src",
+    "internal_sandbox"
+  ],
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        ".",
+        "src",
+        "internal_sandbox"
+      ]
+    }
+  ]
+}

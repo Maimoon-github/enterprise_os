@@ -41,6 +41,16 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "internal_sandbox*"]
+
+[tool.pyright]
+venvPath = "/home/maimoon-amin/miniconda3/envs"
+venv = "strategy_engine"
+include = ["src", "internal_sandbox", "tests"]
+extraPaths = [".", "src", "internal_sandbox"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
