@@ -195,7 +195,7 @@ def test_strategic_reasoning_node_langgraph_workflow():
     assert len(completed_tasks) >= 1
 
     # 2. Assembled LangGraph StateGraph workflow execution
-    workflow = StateGraph(AgentState)
+    workflow = StateGraph(AgentState)  # type: ignore[arg-type]
     workflow.add_node("reasoning_node", strategic_reasoning_node)
     workflow.add_edge(START, "reasoning_node")
     workflow.add_edge("reasoning_node", END)

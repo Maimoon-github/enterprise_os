@@ -145,7 +145,7 @@ def test_autonomous_campaign_reallocation():
 
 def test_funnel_optimization_node_in_langgraph():
     """Verify execution of funnel_optimization_node within a compiled LangGraph workflow."""
-    builder = StateGraph(AgentState)
+    builder = StateGraph(AgentState)  # type: ignore[arg-type]
     builder.add_node("optimization", funnel_optimization_node)
     builder.add_edge(START, "optimization")
     builder.add_edge("optimization", END)

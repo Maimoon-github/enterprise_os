@@ -153,7 +153,7 @@ def test_content_execution_node_and_workspace_persistence():
     assert "Email Nurturing Broadcast" in file_content
 
     # 3. LangGraph StateGraph compiled workflow execution
-    workflow = StateGraph(AgentState)
+    workflow = StateGraph(AgentState)  # type: ignore[arg-type]
     workflow.add_node("execution_node", content_execution_node)
     workflow.add_edge(START, "execution_node")
     workflow.add_edge("execution_node", END)

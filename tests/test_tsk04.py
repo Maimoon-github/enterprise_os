@@ -186,7 +186,7 @@ def test_perception_and_audit_node_langgraph_workflow():
     assert metrics.health_ratio >= 3.0
 
     # Test within LangGraph StateGraph assembly
-    workflow = StateGraph(AgentState)
+    workflow = StateGraph(AgentState)  # type: ignore[arg-type]
     workflow.add_node("perception_node", perception_and_audit_node)
     workflow.add_edge(START, "perception_node")
     workflow.add_edge("perception_node", END)

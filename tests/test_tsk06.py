@@ -120,7 +120,7 @@ def test_langgraph_hitl_approval_gate_workflow():
             "messages": [AIMessage(content="Action dispatched successfully.")],
         }
 
-    builder = StateGraph(AgentState)
+    builder = StateGraph(AgentState)  # type: ignore[arg-type]
     builder.add_node("draft", draft_node)
     builder.add_node("guardrails", compliance_guardrail_node)
     builder.add_node("human_gate", human_gate_node)

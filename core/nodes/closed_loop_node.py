@@ -91,13 +91,13 @@ def strategy_node(state: ClosedLoopState) -> Dict[str, Any]:
 
     # Invoke live Ollama strategic deliberation if model available
     try:
-        model = ModelRouter.get_model(ModelTier.HIGH_CAPACITY)
+        model_client: Any = ModelRouter.get_model(ModelTier.HIGH_CAPACITY)
         prompt_text = (
             f"You are the Enterprise OS Strategic Commander. Goal: '{goal}'. "
             f"Iteration turn: {iteration + 1}/{max_iter}. Prior directive: {cmd.command_type}. "
             f"State a 1-sentence strategic rationale."
         )
-        llm_res = model.invoke([HumanMessage(content=prompt_text)])
+        llm_res = model_client.invoke([HumanMessage(content=prompt_text)])
         live_analysis = str(llm_res.content).strip().replace("\n", " ")[:180]
         thought = f"{thought} | Strategic Analysis: {live_analysis}"
     except Exception:
