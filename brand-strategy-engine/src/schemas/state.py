@@ -1,6 +1,6 @@
 """Unified state contracts for Universal AI Brand Strategy Engine."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List
 from pydantic import BaseModel, Field
@@ -141,7 +141,7 @@ class MasterEngineState(BaseModel):
     session_id: str = Field(..., description="Unique UUID for this audit run")
     mode: OperationalMode = Field(..., description="Operational modality")
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Session initialization timestamp",
     )
     brand_profile: BrandProfile = Field(..., description="Audited brand metadata")

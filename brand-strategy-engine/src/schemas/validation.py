@@ -1,6 +1,6 @@
 """Validation schemas and audit trail contracts."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
@@ -19,7 +19,7 @@ class AuditEntry(BaseModel):
         description="Detailed diagnosis if check failed",
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC time of verification step",
     )
 

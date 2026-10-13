@@ -207,7 +207,7 @@ def test_typed_context_slices(sample_master_state):
 
     analyst_model = ContextIsolator.get_analyst_slice_model(sample_master_state)
     assert isinstance(analyst_model, AnalystSlice)
-    assert analyst_model.website_url == str(sample_master_state.brand_profile.website_url)
+    assert analyst_model.website_url == sample_master_state.brand_profile.website_url
 
     audience_model = ContextIsolator.get_audience_slice_model(sample_master_state)
     assert isinstance(audience_model, AudienceSlice)

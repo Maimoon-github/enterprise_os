@@ -1,6 +1,6 @@
 """Evidence reference schema and provenance contracts."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -29,6 +29,6 @@ class EvidenceReference(BaseModel):
         description="Raw visual, structural, or semantic notes recorded at capture",
     )
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC capture timestamp",
     )

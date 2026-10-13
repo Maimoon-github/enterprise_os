@@ -346,7 +346,7 @@ Responsibilities:
                 await self.long_term_memory.save_baseline(
                     tenant_id=tid,
                     brand_name=brand_profile.brand_name,
-                    website_url=str(brand_profile.website_url),
+                    website_url=brand_profile.website_url,
                     kpi=init.success_metric.kpi,
                     baseline=init.success_metric.baseline,
                 )
@@ -365,7 +365,7 @@ Responsibilities:
             "session_id": state.session_id,
             "mode": state.mode.value,
             "brand_name": state.brand_profile.brand_name,
-            "target_url": str(state.brand_profile.website_url),
+            "target_url": state.brand_profile.website_url,
             "validation_status": state.validation_report.status,
             "total_initiatives": len(approved),
             "approved_initiatives": approved,

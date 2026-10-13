@@ -18,7 +18,7 @@ class ContextIsolator:
     def get_analyst_slice_model(cls, state: MasterEngineState) -> AnalystSlice:
         """Returns strongly-typed AnalystSlice contract."""
         return AnalystSlice(
-            website_url=str(state.brand_profile.website_url),
+            website_url=state.brand_profile.website_url,
             mode=state.mode.value,
             business_goals=state.brand_profile.business_goals,
             industry=state.brand_profile.industry,
@@ -78,7 +78,7 @@ class ContextIsolator:
     @classmethod
     def get_seo_slice_model(cls, state: MasterEngineState) -> SEOSlice:
         """Returns strongly-typed SEOSlice contract."""
-        first_url = str(state.brand_profile.website_url)
+        first_url = state.brand_profile.website_url
         snapshot = state.research_repository.dom_snapshots.get(first_url, {})
         return SEOSlice(
             mode=state.mode.value,
@@ -98,7 +98,7 @@ class ContextIsolator:
         """Returns strongly-typed GrowthSlice contract."""
         return GrowthSlice(
             mode=state.mode.value,
-            website_url=str(state.brand_profile.website_url),
+            website_url=state.brand_profile.website_url,
             audience_analysis=state.strategic_artifacts.audience_analysis,
             brand_positioning=state.strategic_artifacts.brand_positioning,
             seo_and_content_plan=state.strategic_artifacts.seo_and_content_plan,

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import asyncpg
 
@@ -94,7 +94,7 @@ class LongTermMemory:
             "website_url": website_url,
             "kpi": kpi,
             "baseline": baseline,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if self.pool:
             try:
@@ -144,7 +144,7 @@ class LongTermMemory:
             "recommendation_id": recommendation_id,
             "status": status,
             "audit_data": audit_data,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if self.pool:
             try:
@@ -190,7 +190,7 @@ class LongTermMemory:
             "session_id": session_id,
             "tenant_id": tenant_id,
             "state_data": state_data,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         if self.pool:
             try:

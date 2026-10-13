@@ -1,6 +1,6 @@
 """Semantic sliding-window chunker preserving structural headings and provenance."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 from typing import Any, Dict, List
 
@@ -48,7 +48,7 @@ class DocumentChunker:
                 "sha256_hash": sha256_hash,
                 "page_number": section.get("page_number", 1),
                 "section_heading": section.get("section_heading", "General"),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "byte_range": [start_byte, end_byte],
                 "content": chunk_text,
             }
