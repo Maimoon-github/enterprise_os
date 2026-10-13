@@ -141,3 +141,97 @@ async def test_end_to_end_orchestrator_personal_mode(sample_brand_profile_person
     dossier = orchestrator.compile_final_strategy_dossier(state)
     assert dossier["brand_name"] == sample_brand_profile_personal.brand_name
     assert len(dossier["approved_initiatives"]) >= 1
+
+
+def test_agent_rbac_sandbox_permissions():
+    analyst = AnalystAgent()
+    # Agent 1 has VNC sandbox permissions
+    assert analyst.verify_sandbox_access("vnc") is True
+    assert analyst.verify_sandbox_access("display") is True
+
+    # Agent 2 has no sandbox access
+    audience = AudienceAgent()
+    with pytest.raises(PermissionError) as exc_info:
+        audience.verify_sandbox_access("vnc")
+    assert "RBAC Policy Violation" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_supervisor_delegation_and_trace(sample_brand_profile_personal):
+    orchestrator = StrategyOrchestrator()
+    # Verify Agent 0 whitelisted tools
+    assert "delegate_task" in orchestrator.whitelisted_tool_names
+    assert "merge_agent_payload" in orchestrator.whitelisted_tool_names
+    assert "route_revisions" in orchestrator.whitelisted_tool_names
+
+    state = await orchestrator.execute_audit(
+        brand_profile=sample_brand_profile_personal,
+        mode=OperationalMode.MODE_A_PERSONAL,
+    )
+    # Verify supervisor recorded execution trace steps
+    assert len(orchestrator.execution_trace) >= 6
+    actions = [step["action"] for step in orchestrator.execution_trace]
+    assert "delegate_task" in actions
+
+
+@pytest.mark.asyncio
+async def test_antigravity_runtime_harness(sample_brand_profile_personal):
+    from src.orchestrator.manager import (
+        AntigravityRuntimeHarness,
+        CapabilitiesConfig,
+        LocalAgentConfig,
+    )
+
+    capabilities = CapabilitiesConfig(
+        allow_vnc_sandbox=True,
+        whitelisted_tools=["delegate_task", "compile_strategy_dossier"],
+    )
+    config = LocalAgentConfig(
+        system_instructions="Master supervisor configuration",
+        capabilities=capabilities,
+    )
+    assert config.capabilities.allow_vnc_sandbox is True
+
+    harness = AntigravityRuntimeHarness()
+    state = await harness.execute_governed_pipeline(
+        brand_profile=sample_brand_profile_personal,
+        mode=OperationalMode.MODE_A_PERSONAL,
+    )
+    assert state.current_stage == "Completed"
+    assert state.validation_report.passed_count >= 1
+
+
+def test_typed_context_slices(sample_master_state):
+    from src.orchestrator.context_isolator import ContextIsolator
+    from src.schemas.state import AnalystSlice, AudienceSlice, GrowthSlice
+
+    analyst_model = ContextIsolator.get_analyst_slice_model(sample_master_state)
+    assert isinstance(analyst_model, AnalystSlice)
+    assert analyst_model.website_url == str(sample_master_state.brand_profile.website_url)
+
+    audience_model = ContextIsolator.get_audience_slice_model(sample_master_state)
+    assert isinstance(audience_model, AudienceSlice)
+
+    growth_model = ContextIsolator.get_growth_slice_model(sample_master_state)
+    assert isinstance(growth_model, GrowthSlice)
+
+
+@pytest.mark.asyncio
+async def test_long_term_memory_session_persistence(sample_master_state):
+    from src.memory.long_term import LongTermMemory
+
+    memory = LongTermMemory()
+    await memory.connect()
+    session_id = sample_master_state.session_id
+    tenant_id = "tenant_test_persistence"
+
+    await memory.save_session_state(
+        session_id=session_id,
+        tenant_id=tenant_id,
+        state_data=sample_master_state.model_dump(),
+    )
+
+    loaded = await memory.get_session_state(session_id=session_id, tenant_id=tenant_id)
+    assert loaded is not None
+    assert loaded["session_id"] == session_id
+    assert loaded["brand_profile"]["brand_name"] == sample_master_state.brand_profile.brand_name

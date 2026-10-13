@@ -9,11 +9,17 @@ from src.schemas.initiative import (
     SuccessMetric,
 )
 from src.schemas.state import (
+    AnalystSlice,
+    AudienceSlice,
     BrandProfile,
+    BrandSlice,
+    GrowthSlice,
     MasterEngineState,
     OperationalMode,
     ResearchRepository,
+    SEOSlice,
     StrategicArtifacts,
+    ValidatorSlice,
 )
 from src.schemas.validation import AuditEntry, ValidationReport
 
@@ -28,6 +34,12 @@ __all__ = [
     "ValidationReport",
     "OperationalMode",
     "BrandProfile",
+    "AnalystSlice",
+    "AudienceSlice",
+    "BrandSlice",
+    "SEOSlice",
+    "GrowthSlice",
+    "ValidatorSlice",
     "ResearchRepository",
     "StrategicArtifacts",
     "MasterEngineState",

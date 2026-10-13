@@ -26,6 +26,7 @@ class LongTermMemory:
         # In-memory storage fallback for local/test execution without PostgreSQL
         self._fallback_baselines: List[Dict[str, Any]] = []
         self._fallback_audit_logs: List[Dict[str, Any]] = []
+        self._fallback_sessions: List[Dict[str, Any]] = []
 
     async def connect(self) -> bool:
         """Initializes database pool or enables fallback mode if database is unavailable."""
@@ -39,7 +40,7 @@ class LongTermMemory:
             return False
 
     async def initialize_schema(self) -> None:
-        """Creates tenant-isolated schema and audit tables."""
+        """Creates tenant-isolated schema, session persistence, and audit tables."""
         if not self.pool:
             return
         async with self.pool.acquire() as conn:
@@ -67,6 +68,14 @@ class LongTermMemory:
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE INDEX IF NOT EXISTS idx_audit_tenant ON strategy_audit_logs(tenant_id);
+
+                CREATE TABLE IF NOT EXISTS engine_sessions (
+                    session_id VARCHAR(64) PRIMARY KEY,
+                    tenant_id VARCHAR(64) NOT NULL,
+                    state_data JSONB NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON engine_sessions(tenant_id);
                 """
             )
 
@@ -169,6 +178,74 @@ class LongTermMemory:
             except Exception as e:
                 logger.warning("Error querying audit logs: %s", e)
         return [a for a in self._fallback_audit_logs if a["tenant_id"] == tenant_id]
+
+    async def save_session_state(
+        self,
+        session_id: str,
+        tenant_id: str,
+        state_data: Dict[str, Any],
+    ) -> None:
+        """Persists entire MasterEngineState snapshot for session recovery."""
+        record = {
+            "session_id": session_id,
+            "tenant_id": tenant_id,
+            "state_data": state_data,
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        if self.pool:
+            try:
+                async with self.pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO engine_sessions (session_id, tenant_id, state_data, updated_at)
+                        VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP)
+                        ON CONFLICT (session_id) DO UPDATE
+                        SET state_data = EXCLUDED.state_data, updated_at = CURRENT_TIMESTAMP;
+                        """,
+                        session_id,
+                        tenant_id,
+                        json.dumps(state_data),
+                    )
+                return
+            except Exception as e:
+                logger.warning("Error saving session state to DB: %s", e)
+        # In-memory fallback
+        for idx, s in enumerate(self._fallback_sessions):
+            if s["session_id"] == session_id:
+                self._fallback_sessions[idx] = record
+                return
+        self._fallback_sessions.append(record)
+
+    async def get_session_state(
+        self,
+        session_id: str,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieves persisted MasterEngineState snapshot."""
+        if self.pool:
+            try:
+                async with self.pool.acquire() as conn:
+                    if tenant_id:
+                        row = await conn.fetchrow(
+                            "SELECT state_data FROM engine_sessions WHERE session_id = $1 AND tenant_id = $2;",
+                            session_id,
+                            tenant_id,
+                        )
+                    else:
+                        row = await conn.fetchrow(
+                            "SELECT state_data FROM engine_sessions WHERE session_id = $1;",
+                            session_id,
+                        )
+                    if row:
+                        raw = row["state_data"]
+                        return json.loads(raw) if isinstance(raw, str) else dict(raw)
+            except Exception as e:
+                logger.warning("Error reading session state from DB: %s", e)
+        for s in self._fallback_sessions:
+            if s["session_id"] == session_id:
+                if tenant_id is None or s["tenant_id"] == tenant_id:
+                    return s["state_data"]
+        return None
 
     async def close(self) -> None:
         """Closes active database connections."""

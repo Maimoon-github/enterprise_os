@@ -1,7 +1,12 @@
 """Orchestrator package exports."""
 
 from src.orchestrator.context_isolator import ContextIsolator
-from src.orchestrator.manager import StrategyOrchestrator
+from src.orchestrator.manager import (
+    AntigravityRuntimeHarness,
+    CapabilitiesConfig,
+    LocalAgentConfig,
+    StrategyOrchestrator,
+)
 from src.orchestrator.state_machine import PipelineStage, StateMachine
 
 __all__ = [
@@ -9,4 +14,7 @@ __all__ = [
     "StateMachine",
     "PipelineStage",
     "StrategyOrchestrator",
+    "AntigravityRuntimeHarness",
+    "CapabilitiesConfig",
+    "LocalAgentConfig",
 ]

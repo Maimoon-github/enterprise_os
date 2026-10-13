@@ -17,6 +17,65 @@ class OperationalMode(str, Enum):
     MODE_B_ECOMMERCE = "Mode_B_eCommerce"
 
 
+class AnalystSlice(BaseModel):
+    """Bounded state slice injected into Agent 1 (Analyst)."""
+
+    website_url: str = Field(..., description="Target brand root URL")
+    mode: str = Field(..., description="Operational modality")
+    business_goals: List[str] = Field(default_factory=list, description="Commercial goals")
+    industry: str = Field(..., description="Industry vertical")
+
+
+class AudienceSlice(BaseModel):
+    """Bounded state slice injected into Agent 2 (Audience Strategist)."""
+
+    mode: str = Field(..., description="Operational modality")
+    industry: str = Field(..., description="Industry vertical")
+    target_market: List[str] = Field(default_factory=list, description="Target customer segments")
+    observation_notes: str = Field(default="", description="Visual and touchpoint observation notes")
+    business_goals: List[str] = Field(default_factory=list, description="Commercial goals")
+    competitors: List[Dict[str, Any]] = Field(default_factory=list, description="Competitor profiles")
+
+
+class BrandSlice(BaseModel):
+    """Bounded state slice injected into Agent 3 (Brand Strategist)."""
+
+    mode: str = Field(..., description="Operational modality")
+    headline: str = Field(default="", description="Extracted hero headline copy")
+    brand_name: str = Field(..., description="Target brand name")
+    audience_icp: Dict[str, Any] = Field(default_factory=dict, description="ICP model from Agent 2")
+    competitors: List[Dict[str, Any]] = Field(default_factory=list, description="Competitor profiles")
+
+
+class SEOSlice(BaseModel):
+    """Bounded state slice injected into Agent 4 (SEO & Content Strategist)."""
+
+    mode: str = Field(..., description="Operational modality")
+    website_url: str = Field(..., description="Target website URL")
+    dom_snapshot: Dict[str, Any] = Field(default_factory=dict, description="Captured DOM metadata and hierarchy")
+    brand_positioning: Dict[str, Any] = Field(default_factory=dict, description="Synthesized brand positioning")
+
+
+class GrowthSlice(BaseModel):
+    """Bounded state slice injected into Agent 5 (Growth Strategist)."""
+
+    mode: str = Field(..., description="Operational modality")
+    website_url: str = Field(..., description="Target website URL")
+    audience_analysis: Dict[str, Any] = Field(default_factory=dict, description="Audience analysis")
+    brand_positioning: Dict[str, Any] = Field(default_factory=dict, description="Brand positioning")
+    seo_and_content_plan: Dict[str, Any] = Field(default_factory=dict, description="SEO and content blueprint")
+    visual_evidence_vnc: List[EvidenceReference] = Field(default_factory=list, description="Empirical visual evidence")
+    business_goals: List[str] = Field(default_factory=list, description="Commercial goals")
+
+
+class ValidatorSlice(BaseModel):
+    """Bounded state slice injected into Agent 6 (Strategy Validator)."""
+
+    growth_initiatives: List[StrategicInitiative] = Field(default_factory=list, description="Proposed initiatives")
+    research_repository: Dict[str, Any] = Field(default_factory=dict, description="Raw empirical evidence")
+    brand_profile: Dict[str, Any] = Field(default_factory=dict, description="Brand profile parameters")
+
+
 class BrandProfile(BaseModel):
     """Target brand entity specifications."""
 

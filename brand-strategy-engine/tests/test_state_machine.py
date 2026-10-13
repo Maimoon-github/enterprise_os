@@ -22,6 +22,9 @@ def test_transition_validation():
     assert StateMachine.can_transition("Initialization", "Analyst") is True
     assert StateMachine.can_transition("Analyst", "Audience") is True
     assert StateMachine.can_transition("Analyst", "Growth") is False  # Cannot skip stages
+    assert StateMachine.can_transition("Validator", "Completed") is True  # Valid completion
+    assert StateMachine.can_transition("Validator", "Growth") is True  # Valid revision loop
+    assert StateMachine.can_transition("Validator", "Brand") is False  # Invalid backwards skip
 
 
 def test_validation_verdict_all_approved(sample_master_state):

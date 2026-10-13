@@ -33,12 +33,19 @@ class StateMachine:
         PipelineStage.GROWTH: PipelineStage.VALIDATOR,
     }
 
+    VALIDATOR_TRANSITIONS = {
+        PipelineStage.COMPLETED,
+        PipelineStage.GROWTH,
+    }
+
     @classmethod
     def can_transition(cls, current_stage: str, next_stage: str) -> bool:
         """Verifies if transition between stages is permitted."""
         try:
             curr = PipelineStage(current_stage)
             target = PipelineStage(next_stage)
+            if curr == PipelineStage.VALIDATOR:
+                return target in cls.VALIDATOR_TRANSITIONS
             return cls.STAGE_TRANSITIONS.get(curr) == target
         except ValueError:
             return False

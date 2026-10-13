@@ -63,7 +63,11 @@ Mandates:
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Executes adversarial validation on all proposed growth initiatives."""
-        initiatives: List[StrategicInitiative] = state_slice.get("growth_initiatives", [])
+        raw_initiatives = state_slice.get("growth_initiatives", [])
+        initiatives: List[StrategicInitiative] = [
+            init if isinstance(init, StrategicInitiative) else StrategicInitiative(**init)
+            for init in raw_initiatives
+        ]
         research_repo = state_slice.get("research_repository", {})
 
         # Collect verified evidence IDs from research repository
