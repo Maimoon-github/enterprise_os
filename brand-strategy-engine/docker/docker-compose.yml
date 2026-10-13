@@ -1,0 +1,86 @@
+version: '3.8'
+
+networks:
+  antigravity-internal-net:
+    driver: bridge
+    internal: true
+  host-bridge:
+    driver: bridge
+
+services:
+  ollama-node:
+    image: ollama/ollama:latest
+    container_name: engine-ollama
+    restart: unless-stopped
+    volumes:
+      - ./ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_NUM_PARALLEL=4
+    networks:
+      - antigravity-internal-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  vnc-browser-sandbox:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.vnc_sandbox
+    container_name: engine-vnc-sandbox
+    restart: unless-stopped
+    ipc: host
+    environment:
+      - DISPLAY=:1
+      - RESOLUTION=1920x1080x24
+      - NOVNC_PORT=6080
+      - VNC_PORT=5901
+    networks:
+      - antigravity-internal-net
+    security_opt:
+      - seccomp:unconfined
+
+  postgres-pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: engine-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=brand_strategy_db
+      - POSTGRES_USER=engine_user
+      - POSTGRES_PASSWORD=engine_secure_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - antigravity-internal-net
+
+  antigravity-engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.engine
+    container_name: engine-core
+    restart: on-failure
+    depends_on:
+      - ollama-node
+      - vnc-browser-sandbox
+      - postgres-pgvector
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-node:11434/v1
+      - VNC_HOST=vnc-browser-sandbox
+      - VNC_PORT=5901
+      - DATABASE_URL=postgresql://engine_user:engine_secure_pass@postgres-pgvector:5432/brand_strategy_db
+      - CONFIG_PATH=/app/.config/config.toml
+    volumes:
+      - ./evidence_blobs:/app/evidence_blobs
+      - ./user_documents:/app/user_documents
+    networks:
+      - antigravity-internal-net
+      - host-bridge
+    ports:
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  pgdata:

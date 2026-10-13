@@ -1,0 +1,10 @@
+{
+  "python.defaultInterpreterPath": "/home/maimoon-amin/miniconda3/envs/strategy_engine/bin/python",
+  "python.analysis.typeCheckingMode": "basic",
+  "editor.formatOnSave": true,
+  "files.trimTrailingWhitespace": true,
+  "engine.environment": "production-local",
+  "engine.defaultMode": "Mode_A_Personal",
+  "engine.vncSandboxHost": "vnc-browser-sandbox",
+  "engine.vncSandboxPort": 5901
+}
