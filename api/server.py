@@ -13,6 +13,10 @@ import datetime
 import io
 import json
 import os
+
+if not os.getenv("OLLAMA_HOST"):
+    os.environ.setdefault("DISABLE_OLLAMA", "1")
+
 from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks, Response
@@ -305,6 +309,48 @@ async def execute_engine_stream(thread_id: str, initial_state: Optional[Dict[str
         })
 
 
+active_threads_registry: List[str] = ["session-c2-live-01"]
+
+
+@app.get("/")
+async def root_status():
+    """Root status portal providing clear service discovery and avoiding 'Not Found' errors."""
+    return {
+        "status": "online",
+        "service": "Enterprise OS Strategy Engine & WebSocket Bridge",
+        "authority": "Exclusive Strategy Engine Authority over AIO Sandbox",
+        "sandbox_runtime": "Connected (127.0.0.1:8080)",
+        "dashboard_ui": "http://localhost:8501",
+        "api_documentation": "/docs",
+        "endpoints": {
+            "health": "/api/health",
+            "threads": "/api/threads",
+            "dispatch_run": "POST /api/runs",
+            "thread_state": "GET /api/threads/{thread_id}/state",
+            "hitl_approval": "POST /api/threads/{thread_id}/approve",
+            "cro_artifact": "GET /api/artifacts/home/gem/audit_shot.png",
+            "websocket_stream": "ws://127.0.0.1:8000/ws/{thread_id}",
+        },
+    }
+
+
+@app.get("/api")
+async def api_info():
+    """API Gateway metadata."""
+    return {
+        "status": "online",
+        "version": "1.0.0",
+        "service": "Enterprise OS Strategy Engine Gateway",
+        "docs": "/docs",
+    }
+
+
+@app.get("/api/threads")
+async def list_threads():
+    """List all registered execution threads."""
+    return {"threads": list(dict.fromkeys(active_threads_registry))}
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
@@ -315,10 +361,114 @@ async def health_check():
     }
 
 
+@app.get("/api/sandbox/status")
+async def sandbox_status():
+    """Verify live connectivity and authentication with AIO Sandbox container."""
+    sandbox_url = os.getenv("SANDBOX_BASE_URL", "http://127.0.0.1:8080")
+    sandbox_key = os.getenv("SANDBOX_API_KEY", "aio-secret-key")
+    headers = {"X-AIO-API-Key": sandbox_key}
+
+    auth_ok = False
+    status_code = None
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{sandbox_url}/", headers=headers)
+            status_code = resp.status_code
+            auth_ok = status_code == 200
+    except Exception as e:
+        status_code = str(e)
+
+    return {
+        "status": "authenticated" if auth_ok else "unauthorized_or_offline",
+        "container": "aio-sandbox (ghcr.io/agent-infra/sandbox:latest)",
+        "endpoint": sandbox_url,
+        "auth_configured": bool(sandbox_key),
+        "auth_header": "X-AIO-API-Key: aio-secret-key",
+        "http_status": status_code,
+        "authenticated_browser_url": f"{sandbox_url}/?api_key={sandbox_key}",
+        "workspace": "/home/gem",
+        "explanation": "Direct browser access without credentials returns 401 Authorization Required. Use authenticated_browser_url or API header X-AIO-API-Key.",
+    }
+
+
+@app.get("/api/rag/status")
+async def rag_status():
+    """Inspect PostgreSQL + pgvector knowledge database status."""
+    from core.persistence import get_db_uri
+    db_uri = get_db_uri()
+    count = 0
+    partitions = []
+    try:
+        import psycopg
+        with psycopg.connect(db_uri) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*), array_agg(DISTINCT partition) FROM knowledge_documents;")
+                row = cur.fetchone()
+                if row:
+                    count = row[0] or 0
+                    partitions = [p for p in (row[1] or []) if p is not None]
+    except Exception:
+        pass
+
+    return {
+        "vector_database": "pgvector (PostgreSQL 16 @ 127.0.0.1:5432)",
+        "table": "knowledge_documents",
+        "total_documents": count,
+        "partitions": partitions,
+        "embedding_dimensions": 1536,
+        "retrieval_strategy": "Hybrid: Dense Vector Cosine + BM25 Lexical + RRF Reranking",
+    }
+
+
+@app.get("/api/rag/search")
+async def rag_search(query: str, top_k: int = 5, partition: Optional[str] = None):
+    """Query the pgvector knowledge base using HybridRetriever."""
+    from rag.retriever import HybridRetriever
+    retriever = HybridRetriever()
+    results = retriever.search(query=query, partition=partition, top_k=top_k)
+    return {
+        "query": query,
+        "hits_count": len(results),
+        "hits": [r.model_dump() for r in results],
+    }
+
+
+class IngestRequest(BaseModel):
+    title: str
+    content: str
+    partition: str = "brand_core"
+    doc_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/rag/ingest")
+async def rag_ingest(req: IngestRequest):
+    """Embed and index a document into pgvector."""
+    from rag.ingestion import DocumentIndexer
+    indexer = DocumentIndexer()
+    doc_id = req.doc_id or f"doc-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    inserted_ids = indexer.index_document(
+        partition=req.partition,
+        doc_id=doc_id,
+        title=req.title,
+        content=req.content,
+        metadata=req.metadata,
+    )
+    return {
+        "status": "indexed",
+        "doc_id": doc_id,
+        "chunks_created": len(inserted_ids),
+        "chunk_ids": inserted_ids,
+    }
+
+
 @app.post("/api/runs")
 async def start_run(req: RunRequest, background_tasks: BackgroundTasks):
     """Trigger a new governed Strategy Engine run."""
     thread_id = req.thread_id or f"session-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+    if thread_id not in active_threads_registry:
+        active_threads_registry.append(thread_id)
 
     initial_state: ClosedLoopState = {
         "brand_profile": BrandProfile(

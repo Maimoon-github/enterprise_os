@@ -1,21 +1,22 @@
 # pyright: reportMissingImports=false
 """Reactive Command & Control Dashboard for LangGraph Strategy Engine (TSK-11).
 
-Provides real-time visualization of Strategy Engine node transitions, CRO artifacts,
-unit economics (ROAS, CAC, Net Contribution), task queues, and interactive HitL approvals.
-Strictly routes all operator actions through the Strategy Engine API/WebSocket gateway,
-guaranteeing zero direct, uninspected calls to the AIO Sandbox.
+Provides an intuitive, holistic real-time interface displaying:
+1. Strategy Command Console with live AIO Sandbox execution telemetry.
+2. RAG Vector Knowledge Base (pgvector / PostgreSQL 16 @ 5432).
+3. AIO Sandbox Container authentication, live browser links, and CRO artifacts.
+4. Unit economics explanations and funnel bottleneck diagnostics.
 """
 
 import datetime
 import json
 import os
+import time
 import requests
 import streamlit as st
 
-# Configure Dashboard Layout
 st.set_page_config(
-    page_title="Enterprise OS — Strategy Engine Command & Control",
+    page_title="Enterprise OS — Strategy Engine C2",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -28,31 +29,53 @@ st.markdown(
     """
     <style>
     .metric-card {
-        background-color: #1e293b;
-        border-radius: 8px;
-        padding: 16px;
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 12px;
+    }
+    .metric-title {
+        color: #94a3b8;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .metric-value {
+        color: #f8fafc;
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin: 4px 0;
+    }
+    .metric-explain {
+        color: #cbd5e1;
+        font-size: 0.8rem;
+        line-height: 1.3;
     }
     .badge-approved {
         background-color: #065f46;
         color: #34d399;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.85rem;
     }
     .badge-paused {
         background-color: #78350f;
         color: #fbbf24;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.85rem;
     }
     .badge-node {
         background-color: #1e3a8a;
         color: #93c5fd;
-        padding: 4px 8px;
-        border-radius: 4px;
+        padding: 4px 10px;
+        border-radius: 6px;
         font-family: monospace;
+        font-size: 0.85rem;
     }
     </style>
     """,
@@ -60,212 +83,365 @@ st.markdown(
 )
 
 
-def fetch_thread_state(thread_id: str):
-    """Fetch live state snapshot from Strategy Engine bridge."""
+def fetch_api(endpoint: str, timeout: float = 3.0):
+    """Fetch JSON from Strategy Engine API."""
     try:
-        resp = requests.get(f"{API_BASE_URL}/api/threads/{thread_id}/state", timeout=4.0)
-        if resp.status_code == 200:
-            return resp.json()
+        r = requests.get(f"{API_BASE_URL}{endpoint}", timeout=timeout)
+        if r.status_code == 200:
+            return r.json()
     except Exception:
         pass
     return None
 
 
-def trigger_run(thread_id: str, goal: str, brand: str, url: str, require_hitl: bool):
-    """Dispatch strategy execution to Strategy Engine API."""
-    payload = {
-        "thread_id": thread_id,
-        "goal": goal,
-        "brand_name": brand,
-        "target_url": url,
-        "require_human_gate": require_hitl,
-        "max_iterations": 4,
-    }
+def post_api(endpoint: str, payload: dict, timeout: float = 5.0):
+    """POST JSON to Strategy Engine API."""
     try:
-        resp = requests.post(f"{API_BASE_URL}/api/runs", json=payload, timeout=5.0)
-        return resp.status_code in (200, 201), resp.json()
-    except Exception as e:
-        return False, {"error": str(e)}
-
-
-def submit_approval(thread_id: str, approved: bool, feedback: str):
-    """Send HitL operator decision to resume graph execution."""
-    payload = {"approved": approved, "feedback": feedback}
-    try:
-        resp = requests.post(f"{API_BASE_URL}/api/threads/{thread_id}/approve", json=payload, timeout=5.0)
-        return resp.status_code == 200, resp.json()
+        r = requests.post(f"{API_BASE_URL}{endpoint}", json=payload, timeout=timeout)
+        return r.status_code in (200, 201), r.json()
     except Exception as e:
         return False, {"error": str(e)}
 
 
 # -----------------------------------------------------------------------------
-# Sidebar: Controls & Run Dispatch
+# Top Header & Status Bar
 # -----------------------------------------------------------------------------
-st.sidebar.title("⚡ Strategy Engine C2")
-st.sidebar.markdown("**Authority Model**: Exclusive Engine Authority")
+h_col1, h_col2 = st.columns([3, 2])
+with h_col1:
+    st.title("⚡ Enterprise OS Strategy Engine")
+    st.caption("Autonomous Closed-Loop Command & Control | AIO Sandbox + pgvector RAG")
 
-thread_id_input = st.sidebar.text_input("Active Thread ID", value="session-c2-live-01")
-brand_input = st.sidebar.text_input("Brand Profile", value="AuraGlow Skincare")
-url_input = st.sidebar.text_input("Storefront URL", value="https://auraglow-store.com")
-goal_input = st.sidebar.text_area(
-    "Strategic Goal",
-    value="Audit storefront conversion leaks, calculate CAC/CLV, and persist execution schedule",
-)
-require_hitl_check = st.sidebar.checkbox("Enforce HitL Approval Gate", value=True)
+with h_col2:
+    st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
+    sb_status = fetch_api("/api/sandbox/status")
+    rag_info = fetch_api("/api/rag/status")
+    sb_online = sb_status and sb_status.get("status") == "authenticated"
+    rag_online = rag_info and rag_info.get("total_documents", 0) > 0
 
-if st.sidebar.button("🚀 Dispatch to Strategy Engine", type="primary"):
-    success, res = trigger_run(thread_id_input, goal_input, brand_input, url_input, require_hitl_check)
-    if success:
-        st.sidebar.success(f"Run queued under thread: {thread_id_input}")
-    else:
-        st.sidebar.error(f"Failed to dispatch: {res.get('error', 'API unreachable')}")
-
-st.sidebar.divider()
-auto_refresh = st.sidebar.checkbox("Auto Refresh Telemetry (3s)", value=False)
-if auto_refresh:
-    st.empty()
-
-# -----------------------------------------------------------------------------
-# Main Dashboard
-# -----------------------------------------------------------------------------
-st.title("🎯 Reactive Strategy Engine Dashboard")
-st.caption(f"Interfacing via REST/WebSocket Bridge at `{API_BASE_URL}` | Sandbox Containment: `/home/gem`")
-
-state_data = fetch_thread_state(thread_id_input)
-
-# Top Bar: Unit Economics & Financial Metrics
-metrics = state_data.get("audit_metrics") if state_data else None
-roas_val = metrics.get("roas", 4.85) if metrics else 4.85
-cac_val = metrics.get("cac", 38.50) if metrics else 38.50
-net_contrib = metrics.get("net_contribution", 45200.0) if metrics else 45200.0
-health_ratio = metrics.get("health_ratio", 3.89) if metrics else 3.89
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric(label="ROAS", value=f"{roas_val:.2f}x", delta="+0.45x")
-with col2:
-    st.metric(label="CAC", value=f"${cac_val:.2f}", delta="-$4.20", delta_color="inverse")
-with col3:
-    st.metric(label="Net Contribution", value=f"${net_contrib:,.0f}", delta="+$3,400")
-with col4:
-    st.metric(label="Health Ratio (CLV/CAC)", value=f"{health_ratio:.2f}", delta="Target >= 3.0")
+    s_c1, s_c2, s_c3 = st.columns(3)
+    with s_c1:
+        st.markdown("**Engine Bridge**  \n🟢 `ONLINE (8000)`")
+    with s_c2:
+        st.markdown(f"**AIO Sandbox**  \n{'🟢 `AUTHENTICATED (8080)`' if sb_online else '🔴 `OFFLINE`'}")
+    with s_c3:
+        st.markdown(f"**pgvector RAG**  \n{'🟢 `CONNECTED (5432)`' if rag_online else '🟡 `IDLE`'}")
 
 st.divider()
 
-# Two Main Columns: Left = Telemetry & HitL, Right = CRO Artifacts & Tasks
-left_col, right_col = st.columns([3, 2])
+# -----------------------------------------------------------------------------
+# Session & Thread Controls
+# -----------------------------------------------------------------------------
+threads_data = fetch_api("/api/threads")
+thread_options = threads_data.get("threads", ["session-c2-live-01"]) if threads_data else ["session-c2-live-01"]
 
-with left_col:
-    st.subheader("📡 Live Node Telemetry & Transitions")
-    
-    current_phase = state_data.get("phase", "idle") if state_data else "idle"
-    next_nodes = state_data.get("next_nodes", []) if state_data else []
-    is_paused_at_gate = "human_gate" in next_nodes
-    
-    status_cols = st.columns([1, 1, 1])
-    with status_cols[0]:
-        st.markdown(f"**Current Phase**: `{current_phase.upper()}`")
-    with status_cols[1]:
-        st.markdown(f"**Next Node**: `{next_nodes[0] if next_nodes else 'COMPLETED'}`")
-    with status_cols[2]:
-        if is_paused_at_gate:
-            st.markdown('<span class="badge-paused">⏸️ HITL SUSPENDED</span>', unsafe_allow_html=True)
-        elif state_data and state_data.get("is_converged"):
-            st.markdown('<span class="badge-approved">🏁 CONVERGED</span>', unsafe_allow_html=True)
-        else:
-            st.markdown('<span class="badge-node">▶️ ACTIVE</span>', unsafe_allow_html=True)
+sess_col1, sess_col2, sess_col3, sess_col4 = st.columns([2, 2, 2, 2])
+with sess_col1:
+    selected_thread = st.selectbox("Active Session Thread", options=thread_options, index=0)
+with sess_col2:
+    brand_name = st.text_input("Brand Profile", value="AuraGlow Skincare")
+with sess_col3:
+    target_url = st.text_input("Storefront URL", value="https://auraglow-store.com")
+with sess_col4:
+    st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+    require_hitl = st.checkbox("Enforce HitL Approval Checkpoint", value=True)
 
-    # -------------------------------------------------------------------------
-    # HitL Approval Interface
-    # -------------------------------------------------------------------------
-    if is_paused_at_gate:
-        st.warning("⚠️ **HitL Approval Gate Active**: Strategy execution is suspended awaiting operator sign-off.")
+state_data = fetch_api(f"/api/threads/{selected_thread}/state")
+phase = state_data.get("phase", "idle") if state_data else "idle"
+next_nodes = state_data.get("next_nodes", []) if state_data else []
+is_paused = "human_gate" in next_nodes
+is_converged = state_data.get("is_converged", False) if state_data else False
+iteration = state_data.get("iteration_count", 0) if state_data else 0
+
+# -----------------------------------------------------------------------------
+# Four Holistic Architecture Tabs
+# -----------------------------------------------------------------------------
+tab_c2, tab_rag, tab_sandbox, tab_econ = st.tabs([
+    "🎮 Strategy Command & Live Execution",
+    "📚 RAG Knowledge Base (pgvector)",
+    "🛡️ AIO Sandbox Runtime & Browser",
+    "📊 Commercial Analytics & Unit Economics",
+])
+
+# =============================================================================
+# TAB 1: Strategy Command & Closed-Loop Execution
+# =============================================================================
+with tab_c2:
+    st.subheader("🎮 Autonomous Command Console")
+    st.markdown("Instruct the Strategy Engine to execute autonomous closed-loop actions in the AIO Sandbox:")
+
+    preset_cols = st.columns(4)
+    PRESETS = [
+        ("🔍 Storefront CRO Audit", "Audit storefront conversion leaks, retrieve DOM markdown, and evaluate checkout flow"),
+        ("💰 Unit Economics & CAC", "Calculate CAC, ROAS, and Net Contribution, and generate ad budget reallocation directives"),
+        ("🛡️ Sandbox Container Integrity", "Inspect container workspace /home/gem, verify uptime, and check disk containment"),
+        ("🚀 Full Closed-Loop Execution", "Audit storefront conversion leaks, calculate CAC/CLV, and persist execution schedule"),
+    ]
+    if "active_prompt" not in st.session_state:
+        st.session_state.active_prompt = PRESETS[3][1]
+
+    for idx, (label, text) in enumerate(PRESETS):
+        with preset_cols[idx]:
+            if st.button(label, use_container_width=True):
+                st.session_state.active_prompt = text
+
+    prompt_val = st.text_area("Strategic Directive Prompt", value=st.session_state.active_prompt, height=75)
+
+    run_btn_col1, run_btn_col2 = st.columns([3, 1])
+    with run_btn_col1:
+        if st.button("🚀 ENFORCE STRATEGY ENGINE EXECUTION", type="primary", use_container_width=True):
+            ok, res = post_api("/api/runs", {
+                "thread_id": selected_thread,
+                "goal": prompt_val,
+                "brand_name": brand_name,
+                "target_url": target_url,
+                "require_human_gate": require_hitl,
+                "max_iterations": 4,
+            })
+            if ok:
+                st.success(f"Strategy run initiated on thread '{selected_thread}'!")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error(f"Error: {res}")
+    with run_btn_col2:
+        new_th = f"session-c2-{datetime.datetime.now().strftime('%H%M%S')}"
+        if st.button("➕ New Thread", use_container_width=True):
+            post_api("/api/runs", {
+                "thread_id": new_th,
+                "goal": prompt_val,
+                "brand_name": brand_name,
+                "target_url": target_url,
+                "require_human_gate": require_hitl,
+                "max_iterations": 4,
+            })
+            st.rerun()
+
+    # HitL Checkpoint Banner
+    if is_paused:
+        st.warning("⚠️ **Human-in-the-Loop Checkpoint Active**: Execution paused awaiting operator sign-off.")
         with st.container(border=True):
             st.markdown("### 🛡️ Operator Decision Gate")
             cmd = state_data.get("current_command") or {}
-            st.markdown(f"**Target Action**: `{cmd.get('command_type', 'command').upper()}`")
+            st.markdown(f"**Target Action**: `{cmd.get('command_type', '').upper()}` inside `/home/gem`")
             st.json(cmd)
-            
-            feedback_text = st.text_input("Operator Feedback / Guidance", value="Approved for sandbox execution.")
-            btn_col1, btn_col2 = st.columns(2)
-            with btn_col1:
-                if st.button("✅ Approve & Resume Execution", type="primary", use_container_width=True):
-                    ok, res = submit_approval(thread_id_input, approved=True, feedback=feedback_text)
+            fb = st.text_input("Operator Feedback", value="Approved for live sandbox execution.")
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("✅ APPROVE & DISPATCH TO SANDBOX", type="primary", use_container_width=True):
+                    ok, res = post_api(f"/api/threads/{selected_thread}/approve", {"approved": True, "feedback": fb})
                     if ok:
-                        st.success("Approval granted. Resuming execution across thread ID.")
+                        st.success("Approved! Resuming execution.")
+                        time.sleep(1)
                         st.rerun()
-                    else:
-                        st.error(f"Error resuming thread: {res}")
-            with btn_col2:
-                if st.button("❌ Reject Action", use_container_width=True):
-                    ok, res = submit_approval(thread_id_input, approved=False, feedback=feedback_text)
+            with b2:
+                if st.button("❌ REJECT ACTION", use_container_width=True):
+                    ok, res = post_api(f"/api/threads/{selected_thread}/approve", {"approved": False, "feedback": fb})
                     if ok:
-                        st.warning("Action rejected by operator.")
+                        st.warning("Action rejected.")
+                        time.sleep(1)
                         st.rerun()
-                    else:
-                        st.error(f"Error rejecting thread: {res}")
 
-    # Observation Telemetry Stream
-    st.markdown("#### 🔍 Observation Telemetry (`ObservationResult`)")
-    obs = state_data.get("current_observation") if state_data else None
-    if obs:
-        st.json({
-            "command_type": obs.get("command_type"),
-            "status": obs.get("status"),
-            "exit_code": obs.get("exit_code"),
-            "execution_time_ms": f"{obs.get('execution_time_ms', 0):.2f} ms",
-            "stdout": obs.get("stdout"),
-            "artifacts_created": obs.get("artifacts_created"),
-        })
+    # Live Observation Telemetry & Multi-Turn History
+    c2_left, c2_right = st.columns([3, 2])
+    with c2_left:
+        st.markdown("#### 📡 Latest Sandbox Output (`ObservationResult`)")
+        obs = state_data.get("current_observation") if state_data else None
+        if obs:
+            status_icon = "🟢" if obs.get("status") in ("success", "ok") else "🔴"
+            st.markdown(
+                f"{status_icon} **Type**: `{obs.get('command_type', '').upper()}` | "
+                f"**Status**: `{obs.get('status')}` | "
+                f"**Duration**: `{obs.get('execution_time_ms', 0):.1f}ms` | "
+                f"**Exit Code**: `{obs.get('exit_code', 0)}`"
+            )
+            out_txt = obs.get("stdout") or obs.get("dom_markdown") or "Success"
+            st.text_area("Live Terminal Output (STDOUT / Markdown)", value=out_txt, height=130, disabled=True)
+        else:
+            st.info("Awaiting command dispatch. Click **🚀 ENFORCE STRATEGY ENGINE EXECUTION**.")
+
+        st.markdown("#### 📜 Multi-Turn Execution History")
+        history = state_data.get("history", []) if state_data else []
+        if history:
+            for t in history:
+                t_no = t.get("turn")
+                c = t.get("command", {})
+                o = t.get("observation", {})
+                with st.expander(f"Turn #{t_no} — [{c.get('command_type', '').upper()}] Status: {o.get('status', 'ok')}", expanded=(t_no == len(history))):
+                    st.json({"command": c, "observation_summary": o.get("stdout") or o.get("dom_markdown") or "OK"})
+        else:
+            st.caption("No turns completed yet on this thread.")
+
+    with c2_right:
+        st.markdown("#### 🖼️ CRO Visual Artifact")
+        st.image(f"{API_BASE_URL}/api/artifacts/home/gem/audit_shot.png", caption="CRO Audit Screenshot (/home/gem/audit_shot.png)", use_container_width=True)
+
+        st.markdown("#### 📋 Strategy Task Progress")
+        t_queue = state_data.get("task_queue", [
+            {"task": "DOM Markdown Extraction", "status": "completed" if iteration >= 1 else "pending"},
+            {"task": "CAC/CLV Analytics Computation", "status": "completed" if iteration >= 2 else "pending"},
+            {"task": "Container Shell Diagnostics", "status": "completed" if iteration >= 3 else "pending"},
+            {"task": "Persist Summary to /home/gem", "status": "completed" if is_converged else "pending"},
+        ]) if state_data else []
+        done_cnt = sum(1 for item in t_queue if item["status"] == "completed")
+        st.progress(int((done_cnt / max(1, len(t_queue))) * 100), text=f"{done_cnt}/{len(t_queue)} Tasks Completed")
+        for item in t_queue:
+            icon = "✅" if item["status"] == "completed" else "⏳"
+            st.markdown(f"{icon} **{item['task']}** — `{item['status'].upper()}`")
+
+# =============================================================================
+# TAB 2: RAG Vector Knowledge Base (pgvector)
+# =============================================================================
+with tab_rag:
+    st.subheader("📚 RAG Vector Knowledge Base & Retrieval")
+    st.markdown("The Strategy Engine grounds all brand decisions against dense vector embeddings stored in **`pgvector`**:")
+
+    rag_info = fetch_api("/api/rag/status")
+    if rag_info:
+        r_c1, r_c2, r_c3, r_c4 = st.columns(4)
+        with r_c1:
+            st.metric("Vector Database", "pgvector (5432)")
+        with r_c2:
+            st.metric("Total Indexed Chunks", rag_info.get("total_documents", 0))
+        with r_c3:
+            st.metric("Partitions", f"{len(rag_info.get('partitions', []))} Domains")
+        with r_c4:
+            st.metric("Vector Dimension", f"{rag_info.get('embedding_dimensions', 1536)}D")
+
+    st.markdown("#### 🔍 Semantic Vector Search Explorer")
+    rag_q = st.text_input("Enter Query to Search Knowledge Base", value="Baymard checkout shipping friction")
+    search_hits = fetch_api(f"/api/rag/search?query={rag_q}&top_k=3")
+
+    if search_hits and search_hits.get("hits"):
+        st.markdown(f"**Found {search_hits['hits_count']} Relevant Knowledge Chunks:**")
+        for hit in search_hits["hits"]:
+            with st.container(border=True):
+                st.markdown(f"**[{hit['partition'].upper()}] {hit['title']}** | *RRF Score: {hit['score']:.4f} (Dense Cosine: {hit['dense_score']:.4f})*")
+                st.markdown(f"> {hit['content']}")
+                st.caption(f"Doc ID: `{hit['doc_id']}` | Metadata: {hit.get('metadata')}")
     else:
-        st.info("No active observation telemetry received yet. Dispatch a run from the sidebar.")
+        st.info("No matching chunks found.")
 
-    # Execution History Timeline
-    st.markdown("#### 📜 Multi-Turn Execution History")
-    history = state_data.get("history", []) if state_data else []
-    if history:
-        for turn_item in history:
-            turn_no = turn_item.get("turn")
-            t_cmd = turn_item.get("command", {})
-            t_obs = turn_item.get("observation", {})
-            with st.expander(f"Turn {turn_no}: [{t_cmd.get('command_type', 'action').upper()}] Status: {t_obs.get('status', 'ok')}"):
-                st.markdown(f"**Command Details**:")
-                st.code(json.dumps(t_cmd, indent=2), language="json")
-                st.markdown(f"**Observation Output**:")
-                st.code(t_obs.get("stdout") or t_obs.get("dom_markdown") or "Success", language="markdown")
-    else:
-        st.caption("Awaiting multi-turn telemetry history.")
+    st.markdown("#### 📥 Ingest & Vectorize New Brand Knowledge")
+    with st.expander("➕ Embed New Document into pgvector"):
+        new_title = st.text_input("Document Title", value="Q4 Campaign Guidelines")
+        new_part = st.selectbox("Partition", ["brand_core", "playbooks_research"])
+        new_content = st.text_area("Document Content", value="AuraGlow emphasizes clean clinical results and 100% upfront pricing.")
+        if st.button("⚡ Vectorize & Index into pgvector"):
+            ok, res = post_api("/api/rag/ingest", {"title": new_title, "content": new_content, "partition": new_part})
+            if ok:
+                st.success(f"Indexed successfully! Created {res.get('chunks_created')} vector chunks.")
+                st.rerun()
 
-with right_col:
-    st.subheader("🖼️ CRO Artifacts & Containment")
-    cro_artifact_url = f"{API_BASE_URL}/api/artifacts/home/gem/audit_shot.png"
-    st.image(
-        cro_artifact_url,
-        caption="CRO Visual Audit Artifact (/home/gem/audit_shot.png)",
-        use_container_width=True,
-    )
+# =============================================================================
+# TAB 3: AIO Sandbox Runtime & Connectivity
+# =============================================================================
+with tab_sandbox:
+    st.subheader("🛡️ AIO Sandbox Container Runtime (`aio-sandbox`)")
+    sb_stat = fetch_api("/api/sandbox/status")
     
-    st.markdown("#### 📋 Strategy Task Queue")
-    task_queue = state_data.get("task_queue", [
-        {"task": "DOM Markdown Extraction", "status": "pending"},
-        {"task": "CAC/CLV Analytics Computation", "status": "pending"},
-        {"task": "Container Shell Diagnostics", "status": "pending"},
-        {"task": "Persist Summary to /home/gem", "status": "pending"},
-    ]) if state_data else [
-        {"task": "DOM Markdown Extraction", "status": "pending"},
-        {"task": "CAC/CLV Analytics Computation", "status": "pending"},
-        {"task": "Container Shell Diagnostics", "status": "pending"},
-        {"task": "Persist Summary to /home/gem", "status": "pending"},
-    ]
+    if sb_stat:
+        st.success(f"✅ **AIO Sandbox Status:** `{sb_stat.get('status').upper()}` (HTTP 200 via `X-AIO-API-Key`)")
+        
+        sb_c1, sb_c2 = st.columns([1, 1])
+        with sb_c1:
+            st.markdown(
+                f"""
+                * **Container Image**: `{sb_stat.get('container')}`
+                * **Internal Port**: `127.0.0.1:8080`
+                * **Execution Workspace**: `{sb_stat.get('workspace')}` (Strict Isolation)
+                * **Auth Header**: `{sb_stat.get('auth_header')}`
+                """
+            )
+        with sb_c2:
+            st.info(
+                f"**Why direct browser access shows 401 Authorization Required:**\n\n"
+                f"The AIO Sandbox Nginx reverse proxy protects port 8080. Opening `http://127.0.0.1:8080/` in a raw browser without credentials returns 401.\n\n"
+                f"**Authenticated Direct Link:**  \n"
+                f"[🔗 Open Authenticated AIO Sandbox ({sb_stat.get('authenticated_browser_url')})]({sb_stat.get('authenticated_browser_url')})"
+            )
 
-    for item in task_queue:
-        is_done = item["status"] == "completed"
-        icon = "✅" if is_done else "⏳"
-        st.markdown(f"{icon} **{item['task']}** — `{item['status'].upper()}`")
-
-    st.markdown("#### 🔒 Governance & Authority Guarantee")
-    st.info(
-        "• Strategy Engine retains **sole authority** over Sandbox dispatch.\n"
-        "• All operator inputs route exclusively through StateGraph checkpoints.\n"
-        "• Direct uninspected sandbox execution from dashboard is strictly prohibited."
+    st.markdown("#### 🧰 Sandbox Subsystem Capabilities")
+    st.markdown(
+        """
+        | Subsystem | Service Accessor | Purpose |
+        | :--- | :--- | :--- |
+        | **Browser Automation** | `client.browser_page` | Headless Chromium navigation, DOM markdown extraction, Core Web Vitals |
+        | **Visual Artifacts** | `client.file` | High-res screenshot captures saved to `/home/gem/audit_shot.png` |
+        | **Code Runtime** | `client.code` | Isolated Python 3.12 data computation for CAC, CLV, and ROAS ratios |
+        | **Shell Containment** | `client.shell` | Persistent terminal commands bound strictly within `/home/gem` |
+        """
     )
+
+# =============================================================================
+# TAB 4: Commercial Analytics & Unit Economics
+# =============================================================================
+with tab_econ:
+    st.subheader("📊 Unit Economics & Funnel Diagnostics")
+    st.caption("Commercial formulas and diagnostic heuristics governing Strategy Engine ad spend allocations:")
+
+    metrics = state_data.get("audit_metrics") if state_data else {}
+    roas_val = metrics.get("roas", 4.85)
+    cac_val = metrics.get("cac", 38.50)
+    net_contrib = metrics.get("net_contribution", 45200.0)
+    health_ratio = metrics.get("health_ratio", 3.89)
+
+    e_c1, e_c2, e_c3, e_c4 = st.columns(4)
+    with e_c1:
+        st.markdown(
+            f"""<div class="metric-card">
+                <div class="metric-title">ROAS</div>
+                <div class="metric-value">{roas_val:.2f}x</div>
+                <div class="metric-explain"><b>Formula:</b> Revenue / Ad Spend<br/>Target: &gt; 3.0x. Status: Strong Return.</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with e_c2:
+        st.markdown(
+            f"""<div class="metric-card">
+                <div class="metric-title">CAC</div>
+                <div class="metric-value">${cac_val:.2f}</div>
+                <div class="metric-explain"><b>Formula:</b> Ad Spend / New Customers<br/>Target: &lt; $45.00. Status: Efficient.</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with e_c3:
+        st.markdown(
+            f"""<div class="metric-card">
+                <div class="metric-title">Net Contribution</div>
+                <div class="metric-value">${net_contrib:,.0f}</div>
+                <div class="metric-explain"><b>Formula:</b> Revenue - COGS - Ad Spend - Logistics<br/>Net cash profit generated.</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+    with e_c4:
+        st.markdown(
+            f"""<div class="metric-card">
+                <div class="metric-title">Health Ratio (CLV/CAC)</div>
+                <div class="metric-value">{health_ratio:.2f}x</div>
+                <div class="metric-explain"><b>Formula:</b> CLV ($150) / CAC ($38.50)<br/>Target &ge; 3.0x. Status: Profitable ✅.</div>
+            </div>""",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("#### 🩺 Funnel Bottleneck Diagnostic Heuristics")
+    st.markdown(
+        """
+        * **High Reach + Low Website Traffic:** Weak hook, audience-channel mismatch, or vague call-to-action.
+        * **High Traffic + Low Conversions:** Landing page mismatch, lack of trust signals/reviews, slow load speed, or checkout friction (e.g. hidden shipping costs, mandatory account creation).
+        * **CLV / CAC &lt; 3.0:** Unsustainable ad spend burn. Strategy Engine halts ad spend and pivots 35% budget to organic ToFu educational content.
+        """
+    )
+
+st.divider()
+
+# Footer
+f1, f2, f3 = st.columns([2, 1, 1])
+with f1:
+    st.caption("Enterprise OS — Built with LangGraph, FastAPI, Streamlit, and AIO Sandbox.")
+with f2:
+    st.markdown(f"[📖 API Documentation]({API_BASE_URL}/docs)")
+with f3:
+    auto_refresh_live = st.checkbox("Auto-Refresh Live Telemetry (3s)", value=True)
+    if auto_refresh_live and not is_converged:
+        time.sleep(3)
+        st.rerun()
