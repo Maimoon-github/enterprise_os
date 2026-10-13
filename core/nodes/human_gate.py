@@ -197,3 +197,26 @@ def human_gate_node(state: AgentState) -> Dict[str, Any]:
         "artifacts": [f"approval_receipt_{receipt.timestamp}.json"],
         "messages": [AIMessage(content=pending_msg)],
     }
+
+
+def resume_human_gate_execution(
+    graph: Any,
+    thread_id: str,
+    approved: bool,
+    feedback: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Expose state resumption hook for dashboard HitL actions.
+
+    Updates the checkpointed state at 'human_gate' with the operator's approval
+    decision and resumes execution under the specified thread_id.
+    """
+    config = {"configurable": {"thread_id": thread_id}}
+    graph.update_state(
+        config,
+        {
+            "human_approved": approved,
+            "human_feedback": feedback or ("Approved by operator" if approved else "Rejected by operator"),
+        },
+        as_node="human_gate",
+    )
+    return graph.invoke(None, config)
