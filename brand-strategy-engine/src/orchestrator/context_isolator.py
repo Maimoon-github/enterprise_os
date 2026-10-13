@@ -1,5 +1,5 @@
 from typing import Any, Dict
-from src.memory.summarizer import StateSummarizer
+from src.memory.summarizer import StateSummarizer, TokenBudget
 from src.schemas.state import (
     AnalystSlice,
     AudienceSlice,
@@ -13,6 +13,8 @@ from src.schemas.state import (
 
 class ContextIsolator:
     """Extracts strictly bounded, typed state slices for each domain specialist."""
+
+    STAGE_TOKEN_BUDGET = TokenBudget
 
     @classmethod
     def get_analyst_slice_model(cls, state: MasterEngineState) -> AnalystSlice:

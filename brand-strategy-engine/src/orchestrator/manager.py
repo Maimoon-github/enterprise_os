@@ -14,7 +14,7 @@ from src.agents.growth_agent import GrowthAgent
 from src.agents.seo_content_agent import SEOContentAgent
 from src.agents.validator_agent import ValidatorAgent
 from src.memory.long_term import LongTermMemory
-from src.memory.short_term import ShortTermMemory
+from src.memory.short_term import SessionNodeType, ShortTermMemory
 from src.orchestrator.context_isolator import ContextIsolator
 from src.orchestrator.state_machine import PipelineStage, StateMachine
 from src.rag.chunker import DocumentChunker
@@ -238,6 +238,14 @@ Responsibilities:
             current_stage=PipelineStage.INITIALIZATION.value,
         )
 
+        await self.short_term_memory.add_graph_node(
+            session_id=session_id,
+            agent_id="Supervisor",
+            stage=PipelineStage.INITIALIZATION.value,
+            node_type=SessionNodeType.INITIALIZATION,
+            payload={"mode": mode.value, "brand_name": brand_profile.brand_name},
+        )
+
         # Stage 1: Empirical VNC Reconnaissance (Agent 1)
         StateMachine.advance_stage(state)
         analyst_slice = ContextIsolator.get_analyst_slice(state)
@@ -250,6 +258,13 @@ Responsibilities:
         analyst_out = await self.delegate_task("Agent_1", analyst_slice)
         self.merge_agent_payload(state, PipelineStage.ANALYST.value, analyst_out)
         await self.short_term_memory.save_stage_buffer(session_id, "analyst", analyst_out)
+        await self.short_term_memory.add_graph_node(
+            session_id=session_id,
+            agent_id="Agent_1",
+            stage=PipelineStage.ANALYST.value,
+            node_type=SessionNodeType.STAGE_HANDOFF,
+            payload={"output_keys": list(analyst_out.keys())},
+        )
 
         # Stage 2: Audience & Friction Modeling (Agent 2)
         StateMachine.advance_stage(state)
@@ -263,6 +278,13 @@ Responsibilities:
         audience_out = await self.delegate_task("Agent_2", audience_slice)
         self.merge_agent_payload(state, PipelineStage.AUDIENCE.value, audience_out)
         await self.short_term_memory.save_stage_buffer(session_id, "audience", audience_out)
+        await self.short_term_memory.add_graph_node(
+            session_id=session_id,
+            agent_id="Agent_2",
+            stage=PipelineStage.AUDIENCE.value,
+            node_type=SessionNodeType.STAGE_HANDOFF,
+            payload={"output_keys": list(audience_out.keys())},
+        )
 
         # Stage 3: Brand Positioning & Category of One (Agent 3)
         StateMachine.advance_stage(state)
@@ -276,6 +298,13 @@ Responsibilities:
         brand_out = await self.delegate_task("Agent_3", brand_slice)
         self.merge_agent_payload(state, PipelineStage.BRAND.value, brand_out)
         await self.short_term_memory.save_stage_buffer(session_id, "brand", brand_out)
+        await self.short_term_memory.add_graph_node(
+            session_id=session_id,
+            agent_id="Agent_3",
+            stage=PipelineStage.BRAND.value,
+            node_type=SessionNodeType.STAGE_HANDOFF,
+            payload={"output_keys": list(brand_out.keys())},
+        )
 
         # Stage 4: SEO & Content Gap Auditing (Agent 4)
         StateMachine.advance_stage(state)
@@ -289,6 +318,13 @@ Responsibilities:
         seo_out = await self.delegate_task("Agent_4", seo_slice)
         self.merge_agent_payload(state, PipelineStage.SEO.value, seo_out)
         await self.short_term_memory.save_stage_buffer(session_id, "seo", seo_out)
+        await self.short_term_memory.add_graph_node(
+            session_id=session_id,
+            agent_id="Agent_4",
+            stage=PipelineStage.SEO.value,
+            node_type=SessionNodeType.STAGE_HANDOFF,
+            payload={"output_keys": list(seo_out.keys())},
+        )
 
         # Stage 5 & 6: Strategic Synthesis and Adversarial Revision Loop
         while state.iteration_counter <= StateMachine.MAX_REVISION_LOOPS:
@@ -304,6 +340,13 @@ Responsibilities:
             growth_out = await self.delegate_task("Agent_5", growth_slice)
             self.merge_agent_payload(state, PipelineStage.GROWTH.value, growth_out)
             await self.short_term_memory.save_stage_buffer(session_id, f"growth_cycle_{state.iteration_counter}", growth_out)
+            await self.short_term_memory.add_graph_node(
+                session_id=session_id,
+                agent_id="Agent_5",
+                stage=PipelineStage.GROWTH.value,
+                node_type=SessionNodeType.STAGE_HANDOFF,
+                payload={"cycle": state.iteration_counter},
+            )
 
             # Stage 6: Strategy Validator (Agent 6)
             state.current_stage = PipelineStage.VALIDATOR.value
@@ -316,6 +359,13 @@ Responsibilities:
             )
             validator_out = await self.delegate_task("Agent_6", validator_slice)
             self.merge_agent_payload(state, PipelineStage.VALIDATOR.value, validator_out)
+            await self.short_term_memory.add_graph_node(
+                session_id=session_id,
+                agent_id="Agent_6",
+                stage=PipelineStage.VALIDATOR.value,
+                node_type=SessionNodeType.STAGE_HANDOFF,
+                payload={"validation_status": str(validator_out.get("validation_report"))},
+            )
 
             # Evaluate verdict
             next_stage, approved, purged = self.route_revisions(state)
@@ -340,7 +390,25 @@ Responsibilities:
             if next_stage == PipelineStage.COMPLETED:
                 break
 
-        # Save historical baseline
+        # Save brand profile, competitor footprints, and historical baselines
+        await self.long_term_memory.save_brand_profile(
+            tenant_id=tid,
+            client_id="default_client",
+            brand_name=brand_profile.brand_name,
+            website_url=brand_profile.website_url,
+            industry=brand_profile.industry,
+            business_goals=brand_profile.business_goals,
+            target_market=brand_profile.target_market,
+        )
+        for comp in state.research_repository.competitor_profiles:
+            await self.long_term_memory.save_competitor_footprint(
+                tenant_id=tid,
+                client_id="default_client",
+                competitor_name=comp.get("name", "Unknown"),
+                domain=comp.get("domain", ""),
+                positioning_summary=comp.get("positioning_summary", ""),
+            )
+
         for init in state.strategic_artifacts.growth_initiatives:
             if init.approval_status == ApprovalStatus.APPROVED:
                 await self.long_term_memory.save_baseline(
