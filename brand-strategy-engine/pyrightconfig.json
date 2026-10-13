@@ -9,7 +9,8 @@
   "extraPaths": [
     ".",
     "src",
-    "internal_sandbox"
+    "internal_sandbox",
+    "/home/maimoon-amin/miniconda3/envs/strategy_engine/lib/python3.11/site-packages"
   ],
   "executionEnvironments": [
     {
@@ -17,7 +18,8 @@
       "extraPaths": [
         ".",
         "src",
-        "internal_sandbox"
+        "internal_sandbox",
+        "/home/maimoon-amin/miniconda3/envs/strategy_engine/lib/python3.11/site-packages"
       ]
     }
   ]

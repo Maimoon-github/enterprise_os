@@ -49,7 +49,12 @@ include = ["src*", "internal_sandbox*"]
 venvPath = "/home/maimoon-amin/miniconda3/envs"
 venv = "strategy_engine"
 include = ["src", "internal_sandbox", "tests"]
-extraPaths = [".", "src", "internal_sandbox"]
+extraPaths = [
+    ".",
+    "src",
+    "internal_sandbox",
+    "/home/maimoon-amin/miniconda3/envs/strategy_engine/lib/python3.11/site-packages",
+]
 
 [tool.ruff]
 line-length = 100

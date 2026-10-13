@@ -1,0 +1,9 @@
+{
+  "python.defaultInterpreterPath": "/home/maimoon-amin/miniconda3/envs/strategy_engine/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/src",
+    "${workspaceFolder}/internal_sandbox",
+    "/home/maimoon-amin/miniconda3/envs/strategy_engine/lib/python3.11/site-packages"
+  ]
+}
