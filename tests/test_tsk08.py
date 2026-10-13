@@ -2,6 +2,10 @@
 """Validation tests for TSK-08: Unit Economics, Funnel Diagnostics, and Campaign Reallocation."""
 
 import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 

@@ -168,6 +168,7 @@ def _convert_mapping(
         annotations = getattr(expected_type, "__annotations__", {})
     aliases_to_field_names = _get_alias_to_field_name(annotations)
     for key, value in object_.items():
+        type_: typing.Optional[typing.Any] = None
         if direction == "read" and key in aliases_to_field_names:
             dealiased_key = aliases_to_field_names.get(key)
             if dealiased_key is not None:

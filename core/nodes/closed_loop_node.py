@@ -21,6 +21,7 @@ from core.loop.command_protocol import (
     ShellExecCommand,
 )
 from core.loop.sandbox_controller import SandboxController
+from core.reasoning.cot_engine import ModelRouter, ModelTier
 from core.state import BrandProfile
 
 
@@ -35,6 +36,7 @@ class ClosedLoopState(TypedDict, total=False):
     current_observation: Optional[Dict[str, Any]]
     history: List[Dict[str, Any]]
     is_converged: bool
+    human_approved: Optional[bool]
     messages: Annotated[List[AnyMessage], operator.add]
     metadata: Dict[str, Any]
 
@@ -86,6 +88,20 @@ def strategy_node(state: ClosedLoopState) -> Dict[str, Any]:
             file_path="/home/gem/execution_summary.md",
             content=f"# Strategy Execution Convergence\nGoal: {goal}\nIterations: {iteration}\nStatus: Verified.",
         )
+
+    # Invoke live Ollama strategic deliberation if model available
+    try:
+        model = ModelRouter.get_model(ModelTier.HIGH_CAPACITY)
+        prompt_text = (
+            f"You are the Enterprise OS Strategic Commander. Goal: '{goal}'. "
+            f"Iteration turn: {iteration + 1}/{max_iter}. Prior directive: {cmd.command_type}. "
+            f"State a 1-sentence strategic rationale."
+        )
+        llm_res = model.invoke([HumanMessage(content=prompt_text)])
+        live_analysis = str(llm_res.content).strip().replace("\n", " ")[:180]
+        thought = f"{thought} | Strategic Analysis: {live_analysis}"
+    except Exception:
+        pass
 
     return {
         "current_command": cmd.model_dump(),
@@ -165,15 +181,19 @@ def observation_ingest_node(state: ClosedLoopState) -> Dict[str, Any]:
 
 
 def route_after_strategy(state: ClosedLoopState) -> Literal["sandbox_dispatch_node", "__end__"]:
-    """Conditional router checking if goal already converged before dispatch."""
-    if state.get("is_converged"):
+    """Conditional router checking if goal converged, limit reached, or HitL rejected."""
+    if state.get("is_converged") or state.get("iteration_count", 0) >= state.get("max_iterations", 5):
+        return "__end__"
+    if state.get("human_approved") is False:
         return "__end__"
     return "sandbox_dispatch_node"
 
 
 def route_after_observation(state: ClosedLoopState) -> Literal["strategy_node", "__end__"]:
-    """Conditional router guarding maximum iterations and loop convergence."""
+    """Conditional router guarding maximum iterations, task convergence, and HitL gates."""
     if state.get("is_converged") or state.get("iteration_count", 0) >= state.get("max_iterations", 5):
+        return "__end__"
+    if state.get("human_approved") is False:
         return "__end__"
     return "strategy_node"
 

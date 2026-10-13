@@ -1,6 +1,10 @@
 # pyright: reportMissingImports=false
 """Validation tests for TSK-05: Hierarchical Planning, CoT/Re-Act Reasoning, and Dynamic Replanning."""
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 

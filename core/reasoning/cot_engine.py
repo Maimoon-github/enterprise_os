@@ -69,6 +69,59 @@ class DeterministicChatModel(BaseChatModel):
         return f"deterministic-{self.tier.value}"
 
 
+class OllamaChatModel(BaseChatModel):
+    """Live local Ollama ChatModel connecting to local Ollama daemon."""
+
+    model_name: str = "qwen2.5:7b"
+    base_url: str = "http://127.0.0.1:11434"
+    temperature: float = 0.2
+
+    def _generate(
+        self,
+        messages: List[Any],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        import json
+        import urllib.request
+
+        formatted = []
+        for m in messages:
+            role = "user"
+            if isinstance(m, SystemMessage) or getattr(m, "type", "") == "system":
+                role = "system"
+            elif isinstance(m, AIMessage) or getattr(m, "type", "") == "ai":
+                role = "assistant"
+            formatted.append({"role": role, "content": str(m.content)})
+
+        payload = {
+            "model": self.model_name,
+            "messages": formatted,
+            "stream": False,
+            "options": {"temperature": self.temperature},
+        }
+        try:
+            req = urllib.request.Request(
+                f"{self.base_url}/api/chat",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                content = data.get("message", {}).get("content", "")
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
+        except Exception:
+            fallback = DeterministicChatModel(
+                tier=ModelTier.HIGH_CAPACITY if "qwen2.5:7b" in self.model_name else ModelTier.HIGH_EFFICIENCY
+            )
+            return fallback._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    @property
+    def _llm_type(self) -> str:
+        return f"ollama-{self.model_name}"
+
+
 class ModelRouter:
     """Routes requests to High-Capacity vs High-Efficiency model endpoints."""
 
@@ -80,6 +133,18 @@ class ModelRouter:
         """Instantiate or return the appropriate ChatModel according to tier."""
         if override_model is not None:
             return override_model
+
+        # Check local Ollama daemon first
+        ollama_url = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+        if not os.getenv("DISABLE_OLLAMA"):
+            try:
+                import urllib.request
+                with urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=1.0) as resp:
+                    if resp.status == 200:
+                        model_name = "qwen2.5:7b" if tier == ModelTier.HIGH_CAPACITY else "qwen2.5-coder:7b"
+                        return OllamaChatModel(model_name=model_name, base_url=ollama_url)
+            except Exception:
+                pass
 
         # Real provider routing if API keys exist
         if tier == ModelTier.HIGH_CAPACITY and os.getenv("ANTHROPIC_API_KEY"):

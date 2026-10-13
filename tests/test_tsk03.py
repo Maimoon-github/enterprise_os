@@ -2,6 +2,10 @@
 """Validation tests for TSK-03: Perception Pipelines and Hybrid RAG Knowledge Base."""
 
 import os
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from agent_sandbox import Sandbox
 from core.perception import PerceptionPipeline, AudienceProfile, StoreAuditSignal, MarketTrendSignal
 from rag.ingestion import DocumentIndexer

@@ -1,7 +1,12 @@
 # pyright: reportMissingImports=false
 """Validation tests for TSK-06: Brand Compliance, Anti-Hallucination, and HitL Approval Gates."""
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from core.nodes.human_gate import (
@@ -130,7 +135,7 @@ def test_langgraph_hitl_approval_gate_workflow():
     # Compile with interrupt_before=["human_gate"]
     app = builder.compile(checkpointer=checkpointer, interrupt_before=["human_gate"])
 
-    thread_config = {"configurable": {"thread_id": "session-tsk-06-gate-test"}}
+    thread_config: RunnableConfig = {"configurable": {"thread_id": "session-tsk-06-gate-test"}}
 
     brand = BrandProfile(
         brand_name="AuraGlow",

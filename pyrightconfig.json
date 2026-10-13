@@ -1,13 +1,21 @@
 {
-  "venvPath": ".",
-  "venv": ".venv",
+  "include": [
+    "core",
+    "tests"
+  ],
+  "exclude": [
+    "sandbox",
+    "temp"
+  ],
+  "venvPath": "/home/maimoon-amin/miniconda3/envs",
+  "venv": "engines_os",
   "pythonVersion": "3.11",
   "pythonPlatform": "Linux",
   "reportMissingImports": "none",
   "extraPaths": [
     "core",
     "rag",
-    "sandbox/sdk/python",
-    ".venv/lib/python3.11/site-packages"
+    "sandbox/sdk/python"
   ]
 }
+
