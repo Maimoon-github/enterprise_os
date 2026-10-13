@@ -179,7 +179,7 @@ def test_weekly_operating_cadence_orchestrator():
 def test_benchmark_xml_dataset_suite_evaluation():
     """Verify evaluation XML benchmark suites (workflow, browser, collaboration) pass >= 98%."""
     parser = XMLDatasetParser()
-    dataset_dir = Path("/home/maimoon-amin/Antigravity code/enterprise_os/sandbox/evaluation/dataset")
+    dataset_dir = Path(__file__).resolve().parent / "dataset"
 
     suites = [
         "evaluation_workflow.xml",

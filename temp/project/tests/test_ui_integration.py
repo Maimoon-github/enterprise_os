@@ -6,6 +6,7 @@ Validates:
 2. State pause at human_gate checkpoint and resumption via operator approval across thread IDs.
 3. Live ObservationResult telemetry and CRO artifact visual endpoint serving.
 4. Sole Strategy Engine authority enforcement (sandbox commands emitted exclusively via engine).
+5. Comprehensive strategy document synthesis with 5-stage marketing funnel and unit economics.
 """
 
 import json
@@ -170,3 +171,41 @@ def test_cro_artifact_endpoint(client):
     assert res.status_code == 200
     assert res.headers["content-type"] == "image/png"
     assert len(res.content) > 100
+
+
+def test_strategy_document_generation_and_funnel_architecture(client):
+    """Verify strategy document synthesis contains all 5 marketing funnel stages and formulas."""
+    thread_id = "test-session-strategy-doc-003"
+    client.post(
+        "/api/runs",
+        json={
+            "thread_id": thread_id,
+            "goal": "Build full 5-stage funnel and audit ecommerce checkout",
+            "brand_name": "AuraGlow Skincare",
+            "target_url": "https://auraglow-store.com",
+            "require_human_gate": False,
+            "max_iterations": 4,
+        },
+    )
+
+    # Fetch strategy document endpoint
+    doc_res = client.get(f"/api/threads/{thread_id}/strategy_document")
+    assert doc_res.status_code == 200
+    doc_text = doc_res.text
+    assert "# Autonomous Strategy & Marketing Funnel Blueprint" in doc_text
+    assert "AuraGlow Skincare" in doc_text
+    # 5 Funnel stages check
+    assert "Awareness (ToFu)" in doc_text
+    assert "Engagement & Consideration (MoFu)" in doc_text
+    assert "Intent (MoFu/BoFu)" in doc_text
+    assert "Conversion (BoFu)" in doc_text
+    assert "Retention & Advocacy" in doc_text
+    # 1-to-N Repurposing check
+    assert "1-to-N Content Repurposing Pipeline" in doc_text
+    assert "LinkedIn" in doc_text
+    # Commercial formulas check
+    assert "ROAS" in doc_text
+    assert "Net Contribution" in doc_text
+    assert "Health Ratio" in doc_text
+    # 90-day Roadmap check
+    assert "90-Day Strategic Implementation Roadmap" in doc_text

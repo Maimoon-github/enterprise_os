@@ -107,7 +107,7 @@ class OllamaChatModel(BaseChatModel):
                 data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=90) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 content = data.get("message", {}).get("content", "")
                 return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
@@ -141,7 +141,7 @@ class ModelRouter:
                 import urllib.request
                 with urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=1.0) as resp:
                     if resp.status == 200:
-                        model_name = "qwen2.5:7b" if tier == ModelTier.HIGH_CAPACITY else "qwen2.5-coder:7b"
+                        model_name = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:7b")
                         return OllamaChatModel(model_name=model_name, base_url=ollama_url)
             except Exception:
                 pass

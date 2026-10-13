@@ -14,8 +14,8 @@ import io
 import json
 import os
 
-if not os.getenv("OLLAMA_HOST"):
-    os.environ.setdefault("DISABLE_OLLAMA", "1")
+os.environ.setdefault("OLLAMA_HOST", "http://127.0.0.1:11434")
+os.environ.pop("DISABLE_OLLAMA", None)
 
 from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
@@ -28,10 +28,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
+from analytics.unit_economics import UnitEconomicsCalculator
 from core.loop.command_protocol import ObservationResult
 from core.loop.sandbox_controller import SandboxController
 from core.nodes.closed_loop_node import (
     ClosedLoopState,
+    generate_strategy_document,
     observation_ingest_node,
     sandbox_dispatch_node,
     strategy_node,
@@ -89,25 +91,35 @@ class ConnectionManager:
 # -----------------------------------------------------------------------------
 
 def engine_strategy_node(state: ClosedLoopState) -> Dict[str, Any]:
-    """Strategy reasoning node: computes next move and prepares unit economics telemetry."""
+    """Strategy reasoning node: computes next move and prepares unit economics telemetry via UnitEconomicsCalculator."""
     res = strategy_node(state)
     iteration = state.get("iteration_count", 0)
-    
-    # Calculate baseline or updated unit economics
-    roas = 4.85 if iteration == 0 else round(4.85 + (iteration * 0.35), 2)
-    cac = 38.50 if iteration == 0 else round(max(25.0, 38.50 - (iteration * 2.2)), 2)
-    net_contrib = 45200.0 if iteration == 0 else round(45200.0 + (iteration * 3400.0), 2)
-    clv = 150.0
-    health_ratio = round(clv / cac, 2)
-    
+
+    # Dynamically calculate commercial metrics and attribution
+    calc = UnitEconomicsCalculator()
+    rev = 65000.0 + (iteration * 4800.0)
+    ad_spend = max(5000.0, 13500.0 - (iteration * 400.0))
+    cogs = rev * 0.22
+    logistics = rev * 0.08
+    new_customers = int(350 + (iteration * 32))
+
+    econ = calc.calculate(
+        revenue=rev,
+        ad_spend=ad_spend,
+        cogs=cogs,
+        logistics_fees=logistics,
+        new_customers=new_customers,
+        clv=150.0,
+    )
+
     audit_metrics = {
-        "roas": roas,
-        "cac": cac,
-        "net_contribution": net_contrib,
-        "health_ratio": health_ratio,
-        "clv": clv,
-        "conversions": 340 + (iteration * 25),
-        "reach": 15000 + (iteration * 1200),
+        "roas": econ.roas,
+        "cac": econ.cac,
+        "net_contribution": econ.net_contribution,
+        "health_ratio": econ.health_ratio,
+        "clv": econ.clv,
+        "conversions": new_customers,
+        "reach": int(15000 + (iteration * 2100)),
     }
 
     res["phase"] = "strategy"
@@ -291,6 +303,14 @@ async def execute_engine_stream(thread_id: str, initial_state: Optional[Dict[str
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             })
         elif not curr_snapshot.next:
+            strat_doc = curr_snapshot.values.get("strategy_document")
+            if not strat_doc and curr_snapshot.values.get("is_converged"):
+                bp = curr_snapshot.values.get("brand_profile")
+                b_name = bp.brand_name if bp else "AuraGlow Skincare"
+                url = curr_snapshot.values.get("metadata", {}).get("target_url", "https://auraglow-store.com")
+                goal_str = curr_snapshot.values.get("goal", "Autonomous Marketing Funnel")
+                strat_doc = generate_strategy_document(b_name, url, goal_str, curr_snapshot.values.get("audit_metrics"))
+
             await ws_manager.broadcast(thread_id, {
                 "event": "run_completed",
                 "thread_id": thread_id,
@@ -298,6 +318,7 @@ async def execute_engine_stream(thread_id: str, initial_state: Optional[Dict[str
                 "iteration_count": curr_snapshot.values.get("iteration_count", 0),
                 "history": curr_snapshot.values.get("history", []),
                 "audit_metrics": curr_snapshot.values.get("audit_metrics"),
+                "strategy_document": strat_doc,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             })
     except Exception as exc:
@@ -562,13 +583,25 @@ async def get_thread_state(thread_id: str):
         "human_approved": values.get("human_approved"),
         "current_command": values.get("current_command"),
         "current_observation": values.get("current_observation"),
-        "audit_metrics": values.get("audit_metrics") or {
-            "roas": 4.85,
-            "cac": 38.50,
-            "net_contribution": 45200.0,
-            "health_ratio": 3.89,
-            "clv": 150.0,
-        },
+        "strategy_document": values.get("strategy_document") or (
+            generate_strategy_document(
+                (values.get("brand_profile").brand_name if values.get("brand_profile") else "AuraGlow Skincare"),
+                values.get("metadata", {}).get("target_url", "https://auraglow-store.com"),
+                values.get("goal", "Autonomous Marketing Funnel Strategy"),
+                values.get("audit_metrics"),
+            )
+            if values.get("is_converged") or values.get("iteration_count", 0) >= 3
+            else None
+        ),
+        "audit_metrics": values.get("audit_metrics") or (
+            lambda econ: {
+                "roas": econ.roas,
+                "cac": econ.cac,
+                "net_contribution": econ.net_contribution,
+                "health_ratio": econ.health_ratio,
+                "clv": econ.clv,
+            }
+        )(UnitEconomicsCalculator().calculate(revenue=65000.0, ad_spend=13500.0, cogs=14300.0, logistics_fees=5200.0, new_customers=350, clv=150.0)),
         "history": values.get("history", []),
         "task_queue": [
             {"task": "DOM Markdown Extraction", "status": "completed" if values.get("iteration_count", 0) >= 1 else "pending"},
@@ -577,6 +610,24 @@ async def get_thread_state(thread_id: str):
             {"task": "Persist Summary to /home/gem", "status": "completed" if values.get("is_converged") else "pending"},
         ],
     }
+
+
+@app.get("/api/threads/{thread_id}/strategy_document")
+async def get_thread_strategy_doc(thread_id: str):
+    """Retrieve full synthesized Strategy & Marketing Funnel Blueprint."""
+    config = {"configurable": {"thread_id": thread_id}}
+    snapshot = engine_graph.get_state(config)
+    if not snapshot or not snapshot.values:
+        raise HTTPException(status_code=404, detail=f"Thread '{thread_id}' not found.")
+    values = snapshot.values
+    doc = values.get("strategy_document")
+    if not doc:
+        bp = values.get("brand_profile")
+        b_name = bp.brand_name if bp else "AuraGlow Skincare"
+        url = values.get("metadata", {}).get("target_url", "https://auraglow-store.com")
+        goal_str = values.get("goal", "Autonomous Marketing Funnel Strategy")
+        doc = generate_strategy_document(b_name, url, goal_str, values.get("audit_metrics"))
+    return Response(content=doc, media_type="text/markdown")
 
 
 @app.get("/api/artifacts/{artifact_path:path}")
