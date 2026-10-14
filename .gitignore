@@ -1,2 +1,60 @@
-temp/
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
 
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+eggs/
+.eggs/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing & QA
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Type checking & linting
+.mypy_cache/
+.pytype/
+.ruff_cache/
+
+# Environment variables & local configs
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Temporary, scratch & runtime data
+temp/
+scratch/
+evidence_blobs/
+*.log
+*.sqlite3
+
+# IDEs & OS artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
