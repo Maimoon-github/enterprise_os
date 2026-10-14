@@ -58,6 +58,8 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 parser.py
 │   │   │   └── 🐍 store.py
 │   │   ├── 📁 runtime/
+│   │   │   ├── 📁 ui/
+│   │   │   │   └── 🌐 index.html
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 api.py
 │   │   │   └── 🐍 cli.py
@@ -80,6 +82,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   ├── 🐍 test_memory_context.py
 │   │   ├── 🐍 test_rag_pipeline.py
 │   │   ├── 🐍 test_state_machine.py
+│   │   ├── 🐍 test_ui_api.py
 │   │   └── 🐍 test_vnc_bridge.py
 │   ├── 📝 README.md
 │   ├── ⚙️ pyproject.toml

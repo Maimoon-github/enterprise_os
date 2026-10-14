@@ -3,6 +3,7 @@
 import json
 import logging
 import math
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 import asyncpg
@@ -16,13 +17,15 @@ class LongTermMemory:
     def __init__(
         self,
         dsn: Optional[str] = None,
-        host: str = "postgres-pgvector",
+        host: str = "127.0.0.1",
         port: int = 5432,
         database: str = "brand_strategy_db",
         user: str = "engine_user",
         password: str = "engine_secure_pass",
     ):
-        self.dsn = dsn or f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        env_dsn = os.getenv("DATABASE_URL")
+        env_host = os.getenv("POSTGRES_HOST", host)
+        self.dsn = dsn or env_dsn or f"postgresql://{user}:{password}@{env_host}:{port}/{database}"
         self.pool: Optional[asyncpg.Pool] = None
         # In-memory storage fallback for local/test execution without active PostgreSQL
         self._fallback_baselines: List[Dict[str, Any]] = []
@@ -494,7 +497,7 @@ class LongTermMemory:
                         client_id,
                         recommendation_id,
                         status,
-                        json.dumps(audit_data),
+                        json.dumps(audit_data, default=str),
                     )
                 return
             except Exception as e:
@@ -559,7 +562,7 @@ class LongTermMemory:
                         session_id,
                         tenant_id,
                         client_id,
-                        json.dumps(state_data),
+                        json.dumps(state_data, default=str),
                     )
                 return
             except Exception as e:

@@ -112,7 +112,10 @@ class BaseAgent(ABC):
         self.system_prompt = system_prompt
         self.context_window = context_window
         self.temperature = temperature
-        self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", ollama_base_url).rstrip("/")
+        raw_url = os.getenv("OLLAMA_BASE_URL", ollama_base_url).rstrip("/")
+        if raw_url.endswith("/v1"):
+            raw_url = raw_url[:-3]
+        self.ollama_base_url = raw_url
         self.tools: Dict[str, Callable] = {}
         # Declarative default from master policy if registered
         default_whitelist = MASTER_RBAC_POLICY.get(agent_id, {}).get("whitelisted_tools", [])

@@ -18,7 +18,7 @@ class VectorStore:
         self,
         embedder: Optional[OllamaEmbedder] = None,
         dsn: Optional[str] = None,
-        host: str = "postgres-pgvector",
+        host: str = "127.0.0.1",
         port: int = 5432,
         database: str = "brand_strategy_db",
         user: str = "engine_user",
