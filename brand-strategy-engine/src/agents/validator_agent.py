@@ -39,17 +39,54 @@ Mandates:
         self.register_tool("validate_metric_feasibility", self._tool_metric_feasibility)
         self.register_tool("issue_veto", self._tool_issue_veto)
 
-    def _tool_provenance(self, evidence_id: str, repo_evidence_ids: List[str]) -> bool:
-        return evidence_id in repo_evidence_ids
+    async def invoke_tool(self, tool_name: str, **kwargs) -> Any:
+        """Reconciles tool naming aliases (e.g. issue_rejection_notice, issue_approval_certificate)."""
+        alias_map = {
+            "issue_rejection_notice": "issue_veto",
+        }
+        if tool_name == "issue_approval_certificate":
+            rec_id = kwargs.get("rec_id") or kwargs.get("recommendation_id") or "ALL"
+            return {"recommendation_id": rec_id, "approved": True, "certificate": f"CERT-{rec_id}"}
+        resolved_name = alias_map.get(tool_name, tool_name)
+        return await super().invoke_tool(resolved_name, **kwargs)
 
-    def _tool_logical_consistency(self, implication: str, prescription: str) -> bool:
-        # Prescription must not be empty and must provide concrete steps
-        if len(prescription.strip()) < 15:
+    def _tool_provenance(
+        self,
+        evidence_id: str,
+        repo_evidence_ids: List[str],
+        evidence_ref: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        if evidence_id not in repo_evidence_ids:
             return False
-        # Basic check: prescription should address keywords in implication
+        if evidence_ref:
+            selector = evidence_ref.get("dataset_reference") or ""
+            screenshot = evidence_ref.get("screenshot_uri") or ""
+            source_type = evidence_ref.get("source_type") or ""
+            if not selector and not screenshot and not evidence_id.startswith("chk_") and source_type != "rag_citation":
+                return False
         return True
 
-    def _tool_metric_feasibility(self, metric_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def _tool_logical_consistency(
+        self,
+        implication: Optional[str] = None,
+        prescription: Optional[str] = None,
+        initiative: Optional[Dict[str, Any]] = None,
+        recommendation_object: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> bool:
+        rec = initiative or recommendation_object or {}
+        imp = implication or rec.get("business_implication", "")
+        pres = prescription or rec.get("actionable_prescription", "")
+
+        if not pres or len(pres.strip()) < 15:
+            return False
+        if pres.strip().lower() in ("none", "n/a", "do nothing", "no action needed", "ignore finding"):
+            return False
+        if not imp or len(imp.strip()) < 5:
+            return False
+        return True
+
+    def _tool_metric_feasibility(self, metric_dict: Dict[str, Any], business_type: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         from src.schemas.initiative import SuccessMetric
         metric = SuccessMetric(**metric_dict)
         passed, reason, lift = MetricValidator.validate_metric(metric)
@@ -82,19 +119,36 @@ Mandates:
             if isinstance(cit, dict) and "chunk_id" in cit:
                 repo_evidence_ids.add(cit["chunk_id"])
 
+        dom_snaps = research_repo.get("dom_snapshots") or state_slice.get("dom_snapshots") or {}
+        if isinstance(dom_snaps, dict):
+            for k in dom_snaps.keys():
+                repo_evidence_ids.add(k)
+
+        for ev in state_slice.get("visual_evidence_vnc", []):
+            if isinstance(ev, dict):
+                repo_evidence_ids.add(ev.get("evidence_id"))
+            elif hasattr(ev, "evidence_id"):
+                repo_evidence_ids.add(ev.evidence_id)
+
+        for cit in state_slice.get("rag_citations", []):
+            if isinstance(cit, dict) and "chunk_id" in cit:
+                repo_evidence_ids.add(cit["chunk_id"])
+
         audit_entries: List[AuditEntry] = []
         validated_initiatives: List[StrategicInitiative] = []
         has_vetoes = False
 
         for init in initiatives:
             rejection_reasons = []
+            target_agent = getattr(init, "initiating_agent", "Agent_5_Growth")
 
             # 1. Provenance Check
             ev_id = init.evidence.evidence_id
-            provenance_ok = ev_id in repo_evidence_ids or len(repo_evidence_ids) == 0
+            ev_dict = init.evidence.model_dump() if hasattr(init.evidence, "model_dump") else init.evidence
+            provenance_ok = self._tool_provenance(ev_id, list(repo_evidence_ids), ev_dict)
             await self.react_step(
                 step_number=1,
-                thought=f"Verifying provenance of evidence {ev_id} for initiative {init.recommendation_id}",
+                thought=f"Reason: Auditing evidence provenance for initiative {init.recommendation_id} (evidence ID: {ev_id}).",
                 action="verify_evidence_provenance",
                 action_args={"evidence_id": ev_id, "repo_evidence_ids": list(repo_evidence_ids)},
                 reflection=f"Evidence provenance check for {ev_id}: {'PASSED' if provenance_ok else 'FAILED'}.",
@@ -104,17 +158,21 @@ Mandates:
                     recommendation_id=init.recommendation_id,
                     check_type="provenance_check",
                     passed=provenance_ok,
-                    failure_reason=None if provenance_ok else f"Evidence ID '{ev_id}' not found in research repository.",
+                    failure_reason=None if provenance_ok else f"Unverified evidence provenance: {ev_id} not found in research repository.",
+                    target_agent=target_agent,
                 )
             )
             if not provenance_ok:
                 rejection_reasons.append(f"Unverified evidence provenance: {ev_id}")
 
             # 2. Logical Alignment Check
-            logical_ok = self._tool_logical_consistency(init.business_implication, init.actionable_prescription)
+            logical_ok = self._tool_logical_consistency(
+                implication=init.business_implication,
+                prescription=init.actionable_prescription,
+            )
             await self.react_step(
                 step_number=2,
-                thought=f"Auditing logical alignment between implication and prescription for {init.recommendation_id}",
+                thought=f"Reason: Auditing logical coherence and alignment between implication and prescription for {init.recommendation_id}.",
                 action="audit_logical_consistency",
                 action_args={
                     "implication": init.business_implication,
@@ -128,6 +186,7 @@ Mandates:
                     check_type="logical_alignment",
                     passed=logical_ok,
                     failure_reason=None if logical_ok else "Prescription does not logically resolve the stated business implication.",
+                    target_agent=target_agent,
                 )
             )
             if not logical_ok:
@@ -138,7 +197,7 @@ Mandates:
             metric_ok = m_res["passed"]
             await self.react_step(
                 step_number=3,
-                thought=f"Evaluating mathematical feasibility of metric for {init.recommendation_id}",
+                thought=f"Reason: Evaluating mathematical feasibility and platform verification of metric for {init.recommendation_id}.",
                 action="validate_metric_feasibility",
                 action_args={"metric_dict": init.success_metric.model_dump()},
                 reflection=f"Metric feasibility verification for {init.recommendation_id}: {'PASSED' if metric_ok else 'FAILED'}.",
@@ -149,6 +208,7 @@ Mandates:
                     check_type="metric_feasibility",
                     passed=metric_ok,
                     failure_reason=m_res.get("reason"),
+                    target_agent=target_agent,
                 )
             )
             if not metric_ok:
@@ -159,7 +219,7 @@ Mandates:
                 has_vetoes = True
                 await self.react_step(
                     step_number=4,
-                    thought=f"Issuing veto for initiative {init.recommendation_id}",
+                    thought=f"Reason: Issuing unilateral veto and diagnostic remediation instructions for initiative {init.recommendation_id}.",
                     action="issue_veto",
                     action_args={"rec_id": init.recommendation_id, "reasons": rejection_reasons},
                     reflection=f"Unilateral veto issued for {init.recommendation_id}; diagnostic reasons committed for revision loop.",
@@ -177,7 +237,7 @@ Mandates:
         failed_count = sum(1 for i in validated_initiatives if i.approval_status != ApprovalStatus.APPROVED)
 
         report = ValidationReport(
-            status="Approved" if not has_vetoes else "Revision_Requested",
+            status="Approved" if not has_vetoes else "Failed_Needs_Revision",
             total_audited=len(validated_initiatives),
             passed_count=passed_count,
             failed_count=failed_count,

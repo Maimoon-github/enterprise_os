@@ -178,6 +178,7 @@ class ContextIsolator:
             growth_initiatives=state.strategic_artifacts.growth_initiatives,
             research_repository=state.research_repository.model_dump(),
             brand_profile=state.brand_profile.model_dump(),
+            iteration_counter=state.iteration_counter,
         )
 
     @classmethod

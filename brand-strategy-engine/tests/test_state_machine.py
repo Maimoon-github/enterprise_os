@@ -68,3 +68,4 @@ def test_validation_verdict_revision_loop_and_ceiling(sample_master_state):
     assert purged[0].recommendation_id == init.recommendation_id
     assert len(state.strategic_artifacts.growth_initiatives) == 0  # Purged from final state
     assert state.validation_report.status == "Completed_With_Purged_Unverified_Items"
+    assert any(e.check_type == "max_iteration_ceiling_purge" for e in state.validation_report.audit_trail)

@@ -4,6 +4,7 @@ from enum import Enum
 from typing import List, Tuple
 from src.schemas.initiative import ApprovalStatus, StrategicInitiative
 from src.schemas.state import MasterEngineState
+from src.schemas.validation import AuditEntry
 
 
 class PipelineStage(str, Enum):
@@ -92,6 +93,16 @@ class StateMachine:
             state.strategic_artifacts.growth_initiatives = approved
             state.current_stage = PipelineStage.COMPLETED.value
             state.validation_report.status = "Completed_With_Purged_Unverified_Items"
+            for p in purged:
+                state.validation_report.audit_trail.append(
+                    AuditEntry(
+                        recommendation_id=p.recommendation_id,
+                        check_type="max_iteration_ceiling_purge",
+                        passed=False,
+                        failure_reason=f"Permanently dropped from final strategy dossier after exceeding maximum {cls.MAX_REVISION_LOOPS} revision cycles.",
+                        target_agent=getattr(p, "initiating_agent", "Agent_5_Growth"),
+                    )
+                )
             return PipelineStage.COMPLETED, approved, purged
         else:
             # Route back for revision

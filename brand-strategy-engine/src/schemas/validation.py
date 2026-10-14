@@ -18,6 +18,10 @@ class AuditEntry(BaseModel):
         default=None,
         description="Detailed diagnosis if check failed",
     )
+    target_agent: Optional[str] = Field(
+        default="Agent_5_Growth",
+        description="Target agent initiating recommendation",
+    )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC time of verification step",
@@ -29,7 +33,7 @@ class ValidationReport(BaseModel):
 
     status: str = Field(
         default="Pending",
-        description="Pending | Approved | Revision_Requested | Failed",
+        description="Pending | Approved | Passed | Revision_Requested | Failed_Needs_Revision | Failed",
     )
     total_audited: int = Field(default=0, description="Total initiatives evaluated")
     passed_count: int = Field(default=0, description="Number of fully approved initiatives")

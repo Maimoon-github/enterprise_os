@@ -321,6 +321,13 @@ class ValidatorSlice(BaseModel):
     growth_initiatives: List[StrategicInitiative] = Field(default_factory=list, description="Proposed initiatives")
     research_repository: Dict[str, Any] = Field(default_factory=dict, description="Raw empirical evidence")
     brand_profile: Dict[str, Any] = Field(default_factory=dict, description="Brand profile parameters")
+    iteration_counter: int = Field(default=0, description="Current revision iteration")
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
 
 
 class BrandProfile(BaseModel):

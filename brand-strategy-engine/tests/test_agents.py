@@ -1139,3 +1139,90 @@ async def test_growth_agent_revision_remediation(sample_evidence):
     assert init.success_metric.target == "2.8%"
 
 
+@pytest.mark.asyncio
+async def test_validator_agent_tool_aliases_and_whitelisting():
+    """Validates tool whitelisting, aliases (rejection notice, approval certificate), and unauthorized tool denial."""
+    validator = ValidatorAgent()
+
+    # Tool alias: issue_rejection_notice -> issue_veto
+    veto_res = await validator.invoke_tool("issue_rejection_notice", rec_id="REC-A-001", reasons=["Unproven claim"])
+    assert veto_res["vetoed"] is True
+    assert veto_res["recommendation_id"] == "REC-A-001"
+
+    # Tool alias: issue_approval_certificate
+    cert_res = await validator.invoke_tool("issue_approval_certificate", rec_id="REC-A-001")
+    assert cert_res["approved"] is True
+    assert cert_res["certificate"] == "CERT-REC-A-001"
+
+    # Unauthorized tool invocation
+    with pytest.raises(PermissionError) as exc_info:
+        await validator.invoke_tool("vnc_navigate", url="https://forbidden.com")
+    assert "Security Violation" in str(exc_info.value)
+
+    # Sandbox write / VNC access denial
+    with pytest.raises(PermissionError):
+        validator.verify_sandbox_access("vnc")
+    with pytest.raises(PermissionError):
+        validator.verify_sandbox_access("dom_snapshot")
+    assert validator.verify_sandbox_access("raw_evidence") is True
+
+    # Network access denial
+    with pytest.raises(PermissionError):
+        validator.verify_network_access("external")
+
+
+@pytest.mark.asyncio
+async def test_validator_agent_logical_coherence_veto(sample_strategic_initiative, sample_evidence):
+    """Validates Guardrail 2 (Logical Coherence & Alignment) veto on disconnected prescription."""
+    validator = ValidatorAgent()
+    init = sample_strategic_initiative
+    init.actionable_prescription = "None"  # Trivial / empty prescription
+
+    slice_data = {
+        "growth_initiatives": [init],
+        "research_repository": {
+            "visual_evidence_vnc": [sample_evidence],
+        },
+    }
+    result = await validator.run(slice_data)
+    report = result["validation_report"]
+    assert report.failed_count == 1
+    assert init.approval_status == ApprovalStatus.REJECTED
+    assert any("Logical disconnect" in r for r in (init.rejection_reasons or []))
+
+
+@pytest.mark.asyncio
+async def test_validator_agent_react_execution_trace_and_report(sample_strategic_initiative, sample_evidence):
+    """Validates 4-stage ReAct execution trace, AuditEntry target_agent tracking, and ValidationReport contracts."""
+    validator = ValidatorAgent()
+    init = sample_strategic_initiative
+
+    slice_data = {
+        "growth_initiatives": [init],
+        "research_repository": {
+            "visual_evidence_vnc": [sample_evidence],
+        },
+    }
+    result = await validator.run(slice_data)
+    report = result["validation_report"]
+    assert report.status == "Approved"
+    assert report.passed_count == 1
+    assert report.failed_count == 0
+    assert len(report.audit_trail) == 3
+
+    # Check target_agent is tracked in each AuditEntry
+    for entry in report.audit_trail:
+        assert entry.target_agent == init.initiating_agent
+        assert entry.passed is True
+
+    # Verify ReAct trace recorded typed steps
+    assert len(validator.execution_trace) == 3
+    actions = [s.action for s in validator.execution_trace]
+    assert actions == [
+        "verify_evidence_provenance",
+        "audit_logical_consistency",
+        "validate_metric_feasibility",
+    ]
+
+
+
