@@ -120,8 +120,8 @@ Mandates:
         **kwargs,
     ) -> Dict[str, Any]:
         """Quantifies feature overlap against competitors and pinpoints category whitespace."""
-        t_feats = [str(f).lower().strip() for f in (target_features or ["web development", "react", "python"])]
-        c_feats = [str(f).lower().strip() for f in (competitor_features or ["web development", "full-stack", "react"])]
+        t_feats = [f.lower().strip() for f in (target_features or ["web development", "react", "python"])]
+        c_feats = [f.lower().strip() for f in (competitor_features or ["web development", "full-stack", "react"])]
         overlap = list(set(t_feats).intersection(set(c_feats)))
         return {
             "commoditized_features": overlap if overlap else ["standard industry claims"],

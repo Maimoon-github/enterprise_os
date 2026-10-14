@@ -79,8 +79,8 @@ Mandates:
     def _tool_ice(self, impact: str, confidence_pct: float, ease: str) -> float:
         """Computes empirical ICE priority score normalized between 0.0 and 10.0."""
         weights = {"high": 9.0, "medium": 6.0, "low": 3.0}
-        imp_val = weights.get(str(impact).lower(), 6.0)
-        ease_val = weights.get(str(ease).lower(), 6.0)
+        imp_val = weights.get(impact.lower(), 6.0)
+        ease_val = weights.get(ease.lower(), 6.0)
         # ICE formula: (Impact * Confidence * Ease) / 100
         score = (imp_val * (confidence_pct / 100.0) * ease_val) / 10.0
         return round(min(10.0, max(0.0, score)), 2)

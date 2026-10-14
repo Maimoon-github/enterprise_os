@@ -214,7 +214,7 @@ class LongTermMemory:
         brand_positioning: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Stores or updates brand profile isolated by tenant_id and client_id."""
-        market_str = ", ".join(target_market) if isinstance(target_market, list) else str(target_market)
+        market_str = ", ".join(target_market) if isinstance(target_market, list) else target_market
         record = {
             "tenant_id": tenant_id,
             "client_id": client_id,

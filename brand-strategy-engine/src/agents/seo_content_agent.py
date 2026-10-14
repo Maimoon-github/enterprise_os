@@ -153,7 +153,7 @@ Mandates:
         clusters: List[Dict[str, str]] = []
 
         for kw in kw_list:
-            kw_clean = str(kw).strip()
+            kw_clean = kw.strip()
             kw_lower = kw_clean.lower()
             if any(term in kw_lower for term in ("hire", "buy", "order", "book", "pricing", "cost", "contact")):
                 intent = "Transactional"
@@ -183,8 +183,8 @@ Mandates:
         **kwargs,
     ) -> Dict[str, Any]:
         """Scans semantic content voids where competitor coverage outpaces the target property."""
-        t_set = set(str(t).lower().strip() for t in (target_topics or ["portfolio", "about"]))
-        c_set = set(str(c).lower().strip() for c in (competitor_topics or ["distributed systems case study", "performance benchmarks"]))
+        t_set = set(t.lower().strip() for t in (target_topics or ["portfolio", "about"]))
+        c_set = set(c.lower().strip() for c in (competitor_topics or ["distributed systems case study", "performance benchmarks"]))
 
         missing = list(c_set - t_set)
         if not missing:
