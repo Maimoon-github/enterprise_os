@@ -22,7 +22,7 @@ Mandates:
         super().__init__(
             agent_id="Agent_6",
             name="Strategy Validator",
-            model_name="deepseek-r1:70b",
+            model_name="deepseek-r1:32b-qwen-distill-q4_K_M",
             system_prompt=self.SYSTEM_PROMPT,
             context_window=32768,
             temperature=0.0,
@@ -97,6 +97,7 @@ Mandates:
                 thought=f"Verifying provenance of evidence {ev_id} for initiative {init.recommendation_id}",
                 action="verify_evidence_provenance",
                 action_args={"evidence_id": ev_id, "repo_evidence_ids": list(repo_evidence_ids)},
+                reflection=f"Evidence provenance check for {ev_id}: {'PASSED' if provenance_ok else 'FAILED'}.",
             )
             audit_entries.append(
                 AuditEntry(
@@ -119,6 +120,7 @@ Mandates:
                     "implication": init.business_implication,
                     "prescription": init.actionable_prescription,
                 },
+                reflection=f"Logical coherence audit for {init.recommendation_id}: {'PASSED' if logical_ok else 'FAILED'}.",
             )
             audit_entries.append(
                 AuditEntry(
@@ -139,6 +141,7 @@ Mandates:
                 thought=f"Evaluating mathematical feasibility of metric for {init.recommendation_id}",
                 action="validate_metric_feasibility",
                 action_args={"metric_dict": init.success_metric.model_dump()},
+                reflection=f"Metric feasibility verification for {init.recommendation_id}: {'PASSED' if metric_ok else 'FAILED'}.",
             )
             audit_entries.append(
                 AuditEntry(
@@ -159,6 +162,7 @@ Mandates:
                     thought=f"Issuing veto for initiative {init.recommendation_id}",
                     action="issue_veto",
                     action_args={"rec_id": init.recommendation_id, "reasons": rejection_reasons},
+                    reflection=f"Unilateral veto issued for {init.recommendation_id}; diagnostic reasons committed for revision loop.",
                 )
                 init.approval_status = ApprovalStatus.REJECTED
                 init.rejection_reasons = rejection_reasons

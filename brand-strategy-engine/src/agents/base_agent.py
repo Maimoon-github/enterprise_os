@@ -6,6 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 import httpx
+from src.schemas.state import ReActStep
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,8 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "route_revisions",
             "compile_strategy_dossier",
         ],
-        "sandbox_permissions": "None",
-        "network_bridge": "internal_loopback",
+        "sandbox_permissions": "No direct access",
+        "network_bridge": "Internal loopback only",
     },
     "Agent_1": {
         "role": "Website & Social Platform Analyst",
@@ -32,7 +33,7 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "rag_query",
         ],
         "sandbox_permissions": "Read-Write (Mouse, Keyboard, Display)",
-        "network_bridge": "internal_vnc_sandbox",
+        "network_bridge": "Internal VNC sandbox only",
     },
     "Agent_2": {
         "role": "Audience Strategist",
@@ -43,7 +44,7 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "rag_query",
         ],
         "sandbox_permissions": "None",
-        "network_bridge": "denied",
+        "network_bridge": "Denied",
     },
     "Agent_3": {
         "role": "Brand Strategist",
@@ -54,7 +55,7 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "rag_query",
         ],
         "sandbox_permissions": "None",
-        "network_bridge": "denied",
+        "network_bridge": "Denied",
     },
     "Agent_4": {
         "role": "SEO & Content Strategist",
@@ -64,8 +65,8 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "scan_content_gaps",
             "rag_query",
         ],
-        "sandbox_permissions": "Read-Only (DOM snapshots)",
-        "network_bridge": "denied",
+        "sandbox_permissions": "Read-only (DOM snapshots)",
+        "network_bridge": "Denied",
     },
     "Agent_5": {
         "role": "Growth Strategist",
@@ -76,7 +77,7 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "rag_query",
         ],
         "sandbox_permissions": "None",
-        "network_bridge": "denied",
+        "network_bridge": "Denied",
     },
     "Agent_6": {
         "role": "Strategy Validator",
@@ -86,8 +87,8 @@ MASTER_RBAC_POLICY: Dict[str, Dict[str, Any]] = {
             "validate_metric_feasibility",
             "issue_veto",
         ],
-        "sandbox_permissions": "Read-Only (Raw evidence blob)",
-        "network_bridge": "denied",
+        "sandbox_permissions": "Read-only (Raw evidence blob)",
+        "network_bridge": "Denied",
     },
 }
 
@@ -116,22 +117,45 @@ class BaseAgent(ABC):
         # Declarative default from master policy if registered
         default_whitelist = MASTER_RBAC_POLICY.get(agent_id, {}).get("whitelisted_tools", [])
         self.whitelisted_tool_names: List[str] = list(default_whitelist)
-        self.execution_trace: List[Dict[str, Any]] = []
+        self.execution_trace: List[ReActStep] = []
 
     def verify_sandbox_access(self, capability: str) -> bool:
         """Enforces declarative sandbox permissions based on agent profile."""
         policy = MASTER_RBAC_POLICY.get(self.agent_id, {})
-        sandbox_perm = policy.get("sandbox_permissions", "None")
-        if capability in ("vnc", "display", "mouse", "keyboard"):
-            allowed = "Read-Write" in sandbox_perm or "Display" in sandbox_perm
-        elif capability in ("dom_snapshot", "raw_evidence"):
-            allowed = "Read-Only" in sandbox_perm or "Read-Write" in sandbox_perm
+        sandbox_perm = policy.get("sandbox_permissions", "None").lower()
+        cap_norm = capability.lower().strip()
+        allowed = False
+
+        if cap_norm in ("vnc", "display", "mouse", "keyboard"):
+            allowed = "read-write" in sandbox_perm
+        elif cap_norm in ("dom_snapshot", "dom_snapshots", "dom"):
+            allowed = "read-write" in sandbox_perm or "dom snapshot" in sandbox_perm
+        elif cap_norm in ("raw_evidence", "raw_evidence_blob", "evidence"):
+            allowed = "read-write" in sandbox_perm or "raw evidence" in sandbox_perm
         else:
             allowed = False
 
         if not allowed:
             raise PermissionError(
                 f"RBAC Policy Violation: Agent {self.agent_id} ({self.name}) is denied access to sandbox capability '{capability}'."
+            )
+        return True
+
+    def verify_network_access(self, target_network: str) -> bool:
+        """Enforces declarative network bridge boundaries based on agent profile."""
+        policy = MASTER_RBAC_POLICY.get(self.agent_id, {})
+        bridge = policy.get("network_bridge", "Denied").lower()
+        target_norm = target_network.lower().strip()
+        allowed = False
+
+        if "loopback" in bridge and "loopback" in target_norm:
+            allowed = True
+        elif "vnc" in bridge and "vnc" in target_norm:
+            allowed = True
+
+        if not allowed:
+            raise PermissionError(
+                f"RBAC Network Violation: Agent {self.agent_id} ({self.name}) is denied network bridge access to '{target_network}' (Permitted: {policy.get('network_bridge')})."
             )
         return True
 
@@ -142,6 +166,23 @@ class BaseAgent(ABC):
                 f"Security Violation: Agent {self.agent_id} ({self.name}) is not authorized to use tool '{tool_name}'."
             )
         self.tools[tool_name] = tool_func
+
+    async def invoke_tool(self, tool_name: str, **kwargs) -> Any:
+        """Executes an authorized tool after verifying runtime whitelist boundaries."""
+        if tool_name not in self.whitelisted_tool_names:
+            raise PermissionError(
+                f"Security Violation: Tool '{tool_name}' is not authorized for Agent {self.agent_id} under master RBAC policy."
+            )
+        if tool_name not in self.tools:
+            raise RuntimeError(
+                f"Error: Tool '{tool_name}' is whitelisted for {self.agent_id} but not yet registered."
+            )
+        tool = self.tools[tool_name]
+        import inspect
+        if inspect.iscoroutinefunction(tool):
+            return await tool(**kwargs)
+        else:
+            return tool(**kwargs)
 
     async def invoke_llm(
         self,
@@ -189,42 +230,54 @@ class BaseAgent(ABC):
         thought: str,
         action: str,
         action_args: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Executes a single Reason -> Act -> Observe -> Reflect step."""
-        # Reason
+        reflection: str = "",
+    ) -> ReActStep:
+        """Executes a single Reason -> Act -> Observe -> Reflect step producing a typed Pydantic record."""
+        # 1. Reason
         logger.info("[%s Step %d] Reason: %s", self.name, step_number, thought)
 
-        # Act
+        # 2. Act
         observation = ""
         error = None
-        if action in self.tools:
-            try:
-                tool = self.tools[action]
-                import inspect
-                if inspect.iscoroutinefunction(tool):
-                    res = await tool(**action_args)
-                else:
-                    res = tool(**action_args)
-                observation = str(res)
-            except Exception as e:
-                error = str(e)
-                observation = f"Tool Execution Error: {e}"
-        elif action in self.whitelisted_tool_names:
-            error = f"Error: Tool '{action}' is whitelisted for {self.agent_id} but not yet registered."
-            observation = error
-        else:
-            error = f"Security Violation: Tool '{action}' is not authorized for Agent {self.agent_id} under master RBAC policy."
-            observation = error
-            logger.warning("RBAC Policy Violation in %s: Tool '%s' is not authorized", self.agent_id, action)
+        if action not in self.whitelisted_tool_names:
+            msg = f"Security Violation: Tool '{action}' is not authorized for Agent {self.agent_id} under master RBAC policy."
+            logger.warning("RBAC Policy Violation in %s: %s", self.agent_id, msg)
+            raise PermissionError(msg)
 
-        # Observe & Record
-        step_record = {
-            "step": step_number,
-            "thought": thought,
-            "action": action,
-            "args": action_args,
-            "observation": observation,
-            "error": error,
-        }
+        try:
+            res = await self.invoke_tool(action, **action_args)
+            observation = str(res)
+        except PermissionError:
+            raise
+        except Exception as e:
+            error = str(e)
+            observation = f"Tool Execution Error: {e}"
+
+        # 3. Observe
+        logger.info(
+            "[%s Step %d] Observe: %s",
+            self.name,
+            step_number,
+            observation[:120] if len(observation) > 120 else observation,
+        )
+
+        # 4. Reflect
+        if not reflection:
+            if error:
+                reflection = f"Step {step_number} encountered tool error: {error}. Corrective reasoning required."
+            else:
+                reflection = f"Step {step_number} action '{action}' verified. Intermediate observations registered."
+        logger.info("[%s Step %d] Reflect: %s", self.name, step_number, reflection)
+
+        # Record typed Pydantic ReAct step
+        step_record = ReActStep(
+            step=step_number,
+            thought=thought,
+            action=action,
+            args=action_args,
+            observation=observation,
+            reflection=reflection,
+            error=error,
+        )
         self.execution_trace.append(step_record)
         return step_record

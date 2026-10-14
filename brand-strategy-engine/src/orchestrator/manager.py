@@ -57,7 +57,7 @@ class LocalAgentConfig:
     def __init__(
         self,
         system_instructions: str = "",
-        model_name: str = "qwen2.5:72b-instruct-q4_K_M",
+        model_name: str = "qwen2.5:14b-instruct-q4_K_M",
         context_window: int = 32768,
         temperature: float = 0.1,
         capabilities: Optional[CapabilitiesConfig] = None,
@@ -88,7 +88,7 @@ Responsibilities:
         super().__init__(
             agent_id="Agent_0",
             name="Brand Strategy Orchestrator",
-            model_name="qwen2.5:72b-instruct-q4_K_M",
+            model_name="qwen2.5:14b-instruct-q4_K_M",
             system_prompt=self.SYSTEM_PROMPT,
             context_window=32768,
             temperature=0.1,
@@ -254,6 +254,7 @@ Responsibilities:
             thought="Inspecting initialization gate -> Stage 1 (Analyst). Delegating VNC reconnaissance.",
             action="delegate_task",
             action_args={"agent_id": "Agent_1", "target_slice": analyst_slice},
+            reflection="Empirical VNC reconnaissance delegated to Agent 1; advancing state machine to Audience stage.",
         )
         analyst_out = await self.delegate_task("Agent_1", analyst_slice)
         self.merge_agent_payload(state, PipelineStage.ANALYST.value, analyst_out)
@@ -274,6 +275,7 @@ Responsibilities:
             thought="Advancing to Stage 2 (Audience). Delegating ICP and customer journey mapping.",
             action="delegate_task",
             action_args={"agent_id": "Agent_2", "target_slice": audience_slice},
+            reflection="Audience ICP and user journey friction delegated to Agent 2; advancing state machine to Brand stage.",
         )
         audience_out = await self.delegate_task("Agent_2", audience_slice)
         self.merge_agent_payload(state, PipelineStage.AUDIENCE.value, audience_out)
@@ -294,6 +296,7 @@ Responsibilities:
             thought="Advancing to Stage 3 (Brand). Delegating Category of One differentiation analysis.",
             action="delegate_task",
             action_args={"agent_id": "Agent_3", "target_slice": brand_slice},
+            reflection="Brand Category of One differentiation delegated to Agent 3; advancing state machine to SEO stage.",
         )
         brand_out = await self.delegate_task("Agent_3", brand_slice)
         self.merge_agent_payload(state, PipelineStage.BRAND.value, brand_out)
@@ -314,6 +317,7 @@ Responsibilities:
             thought="Advancing to Stage 4 (SEO). Delegating technical audit and commercial search mapping.",
             action="delegate_task",
             action_args={"agent_id": "Agent_4", "target_slice": seo_slice},
+            reflection="Technical SEO and semantic gap audit delegated to Agent 4; advancing state machine to Growth stage.",
         )
         seo_out = await self.delegate_task("Agent_4", seo_slice)
         self.merge_agent_payload(state, PipelineStage.SEO.value, seo_out)
@@ -336,6 +340,7 @@ Responsibilities:
                 thought=f"Executing Stage 5 (Growth) in cycle {state.iteration_counter}. Synthesizing ICE initiatives.",
                 action="delegate_task",
                 action_args={"agent_id": "Agent_5", "target_slice": growth_slice},
+                reflection=f"Growth initiative synthesis delegated to Agent 5 in cycle {state.iteration_counter}; advancing to Validator.",
             )
             growth_out = await self.delegate_task("Agent_5", growth_slice)
             self.merge_agent_payload(state, PipelineStage.GROWTH.value, growth_out)
@@ -356,6 +361,7 @@ Responsibilities:
                 thought="Advancing to Stage 6 (Validator). Executing adversarial audit and provenance check.",
                 action="delegate_task",
                 action_args={"agent_id": "Agent_6", "target_slice": validator_slice},
+                reflection="Adversarial audit and provenance verification delegated to Agent 6; awaiting verdict.",
             )
             validator_out = await self.delegate_task("Agent_6", validator_slice)
             self.merge_agent_payload(state, PipelineStage.VALIDATOR.value, validator_out)

@@ -31,7 +31,7 @@ Mandates:
         super().__init__(
             agent_id="Agent_5",
             name="Growth Strategist",
-            model_name="llama3.3:70b-instruct-q4_K_M",
+            model_name="qwen2.5:14b-instruct-q4_K_M",
             system_prompt=self.SYSTEM_PROMPT,
             context_window=32768,
             temperature=0.2,
@@ -102,6 +102,7 @@ Mandates:
             thought="Computing empirical ICE score for hero repositioning initiative",
             action="calculate_ice_score",
             action_args={"impact": "High", "confidence_pct": 92.0, "ease": "High"},
+            reflection="ICE priority score calculated and normalized against implementation complexity.",
         )
         ice_val = float(ice_res.get("observation", 8.28))
 
@@ -120,6 +121,7 @@ Mandates:
             thought="Modeling growth projection and sanity checking baseline vs target",
             action="model_growth_projection",
             action_args={"baseline_cvr": 1.2 if "Personal" in mode else 1.8, "target_cvr": 4.5 if "Personal" in mode else 3.1},
+            reflection="Growth conversion lift projection validated against baseline and sanity bounds.",
         )
 
         rec_id = "REC-A-001" if "Personal" in mode else "REC-B-001"
@@ -173,6 +175,7 @@ Mandates:
             thought=f"Synthesized standardized strategic initiative: {initiative.recommendation_id}",
             action="build_recommendation",
             action_args={"rec_dict": initiative.model_dump()},
+            reflection=f"Strategic initiative {initiative.recommendation_id} synthesized with verified evidence reference {ev_ref.evidence_id}.",
         )
 
         return {

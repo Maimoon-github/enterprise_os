@@ -1,15 +1,16 @@
-"""Integration tests for domain specialist agents, RBAC guardrails, and adversarial veto."""
-
+import tomllib
+from pathlib import Path
 import pytest
 from src.agents.analyst_agent import AnalystAgent
 from src.agents.audience_agent import AudienceAgent
+from src.agents.base_agent import MASTER_RBAC_POLICY
 from src.agents.brand_agent import BrandAgent
 from src.agents.growth_agent import GrowthAgent
 from src.agents.seo_content_agent import SEOContentAgent
 from src.agents.validator_agent import ValidatorAgent
 from src.orchestrator.manager import StrategyOrchestrator
 from src.schemas.initiative import ApprovalStatus, PriorityLevel, StrategicInitiative, SuccessMetric
-from src.schemas.state import OperationalMode
+from src.schemas.state import OperationalMode, ReActStep
 
 
 def test_agent_rbac_whitelist_enforcement():
@@ -235,3 +236,242 @@ async def test_long_term_memory_session_persistence(sample_master_state):
     assert loaded is not None
     assert loaded["session_id"] == session_id
     assert loaded["brand_profile"]["brand_name"] == sample_master_state.brand_profile.brand_name
+
+
+def test_master_rbac_matrix_model_profile_reconciliation():
+    """Validates runtime profiles of Agents 0-6 match authoritative Master RBAC Matrix."""
+    orchestrator = StrategyOrchestrator()
+    assert orchestrator.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert orchestrator.temperature == 0.1
+    assert orchestrator.context_window == 32768
+
+    analyst = AnalystAgent()
+    assert analyst.model_name == "llama3.2-vision:11b-instruct-q4_K_M"
+    assert analyst.temperature == 0.0
+    assert analyst.context_window == 16384
+
+    audience = AudienceAgent()
+    assert audience.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert audience.temperature == 0.2
+    assert audience.context_window == 16384
+
+    brand = BrandAgent()
+    assert brand.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert brand.temperature == 0.2
+    assert brand.context_window == 16384
+
+    seo = SEOContentAgent()
+    assert seo.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert seo.temperature == 0.2
+    assert seo.context_window == 16384
+
+    growth = GrowthAgent()
+    assert growth.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert growth.temperature == 0.2
+    assert growth.context_window == 32768
+
+    validator = ValidatorAgent()
+    assert validator.model_name == "deepseek-r1:32b-qwen-distill-q4_K_M"
+    assert validator.temperature == 0.0
+    assert validator.context_window == 32768
+
+
+def test_config_toml_model_drift_reconciliation():
+    """Validates .config/config.toml model configurations against Master RBAC Matrix."""
+    config_path = Path(__file__).resolve().parent.parent / ".config" / "config.toml"
+    assert config_path.exists(), f"Configuration file {config_path} missing"
+
+    with open(config_path, "rb") as f:
+        config = tomllib.load(f)
+
+    models = config.get("models", {})
+    assert models["orchestrator"]["name"] == "qwen2.5:14b-instruct-q4_K_M"
+    assert models["orchestrator"]["temperature"] == 0.1
+    assert models["orchestrator"]["context_window"] == 32768
+
+    assert models["analyst"]["name"] == "llama3.2-vision:11b-instruct-q4_K_M"
+    assert models["analyst"]["temperature"] == 0.0
+    assert models["analyst"]["context_window"] == 16384
+
+    assert models["specialist"]["name"] == "qwen2.5:14b-instruct-q4_K_M"
+    assert models["specialist"]["temperature"] == 0.2
+    assert models["specialist"]["context_window"] == 16384
+
+    assert models["growth"]["name"] == "qwen2.5:14b-instruct-q4_K_M"
+    assert models["growth"]["temperature"] == 0.2
+    assert models["growth"]["context_window"] == 32768
+
+    assert models["validator"]["name"] == "deepseek-r1:32b-qwen-distill-q4_K_M"
+    assert models["validator"]["temperature"] == 0.0
+    assert models["validator"]["context_window"] == 32768
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_tool_invocation_rejection():
+    """Verifies that invoking an unwhitelisted tool via react_step or invoke_tool raises PermissionError."""
+    audience = AudienceAgent()
+
+    # Direct invoke_tool on unauthorized tool
+    with pytest.raises(PermissionError) as exc_info:
+        await audience.invoke_tool("vnc_navigate", url="https://forbidden.com")
+    assert "Security Violation" in str(exc_info.value)
+
+    # react_step on unauthorized tool
+    with pytest.raises(PermissionError) as exc_info:
+        await audience.react_step(
+            step_number=1,
+            thought="Attempting unauthorized visual capture",
+            action="capture_visual_evidence",
+            action_args={"source_url": "https://forbidden.com"},
+        )
+    assert "Security Violation" in str(exc_info.value)
+
+    # Growth agent unauthorized tool
+    growth = GrowthAgent()
+    with pytest.raises(PermissionError) as exc_info:
+        await growth.invoke_tool("issue_veto", rec_id="REC-001", reasons=["Unwarranted"])
+    assert "Security Violation" in str(exc_info.value)
+
+
+def test_master_rbac_network_bridge_enforcement():
+    """Validates network boundary permissions and strict denials matching Master RBAC Matrix."""
+    orchestrator = StrategyOrchestrator()
+    assert orchestrator.verify_network_access("internal_loopback") is True
+    with pytest.raises(PermissionError) as exc_info:
+        orchestrator.verify_network_access("external_internet")
+    assert "RBAC Network Violation" in str(exc_info.value)
+
+    analyst = AnalystAgent()
+    assert analyst.verify_network_access("internal_vnc_sandbox") is True
+    with pytest.raises(PermissionError) as exc_info:
+        analyst.verify_network_access("external_internet")
+    assert "RBAC Network Violation" in str(exc_info.value)
+
+    # Specialists and Validator have network Denied
+    for agent_cls in (AudienceAgent, BrandAgent, SEOContentAgent, GrowthAgent, ValidatorAgent):
+        agent = agent_cls()
+        with pytest.raises(PermissionError) as exc_info:
+            agent.verify_network_access("internal_loopback")
+        assert "RBAC Network Violation" in str(exc_info.value)
+        with pytest.raises(PermissionError) as exc_info:
+            agent.verify_network_access("external")
+        assert "RBAC Network Violation" in str(exc_info.value)
+
+
+def test_master_rbac_sandbox_boundary_granularity():
+    """Validates precise sandbox permission checks per Master RBAC Matrix."""
+    # Agent 0: No direct access
+    orchestrator = StrategyOrchestrator()
+    with pytest.raises(PermissionError):
+        orchestrator.verify_sandbox_access("vnc")
+    with pytest.raises(PermissionError):
+        orchestrator.verify_sandbox_access("dom_snapshot")
+
+    # Agent 1: Read-Write (Mouse, Keyboard, Display)
+    analyst = AnalystAgent()
+    assert analyst.verify_sandbox_access("vnc") is True
+    assert analyst.verify_sandbox_access("mouse") is True
+    assert analyst.verify_sandbox_access("keyboard") is True
+    assert analyst.verify_sandbox_access("display") is True
+    assert analyst.verify_sandbox_access("dom_snapshot") is True
+    assert analyst.verify_sandbox_access("raw_evidence") is True
+
+    # Agent 4: Read-Only (DOM snapshots)
+    seo = SEOContentAgent()
+    assert seo.verify_sandbox_access("dom_snapshot") is True
+    with pytest.raises(PermissionError):
+        seo.verify_sandbox_access("vnc")
+    with pytest.raises(PermissionError):
+        seo.verify_sandbox_access("raw_evidence")
+
+    # Agent 6: Read-Only (Raw evidence blob)
+    validator = ValidatorAgent()
+    assert validator.verify_sandbox_access("raw_evidence") is True
+    with pytest.raises(PermissionError):
+        validator.verify_sandbox_access("dom_snapshot")
+    with pytest.raises(PermissionError):
+        validator.verify_sandbox_access("vnc")
+
+    # Agents 2, 3, 5: Sandbox None
+    for agent_cls in (AudienceAgent, BrandAgent, GrowthAgent):
+        agent = agent_cls()
+        with pytest.raises(PermissionError):
+            agent.verify_sandbox_access("vnc")
+        with pytest.raises(PermissionError):
+            agent.verify_sandbox_access("dom_snapshot")
+        with pytest.raises(PermissionError):
+            agent.verify_sandbox_access("raw_evidence")
+
+
+@pytest.mark.asyncio
+async def test_deterministic_react_typed_traces():
+    """Validates that all agents record execution traces composed of typed ReActStep Pydantic instances."""
+    analyst = AnalystAgent()
+    await analyst.run({"website_url": "https://brand.com", "mode": "Mode_A_Personal"})
+    assert len(analyst.execution_trace) >= 3
+
+    for step in analyst.execution_trace:
+        assert isinstance(step, ReActStep)
+        assert step.step >= 1
+        assert len(step.thought) > 0  # Reason
+        assert len(step.action) > 0   # Act
+        assert isinstance(step.args, dict)
+        assert len(step.observation) > 0  # Observe
+        assert len(step.reflection) > 0   # Reflect
+        # Dict access backwards-compatibility
+        assert step["action"] == step.action
+
+
+@pytest.mark.asyncio
+async def test_mode_b_ecommerce_execution_and_guardrails(sample_evidence):
+    """Validates Mode B (eCommerce) execution and specialized domain guardrails."""
+    # Agent 1 eCommerce VNC reconnaissance
+    analyst = AnalystAgent()
+    analyst_res = await analyst.run({"website_url": "https://shop-apparel.com", "mode": "Mode_B_eCommerce"})
+    assert "visual_evidence_vnc" in analyst_res
+    ev = analyst_res["visual_evidence_vnc"][0]
+    assert ev.dataset_reference == "div.pdp-accordion-group"
+
+    # Agent 2 eCommerce ICP Grounding
+    audience = AudienceAgent()
+    aud_res = await audience.run({
+        "mode": "Mode_B_eCommerce",
+        "industry": "DTC Outerwear",
+        "target_market": ["Active Commuters"],
+        "observation_notes": "Collapsed mobile accordion menus",
+    })
+    icp = aud_res["audience_analysis"]["icp_profile"]
+    assert "Online Shopper" in icp["title"]
+
+    # Agent 3 eCommerce Category of One & Commodity Flagging
+    brand = BrandAgent()
+    brand_res = await brand.run({
+        "mode": "Mode_B_eCommerce",
+        "headline": "High Quality Outerwear for Everyone",
+    })
+    bp = brand_res["brand_positioning"]
+    assert "Precision-Engineered" in bp["category_of_one"]
+    assert "Commoditized" in bp["uvp_evaluation"]
+
+    # Agent 4 eCommerce CMS-feasible SEO
+    seo = SEOContentAgent()
+    seo_res = await seo.run({
+        "mode": "Mode_B_eCommerce",
+        "dom_snapshot": {},
+    })
+    seo_plan = seo_res["seo_and_content_plan"]
+    assert "Product" in seo_plan["technical_health"]["schema_org"]
+    assert "Shopify" in seo_plan["technical_health"]["cms_feasibility"]
+
+    # Agent 5 eCommerce Growth Synthesis
+    growth = GrowthAgent()
+    growth_res = await growth.run({
+        "mode": "Mode_B_eCommerce",
+        "website_url": "https://shop-apparel.com",
+        "visual_evidence_vnc": [sample_evidence],
+    })
+    init = growth_res["growth_initiatives"][0]
+    assert init.recommendation_id.startswith("REC-B-")
+    assert "Mobile Add-to-Cart" in init.success_metric.kpi
+    assert init.success_metric.verification_source == "Shopify Analytics"
+

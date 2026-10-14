@@ -2,12 +2,30 @@
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from src.schemas.evidence import EvidenceReference
 from src.schemas.initiative import StrategicInitiative
 from src.schemas.validation import ValidationReport
+
+
+class ReActStep(BaseModel):
+    """Typed Pydantic execution trace record for deterministic Reason-Act-Observe-Reflect cycles."""
+
+    step: int = Field(..., description="1-indexed execution step number")
+    thought: str = Field(..., description="Reasoning / hypothesis behind the step")
+    action: str = Field(..., description="Tool or action invoked")
+    args: Dict[str, Any] = Field(default_factory=dict, description="Arguments passed to action")
+    observation: str = Field(default="", description="Observed outcome or tool output")
+    reflection: str = Field(default="", description="Post-observation reflection and state evaluation")
+    error: Optional[str] = Field(default=None, description="Error encountered during execution, if any")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
 
 
 class OperationalMode(str, Enum):

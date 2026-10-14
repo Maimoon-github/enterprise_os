@@ -23,7 +23,7 @@ Mandates:
         super().__init__(
             agent_id="Agent_2",
             name="Audience Strategist",
-            model_name="qwen2.5:32b-instruct-q4_K_M",
+            model_name="qwen2.5:14b-instruct-q4_K_M",
             system_prompt=self.SYSTEM_PROMPT,
             context_window=16384,
             temperature=0.2,
@@ -72,6 +72,7 @@ Mandates:
         industry = state_slice.get("industry", "Technology")
         target_market = state_slice.get("target_market", ["Engineering Leaders"])
         notes = state_slice.get("observation_notes", "Generic copy observed")
+        mode = state_slice.get("mode", "Mode_A_Personal")
 
         # Step 1: Query market demographics
         await self.react_step(
@@ -79,6 +80,7 @@ Mandates:
             thought="Diagnosing market demographics grounded in brand goals and sector",
             action="query_market_demographics",
             action_args={"industry": industry, "target_market": target_market},
+            reflection="Market demographics and buyer archetypes diagnosed against sector parameters.",
         )
 
         # Step 2: Map user journey
@@ -87,6 +89,7 @@ Mandates:
             thought="Mapping conversion touchpoints to identify friction nodes",
             action="map_customer_journey",
             action_args={"touchpoints": ["Hero Discovery", "Case Study Evaluation", "Contact / Checkout"]},
+            reflection="Customer journey nodes mapped; critical conversion bottlenecks flagged.",
         )
 
         # Step 3: Quantify journey friction
@@ -95,15 +98,24 @@ Mandates:
             thought="Quantifying user drop-off friction across the primary funnel",
             action="calculate_friction",
             action_args={"observed_friction_notes": notes},
+            reflection="User drop-off friction quantified across primary conversion pathways.",
         )
         friction_score = float(friction_res.get("observation", 7.0))
 
-        icp_profile = {
-            "title": "Enterprise Technical Decision Maker & Engineering Director",
-            "core_needs": ["Demonstrated mastery in production environments", "Measurable performance benchmarks"],
-            "friction_triggers": ["Unsubstantiated claims of expertise", "Missing live code links or demos"],
-            "decision_velocity": "High-Consideration (2-4 weeks)",
-        }
+        if "Personal" in mode:
+            icp_profile = {
+                "title": "Enterprise Technical Decision Maker & Engineering Director",
+                "core_needs": ["Demonstrated mastery in production environments", "Measurable performance benchmarks"],
+                "friction_triggers": ["Unsubstantiated claims of expertise", "Missing live code links or demos"],
+                "decision_velocity": "High-Consideration (2-4 weeks)",
+            }
+        else:
+            icp_profile = {
+                "title": "High-Intent Online Shopper & Category Specialist",
+                "core_needs": ["Transparent product sizing and material specs", "Frictionless mobile checkout and trust verification"],
+                "friction_triggers": ["Hidden shipping/return policies", "Multi-step collapsed accordion PDP menus"],
+                "decision_velocity": "Impulse to Consideration (24-48 hours)",
+            }
 
         return {
             "audience_analysis": {

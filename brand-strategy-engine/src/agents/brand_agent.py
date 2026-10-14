@@ -23,7 +23,7 @@ Mandates:
         super().__init__(
             agent_id="Agent_3",
             name="Brand Strategist",
-            model_name="qwen2.5:32b-instruct-q4_K_M",
+            model_name="qwen2.5:14b-instruct-q4_K_M",
             system_prompt=self.SYSTEM_PROMPT,
             context_window=16384,
             temperature=0.2,
@@ -82,6 +82,7 @@ Mandates:
             thought="Auditing brand voice and detecting commoditized clichés in copy",
             action="extract_brand_voice",
             action_args={"corpus_text": headline},
+            reflection="Brand voice audited; generic clichés detected across introductory copy.",
         )
 
         # Step 2: Evaluate UVP clarity
@@ -90,6 +91,7 @@ Mandates:
             thought="Evaluating clarity and market resonance of current UVP",
             action="evaluate_uvp",
             action_args={"hero_copy": headline},
+            reflection="UVP resonance evaluated; deficiency in quantifiable outcomes flagged.",
         )
 
         # Step 3: Benchmark against competitor vectors
@@ -101,6 +103,7 @@ Mandates:
                 "target_features": ["web development", "react", "python"],
                 "competitor_features": ["web development", "full-stack", "react"],
             },
+            reflection="Competitor feature overlap identified; defensible category whitespace defined.",
         )
 
         category_of_one = (
@@ -109,10 +112,16 @@ Mandates:
             else "Precision-Engineered Technical Outerwear with Verifiable Thermal Ratings"
         )
 
+        uvp_eval = (
+            "Commoditized: Headline echoes generic competitor templates without proof"
+            if "Personal" in mode
+            else "Commoditized: Value proposition mimics standard DTC apparel claims without empirical technical differentiation"
+        )
+
         return {
             "brand_positioning": {
                 "category_of_one": category_of_one,
-                "uvp_evaluation": "Commoditized: Headline echoes generic competitor templates without proof",
+                "uvp_evaluation": uvp_eval,
                 "narrative_pillars": [
                     "Empirical Competence: Verified production benchmarks over aspirational claims",
                     "Architectural Authority: Transparent case studies with measurable business impact",

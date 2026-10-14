@@ -297,13 +297,13 @@ vector_dimensions = 768
 
 | Agent ID & Name | Model Profile (Ollama) | Execution Focus | Tool Whitelist | Sandbox Permissions | Network Bridge |
 | --- | --- | --- | --- | --- | --- |
-| **Agent 0: Orchestrator** | `qwen2.5:72b` (q4_K_M) | Central routing, context isolation, revision loops | `delegate_task`, `merge_agent_payload`, `route_revisions`, `compile_strategy_dossier` | No direct access | Internal loopback only |
-| **Agent 1: Platform Analyst** | `llama3.2-vision:11b` (q4_K_M) | Visual DOM inspection, UX flow, competitor scanning | `vnc_navigate`, `vnc_interact`, `capture_visual_evidence`, `extract_dom_tree`, `rag_query` | Read-Write (Mouse, Keyboard, Display) | Internal VNC sandbox only |
-| **Agent 2: Audience Strategist** | `qwen2.5:32b` (q4_K_M) | ICP modeling, journey mapping, intent diagnosis | `query_market_demographics`, `map_customer_journey`, `calculate_friction`, `rag_query` | None | Denied |
-| **Agent 3: Brand Strategist** | `qwen2.5:32b` (q4_K_M) | Value proposition, narrative positioning, differentiation | `extract_brand_voice`, `benchmark_differentiation`, `evaluate_uvp`, `rag_query` | None | Denied |
-| **Agent 4: SEO Strategist** | `qwen2.5:32b` (q4_K_M) | Semantic keywords, architecture, content gaps | `analyze_onpage_elements`, `cluster_serp_intent`, `scan_content_gaps`, `rag_query` | Read-only (DOM snapshots) | Denied |
-| **Agent 5: Growth Strategist** | `llama3.3:70b` (q4_K_M) | ICE scoring, initiative synthesis, KPI setting | `calculate_ice_score`, `model_growth_projection`, `build_recommendation`, `rag_query` | None | Denied |
-| **Agent 6: Strategy Validator** | `deepseek-r1:70b` (q4_K_M) | Adversarial audit, provenance verification, veto | `verify_evidence_provenance`, `audit_logical_consistency`, `validate_metric_feasibility`, `issue_veto` | Read-only (Raw evidence blob) | Denied |
+| **Agent 0: Orchestrator** | `qwen2.5:14b-instruct-q4_K_M` | Central routing, context isolation, revision loops | `delegate_task`, `merge_agent_payload`, `route_revisions`, `compile_strategy_dossier` | No direct access | Internal loopback only |
+| **Agent 1: Platform Analyst** | `llama3.2-vision:11b-instruct-q4_K_M` | Visual DOM inspection, UX flow, competitor scanning | `vnc_navigate`, `vnc_interact`, `capture_visual_evidence`, `extract_dom_tree`, `rag_query` | Read-Write (Mouse, Keyboard, Display) | Internal VNC sandbox only |
+| **Agent 2: Audience Strategist** | `qwen2.5:14b-instruct-q4_K_M` | ICP modeling, journey mapping, intent diagnosis | `query_market_demographics`, `map_customer_journey`, `calculate_friction`, `rag_query` | None | Denied |
+| **Agent 3: Brand Strategist** | `qwen2.5:14b-instruct-q4_K_M` | Value proposition, narrative positioning, differentiation | `extract_brand_voice`, `benchmark_differentiation`, `evaluate_uvp`, `rag_query` | None | Denied |
+| **Agent 4: SEO Strategist** | `qwen2.5:14b-instruct-q4_K_M` | Semantic keywords, architecture, content gaps | `analyze_onpage_elements`, `cluster_serp_intent`, `scan_content_gaps`, `rag_query` | Read-only (DOM snapshots) | Denied |
+| **Agent 5: Growth Strategist** | `qwen2.5:14b-instruct-q4_K_M` | ICE scoring, initiative synthesis, KPI setting | `calculate_ice_score`, `model_growth_projection`, `build_recommendation`, `rag_query` | None | Denied |
+| **Agent 6: Strategy Validator** | `deepseek-r1:32b-qwen-distill-q4_K_M` | Adversarial audit, provenance verification, veto | `verify_evidence_provenance`, `audit_logical_consistency`, `validate_metric_feasibility`, `issue_veto` | Read-only (Raw evidence blob) | Denied |
 
 #### 2. Detailed Agent Specifications and ReAct Loops
 

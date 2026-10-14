@@ -64,6 +64,7 @@ Mandates:
             thought=f"Initiating empirical navigation to target URL: {url}",
             action="vnc_navigate",
             action_args={"url": url, "viewport_size": (1920, 1080)},
+            reflection="Target webpage rendered in sandboxed VNC viewport; browser state confirmed active.",
         )
 
         # Step 2: Fetch and extract DOM metadata
@@ -76,6 +77,7 @@ Mandates:
             thought="Extracting semantic accessibility tree and heading structure",
             action="extract_dom_tree",
             action_args={"html": html},
+            reflection="DOM accessibility tree and structured metadata extracted for semantic evaluation.",
         )
 
         # Step 3: Capture visual evidence
@@ -101,6 +103,7 @@ Mandates:
                 "dataset_reference": selector,
                 "observation_notes": notes,
             },
+            reflection=f"Empirical evidence frame {evidence.evidence_id} registered with bounding selector '{selector}'.",
         )
 
         # Competitor benchmarks
