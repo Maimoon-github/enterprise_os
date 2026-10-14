@@ -475,6 +475,183 @@ Responsibilities:
 
         return state
 
+    # ------------------------------------------------------------------
+    # Stage-wise execution (used by the operational UI). Mirrors the
+    # sequencing in execute_audit but advances exactly one stage per call.
+    # ------------------------------------------------------------------
+    STAGE_SPECS: Dict[int, Tuple[PipelineStage, str, str, Any]] = {
+        1: (PipelineStage.ANALYST, "Agent_1", "analyst", ContextIsolator.get_analyst_slice),
+        2: (PipelineStage.AUDIENCE, "Agent_2", "audience", ContextIsolator.get_audience_slice),
+        3: (PipelineStage.BRAND, "Agent_3", "brand", ContextIsolator.get_brand_slice),
+        4: (PipelineStage.SEO, "Agent_4", "seo", ContextIsolator.get_seo_slice),
+        5: (PipelineStage.GROWTH, "Agent_5", "growth", ContextIsolator.get_growth_slice),
+        6: (PipelineStage.VALIDATOR, "Agent_6", "validator", ContextIsolator.get_validator_slice),
+    }
+
+    async def start_session(
+        self,
+        brand_profile: BrandProfile,
+        mode: OperationalMode,
+        docs_dir: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Tuple[MasterEngineState, str, int]:
+        """Stage 0: validates the BrandProfile gate and creates the canonical MasterEngineState."""
+        tid = tenant_id or f"tenant_{uuid.uuid4().hex[:8]}"
+        state = MasterEngineState(
+            session_id=str(uuid.uuid4()),
+            mode=mode,
+            brand_profile=brand_profile,
+            current_stage=PipelineStage.INITIALIZATION.value,
+        )
+        ok, reason = StateMachine.validate_stage_preconditions(state, PipelineStage.INITIALIZATION)
+        if not ok:
+            raise ValueError(reason)
+        if not self.long_term_memory.pool:
+            await self.long_term_memory.connect()
+
+        chunks = await self.ingest_user_documents(docs_dir, tenant_id=tid) if docs_dir else 0
+        await self.short_term_memory.add_graph_node(
+            session_id=state.session_id,
+            agent_id="Supervisor",
+            stage=PipelineStage.INITIALIZATION.value,
+            node_type=SessionNodeType.INITIALIZATION,
+            payload={"mode": mode.value, "brand_name": brand_profile.brand_name},
+        )
+        return state, tid, chunks
+
+    @staticmethod
+    def next_runnable_stage(state: MasterEngineState) -> Optional[int]:
+        """Derives the single stage number (1-6) permitted to run next from MasterEngineState alone."""
+        try:
+            current = PipelineStage(state.current_stage)
+        except ValueError:
+            return None
+        if current == PipelineStage.COMPLETED:
+            return None
+        if current == PipelineStage.GROWTH:
+            inits = state.strategic_artifacts.growth_initiatives
+            if any(i.approval_status == ApprovalStatus.REVISION_REQUESTED for i in inits):
+                return 5  # Stage 6 veto routed back to Growth
+            return 6 if inits else 5
+        nxt = StateMachine.STAGE_TRANSITIONS.get(current)
+        by_stage = {spec[0]: number for number, spec in StrategyOrchestrator.STAGE_SPECS.items()}
+        if current in by_stage:
+            ok, _ = StateMachine.validate_stage_preconditions(state, nxt)
+            if not ok:
+                return by_stage[current]  # committed output is empty/insufficient: re-run same stage
+        return by_stage.get(nxt)
+
+    async def execute_stage(
+        self,
+        state: MasterEngineState,
+        stage_number: int,
+        tenant_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Runs exactly one specialist stage, enforcing sequential gating against MasterEngineState."""
+        if stage_number not in self.STAGE_SPECS:
+            raise ValueError(f"Unknown stage number: {stage_number}")
+        expected = self.next_runnable_stage(state)
+        if stage_number != expected:
+            raise ValueError(
+                f"Stage {stage_number} is gated: current_stage='{state.current_stage}', "
+                f"next permitted stage={expected}."
+            )
+        stage, agent_id, buffer_key, slice_fn = self.STAGE_SPECS[stage_number]
+        ok, reason = StateMachine.validate_stage_preconditions(state, stage)
+        if not ok:
+            raise ValueError(reason)
+
+        previous_stage = state.current_stage
+        state.current_stage = stage.value
+        agent = getattr(self, f"agent_{stage_number}_{buffer_key}")
+        trace_start = len(agent.execution_trace)
+        cycle = state.iteration_counter
+        try:
+            target_slice = slice_fn(state)
+            out = await self.delegate_task(agent_id, target_slice)
+            self.merge_agent_payload(state, stage.value, out)
+        except Exception:
+            state.current_stage = previous_stage  # failed stage must not advance the gate
+            raise
+        trace = [s.model_dump(mode="json") for s in agent.execution_trace[trace_start:]]
+        telemetry = [
+            {"tool": "delegate_task", "detail": f"{agent_id} <- bounded slice ({stage.value}, cycle {cycle})"},
+            {"tool": "merge_agent_payload", "detail": f"{stage.value} payload keys: {sorted(out.keys())}"},
+        ]
+        if stage_number != 6:
+            await self.short_term_memory.save_stage_buffer(
+                state.session_id, buffer_key if stage_number != 5 else f"growth_cycle_{cycle}", out
+            )
+        await self.short_term_memory.add_graph_node(
+            session_id=state.session_id,
+            agent_id=agent_id,
+            stage=stage.value,
+            node_type=SessionNodeType.STAGE_HANDOFF,
+            payload={"output_keys": list(out.keys()), "cycle": cycle},
+        )
+
+        verdict: Optional[Dict[str, Any]] = None
+        if stage_number == 6:
+            next_stage, approved, purged = self.route_revisions(state)
+            if next_stage == PipelineStage.GROWTH:
+                failed = [
+                    i for i in state.strategic_artifacts.growth_initiatives
+                    if i.approval_status != ApprovalStatus.APPROVED
+                ]
+                routed = self.route_revisions(
+                    target=failed, target_agent="Agent_5_Growth", validation_report=state.validation_report
+                )
+                telemetry.append({
+                    "tool": "route_revisions",
+                    "detail": f"{len(routed['failed_initiatives'])} initiative(s) -> Agent_5_Growth, "
+                              f"iteration_counter={state.iteration_counter}/{StateMachine.MAX_REVISION_LOOPS}",
+                })
+            else:
+                telemetry.append({
+                    "tool": "route_revisions",
+                    "detail": f"verdict={state.validation_report.status}; approved={len(approved)}, purged={len(purged)}",
+                })
+            tid = tenant_id or "tenant_ui"
+            for item in state.strategic_artifacts.growth_initiatives:
+                await self.long_term_memory.save_audit_log(
+                    session_id=state.session_id, tenant_id=tid,
+                    recommendation_id=item.recommendation_id,
+                    status=item.approval_status.value, audit_data=item.model_dump(),
+                )
+            await self.long_term_memory.save_session_state(
+                session_id=state.session_id, tenant_id=tid, state_data=state.model_dump(),
+            )
+            if next_stage == PipelineStage.COMPLETED:
+                await self._persist_completed_baselines(state, tid)
+            verdict = {
+                "next_stage": next_stage.value,
+                "approved": len(approved),
+                "purged": len(purged),
+            }
+
+        return {"stage": stage_number, "trace": trace, "telemetry": telemetry, "verdict": verdict, "cycle": cycle}
+
+    async def _persist_completed_baselines(self, state: MasterEngineState, tid: str) -> None:
+        """Persists brand profile, competitor footprints and approved KPI baselines (same as execute_audit)."""
+        bp = state.brand_profile
+        await self.long_term_memory.save_brand_profile(
+            tenant_id=tid, client_id="default_client", brand_name=bp.brand_name,
+            website_url=bp.website_url, industry=bp.industry,
+            business_goals=bp.business_goals, target_market=bp.target_market,
+        )
+        for comp in state.research_repository.competitor_profiles:
+            await self.long_term_memory.save_competitor_footprint(
+                tenant_id=tid, client_id="default_client",
+                competitor_name=comp.get("name", "Unknown"), domain=comp.get("domain", ""),
+                positioning_summary=comp.get("positioning_summary", ""),
+            )
+        for init in state.strategic_artifacts.growth_initiatives:
+            if init.approval_status == ApprovalStatus.APPROVED:
+                await self.long_term_memory.save_baseline(
+                    tenant_id=tid, brand_name=bp.brand_name, website_url=bp.website_url,
+                    kpi=init.success_metric.kpi, baseline=init.success_metric.baseline,
+                )
+
     def compile_strategy_dossier(self, state: MasterEngineState) -> Dict[str, Any]:
         """Compiles clean, executive-ready strategy report."""
         approved = [

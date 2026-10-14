@@ -11,42 +11,41 @@ The engine operates as a containerized, local-first intelligence platform execut
 ```
                            ┌─────────────────────────────────────────────────────────────┐
                            │          Brand Strategy Orchestrator (Agent 0)              │
-                           │     [Google Antigravity SDK Supervisor | Qwen 2.5 72B]      │
+                           │     [Google Antigravity SDK Supervisor | qwen2.5:14b-instruct-q4_K_M]      │
                            └──────┬───────────────────────────────┬────────────────▲─────┘
                                   │ (Task Delegation Slice)       │                │
             ┌─────────────────────▼────────┐             ┌────────▼────────┐       │ (Adversarial
             │  1. Website & Social Analyst │             │  2. Audience    │       │  Revisions
-            │     [Llama 3.2 Vision 11B]   │             │     Strategist  │       │  Max 3 Loops)
-            └──────────────┬───────────────┘             │  [Qwen 2.5 32B] │       │
+            │     [llama3.2-vision:11b-instruct-q4_K_M]   │             │     Strategist  │       │  Max 3 Loops)
+            └──────────────┬───────────────┘             │  [qwen2.5:14b-instruct-q4_K_M] │       │
                            │                             └────────┬────────┘       │
                            └───────────────┬──────────────────────┘                │
                                            ▼                                       │
                             ┌─────────────────────────────┐                        │
                             │    3. Brand Strategist      │                        │
-                            │       [Qwen 2.5 32B]        │                        │
+                            │       [qwen2.5:14b-instruct-q4_K_M]        │                        │
                             └──────────────┬──────────────┘                        │
                                            ▼                                       │
                             ┌─────────────────────────────┐                        │
                             │ 4. SEO & Content Strategist │                        │
-                            │       [Qwen 2.5 32B]        │                        │
+                            │       [qwen2.5:14b-instruct-q4_K_M]        │                        │
                             └──────────────┬──────────────┘                        │
                                            ▼                                       │
                             ┌─────────────────────────────┐                        │
                             │    5. Growth Strategist     │                        │
-                            │    [Llama 3.3 70B Inst.]    │                        │
+                            │    [qwen2.5:14b-instruct-q4_K_M]    │                        │
                             └──────────────┬──────────────┘                        │
                                            ▼                                       │
                             ┌─────────────────────────────┐                        │
                             │    6. Strategy Validator    ├────────────────────────┘
-                            │    [DeepSeek-R1 Distill 70B]│
+                            │    [deepseek-r1:32b-qwen-distill-q4_K_M]│
                             └──────────────┬──────────────┘
                                            │ (Approval Certificate)
                                            ▼
                             ┌─────────────────────────────┐
                             │   Validated Growth Plan     │
                             └─────────────────────────────┘
-
-```
+```                        
 
 ### Deliverable 1: Project Hierarchy and Component Architecture
 
