@@ -114,6 +114,145 @@ async def test_audience_agent_execution():
     analysis = result["audience_analysis"]
     assert "icp_profile" in analysis
     assert analysis["friction_index"] >= 5.0
+    assert len(agent.execution_trace) == 4
+
+
+def test_audience_agent_rbac_and_isolation():
+    agent = AudienceAgent()
+    assert agent.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert agent.temperature == 0.2
+    assert agent.context_window == 16384
+
+    # Strict whitelist
+    expected_tools = {
+        "query_market_demographics",
+        "map_customer_journey",
+        "calculate_friction",
+        "rag_query",
+    }
+    assert set(agent.whitelisted_tool_names) == expected_tools
+
+    # Attempting to register un-whitelisted tool raises PermissionError
+    with pytest.raises(PermissionError):
+        agent.register_tool("vnc_navigate", lambda: None)
+
+    # Sandbox permissions = None -> raises PermissionError
+    with pytest.raises(PermissionError) as exc_info:
+        agent.verify_sandbox_access("display")
+    assert "denied access to sandbox capability" in str(exc_info.value)
+
+    # Network bridge = Denied -> raises PermissionError
+    with pytest.raises(PermissionError) as exc_net:
+        agent.verify_network_access("internal_vnc_sandbox")
+    assert "denied network bridge access" in str(exc_net.value)
+
+    # Alias reconciliation: friction_point_calculator
+    val = agent.friction_point_calculator("Generic headline with collapsed menus")
+    assert val >= 5.0
+
+
+@pytest.mark.asyncio
+async def test_audience_agent_react_loop_and_mode_a():
+    agent = AudienceAgent()
+    slice_data = {
+        "industry": "Cloud Infrastructure",
+        "target_market": ["VPs of Engineering", "CTOs"],
+        "observation_notes": "[ev_vnc_9876] Hero section lacks quantifiable production proof",
+        "visual_evidence_ids": ["ev_vnc_9876"],
+        "mode": "Mode_A_Personal",
+    }
+    result = await agent.run(slice_data)
+    assert "audience_analysis" in result
+    analysis = result["audience_analysis"]
+
+    # Verify ReAct trace: 4 stages
+    assert len(agent.execution_trace) == 4
+    trace_actions = [step.action for step in agent.execution_trace]
+    assert trace_actions == [
+        "rag_query",
+        "map_customer_journey",
+        "calculate_friction",
+        "query_market_demographics",
+    ]
+
+    # Mode A assertions
+    icp = analysis["icp_profile"]
+    assert "Enterprise Technical Decision Maker" in icp["title"]
+    assert "ev_vnc_9876" in icp["grounded_evidence_ids"]
+
+    personas = analysis["buyer_personas"]
+    assert len(personas) >= 1
+    assert "ev_vnc_9876" in personas[0]["grounded_evidence_ids"]
+
+    # Journey touchpoints
+    touchpoints = analysis["journey_touchpoints"]
+    assert len(touchpoints) == 3
+    assert any("5-Sec Technical Authority" in tp["touchpoint_name"] for tp in touchpoints)
+
+
+@pytest.mark.asyncio
+async def test_audience_agent_mode_b_ecommerce():
+    agent = AudienceAgent()
+    slice_data = {
+        "industry": "eCommerce Technical Apparel",
+        "target_market": ["Mountain Runners"],
+        "observation_notes": "[ev_vnc_5432] Sizing guides collapsed in PDP accordion; sticky ATC hides returns",
+        "visual_evidence_ids": ["ev_vnc_5432"],
+        "mode": "Mode_B_eCommerce",
+    }
+    result = await agent.run(slice_data)
+    analysis = result["audience_analysis"]
+
+    # Mode B assertions
+    icp = analysis["icp_profile"]
+    assert "Online Shopper" in icp["title"]
+    assert "ev_vnc_5432" in icp["grounded_evidence_ids"]
+
+    assert "Impulse" in analysis["intent_classification"] or "eCommerce" in analysis["intent_classification"]
+
+    touchpoints = analysis["journey_touchpoints"]
+    assert any("PDP" in tp["touchpoint_name"] for tp in touchpoints)
+    assert any("Sticky Add-to-Cart" in tp["touchpoint_name"] for tp in touchpoints)
+
+
+def test_audience_agent_persona_grounding_guardrail():
+    agent = AudienceAgent()
+
+    # Reject generic persona name "Tech Enthusiast Tim"
+    generic_persona = [{
+        "name": "Tech Enthusiast Tim",
+        "role_archetype": "General consumer",
+        "grounded_evidence_ids": ["ev_vnc_001"],
+    }]
+    with pytest.raises(ValueError) as exc_gen:
+        agent.validate_persona_grounding(generic_persona, ["ev_vnc_001"])
+    assert "Generic unanchored persona" in str(exc_gen.value)
+
+    # Reject persona without evidence citations
+    uncited_persona = [{
+        "name": "VP of Engineering",
+        "role_archetype": "Engineering Leader",
+        "grounded_evidence_ids": [],
+    }]
+    with pytest.raises(ValueError) as exc_uncited:
+        agent.validate_persona_grounding(uncited_persona, ["ev_vnc_001"])
+    assert "no empirical evidence_id or chunk_id citation" in str(exc_uncited.value)
+
+
+@pytest.mark.asyncio
+async def test_audience_agent_evidence_assurance_context_gaps():
+    agent = AudienceAgent()
+    # Unverified / missing demographic data
+    slice_data = {
+        "industry": "Unknown",
+        "target_market": [],
+        "observation_notes": "",
+    }
+    result = await agent.run(slice_data)
+    assert "context_gaps" in result
+    assert len(result["context_gaps"]) >= 1
+    assert "Demographic or intent data is unavailable" in result["context_gaps"][0]
+
 
 
 @pytest.mark.asyncio

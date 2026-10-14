@@ -34,10 +34,22 @@ class ContextIsolator:
 
     @classmethod
     def get_audience_slice_model(cls, state: MasterEngineState) -> AudienceSlice:
-        """Returns strongly-typed AudienceSlice contract."""
+        """Returns strongly-typed AudienceSlice contract omitting heavy unpruned DOM trees."""
         visual_notes = [
-            ev.observation_notes for ev in state.research_repository.visual_evidence_vnc
+            f"[{ev.evidence_id}] {ev.observation_notes}" for ev in state.research_repository.visual_evidence_vnc
         ]
+        ev_ids = [ev.evidence_id for ev in state.research_repository.visual_evidence_vnc]
+
+        # Pruned DOM summary: title, headings, and opengraph only (omits heavy raw trees)
+        dom_summary = {}
+        for url, snap in state.research_repository.dom_snapshots.items():
+            meta = snap.get("metadata", {})
+            dom_summary[url] = {
+                "title": meta.get("title", ""),
+                "headings": meta.get("headings", []),
+                "opengraph": meta.get("opengraph", {}),
+            }
+
         return AudienceSlice(
             mode=state.mode.value,
             industry=state.brand_profile.industry,
@@ -45,6 +57,9 @@ class ContextIsolator:
             observation_notes=" | ".join(visual_notes) if visual_notes else "Standard digital touchpoint",
             business_goals=state.brand_profile.business_goals,
             competitors=state.research_repository.competitor_profiles,
+            visual_evidence_ids=ev_ids,
+            dom_summary=dom_summary,
+            rag_citations=state.research_repository.rag_citations,
         )
 
     @classmethod

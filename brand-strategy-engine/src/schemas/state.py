@@ -44,6 +44,45 @@ class AnalystSlice(BaseModel):
     industry: str = Field(..., description="Industry vertical")
 
 
+class BuyerPersona(BaseModel):
+    """Grounded buyer persona model."""
+
+    name: str = Field(..., description="Persona title or professional role")
+    role_archetype: str = Field(..., description="Role archetype e.g. Engineering Director, eCommerce Shopper")
+    intent_classification: str = Field(..., description="Intent classification (e.g. High-Consideration B2B, Impulse eCommerce)")
+    core_needs: List[str] = Field(default_factory=list, description="Key decision criteria and priorities")
+    friction_triggers: List[str] = Field(default_factory=list, description="Friction triggers and bounce factors")
+    grounded_evidence_ids: List[str] = Field(default_factory=list, description="Empirical evidence_id or RAG chunk_id references")
+
+
+class JourneyTouchpoint(BaseModel):
+    """Customer journey touchpoint and friction assessment."""
+
+    stage: str = Field(..., description="Journey stage (e.g. Discovery, Evaluation, Conversion)")
+    touchpoint_name: str = Field(..., description="Name of touchpoint (e.g. Hero Discovery, PDP Accordion, Checkout)")
+    friction_score: float = Field(..., ge=1.0, le=10.0, description="Quantified friction rating from 1.0 to 10.0")
+    drop_off_trigger: str = Field(..., description="Key cause of visitor drop-off")
+    grounded_evidence_id: Optional[str] = Field(default=None, description="Linked evidence_id or chunk_id citation")
+
+
+class AudienceAnalysis(BaseModel):
+    """Strongly typed audience strategy artifact."""
+
+    icp_profile: Dict[str, Any] = Field(..., description="Structured ICP profile")
+    buyer_personas: List[BuyerPersona] = Field(default_factory=list, description="Grounded buyer personas")
+    intent_classification: str = Field(..., description="Primary visitor intent classification")
+    journey_touchpoints: List[JourneyTouchpoint] = Field(default_factory=list, description="Mapped customer journey stages")
+    friction_index: float = Field(..., ge=1.0, le=10.0, description="Overall quantified funnel friction index")
+    journey_breakdown: Dict[str, str] = Field(default_factory=dict, description="Stage-by-stage friction breakdown")
+    persona_alignment_ratings: Dict[str, float] = Field(default_factory=dict, description="Persona-to-content alignment ratings (1.0 to 10.0)")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
 class AudienceSlice(BaseModel):
     """Bounded state slice injected into Agent 2 (Audience Strategist)."""
 
@@ -53,6 +92,9 @@ class AudienceSlice(BaseModel):
     observation_notes: str = Field(default="", description="Visual and touchpoint observation notes")
     business_goals: List[str] = Field(default_factory=list, description="Commercial goals")
     competitors: List[Dict[str, Any]] = Field(default_factory=list, description="Competitor profiles")
+    visual_evidence_ids: List[str] = Field(default_factory=list, description="Visual evidence IDs from Agent 1")
+    dom_summary: Dict[str, Any] = Field(default_factory=dict, description="Pruned DOM summaries from Agent 1")
+    rag_citations: List[Dict[str, Any]] = Field(default_factory=list, description="Retrieved client RAG chunks")
 
 
 class BrandSlice(BaseModel):
