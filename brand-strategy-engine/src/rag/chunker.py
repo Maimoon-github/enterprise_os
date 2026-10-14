@@ -1,8 +1,7 @@
-"""Semantic sliding-window chunker preserving structural headings and provenance."""
-
 from datetime import datetime, timezone
 import hashlib
 from typing import Any, Dict, List
+from src.schemas.evidence import ChunkProvenance
 
 
 class DocumentChunker:
@@ -17,7 +16,7 @@ class DocumentChunker:
         section: Dict[str, Any],
         document_id: str,
     ) -> List[Dict[str, Any]]:
-        """Splits a single document section into overlapping chunks."""
+        """Splits a single document section into overlapping chunks adhering to ChunkProvenance."""
         content = section.get("content", "")
         words = content.split()
         if not words:
@@ -28,14 +27,19 @@ class DocumentChunker:
         total_len = len(words)
         char_offset = 0
 
+        # Prioritize source file SHA256 if available from parser, else compute content hash
+        source_sha256 = section.get("sha256_hash")
+
         for i in range(0, total_len, step):
             window_words = words[i : i + self.chunk_size_words]
             chunk_text = " ".join(window_words)
 
-            # Calculate SHA256 of chunk content
+            # Calculate SHA256 of chunk content for deterministic ID
             content_bytes = chunk_text.encode("utf-8")
-            sha256_hash = hashlib.sha256(content_bytes).hexdigest()
-            chunk_id = f"chk_{sha256_hash[:8]}"
+            chunk_content_hash = hashlib.sha256(content_bytes).hexdigest()
+            chunk_id = f"chk_{chunk_content_hash[:8]}"
+
+            sha256_to_record = source_sha256 if (source_sha256 and len(source_sha256) == 64) else chunk_content_hash
 
             start_byte = char_offset
             end_byte = char_offset + len(content_bytes)
@@ -45,14 +49,17 @@ class DocumentChunker:
                 "chunk_id": chunk_id,
                 "document_id": document_id,
                 "source_filename": section.get("source_filename", "unknown"),
-                "sha256_hash": sha256_hash,
+                "sha256_hash": sha256_to_record,
                 "page_number": section.get("page_number", 1),
                 "section_heading": section.get("section_heading", "General"),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "byte_range": [start_byte, end_byte],
                 "content": chunk_text,
             }
-            chunks.append(chunk_meta)
+
+            # Enforce 9-field Pydantic provenance contract
+            validated = ChunkProvenance(**chunk_meta)
+            chunks.append(validated.model_dump())
 
             if i + self.chunk_size_words >= total_len:
                 break

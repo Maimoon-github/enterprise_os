@@ -7,11 +7,6 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📁 .config/
 │   │   ├── ⚙️ config.toml
 │   │   └── ⚙️ settings.json
-│   ├── 📁 .pytest_cache/
-│   │   ├── 📁 v/
-│   │   ├── ⚙️ .gitignore
-│   │   ├── 📄 CACHEDIR.TAG
-│   │   └── 📝 README.md
 │   ├── 📁 docker/
 │   │   ├── 📄 Dockerfile.engine
 │   │   ├── 📄 Dockerfile.vnc_sandbox
@@ -153,6 +148,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   ├── 📝 File Tree: VNC Browser computer.md
 │   └── 📝 context.md
 ├── ⚙️ .gitignore
+├── 📄 File Tree: enterprise_os
 └── ⚙️ pyrightconfig.json
 
 ────────────────────────────────────────────────────────────────────────────────
