@@ -1225,4 +1225,74 @@ async def test_validator_agent_react_execution_trace_and_report(sample_strategic
     ]
 
 
+@pytest.mark.asyncio
+async def test_validator_agent_zero_hallucination_immediate_veto(sample_strategic_initiative):
+    """Enforces Zero-Hallucination Policy: immediate rejection of unanchored evidence ID."""
+    validator = ValidatorAgent()
+    init = sample_strategic_initiative
+    init.evidence.evidence_id = "ev_fabricated_hallucination_888"
+
+    slice_data = {
+        "growth_initiatives": [init],
+        "research_repository": {
+            "visual_evidence_vnc": [{"evidence_id": "ev_valid_screen_001"}],
+            "rag_citations": [],
+            "dom_snapshots": {},
+        },
+    }
+    result = await validator.run(slice_data)
+    report = result["validation_report"]
+
+    assert report.failed_count == 1
+    assert init.approval_status == ApprovalStatus.REJECTED
+    assert any("ungrounded hallucination" in r for r in (init.rejection_reasons or []))
+    assert any(e.check_type == "provenance_check" and not e.passed for e in report.audit_trail)
+
+
+@pytest.mark.asyncio
+async def test_validator_agent_logical_alignment_with_business_goals(sample_strategic_initiative, sample_evidence):
+    """Verifies Check 2 logical alignment between finding, implication, and business goals."""
+    validator = ValidatorAgent()
+    init = sample_strategic_initiative
+
+    slice_data = {
+        "growth_initiatives": [init],
+        "research_repository": {
+            "visual_evidence_vnc": [sample_evidence],
+        },
+        "brand_profile": {
+            "business_goals": ["Increase inbound high-value contracting inquiries to 4% CTR"],
+        },
+    }
+    result = await validator.run(slice_data)
+    report = result["validation_report"]
+    logical_entries = [e for e in report.audit_trail if e.check_type == "logical_alignment"]
+    assert len(logical_entries) == 1
+    assert logical_entries[0].passed is True
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_stage_gating_sequence(sample_brand_profile_personal):
+    """Verifies strict sequential stage progression from Stage 0 through Stage 6."""
+    from src.orchestrator.state_machine import PipelineStage, StateMachine
+    from src.schemas.state import MasterEngineState, OperationalMode
+
+    state = MasterEngineState(
+        session_id="test-gate-seq-1",
+        mode=OperationalMode.MODE_A_PERSONAL,
+        brand_profile=sample_brand_profile_personal,
+        current_stage=PipelineStage.INITIALIZATION.value,
+    )
+
+    # Valid progression
+    assert StateMachine.can_transition(state.current_stage, PipelineStage.ANALYST.value) is True
+    StateMachine.advance_stage(state)
+    assert state.current_stage == PipelineStage.ANALYST.value
+
+    # Cannot skip directly to SEO or Validator
+    assert StateMachine.can_transition(state.current_stage, PipelineStage.SEO.value) is False
+    assert StateMachine.can_transition(state.current_stage, PipelineStage.VALIDATOR.value) is False
+
+
+
 

@@ -303,7 +303,8 @@ vector_dimensions = 768
 | **Agent 3: Brand Strategist** | `qwen2.5:14b-instruct-q4_K_M` | Value proposition, narrative positioning, differentiation | `extract_brand_voice`, `benchmark_differentiation`, `evaluate_uvp`, `rag_query` | None | Denied |
 | **Agent 4: SEO Strategist** | `qwen2.5:14b-instruct-q4_K_M` | Semantic keywords, architecture, content gaps | `analyze_onpage_elements`, `cluster_serp_intent`, `scan_content_gaps`, `rag_query` | Read-only (DOM snapshots) | Denied |
 | **Agent 5: Growth Strategist** | `qwen2.5:14b-instruct-q4_K_M` | ICE scoring, initiative synthesis, KPI setting | `calculate_ice_score`, `model_growth_projection`, `build_recommendation`, `rag_query` | None | Denied |
-| **Agent 6: Strategy Validator** | `deepseek-r1:32b-qwen-distill-q4_K_M` | Adversarial audit, provenance verification, veto | `verify_evidence_provenance`, `audit_logical_consistency`, `validate_metric_feasibility`, `issue_veto` | Read-only (Raw evidence blob) | Denied |
+| **Agent 6: Strategy Validator** | `deepseek-r1:32b-qwen-distill-q4_K_M` | Adversarial audit, provenance verification, veto | `verify_evidence_provenance`, `audit_logical_consistency`, `validate_metric_feasibility`, `issue_veto` | Read-only (Raw evidence blob) | Denied | 
+
 
 #### 2. Detailed Agent Specifications and ReAct Loops
 
@@ -727,11 +728,11 @@ You can deploy and verify the engine using the containerized runtime:
 
 1. Pull the required models into your local Ollama instance:
 ```bash
-ollama pull qwen2.5:72b-instruct-q4_K_M
+ollama pull qwen2.5:14b-instruct-q4_K_M	
 ollama pull qwen2.5:32b-instruct-q4_K_M
 ollama pull llama3.3:70b-instruct-q4_K_M
-ollama pull llama3.2-vision:11b-instruct-q4_K_M
-ollama pull deepseek-r1:70b
+ollama pull llama3.2-vision:11b-instruct-q4_K_M	
+ollama pull deepseek-r1:32b-qwen-distill-q4_K_M
 ollama pull nomic-embed-text:latest
 
 ```

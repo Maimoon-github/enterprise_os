@@ -1,8 +1,9 @@
 """Agent 6: Strategy Validator."""
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from src.agents.base_agent import BaseAgent
+from src.schemas.evidence import EvidenceReference
 from src.schemas.initiative import ApprovalStatus, StrategicInitiative
 from src.schemas.validation import AuditEntry, ValidationReport
 from src.tools.metric_validator import MetricValidator
@@ -54,15 +55,17 @@ Mandates:
         self,
         evidence_id: str,
         repo_evidence_ids: List[str],
-        evidence_ref: Optional[Dict[str, Any]] = None,
+        evidence_ref: Optional[Union[Dict[str, Any], EvidenceReference]] = None,
     ) -> bool:
         if evidence_id not in repo_evidence_ids:
             return False
-        if evidence_ref:
-            selector = evidence_ref.get("dataset_reference") or ""
-            screenshot = evidence_ref.get("screenshot_uri") or ""
-            source_type = evidence_ref.get("source_type") or ""
-            if not selector and not screenshot and not evidence_id.startswith("chk_") and source_type != "rag_citation":
+        if evidence_ref is not None:
+            ref_dict = evidence_ref.model_dump() if isinstance(evidence_ref, EvidenceReference) else evidence_ref
+            bbox = ref_dict.get("bounding_box")
+            selector = ref_dict.get("dataset_reference") or ""
+            screenshot = ref_dict.get("screenshot_uri") or ""
+            source_type = ref_dict.get("source_type") or ""
+            if not bbox and not selector and not screenshot and not evidence_id.startswith("chk_") and source_type != "rag_citation":
                 return False
         return True
 
@@ -72,11 +75,14 @@ Mandates:
         prescription: Optional[str] = None,
         initiative: Optional[Dict[str, Any]] = None,
         recommendation_object: Optional[Dict[str, Any]] = None,
+        business_goals: Optional[List[str]] = None,
+        finding: Optional[str] = None,
         **kwargs,
     ) -> bool:
         rec = initiative or recommendation_object or {}
         imp = implication or rec.get("business_implication", "")
         pres = prescription or rec.get("actionable_prescription", "")
+        fnd = finding or rec.get("finding", "")
 
         if not pres or len(pres.strip()) < 15:
             return False
@@ -158,17 +164,21 @@ Mandates:
                     recommendation_id=init.recommendation_id,
                     check_type="provenance_check",
                     passed=provenance_ok,
-                    failure_reason=None if provenance_ok else f"Unverified evidence provenance: {ev_id} not found in research repository.",
+                    failure_reason=None if provenance_ok else f"Unverified evidence provenance: {ev_id} not found in research repository (ungrounded hallucination).",
                     target_agent=target_agent,
                 )
             )
             if not provenance_ok:
-                rejection_reasons.append(f"Unverified evidence provenance: {ev_id}")
+                rejection_reasons.append(f"Unverified evidence provenance: {ev_id} (ungrounded hallucination)")
 
             # 2. Logical Alignment Check
+            bp = state_slice.get("brand_profile", {})
+            b_goals = bp.get("business_goals", []) if isinstance(bp, dict) else getattr(bp, "business_goals", [])
             logical_ok = self._tool_logical_consistency(
                 implication=init.business_implication,
                 prescription=init.actionable_prescription,
+                finding=init.finding,
+                business_goals=b_goals,
             )
             await self.react_step(
                 step_number=2,

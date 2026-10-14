@@ -62,7 +62,8 @@ class OllamaEmbedder:
                     data = resp.json()
                     embedding = data.get("embedding", [])
                     if len(embedding) == self.dimension:
-                        return embedding
+                        norm = math.sqrt(sum(x * x for x in embedding)) or 1.0
+                        return [round(x / norm, 6) for x in embedding]
         except Exception as e:
             logger.debug("Ollama embedding endpoint unavailable (%s), using local fallback", e)
 

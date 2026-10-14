@@ -146,6 +146,9 @@ class ContextIsolator:
     @classmethod
     def get_growth_slice_model(cls, state: MasterEngineState) -> GrowthSlice:
         """Returns strongly-typed GrowthSlice contract omitting raw VNC frame buffers and transient scratchpads."""
+        failed_entries = [e for e in state.validation_report.audit_trail if not e.passed]
+        rejection_reasons = [e.failure_reason for e in failed_entries if e.failure_reason] or None
+
         return GrowthSlice(
             mode=state.mode.value,
             website_url=state.brand_profile.website_url,
@@ -162,6 +165,7 @@ class ContextIsolator:
             },
             rag_citations=state.research_repository.rag_citations,
             business_goals=state.brand_profile.business_goals,
+            rejection_reasons=rejection_reasons,
             iteration_cycle=state.iteration_counter,
         )
 

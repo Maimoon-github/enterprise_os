@@ -151,7 +151,7 @@ async def test_rag_search_evidence_assurance_and_sanitization():
     ]
     await store.add_chunks(sample_chunks, tenant_id="tenant_beta")
 
-    rag_tool = RAGSearchTool(vector_store=store, min_similarity_threshold=0.10)
+    rag_tool = RAGSearchTool(vector_store=store, min_similarity_threshold=0.50)
 
     # 1. Test prompt injection neutralization
     sanitized = rag_tool.sanitize_untrusted_content(sample_chunks[0]["content"], "pitch_deck.pdf")

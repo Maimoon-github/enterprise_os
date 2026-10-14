@@ -28,7 +28,7 @@ from src.schemas.state import (
     ResearchRepository,
     StrategicArtifacts,
 )
-from src.schemas.validation import ValidationReport
+from src.schemas.validation import AuditEntry, ValidationReport
 from src.tools.browser_bridge import BrowserBridge
 from src.tools.rag_search import RAGSearchTool
 
@@ -200,11 +200,35 @@ Responsibilities:
 
     def route_revisions(
         self,
-        state: MasterEngineState,
+        target: Any,
+        target_agent: Optional[str] = None,
         validation_report: Optional[ValidationReport] = None,
-    ) -> Tuple[PipelineStage, List[StrategicInitiative], List[StrategicInitiative]]:
+        audit_trail: Optional[List[AuditEntry]] = None,
+    ) -> Any:
         """Processes adversarial audit verdict and enforces the 3-cycle revision loop ceiling."""
-        return StateMachine.process_validation_verdict(state)
+        if isinstance(target, MasterEngineState):
+            return StateMachine.process_validation_verdict(target)
+
+        failed_initiatives = target if isinstance(target, list) else [target]
+        audit_reasons = []
+        if validation_report and validation_report.audit_trail:
+            audit_reasons = [e for e in validation_report.audit_trail if not e.passed]
+        elif audit_trail:
+            audit_reasons = [e for e in audit_trail if not e.passed]
+
+        agent = target_agent or "Agent_5_Growth"
+        logger.info(
+            "Routing %d failed initiatives back to %s with %d audit diagnostic entries",
+            len(failed_initiatives),
+            agent,
+            len(audit_reasons),
+        )
+        return {
+            "target_agent": agent,
+            "failed_initiatives": failed_initiatives,
+            "audit_trail": audit_reasons,
+            "action": "revise_initiatives",
+        }
 
     async def ingest_user_documents(self, docs_dir: str, tenant_id: str) -> int:
         """Ingests client pitch decks and internal brand guidelines into the RAG vector store."""
@@ -389,6 +413,16 @@ Responsibilities:
 
             # Evaluate verdict
             next_stage, approved, purged = self.route_revisions(state)
+            if next_stage == PipelineStage.GROWTH:
+                failed_items = [
+                    i for i in state.strategic_artifacts.growth_initiatives
+                    if i.approval_status != ApprovalStatus.APPROVED
+                ]
+                self.route_revisions(
+                    target=failed_items,
+                    target_agent="Agent_5_Growth",
+                    validation_report=state.validation_report,
+                )
 
             # Record audit logs in long-term memory
             for item in state.strategic_artifacts.growth_initiatives:
