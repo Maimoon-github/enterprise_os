@@ -10,7 +10,17 @@ from src.agents.seo_content_agent import SEOContentAgent
 from src.agents.validator_agent import ValidatorAgent
 from src.orchestrator.manager import StrategyOrchestrator
 from src.schemas.initiative import ApprovalStatus, PriorityLevel, StrategicInitiative, SuccessMetric
-from src.schemas.state import OperationalMode, ReActStep
+from src.schemas.state import (
+    BrandPositioning,
+    BrandSlice,
+    ContentGap,
+    KeywordOpportunity,
+    OperationalMode,
+    ReActStep,
+    SEOAndContentPlan,
+    SEOSlice,
+    TechnicalSEOIssue,
+)
 
 
 def test_agent_rbac_whitelist_enforcement():
@@ -268,6 +278,330 @@ async def test_brand_agent_category_of_one():
     assert "Distributed Systems" in brand["category_of_one"]
 
 
+def test_brand_agent_rbac_and_isolation():
+    agent = BrandAgent()
+    assert agent.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert agent.temperature == 0.2
+    assert agent.context_window == 16384
+
+    # Strict whitelist restricted to 4 tools
+    expected_tools = {
+        "extract_brand_voice",
+        "benchmark_differentiation",
+        "evaluate_uvp",
+        "rag_query",
+    }
+    assert set(agent.whitelisted_tool_names) == expected_tools
+
+    # Attempting to register un-whitelisted tool raises PermissionError
+    with pytest.raises(PermissionError):
+        agent.register_tool("vnc_navigate", lambda: None)
+
+    # Sandbox permissions = None -> raises PermissionError
+    with pytest.raises(PermissionError) as exc_info:
+        agent.verify_sandbox_access("vnc")
+    assert "denied access to sandbox capability" in str(exc_info.value)
+
+    # Network bridge = Denied -> raises PermissionError
+    with pytest.raises(PermissionError) as exc_net:
+        agent.verify_network_access("internal_vnc_sandbox")
+    assert "denied network bridge access" in str(exc_net.value)
+
+    # Alias reconciliation
+    voice_alias = agent.extract_brand_voice_attributes("Passionate developer and innovative builder")
+    assert voice_alias["cliche_count"] >= 2
+    uvp_alias = agent.uvp_clarity_evaluator("High quality products for everyone")
+    assert uvp_alias["clarity_rating"] == "Deficient"
+    diff_alias = agent.category_positioning_matrix_plot(["react", "python"], ["react", "node"])
+    assert "react" in diff_alias["commoditized_features"]
+
+
+@pytest.mark.asyncio
+async def test_brand_agent_react_loop_and_mode_a():
+    agent = BrandAgent()
+    slice_data = {
+        "mode": "Mode_A_Personal",
+        "headline": "Full-Stack Developer & Passionate Problem Solver",
+        "subheadings": ["Innovative Builder & Agile Team Player"],
+        "visual_evidence_ids": ["ev_vnc_9876"],
+    }
+    result = await agent.run(slice_data)
+    assert "brand_positioning" in result
+    brand = result["brand_positioning"]
+
+    # Verify 4-stage ReAct trace
+    assert len(agent.execution_trace) == 4
+    trace_actions = [step.action for step in agent.execution_trace]
+    assert trace_actions == [
+        "extract_brand_voice",
+        "evaluate_uvp",
+        "benchmark_differentiation",
+        "rag_query",
+    ]
+
+    # Verify strongly typed Pydantic contract compliance
+    pos_model = BrandPositioning(**brand)
+    assert "Distributed Systems" in pos_model.category_of_one
+    assert "Commoditized" in pos_model.uvp_evaluation
+    assert len(pos_model.narrative_pillars) >= 2
+    assert "headline" in pos_model.core_messaging_hierarchy
+    assert "prescribed_position" in pos_model.differentiation_matrix
+    assert len(pos_model.identity_improvement_playbook) >= 3
+
+    # Mode A cliché detection
+    assert len(pos_model.commoditized_claim_flags) >= 1
+    assert any("passionate" in flag["claim"].lower() for flag in pos_model.commoditized_claim_flags)
+    assert "ev_vnc_9876" in pos_model.evidence_citations
+
+
+@pytest.mark.asyncio
+async def test_brand_agent_mode_b_ecommerce_deep():
+    agent = BrandAgent()
+    slice_data = {
+        "mode": "Mode_B_eCommerce",
+        "headline": "High Quality Outerwear for Everyone",
+        "subheadings": ["Comfortable alpine apparel made with passion"],
+        "visual_evidence_ids": ["ev_vnc_ecommerce_101"],
+    }
+    result = await agent.run(slice_data)
+    brand = result["brand_positioning"]
+    pos_model = BrandPositioning(**brand)
+
+    assert "Precision-Engineered" in pos_model.category_of_one
+    assert "Commoditized" in pos_model.uvp_evaluation
+    # Verify perceived value vs price tier & trust architecture
+    playbook_text = " ".join(pos_model.identity_improvement_playbook).lower()
+    assert "thermal" in playbook_text or "ratings" in playbook_text
+    assert "trust" in playbook_text or "certifications" in playbook_text
+    assert "ev_vnc_ecommerce_101" in pos_model.evidence_citations
+
+
+@pytest.mark.asyncio
+async def test_brand_agent_competitive_reality_guardrail():
+    agent = BrandAgent()
+    target_claims = ["Empirical sub-50ms distributed systems architecture", "Passionate Problem Solver"]
+    competitors = [
+        {
+            "name": "Legacy Tech Agency",
+            "headline": "Passionate Problem Solver & Full-Stack Developers",
+            "messaging": "passionate problem solver",
+            "evidence_id": "ev_comp_legacy_001",
+        }
+    ]
+    flags = agent.enforce_competitive_reality(
+        target_claims=target_claims,
+        competitors=competitors,
+        target_evidence_id="ev_vnc_test_01",
+    )
+    # The matching claim must be flagged as commoditized with both evidence IDs cited
+    assert len(flags) == 1
+    flag = flags[0]
+    assert flag["status"] == "commoditized"
+    assert flag["target_evidence_id"] == "ev_vnc_test_01"
+    assert flag["competitor_evidence_id"] == "ev_comp_legacy_001"
+    assert "Passionate Problem Solver" in flag["claim"]
+
+
+@pytest.mark.asyncio
+async def test_brand_agent_evidence_assurance_context_gaps():
+    agent = BrandAgent()
+    # Missing visual evidence and RAG citations should log context gaps
+    slice_data = {
+        "mode": "Mode_A_Personal",
+        "headline": "",
+    }
+    result = await agent.run(slice_data)
+    assert "context_gaps" in result
+    assert len(result["context_gaps"]) >= 1
+    assert any("Empirical brand visual evidence is unavailable" in g for g in result["context_gaps"])
+
+    # Reject ungrounded citations without ev_ or chk_
+    with pytest.raises(ValueError) as exc_info:
+        agent.validate_evidence_assurance(["fabricated_claim_123"])
+    assert "Evidence Assurance Violation" in str(exc_info.value)
+
+
+def test_seo_agent_rbac_and_isolation():
+    agent = SEOContentAgent()
+    assert agent.model_name == "qwen2.5:14b-instruct-q4_K_M"
+    assert agent.temperature == 0.2
+    assert agent.context_window == 16384
+
+    # Whitelist strictly restricted to 4 tools
+    expected_tools = {
+        "analyze_onpage_elements",
+        "cluster_serp_intent",
+        "scan_content_gaps",
+        "rag_query",
+    }
+    assert set(agent.whitelisted_tool_names) == expected_tools
+
+    # Attempting to register un-whitelisted tool raises PermissionError
+    with pytest.raises(PermissionError):
+        agent.register_tool("vnc_navigate", lambda: None)
+
+    # Sandbox permissions: Read-only (DOM snapshots) -> dom_snapshot allowed, vnc denied
+    assert agent.verify_sandbox_access("dom_snapshot") is True
+    with pytest.raises(PermissionError) as exc_vnc:
+        agent.verify_sandbox_access("vnc")
+    assert "denied access to sandbox capability" in str(exc_vnc.value)
+
+    # Network bridge: Denied -> raises PermissionError
+    with pytest.raises(PermissionError) as exc_net:
+        agent.verify_network_access("external")
+    assert "denied network bridge access" in str(exc_net.value)
+
+    # Alias reconciliation
+    onpage_alias = agent.technical_seo_auditor(crawl_data={"metadata": {"title": "Short"}})
+    assert "title_tag_status" in onpage_alias
+    serp_alias = agent.serp_intent_cluster_analyzer(keywords=["hire distributed engineer"])
+    assert len(serp_alias["high_intent_clusters"]) >= 1
+    gap_alias = agent.content_gap_scanner(
+        target_inventory=["portfolio"],
+        competitor_inventory=["case study", "portfolio"],
+    )
+    assert "missing_case_studies" in gap_alias
+
+
+@pytest.mark.asyncio
+async def test_seo_agent_react_loop_and_mode_a():
+    agent = SEOContentAgent()
+    slice_data = {
+        "mode": "Mode_A_Personal",
+        "dom_snapshot": {
+            "metadata": {
+                "title": "Alex Chen | Portfolio",
+                "headings": [{"level": "h1", "text": "Full-Stack Developer"}],
+            },
+            "evidence_id": "ev_dom_alexchen_001",
+        },
+    }
+    result = await agent.run(slice_data)
+    assert "seo_and_content_plan" in result
+    plan = result["seo_and_content_plan"]
+
+    # Verify 4-stage ReAct trace
+    assert len(agent.execution_trace) == 4
+    trace_actions = [step.action for step in agent.execution_trace]
+    assert trace_actions == [
+        "analyze_onpage_elements",
+        "cluster_serp_intent",
+        "scan_content_gaps",
+        "rag_query",
+    ]
+
+    # Verify strongly typed Pydantic contract compliance
+    plan_model = SEOAndContentPlan(**plan)
+    assert "Person" in plan_model.technical_health["schema_org"]
+    assert "WordPress" in plan_model.technical_health["cms_feasibility"] or "Next.js" in plan_model.technical_health["cms_feasibility"]
+    assert len(plan_model.technical_issue_log) >= 3
+    assert len(plan_model.keyword_opportunity_matrix) >= 3
+    assert len(plan_model.content_gap_inventory) >= 2
+    assert len(plan_model.content_editorial_blueprint) >= 2
+
+    # Verify technical grounding: exact DOM node selector and evidence_id cited
+    for issue in plan_model.technical_issue_log:
+        assert issue.dom_selector.startswith("head >") or issue.dom_selector.startswith("main >")
+        assert issue.evidence_id == "ev_dom_alexchen_001"
+        assert any(cms in issue.cms_feasibility.lower() for cms in ("wordpress", "shopify", "webflow", "next.js", "native"))
+
+
+@pytest.mark.asyncio
+async def test_seo_agent_mode_b_ecommerce_deep():
+    agent = SEOContentAgent()
+    slice_data = {
+        "mode": "Mode_B_eCommerce",
+        "dom_snapshot": {
+            "metadata": {
+                "title": "Alpine Technical Outerwear - Shop Mountain Jackets",
+            },
+            "evidence_id": "ev_dom_ecommerce_999",
+        },
+    }
+    result = await agent.run(slice_data)
+    plan = result["seo_and_content_plan"]
+    plan_model = SEOAndContentPlan(**plan)
+
+    assert "Product" in plan_model.technical_health["schema_org"]
+    assert "Shopify" in plan_model.technical_health["cms_feasibility"]
+    assert any("Jacket" in kw.keyword or "Outerwear" in kw.keyword for kw in plan_model.keyword_opportunity_matrix)
+    assert any(kw.search_intent == "Transactional" for kw in plan_model.keyword_opportunity_matrix)
+    assert "ev_dom_ecommerce_999" in plan_model.evidence_citations
+
+
+def test_seo_agent_guardrails_technical_grounding_and_intent():
+    agent = SEOContentAgent()
+
+    # Technical Grounding: Reject issues lacking DOM selector
+    ungrounded_issue = TechnicalSEOIssue(
+        issue_id="SEO-ERR-01",
+        category="Schema Markup",
+        severity="Critical",
+        dom_selector="",  # empty selector violates grounding
+        evidence_id="ev_dom_001",
+        description="Missing schema",
+        actionable_fix="Add schema markup via Next.js native head",
+        cms_feasibility="Next.js native markup",
+    )
+    with pytest.raises(ValueError) as exc_ground:
+        agent.validate_technical_grounding([ungrounded_issue])
+    assert "lacks an exact DOM selector" in str(exc_ground.value)
+
+    # Technical Grounding: Reject issues lacking valid evidence_id
+    uncited_issue = TechnicalSEOIssue(
+        issue_id="SEO-ERR-02",
+        category="Canonicalization",
+        severity="Critical",
+        dom_selector="head > link[rel=\"canonical\"]",
+        evidence_id="invalid_no_prefix",  # missing ev_ or chk_
+        description="Missing canonical",
+        actionable_fix="Add canonical tag via Shopify theme",
+        cms_feasibility="Shopify Liquid",
+    )
+    with pytest.raises(ValueError) as exc_ev:
+        agent.validate_technical_grounding([uncited_issue])
+    assert "lacks a valid empirical evidence_id" in str(exc_ev.value)
+
+    # No Keyword Stuffing: Reject keywords lacking valid search intent
+    stuffed_kw = KeywordOpportunity(
+        keyword="cheap shoes buy best online discount",
+        search_intent="Uncategorized Intent",  # invalid intent category
+        target_page="/products",
+    )
+    with pytest.raises(ValueError) as exc_stuff:
+        agent.validate_no_keyword_stuffing([stuffed_kw])
+    assert "Keyword Stuffing / Intent Violation" in str(exc_stuff.value)
+
+    # CMS Feasibility: Reject recommendations requiring non-standard infrastructure
+    unfeasible_issue = TechnicalSEOIssue(
+        issue_id="SEO-ERR-03",
+        category="Server Infrastructure",
+        severity="Critical",
+        dom_selector="head > script",
+        evidence_id="ev_dom_001",
+        description="Edge CDN dynamic rendering required",
+        actionable_fix="Deploy custom Rust WebAssembly edge server worker cluster",
+        cms_feasibility="Proprietary custom edge infrastructure",
+    )
+    with pytest.raises(ValueError) as exc_cms:
+        agent.validate_cms_feasibility([unfeasible_issue])
+    assert "CMS Feasibility Violation" in str(exc_cms.value)
+
+
+@pytest.mark.asyncio
+async def test_seo_agent_evidence_assurance_context_gaps():
+    agent = SEOContentAgent()
+    slice_data = {
+        "mode": "Mode_A_Personal",
+        "dom_snapshot": {},  # empty snapshot
+    }
+    result = await agent.run(slice_data)
+    assert "context_gaps" in result
+    assert len(result["context_gaps"]) >= 2
+    assert any("Live crawl data is absent" in g for g in result["context_gaps"])
+    assert any("CMS platform stack unverified" in g for g in result["context_gaps"])
+
+
 @pytest.mark.asyncio
 async def test_growth_agent_initiative_synthesis(sample_evidence):
     agent = GrowthAgent()
@@ -409,7 +743,7 @@ async def test_antigravity_runtime_harness(sample_brand_profile_personal):
 
 def test_typed_context_slices(sample_master_state):
     from src.orchestrator.context_isolator import ContextIsolator
-    from src.schemas.state import AnalystSlice, AudienceSlice, GrowthSlice
+    from src.schemas.state import AnalystSlice, AudienceSlice, BrandSlice, GrowthSlice
 
     analyst_model = ContextIsolator.get_analyst_slice_model(sample_master_state)
     assert isinstance(analyst_model, AnalystSlice)
@@ -418,8 +752,23 @@ def test_typed_context_slices(sample_master_state):
     audience_model = ContextIsolator.get_audience_slice_model(sample_master_state)
     assert isinstance(audience_model, AudienceSlice)
 
+    brand_model = ContextIsolator.get_brand_slice_model(sample_master_state)
+    assert isinstance(brand_model, BrandSlice)
+    assert brand_model.brand_name == sample_master_state.brand_profile.brand_name
+    assert len(brand_model.visual_summaries) >= 1
+    # Verify raw DOM trees, terminal logs, and SEO markups are omitted from BrandSlice
+    assert not hasattr(brand_model, "dom_snapshot") or getattr(brand_model, "dom_snapshot", None) is None
+    assert not hasattr(brand_model, "terminal_logs")
+
     growth_model = ContextIsolator.get_growth_slice_model(sample_master_state)
     assert isinstance(growth_model, GrowthSlice)
+
+    seo_model = ContextIsolator.get_seo_slice_model(sample_master_state)
+    assert isinstance(seo_model, SEOSlice)
+    assert seo_model.website_url == sample_master_state.brand_profile.website_url
+    assert "Alex Chen" in str(seo_model.dom_snapshot)
+    # Verify raw visual buffers are omitted from SEOSlice
+    assert not hasattr(seo_model, "visual_evidence_vnc") or getattr(seo_model, "visual_evidence_vnc", None) is None
 
 
 @pytest.mark.asyncio

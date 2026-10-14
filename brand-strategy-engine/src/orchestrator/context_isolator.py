@@ -70,13 +70,37 @@ class ContextIsolator:
 
     @classmethod
     def get_brand_slice_model(cls, state: MasterEngineState) -> BrandSlice:
-        """Returns strongly-typed BrandSlice contract."""
-        headline = "Full-Stack Developer & Passionate Problem Solver"
+        """Returns strongly-typed BrandSlice contract omitting raw DOM trees, terminal logs, and technical SEO markups."""
+        headline = ""
+        subheadings = []
         for snap in state.research_repository.dom_snapshots.values():
             meta = snap.get("metadata", {})
-            if meta.get("title"):
+            if not headline and meta.get("title"):
                 headline = meta["title"]
+            headings = meta.get("headings", [])
+            for h in headings:
+                if isinstance(h, dict):
+                    text = h.get("text", "")
+                    tag = h.get("tag", "").lower()
+                    if tag in ("h1", "hero") and not headline:
+                        headline = text
+                    elif text and text not in subheadings:
+                        subheadings.append(text)
+                elif isinstance(h, str) and h not in subheadings:
+                    subheadings.append(h)
+            if headline and subheadings:
                 break
+
+        if not headline:
+            headline = "Full-Stack Developer & Passionate Problem Solver"
+
+        visual_summaries = [
+            f"[{ev.evidence_id}] {ev.observation_notes}"
+            for ev in state.research_repository.visual_evidence_vnc
+        ]
+        visual_evidence_ids = [
+            ev.evidence_id for ev in state.research_repository.visual_evidence_vnc
+        ]
 
         return BrandSlice(
             mode=state.mode.value,
@@ -84,6 +108,12 @@ class ContextIsolator:
             brand_name=state.brand_profile.brand_name,
             audience_icp=state.strategic_artifacts.audience_analysis.get("icp_profile", {}),
             competitors=state.research_repository.competitor_profiles,
+            visual_summaries=visual_summaries,
+            visual_evidence_ids=visual_evidence_ids,
+            subheadings=subheadings[:5],
+            competitor_messaging=state.research_repository.competitor_profiles,
+            audience_analysis=state.strategic_artifacts.audience_analysis,
+            rag_citations=state.research_repository.rag_citations,
         )
 
     @classmethod
@@ -94,14 +124,17 @@ class ContextIsolator:
 
     @classmethod
     def get_seo_slice_model(cls, state: MasterEngineState) -> SEOSlice:
-        """Returns strongly-typed SEOSlice contract."""
+        """Returns strongly-typed SEOSlice contract omitting raw VNC screenshot frame buffers and unrelated agent scratchpads."""
         first_url = state.brand_profile.website_url
         snapshot = state.research_repository.dom_snapshots.get(first_url, {})
         return SEOSlice(
             mode=state.mode.value,
             website_url=first_url,
             dom_snapshot=snapshot,
+            dom_snapshots=state.research_repository.dom_snapshots,
+            competitor_profiles=state.research_repository.competitor_profiles,
             brand_positioning=state.strategic_artifacts.brand_positioning,
+            rag_citations=state.research_repository.rag_citations,
         )
 
     @classmethod

@@ -179,8 +179,12 @@ Responsibilities:
                 state.research_repository.context_gaps.extend(payload["context_gaps"])
         elif stage_name in ("Brand", PipelineStage.BRAND.value):
             state.strategic_artifacts.brand_positioning = payload.get("brand_positioning", {})
+            if payload.get("context_gaps"):
+                state.research_repository.context_gaps.extend(payload["context_gaps"])
         elif stage_name in ("SEO", PipelineStage.SEO.value):
             state.strategic_artifacts.seo_and_content_plan = payload.get("seo_and_content_plan", {})
+            if payload.get("context_gaps"):
+                state.research_repository.context_gaps.extend(payload["context_gaps"])
         elif stage_name in ("Growth", PipelineStage.GROWTH.value):
             state.strategic_artifacts.growth_initiatives = payload.get("growth_initiatives", [])
         elif stage_name in ("Validator", PipelineStage.VALIDATOR.value):

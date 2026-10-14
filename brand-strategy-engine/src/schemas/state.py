@@ -97,6 +97,50 @@ class AudienceSlice(BaseModel):
     rag_citations: List[Dict[str, Any]] = Field(default_factory=list, description="Retrieved client RAG chunks")
 
 
+class BrandPositioning(BaseModel):
+    """Strongly typed brand positioning artifact."""
+
+    category_of_one: str = Field(..., description="Defensible Category of One positioning statement")
+    core_messaging_hierarchy: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Core messaging hierarchy: primary headline, subheadings, value propositions, and proof points",
+    )
+    differentiation_matrix: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Category of One differentiation matrix vs competitor vectors",
+    )
+    uvp_evaluation: str = Field(
+        default="",
+        description="High-level UVP rating (e.g. Commoditized vs Differentiated)",
+    )
+    uvp_critique: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Detailed UVP clarity evaluation, deficiency diagnosis, and recommended focus",
+    )
+    commoditized_claim_flags: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Cross-checked competitor overlapping claims flagged as commoditized",
+    )
+    identity_improvement_playbook: List[str] = Field(
+        default_factory=list,
+        description="Actionable playbook for tonal, narrative, and authority improvements",
+    )
+    narrative_pillars: List[str] = Field(
+        default_factory=list,
+        description="Empirical narrative pillars",
+    )
+    evidence_citations: List[str] = Field(
+        default_factory=list,
+        description="Linked empirical evidence_id or RAG chunk_id citations",
+    )
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
 class BrandSlice(BaseModel):
     """Bounded state slice injected into Agent 3 (Brand Strategist)."""
 
@@ -105,6 +149,129 @@ class BrandSlice(BaseModel):
     brand_name: str = Field(..., description="Target brand name")
     audience_icp: Dict[str, Any] = Field(default_factory=dict, description="ICP model from Agent 2")
     competitors: List[Dict[str, Any]] = Field(default_factory=list, description="Competitor profiles")
+    visual_summaries: List[str] = Field(
+        default_factory=list,
+        description="Analyst visual summaries and observation notes",
+    )
+    visual_evidence_ids: List[str] = Field(
+        default_factory=list,
+        description="Visual evidence IDs from Agent 1",
+    )
+    subheadings: List[str] = Field(
+        default_factory=list,
+        description="Extracted subheading copy snippets",
+    )
+    competitor_messaging: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Competitor messaging vectors from research repository",
+    )
+    audience_analysis: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Full audience strategy analysis from Agent 2",
+    )
+    rag_citations: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Retrieved client document chunks",
+    )
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class TechnicalSEOIssue(BaseModel):
+    """Grounded technical SEO issue bound to an exact DOM selector and empirical evidence_id."""
+
+    issue_id: str = Field(..., description="Unique issue identifier")
+    category: str = Field(..., description="Technical category (e.g. Schema Markup, Canonicalization, Headings, Meta)")
+    severity: str = Field(..., description="Severity rating (Critical, Warning, Optimization)")
+    dom_selector: str = Field(..., description="Exact DOM node selector citing the flaw")
+    evidence_id: str = Field(..., description="Empirical evidence citation (ev_dom_... or chk_...)")
+    description: str = Field(..., description="Detailed diagnostic description")
+    actionable_fix: str = Field(..., description="Prescribed remediation steps")
+    cms_feasibility: str = Field(..., description="CMS-scoped implementation constraint (WordPress, Shopify, Webflow, Next.js)")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class KeywordOpportunity(BaseModel):
+    """Keyword opportunity strictly mapped to search intent to prevent keyword stuffing."""
+
+    keyword: str = Field(..., description="Target search query or cluster")
+    search_intent: str = Field(..., description="Explicit search intent: Informational, Commercial, or Transactional")
+    target_page: str = Field(default="", description="Recommended landing page or URL path")
+    difficulty: str = Field(default="Medium", description="Competitive ranking difficulty")
+    estimated_relevance: float = Field(default=8.0, ge=1.0, le=10.0, description="Relevance to brand positioning (1-10)")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class ContentGap(BaseModel):
+    """Semantic content void identified against competitor coverage."""
+
+    topic: str = Field(..., description="Unaddressed high-value topic or case study theme")
+    competitor_coverage: str = Field(..., description="Observed competitor coverage summary")
+    intent: str = Field(..., description="Target visitor intent (Informational, Commercial, Transactional)")
+    recommended_format: str = Field(default="Technical Case Study", description="Editorial format")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class SEOAndContentPlan(BaseModel):
+    """Strongly typed strategic SEO and content artifact produced by Agent 4."""
+
+    technical_health: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="High-level technical audit summary (schema_org, title_tag, canonical_tag, cms_feasibility)",
+    )
+    technical_issue_log: List[TechnicalSEOIssue] = Field(
+        default_factory=list,
+        description="Grounded technical SEO flaws bound to DOM nodes and evidence IDs",
+    )
+    content_gap_inventory: List[ContentGap] = Field(
+        default_factory=list,
+        description="Identified content voids against competitors",
+    )
+    keyword_opportunity_matrix: List[KeywordOpportunity] = Field(
+        default_factory=list,
+        description="Ranked keywords strictly categorized by intent",
+    )
+    content_editorial_blueprint: List[str] = Field(
+        default_factory=list,
+        description="Strategic content calendar and editorial roadmap",
+    )
+    high_intent_keywords: List[str] = Field(
+        default_factory=list,
+        description="High-intent commercial and transactional keywords for backward compatibility",
+    )
+    cms_platform: str = Field(
+        default="Standard CMS (WordPress/Shopify/Webflow/Next.js)",
+        description="Identified or scoped CMS framework",
+    )
+    evidence_citations: List[str] = Field(
+        default_factory=list,
+        description="Empirical evidence_id or RAG chunk_id citations",
+    )
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
 
 
 class SEOSlice(BaseModel):
@@ -113,7 +280,16 @@ class SEOSlice(BaseModel):
     mode: str = Field(..., description="Operational modality")
     website_url: str = Field(..., description="Target website URL")
     dom_snapshot: Dict[str, Any] = Field(default_factory=dict, description="Captured DOM metadata and hierarchy")
+    dom_snapshots: Dict[str, Any] = Field(default_factory=dict, description="Captured DOM trees keyed by page route")
+    competitor_profiles: List[Dict[str, Any]] = Field(default_factory=list, description="Discovered competitor benchmarks")
     brand_positioning: Dict[str, Any] = Field(default_factory=dict, description="Synthesized brand positioning")
+    rag_citations: List[Dict[str, Any]] = Field(default_factory=list, description="Retrieved client document chunks")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
 
 
 class GrowthSlice(BaseModel):
