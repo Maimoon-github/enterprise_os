@@ -145,15 +145,24 @@ class ContextIsolator:
 
     @classmethod
     def get_growth_slice_model(cls, state: MasterEngineState) -> GrowthSlice:
-        """Returns strongly-typed GrowthSlice contract."""
+        """Returns strongly-typed GrowthSlice contract omitting raw VNC frame buffers and transient scratchpads."""
         return GrowthSlice(
             mode=state.mode.value,
             website_url=state.brand_profile.website_url,
+            brand_profile=state.brand_profile.model_dump(),
             audience_analysis=state.strategic_artifacts.audience_analysis,
             brand_positioning=state.strategic_artifacts.brand_positioning,
             seo_and_content_plan=state.strategic_artifacts.seo_and_content_plan,
             visual_evidence_vnc=state.research_repository.visual_evidence_vnc,
+            research_repository={
+                "visual_evidence_ids": [ev.evidence_id for ev in state.research_repository.visual_evidence_vnc],
+                "dom_snapshots_keys": list(state.research_repository.dom_snapshots.keys()),
+                "competitor_profiles": state.research_repository.competitor_profiles,
+                "rag_citations": state.research_repository.rag_citations,
+            },
+            rag_citations=state.research_repository.rag_citations,
             business_goals=state.brand_profile.business_goals,
+            iteration_cycle=state.iteration_counter,
         )
 
     @classmethod

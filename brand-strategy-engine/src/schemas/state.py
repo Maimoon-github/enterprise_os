@@ -297,11 +297,22 @@ class GrowthSlice(BaseModel):
 
     mode: str = Field(..., description="Operational modality")
     website_url: str = Field(..., description="Target website URL")
+    brand_profile: Dict[str, Any] = Field(default_factory=dict, description="Target brand specifications")
     audience_analysis: Dict[str, Any] = Field(default_factory=dict, description="Audience analysis")
     brand_positioning: Dict[str, Any] = Field(default_factory=dict, description="Brand positioning")
     seo_and_content_plan: Dict[str, Any] = Field(default_factory=dict, description="SEO and content blueprint")
     visual_evidence_vnc: List[EvidenceReference] = Field(default_factory=list, description="Empirical visual evidence")
+    research_repository: Dict[str, Any] = Field(default_factory=dict, description="Indexed evidence records")
+    rag_citations: List[Dict[str, Any]] = Field(default_factory=list, description="Retrieved client document chunks")
     business_goals: List[str] = Field(default_factory=list, description="Commercial goals")
+    rejection_reasons: Optional[List[str]] = Field(default=None, description="Validator feedback for revision cycle")
+    iteration_cycle: int = Field(default=0, ge=0, le=3, description="Current revision iteration cycle")
+
+    def __getitem__(self, item: str) -> Any:
+        return getattr(self, item)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
 
 
 class ValidatorSlice(BaseModel):

@@ -9,7 +9,8 @@ from src.agents.growth_agent import GrowthAgent
 from src.agents.seo_content_agent import SEOContentAgent
 from src.agents.validator_agent import ValidatorAgent
 from src.orchestrator.manager import StrategyOrchestrator
-from src.schemas.initiative import ApprovalStatus, PriorityLevel, StrategicInitiative, SuccessMetric
+from src.schemas.evidence import EvidenceReference
+from src.schemas.initiative import ApprovalStatus, PriorityLevel, PriorityMatrix, StrategicInitiative, SuccessMetric
 from src.schemas.state import (
     BrandPositioning,
     BrandSlice,
@@ -1028,4 +1029,113 @@ async def test_mode_b_ecommerce_execution_and_guardrails(sample_evidence):
     assert init.recommendation_id.startswith("REC-B-")
     assert "Mobile Add-to-Cart" in init.success_metric.kpi
     assert init.success_metric.verification_source == "Shopify Analytics"
+    assert "Core_Priorities" in growth_res["roadmap"]
+    assert init.recommendation_id in growth_res["roadmap"]["Core_Priorities"]
+
+
+@pytest.mark.asyncio
+async def test_growth_agent_react_loop_and_tool_whitelisting(sample_evidence):
+    """Validates 4-stage ReAct loop, tool whitelist, and alias support for Agent 5."""
+    growth = GrowthAgent()
+
+    # Tool alias test
+    rec_dict = {
+        "recommendation_id": "REC-A-099",
+        "initiating_agent": "Agent_5_Growth",
+        "finding": "Weak proof-of-work",
+        "evidence": sample_evidence.model_dump(),
+        "business_implication": "Low lead volume",
+        "actionable_prescription": "Deploy interactive playground",
+        "priority": {
+            "impact": "High",
+            "effort": "Low",
+            "cost": "Low",
+            "confidence": "90%",
+            "ice_score": 8.5,
+        },
+        "success_metric": {
+            "kpi": "Inbound Lead CVR",
+            "baseline": "1.0%",
+            "target": "3.0%",
+            "verification_source": "GA4",
+        },
+        "approval_status": "Proposed",
+    }
+    rec_obj = await growth.invoke_tool("build_standardized_recommendation", rec_dict=rec_dict)
+    assert isinstance(rec_obj, dict)
+    assert rec_obj["recommendation_id"] == "REC-A-099"
+
+    # Execution and ReAct trace verification
+    slice_data = {
+        "mode": "Mode_A_Personal",
+        "website_url": "https://developer.io",
+        "visual_evidence_vnc": [sample_evidence],
+    }
+    result = await growth.run(slice_data)
+    assert len(growth.execution_trace) == 4
+    trace_actions = [step.action for step in growth.execution_trace]
+    assert trace_actions == [
+        "rag_query",
+        "calculate_ice_score",
+        "model_growth_projection",
+        "build_recommendation",
+    ]
+    assert "Quick_Wins" in result["roadmap"]
+    assert len(result["roadmap"]["Quick_Wins"]) == 1
+    assert result["roadmap"]["Quick_Wins"][0] == result["growth_initiatives"][0].recommendation_id
+
+
+@pytest.mark.asyncio
+async def test_growth_agent_traceability_rejection(sample_evidence):
+    """Validates that initiatives citing ungrounded evidence_ids trigger deterministic Traceability rejection."""
+    growth = GrowthAgent()
+    init = StrategicInitiative(
+        recommendation_id="REC-A-002",
+        initiating_agent=growth.agent_id,
+        finding="Unsubstantiated claim",
+        evidence=EvidenceReference(
+            evidence_id="ev_disconnected_ghost_999",
+            source_url="https://site.com",
+            source_type="dom_selector",
+            dataset_reference="h1",
+            observation_notes="Fabricated reference",
+        ),
+        business_implication="None",
+        actionable_prescription="None",
+        priority=PriorityMatrix(
+            impact=PriorityLevel.HIGH,
+            effort=PriorityLevel.LOW,
+            cost=PriorityLevel.LOW,
+            confidence="90%",
+            ice_score=8.0,
+        ),
+        success_metric=SuccessMetric(
+            kpi="Inbound Lead CVR",
+            baseline="1.0%",
+            target="2.5%",
+            verification_source="GA4",
+        ),
+        approval_status=ApprovalStatus.PROPOSED,
+    )
+    with pytest.raises(ValueError) as exc_info:
+        growth.validate_traceability([init], valid_evidence_ids=["ev_verified_001"])
+    assert "Traceability Violation" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_growth_agent_revision_remediation(sample_evidence):
+    """Validates revision handling when Validator feedback rejects an initiative."""
+    growth = GrowthAgent()
+    slice_data = {
+        "mode": "Mode_A_Personal",
+        "website_url": "https://alexchen.dev",
+        "visual_evidence_vnc": [sample_evidence],
+        "rejection_reasons": ["Unrealistic growth lift: 1400% exceeds 400% threshold"],
+        "iteration_cycle": 1,
+    }
+    res = await growth.run(slice_data)
+    init = res["growth_initiatives"][0]
+    assert init.iteration_cycle == 2
+    assert init.success_metric.target == "2.8%"
+
 

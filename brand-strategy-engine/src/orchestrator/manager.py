@@ -186,7 +186,13 @@ Responsibilities:
             if payload.get("context_gaps"):
                 state.research_repository.context_gaps.extend(payload["context_gaps"])
         elif stage_name in ("Growth", PipelineStage.GROWTH.value):
-            state.strategic_artifacts.growth_initiatives = payload.get("growth_initiatives", [])
+            state.strategic_artifacts.growth_initiatives = (
+                payload.get("growth_initiatives")
+                or payload.get("synthesized_growth_initiatives")
+                or []
+            )
+            if payload.get("context_gaps"):
+                state.research_repository.context_gaps.extend(payload["context_gaps"])
         elif stage_name in ("Validator", PipelineStage.VALIDATOR.value):
             state.validation_report = payload["validation_report"]
             state.strategic_artifacts.growth_initiatives = payload["validated_initiatives"]
