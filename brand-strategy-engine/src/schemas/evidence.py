@@ -1,7 +1,7 @@
 """Evidence reference schema and provenance contracts."""
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, Optional, Tuple
 from pydantic import BaseModel, Field, HttpUrl
 
 
@@ -27,6 +27,14 @@ class EvidenceReference(BaseModel):
     observation_notes: str = Field(
         ...,
         description="Raw visual, structural, or semantic notes recorded at capture",
+    )
+    screenshot_uri: Optional[str] = Field(
+        default=None,
+        description="Filesystem path to stored screenshot image blob",
+    )
+    bounding_box: Optional[Tuple[int, int, int, int]] = Field(
+        default=None,
+        description="Visual bounding box [x1, y1, x2, y2] coordinates",
     )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),

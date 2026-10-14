@@ -32,6 +32,14 @@ class DOMParser:
                 except json.JSONDecodeError:
                     continue
 
+        # OpenGraph extraction
+        opengraph: Dict[str, str] = {}
+        for meta in soup.find_all("meta"):
+            prop = meta.get("property") or meta.get("name")
+            content = meta.get("content")
+            if prop and content and str(prop).startswith("og:"):
+                opengraph[str(prop)] = str(content)
+
         canonical_tag = soup.find("link", rel="canonical")
         canonical_href = ""
         if canonical_tag and hasattr(canonical_tag, "get"):
@@ -40,6 +48,7 @@ class DOMParser:
         return {
             "title": title,
             "meta_tags": meta_tags,
+            "opengraph": opengraph,
             "json_ld": json_ld_blocks,
             "canonical": canonical_href,
         }

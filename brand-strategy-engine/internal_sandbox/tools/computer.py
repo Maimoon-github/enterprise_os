@@ -19,11 +19,18 @@ ActionType = Literal[
     "right_click",
     "double_click",
     "middle_click",
+    "scroll",
     "screenshot",
     "cursor_position",
 ]
 
 OUTPUT_DIR = Path("/tmp/outputs")
+
+MAX_SCALING_TARGETS: Dict[str, Tuple[int, int]] = {
+    "XGA": (1024, 768),
+    "WXGA": (1280, 800),
+    "FWXGA": (1366, 768),
+}
 
 
 class ComputerTool(BaseTool):
@@ -43,7 +50,46 @@ class ComputerTool(BaseTool):
         self.display_num = int(env_disp) if env_disp is not None else display_num
         self.display_prefix = f"DISPLAY=:{self.display_num} " if self.display_num else ""
         self.xdotool = f"{self.display_prefix}xdotool"
+        self._scaling_enabled: bool = True
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    def set_viewport(self, width: int, height: int) -> None:
+        """Sets active viewport dimensions for coordinate scaling."""
+        self.width = width
+        self.height = height
+
+    def scale_coordinates(
+        self,
+        source: str,
+        x: int,
+        y: int,
+        target: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        """Proportionally scales coordinates between API space and physical canvas."""
+        if not self._scaling_enabled or self.width == 0 or self.height == 0:
+            return x, y
+
+        if target and target in MAX_SCALING_TARGETS:
+            target_w, target_h = MAX_SCALING_TARGETS[target]
+        else:
+            ratio = self.width / self.height
+            target_dim: Optional[Tuple[int, int]] = None
+            for name, (tw, th) in MAX_SCALING_TARGETS.items():
+                if abs(tw / th - ratio) < 0.05 and tw < self.width:
+                    target_dim = (tw, th)
+                    break
+            if target_dim is None:
+                target_w, target_h = MAX_SCALING_TARGETS["XGA"]
+            else:
+                target_w, target_h = target_dim
+
+        x_factor = target_w / self.width
+        y_factor = target_h / self.height
+
+        if source.lower() == "api":
+            return round(x / x_factor), round(y / y_factor)
+        # source == "computer"
+        return round(x * x_factor), round(y * y_factor)
 
     def to_params(self) -> Dict[str, Any]:
         return {
@@ -63,6 +109,7 @@ class ComputerTool(BaseTool):
                             "right_click",
                             "double_click",
                             "middle_click",
+                            "scroll",
                             "screenshot",
                             "cursor_position",
                         ],
@@ -73,6 +120,11 @@ class ComputerTool(BaseTool):
                         "items": {"type": "integer"},
                         "description": "[x, y] coordinates",
                     },
+                    "scroll_direction": {
+                        "type": "string",
+                        "enum": ["up", "down", "left", "right"],
+                    },
+                    "scroll_amount": {"type": "integer"},
                 },
                 "required": ["action"],
             },
@@ -146,6 +198,18 @@ class ComputerTool(BaseTool):
             cmd = f"{self.xdotool} click {btn_map[action]}"
             await self.shell(cmd)
             return ToolResult(output=f"Performed {action}")
+
+        elif action == "scroll":
+            direction = kwargs.get("scroll_direction", "down")
+            amount = kwargs.get("scroll_amount", 2)
+            btn_map = {"up": "4", "down": "5", "left": "6", "right": "7"}
+            btn = btn_map.get(direction, "5")
+            if coordinate:
+                x, y = coordinate
+                await self.shell(f"{self.xdotool} mousemove --sync {x} {y}")
+            cmd = f"{self.xdotool} click --repeat {amount} {btn}"
+            await self.shell(cmd)
+            return ToolResult(output=f"Scrolled {direction} by {amount}")
 
         elif action == "type":
             if text is None:

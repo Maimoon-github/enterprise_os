@@ -43,8 +43,13 @@ class VNCClient:
         self.is_connected = self.check_socket()
         return self.is_connected
 
-    async def navigate_browser(self, url: str) -> ToolResult:
+    async def navigate_browser(
+        self,
+        url: str,
+        viewport_size: Tuple[int, int] = (1920, 1080),
+    ) -> ToolResult:
         """Launches Firefox or directs active browser window to the designated target URL."""
+        self._computer_tool.set_viewport(viewport_size[0], viewport_size[1])
         # Execute sandboxed browser navigation via xdotool and firefox CLI
         nav_cmd = f"firefox-esr --new-window '{url}' >/dev/null 2>&1 &"
         await self._computer_tool.shell(nav_cmd)
@@ -56,9 +61,33 @@ class VNCClient:
         action = "left_click" if button == 1 else "right_click"
         return await self._computer_tool(action=action, coordinate=(x, y))
 
+    async def send_scroll(
+        self,
+        direction: str = "down",
+        amount: int = 2,
+        coordinate: Optional[Tuple[int, int]] = None,
+    ) -> ToolResult:
+        """Dispatches mouse wheel scroll events."""
+        return await self._computer_tool(
+            action="scroll",
+            scroll_direction=direction,
+            scroll_amount=amount,
+            coordinate=coordinate,
+        )
+
     async def send_keys(self, text: str) -> ToolResult:
         """Dispatches typed keystrokes to the active window."""
         return await self._computer_tool(action="type", text=text)
+
+    def scale_coordinates(
+        self,
+        source: str,
+        x: int,
+        y: int,
+        target: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        """Scales coordinates proportionally using underlying ComputerTool."""
+        return self._computer_tool.scale_coordinates(source, x, y, target=target)
 
     async def capture_screen(self) -> ToolResult:
         """Retrieves current frame buffer as base64-encoded PNG."""

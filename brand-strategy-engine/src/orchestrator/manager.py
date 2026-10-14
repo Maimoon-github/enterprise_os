@@ -171,6 +171,8 @@ Responsibilities:
             state.research_repository.dom_snapshots.update(payload.get("dom_snapshots", {}))
             state.research_repository.visual_evidence_vnc.extend(payload.get("visual_evidence_vnc", []))
             state.research_repository.competitor_profiles.extend(payload.get("competitors", []))
+            if payload.get("context_gaps"):
+                state.research_repository.context_gaps.extend(payload["context_gaps"])
         elif stage_name in ("Audience", PipelineStage.AUDIENCE.value):
             state.strategic_artifacts.audience_analysis = payload.get("audience_analysis", {})
         elif stage_name in ("Brand", PipelineStage.BRAND.value):

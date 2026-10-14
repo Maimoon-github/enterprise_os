@@ -231,6 +231,7 @@ class BaseAgent(ABC):
         action: str,
         action_args: Dict[str, Any],
         reflection: str = "",
+        error: Optional[str] = None,
     ) -> ReActStep:
         """Executes a single Reason -> Act -> Observe -> Reflect step producing a typed Pydantic record."""
         # 1. Reason
@@ -238,7 +239,6 @@ class BaseAgent(ABC):
 
         # 2. Act
         observation = ""
-        error = None
         if action not in self.whitelisted_tool_names:
             msg = f"Security Violation: Tool '{action}' is not authorized for Agent {self.agent_id} under master RBAC policy."
             logger.warning("RBAC Policy Violation in %s: %s", self.agent_id, msg)

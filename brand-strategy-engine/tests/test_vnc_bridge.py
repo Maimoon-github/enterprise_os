@@ -103,3 +103,64 @@ def test_metric_validator_feasible_inverse_reduction():
     passed, reason, lift = MetricValidator.validate_metric(metric)
     assert passed is True
     assert reason is None
+
+
+def test_computer_coordinate_scaling_proportional():
+    tool = ComputerTool(width=1920, height=1080)
+    # Scale from 1920x1080 down to XGA (1024x768)
+    scaled_x, scaled_y = tool.scale_coordinates(source="computer", x=1920, y=1080, target="XGA")
+    assert scaled_x == 1024
+    assert scaled_y == 768
+
+    # Scale from XGA (1024x768) back up to 1920x1080
+    up_x, up_y = tool.scale_coordinates(source="api", x=1024, y=768, target="XGA")
+    assert up_x == 1920
+    assert up_y == 1080
+
+
+@pytest.mark.asyncio
+async def test_vnc_scroll_interaction():
+    bridge = BrowserBridge()
+    # Execute scroll interaction
+    result = await bridge.vnc_interact(
+        action_type="scroll",
+        scroll_direction="down",
+        scroll_amount=3,
+        coordinate=(200, 300),
+    )
+    assert result["status"] == "success"
+    assert result["action"] == "scroll"
+
+
+@pytest.mark.asyncio
+async def test_dom_parser_opengraph_extraction():
+    og_html = """
+    <html>
+        <head>
+            <title>Test Store</title>
+            <meta property="og:title" content="Test eCommerce Store" />
+            <meta property="og:description" content="Shop sustainable products" />
+            <meta property="og:image" content="https://teststore.com/og.jpg" />
+        </head>
+        <body><h1>Welcome</h1></body>
+    </html>
+    """
+    metadata = DOMParser.extract_metadata(og_html)
+    assert "opengraph" in metadata
+    assert metadata["opengraph"].get("og:title") == "Test eCommerce Store"
+    assert metadata["opengraph"].get("og:image") == "https://teststore.com/og.jpg"
+
+
+@pytest.mark.asyncio
+async def test_browser_bridge_screenshot_blob_persistence(tmp_path):
+    bridge = BrowserBridge()
+    ev = await bridge.capture_visual_evidence(
+        source_url="https://store.example.com",
+        dataset_reference="div.pdp-accordion",
+        observation_notes="Accordion collapsed",
+        bounding_box=(100, 150, 800, 600),
+    )
+    assert ev.screenshot_uri is not None
+    assert ev.bounding_box == (100, 150, 800, 600)
+    assert ev.dataset_reference == "div.pdp-accordion"
+

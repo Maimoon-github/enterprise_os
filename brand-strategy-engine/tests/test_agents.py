@@ -29,10 +29,76 @@ async def test_analyst_agent_execution():
 
     assert "dom_snapshots" in result
     assert "visual_evidence_vnc" in result
-    assert len(result["visual_evidence_vnc"]) == 1
+    assert len(result["visual_evidence_vnc"]) >= 1
     ev = result["visual_evidence_vnc"][0]
     assert ev.evidence_id.startswith("ev_vnc_")
-    assert len(agent.execution_trace) >= 2
+    assert len(agent.execution_trace) >= 4
+
+
+@pytest.mark.asyncio
+async def test_analyst_agent_dual_viewport_mode_b_ecommerce():
+    agent = AnalystAgent()
+    slice_data = {
+        "website_url": "https://luxuryapparel.store",
+        "mode": "Mode_B_eCommerce",
+        "industry": "eCommerce",
+    }
+    result = await agent.run(slice_data)
+
+    assert "dom_snapshots" in result
+    assert "visual_evidence_vnc" in result
+    # Dual-viewport generates both Desktop and Mobile frames
+    assert len(result["visual_evidence_vnc"]) == 2
+
+    desktop_ev = result["visual_evidence_vnc"][0]
+    mobile_ev = result["visual_evidence_vnc"][1]
+    assert "pdp-accordion" in desktop_ev.dataset_reference
+    assert "add-to-cart" in mobile_ev.dataset_reference
+    assert desktop_ev.bounding_box is not None
+    assert mobile_ev.bounding_box is not None
+
+    # Verify 4-stage ReAct trace
+    assert len(agent.execution_trace) == 4
+    trace_actions = [step.action for step in agent.execution_trace]
+    assert trace_actions == ["vnc_navigate", "extract_dom_tree", "capture_visual_evidence", "rag_query"]
+
+
+@pytest.mark.asyncio
+async def test_analyst_agent_rate_limiting_graceful_handling():
+    agent = AnalystAgent()
+
+    # Simulate 429 Rate Limit
+    async def mock_fetch_response(url: str):
+        return "<html><body>429 Too Many Requests</body></html>", 429
+
+    agent.browser_bridge.fetch_page_response = mock_fetch_response
+
+    slice_data = {
+        "website_url": "https://rate-limited.domain.io",
+        "mode": "Mode_A_Personal",
+    }
+    result = await agent.run(slice_data)
+
+    assert result["visual_evidence_vnc"] == []
+    assert len(result["context_gaps"]) == 1
+    assert "restricted by HTTP 429" in result["context_gaps"][0]
+
+
+def test_analyst_agent_whitelist_and_rbac():
+    agent = AnalystAgent()
+    expected_tools = {
+        "vnc_navigate",
+        "vnc_interact",
+        "capture_visual_evidence",
+        "extract_dom_tree",
+        "rag_query",
+    }
+    assert set(agent.whitelisted_tool_names) == expected_tools
+
+    # Attempting to register unauthorized tool triggers PermissionError
+    with pytest.raises(PermissionError):
+        agent.register_tool("unauthorized_shell_exec", lambda: "evil")
+
 
 
 @pytest.mark.asyncio

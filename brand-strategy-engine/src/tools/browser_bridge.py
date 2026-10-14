@@ -1,5 +1,8 @@
 """Public tool bridge for Agent 1 providing VNC sandbox access and evidence capture."""
 
+import base64
+import os
+from pathlib import Path
 import uuid
 from typing import Any, Dict, Optional, Tuple
 import httpx
@@ -22,7 +25,7 @@ class BrowserBridge:
     ) -> Dict[str, Any]:
         """Directs the sandboxed browser to visit the target URL."""
         self._current_url = url
-        screenshot_result = await self.vnc_client.navigate_browser(url)
+        screenshot_result = await self.vnc_client.navigate_browser(url, viewport_size=viewport_size)
         return {
             "status": "success",
             "url": url,
@@ -35,11 +38,19 @@ class BrowserBridge:
         action_type: str,
         coordinate: Optional[Tuple[int, int]] = None,
         text: Optional[str] = None,
+        scroll_direction: str = "down",
+        scroll_amount: int = 2,
     ) -> Dict[str, Any]:
-        """Performs mouse or keyboard interaction in the sandbox."""
+        """Performs mouse, keyboard, or scroll interaction in the sandbox."""
         if action_type in ("left_click", "right_click", "click") and coordinate:
             btn = 3 if action_type == "right_click" else 1
             result = await self.vnc_client.send_click(coordinate[0], coordinate[1], button=btn)
+        elif action_type == "scroll":
+            result = await self.vnc_client.send_scroll(
+                direction=scroll_direction,
+                amount=scroll_amount,
+                coordinate=coordinate,
+            )
         elif action_type == "type" and text:
             result = await self.vnc_client.send_keys(text)
         else:
@@ -52,28 +63,63 @@ class BrowserBridge:
             "screenshot_base64": result.base64_image,
         }
 
+    def scale_coordinates(
+        self,
+        source: str,
+        x: int,
+        y: int,
+        target: Optional[str] = None,
+    ) -> Tuple[int, int]:
+        """Maps coordinates proportionally between vision model coordinates and display canvas."""
+        return self.vnc_client.scale_coordinates(source, x, y, target=target)
+
     async def capture_visual_evidence(
         self,
         source_url: str,
         dataset_reference: str,
         observation_notes: str,
+        bounding_box: Optional[Tuple[int, int, int, int]] = None,
     ) -> EvidenceReference:
-        """Captures a verifiable visual frame and returns an EvidenceReference."""
+        """Captures a verifiable visual frame and persists screenshot blob to disk."""
         ev_id = f"ev_vnc_{uuid.uuid4().hex[:8]}"
         res = await self.vnc_client.capture_screen()
+
+        # Determine target directory: prefer /app/evidence_blobs, fallback to ./evidence_blobs
+        storage_dir = Path("/app/evidence_blobs")
+        try:
+            storage_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError):
+            storage_dir = Path("evidence_blobs")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+
+        blob_path = storage_dir / f"{ev_id}.png"
+        screenshot_uri = str(blob_path)
+        if res.base64_image:
+            try:
+                blob_path.write_bytes(base64.b64decode(res.base64_image))
+            except Exception:
+                pass
+
         return EvidenceReference(
             evidence_id=ev_id,
             source_url=source_url or self._current_url or "https://unknown.target",
             source_type="vnc_screenshot",
             dataset_reference=dataset_reference,
             observation_notes=observation_notes,
+            screenshot_uri=screenshot_uri,
+            bounding_box=bounding_box,
         )
 
-    async def fetch_page_html(self, url: str) -> str:
-        """Fetches raw HTML directly via HTTP for DOM parsing."""
+    async def fetch_page_response(self, url: str) -> Tuple[str, int]:
+        """Fetches page content and returns (html, status_code)."""
         try:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 resp = await client.get(url, headers={"User-Agent": "Antigravity-Brand-Auditor/2.4"})
-                return resp.text
+                return resp.text, resp.status_code
         except Exception as e:
-            return f"<html><body><p>Failed to retrieve {url}: {e}</p></body></html>"
+            return f"<html><body><p>Failed to retrieve {url}: {e}</p></body></html>", 500
+
+    async def fetch_page_html(self, url: str) -> str:
+        """Fetches raw HTML directly via HTTP for DOM parsing."""
+        html, _ = await self.fetch_page_response(url)
+        return html
