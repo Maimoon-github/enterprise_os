@@ -245,4 +245,4 @@ class EditTool(BaseTool):
 class EditTool20250728(EditTool, BaseAnthropicTool):
     """Anthropic text_editor_20250728 version compatible subclass."""
     api_type: Literal["text_editor_20250728"] = "text_editor_20250728"
-    name: Literal["str_replace_based_edit_tool"] = "str_replace_based_edit_tool"
+    name: Literal["str_replace_based_edit_tool"] = "str_replace_based_edit_tool"  # pyright: ignore[reportIncompatibleVariableOverride]

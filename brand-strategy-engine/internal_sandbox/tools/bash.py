@@ -95,7 +95,7 @@ class _BashSession:
 class BashTool(BaseTool):
     """Execution bridge for sandboxed shell commands."""
 
-    name: str = "bash"
+    name: Literal["bash"] = "bash"
 
     def __init__(self):
         self._session: Optional[_BashSession] = None
@@ -142,8 +142,8 @@ class BashTool(BaseTool):
 
 class BashTool20250124(BashTool, BaseAnthropicTool):
     api_type: Literal["bash_20250124"] = "bash_20250124"
-    name: Literal["bash"] = "bash"
+    name: Literal["bash"] = "bash"  # pyright: ignore[reportIncompatibleVariableOverride]
 
 
 class BashTool20241022(BashTool20250124):
-    api_type: Literal["bash_20250124"] = "bash_20250124"
+    api_type: Literal["bash_20250124"] = "bash_20250124"  # pyright: ignore[reportIncompatibleVariableOverride]

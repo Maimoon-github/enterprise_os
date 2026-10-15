@@ -1,6 +1,6 @@
 """Collection classes for managing multiple tools."""
 
-from typing import Any, cast
+from typing import Any
 
 from .base import (
     BaseAnthropicTool,
@@ -18,11 +18,11 @@ class ToolCollection:
         self.tool_map: dict[str, BaseAnthropicTool] = {}
         self.toolset_map: dict[str, BaseAnthropicTool] = {}
         for tool in tools:
-            params = cast(dict[str, Any], tool.to_params())
+            params = tool.to_params()
             if "name" in params:
                 self.tool_map[params["name"]] = tool
             else:
-                self.toolset_map[cast(Any, tool).toolset_name] = tool
+                self.toolset_map[getattr(tool, "toolset_name", "")] = tool
 
     def to_params(self) -> list[dict[str, Any]]:
         return [tool.to_params() for tool in self.tools]

@@ -354,7 +354,7 @@ class BaseComputerTool(BaseTool):
         if action == "zoom":
             reg = region or kwargs.get("region")
             if reg and len(reg) == 4:
-                return await self.zoom(tuple(reg))
+                return await self.zoom((int(reg[0]), int(reg[1]), int(reg[2]), int(reg[3])))
             raise ToolError("region required for zoom")
 
         raise ToolError(f"Invalid computer action: {action}")
@@ -398,9 +398,9 @@ class ComputerTool20250124(BaseComputerTool, BaseAnthropicTool):
 
 
 class ComputerTool20251124(ComputerTool20250124):
-    api_type: Literal["computer_20251124"] = "computer_20251124"
+    api_type: Literal["computer_20251124"] = "computer_20251124"  # pyright: ignore[reportIncompatibleVariableOverride]
 
 
 class ComputerToolset20260801(ComputerTool20251124):
-    api_type: Literal["computer_toolset_20260801"] = "computer_toolset_20260801"
+    api_type: Literal["computer_toolset_20260801"] = "computer_toolset_20260801"  # pyright: ignore[reportIncompatibleVariableOverride]
     toolset_name: Literal["computer"] = "computer"
