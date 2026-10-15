@@ -271,64 +271,70 @@ async def test_long_term_memory_multi_tenant_isolation():
     tenant_b = "tenant_beta"
     client_b1 = "client_beta_1"
 
-    # 1. Brand Profile isolation
-    await memory.save_brand_profile(
-        tenant_id=tenant_a,
-        client_id=client_a1,
-        brand_name="Alpha Brand",
-        website_url="https://alpha.example.com",
-        industry="SaaS",
-        business_goals=["Expand ARR"],
-    )
-    await memory.save_brand_profile(
-        tenant_id=tenant_b,
-        client_id=client_b1,
-        brand_name="Beta Brand",
-        website_url="https://beta.example.com",
-        industry="Fintech",
-        business_goals=["Achieve Profitability"],
-    )
+    await memory.clear_tenant_data(tenant_a)
+    await memory.clear_tenant_data(tenant_b)
 
-    # Tenant Alpha querying
-    profile_a = await memory.get_brand_profile(tenant_id=tenant_a, client_id=client_a1)
-    assert profile_a is not None
-    assert profile_a["brand_name"] == "Alpha Brand"
+    try:
+        # 1. Brand Profile isolation
+        await memory.save_brand_profile(
+            tenant_id=tenant_a,
+            client_id=client_a1,
+            brand_name="Alpha Brand",
+            website_url="https://alpha.example.com",
+            industry="SaaS",
+            business_goals=["Expand ARR"],
+        )
+        await memory.save_brand_profile(
+            tenant_id=tenant_b,
+            client_id=client_b1,
+            brand_name="Beta Brand",
+            website_url="https://beta.example.com",
+            industry="Fintech",
+            business_goals=["Achieve Profitability"],
+        )
 
-    # Tenant Alpha cannot access Tenant Beta
-    profile_cross = await memory.get_brand_profile(tenant_id=tenant_a, client_id=client_b1)
-    assert profile_cross is None
+        # Tenant Alpha querying
+        profile_a = await memory.get_brand_profile(tenant_id=tenant_a, client_id=client_a1)
+        assert profile_a is not None
+        assert profile_a["brand_name"] == "Alpha Brand"
 
-    # 2. Historical Baseline isolation
-    await memory.save_baseline(
-        tenant_id=tenant_a,
-        client_id=client_a1,
-        brand_name="Alpha Brand",
-        website_url="https://alpha.example.com",
-        kpi="Organic Traffic",
-        baseline="10k visitors/mo",
-    )
-    baselines_a = await memory.get_baselines(tenant_id=tenant_a, client_id=client_a1)
-    assert len(baselines_a) == 1
-    assert baselines_a[0]["kpi"] == "Organic Traffic"
+        # Tenant Alpha cannot access Tenant Beta
+        profile_cross = await memory.get_brand_profile(tenant_id=tenant_a, client_id=client_b1)
+        assert profile_cross is None
 
-    baselines_b = await memory.get_baselines(tenant_id=tenant_b, client_id=client_b1)
-    assert len(baselines_b) == 0
+        # 2. Historical Baseline isolation
+        await memory.save_baseline(
+            tenant_id=tenant_a,
+            client_id=client_a1,
+            brand_name="Alpha Brand",
+            website_url="https://alpha.example.com",
+            kpi="Organic Traffic",
+            baseline="10k visitors/mo",
+        )
+        baselines_a = await memory.get_baselines(tenant_id=tenant_a, client_id=client_a1)
+        assert len(baselines_a) == 1
+        assert baselines_a[0]["kpi"] == "Organic Traffic"
 
-    # 3. Strategy Audit Logs isolation
-    await memory.save_audit_log(
-        session_id="sess_a",
-        tenant_id=tenant_a,
-        client_id=client_a1,
-        recommendation_id="rec_001",
-        status="APPROVED",
-        audit_data={"ice_score": 8.5},
-    )
-    audit_a = await memory.get_audit_history(tenant_id=tenant_a, client_id=client_a1)
-    assert len(audit_a) == 1
-    assert audit_a[0]["recommendation_id"] == "rec_001"
+        baselines_b = await memory.get_baselines(tenant_id=tenant_b, client_id=client_b1)
+        assert len(baselines_b) == 0
 
-    audit_b = await memory.get_audit_history(tenant_id=tenant_b, client_id=client_b1)
-    assert len(audit_b) == 0
+        # 3. Strategy Audit Logs isolation
+        await memory.save_audit_log(
+            session_id="sess_a",
+            tenant_id=tenant_a,
+            client_id=client_a1,
+            recommendation_id="rec_001",
+            status="APPROVED",
+            audit_data={"ice_score": 8.5},
+        )
+        audit_a = await memory.get_audit_history(tenant_id=tenant_a, client_id=client_a1)
+        assert len(audit_a) == 1
+        assert audit_a[0]["recommendation_id"] == "rec_001"
+
+        audit_b = await memory.get_audit_history(tenant_id=tenant_b, client_id=client_b1)
+        assert len(audit_b) == 0
+    finally:
+        await memory.close()
 
 
 @pytest.mark.asyncio
@@ -340,49 +346,55 @@ async def test_long_term_memory_competitor_embeddings_768_dim():
     tenant_id = "tenant_competitor_test"
     client_id = "client_comp_1"
 
-    # Generate deterministic 768-dimensional mock embeddings
-    emb_direct = [0.1] * 768
-    emb_indirect = [0.0] * 384 + [0.2] * 384
-    query_vector = [0.1] * 768  # Identical direction to emb_direct
+    await memory.clear_tenant_data(tenant_id)
+    await memory.clear_tenant_data("tenant_foreign")
 
-    await memory.save_competitor_footprint(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        competitor_name="Direct Competitor Inc",
-        domain="direct.example.com",
-        positioning_summary="Primary enterprise market rival",
-        embedding=emb_direct,
-    )
+    try:
+        # Generate deterministic 768-dimensional mock embeddings
+        emb_direct = [0.1] * 768
+        emb_indirect = [0.0] * 384 + [0.2] * 384
+        query_vector = [0.1] * 768  # Identical direction to emb_direct
 
-    await memory.save_competitor_footprint(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        competitor_name="Indirect Competitor LLC",
-        domain="indirect.example.com",
-        positioning_summary="Adjacent niche tool",
-        embedding=emb_indirect,
-    )
+        await memory.save_competitor_footprint(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            competitor_name="Direct Competitor Inc",
+            domain="direct.example.com",
+            positioning_summary="Primary enterprise market rival",
+            embedding=emb_direct,
+        )
 
-    # Cross-tenant competitor to verify isolation
-    await memory.save_competitor_footprint(
-        tenant_id="tenant_foreign",
-        client_id="client_foreign",
-        competitor_name="Foreign Competitor",
-        domain="foreign.example.com",
-        positioning_summary="Should not appear in search",
-        embedding=emb_direct,
-    )
+        await memory.save_competitor_footprint(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            competitor_name="Indirect Competitor LLC",
+            domain="indirect.example.com",
+            positioning_summary="Adjacent niche tool",
+            embedding=emb_indirect,
+        )
 
-    results = await memory.query_competitor_footprints(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        query_embedding=query_vector,
-        top_k=5,
-    )
+        # Cross-tenant competitor to verify isolation
+        await memory.save_competitor_footprint(
+            tenant_id="tenant_foreign",
+            client_id="client_foreign",
+            competitor_name="Foreign Competitor",
+            domain="foreign.example.com",
+            positioning_summary="Should not appear in search",
+            embedding=emb_direct,
+        )
 
-    assert len(results) == 2
-    # Verify top result is Direct Competitor with higher cosine similarity
-    assert results[0]["competitor_name"] == "Direct Competitor Inc"
-    assert results[0]["similarity_score"] > results[1]["similarity_score"]
-    # Foreign competitor is strictly isolated
-    assert all(r["competitor_name"] != "Foreign Competitor" for r in results)
+        results = await memory.query_competitor_footprints(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            query_embedding=query_vector,
+            top_k=5,
+        )
+
+        assert len(results) == 2
+        # Verify top result is Direct Competitor with higher cosine similarity
+        assert results[0]["competitor_name"] == "Direct Competitor Inc"
+        assert results[0]["similarity_score"] > results[1]["similarity_score"]
+        # Foreign competitor is strictly isolated
+        assert all(r["competitor_name"] != "Foreign Competitor" for r in results)
+    finally:
+        await memory.close()

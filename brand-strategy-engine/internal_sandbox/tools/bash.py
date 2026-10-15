@@ -2,9 +2,9 @@
 
 import asyncio
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
-from .base import BaseTool, CLIResult, ToolError, ToolResult
+from .base import BaseAnthropicTool, BaseTool, CLIResult, ToolError, ToolResult
 
 
 class _BashSession:
@@ -14,7 +14,7 @@ class _BashSession:
     _process: Optional[asyncio.subprocess.Process]
     command: str = "/bin/bash"
     _output_delay: float = 0.2
-    _timeout: float = 60.0
+    _timeout: float = 120.0
     _sentinel: str = "<<exit_sentinel>>"
 
     def __init__(self):
@@ -48,6 +48,16 @@ class _BashSession:
             await self.start()
         assert self._process and self._process.stdin
 
+        if self._process.returncode is not None:
+            return CLIResult(
+                system="tool must be restarted",
+                error=f"bash has exited with returncode {self._process.returncode}",
+            )
+        if self._timed_out:
+            raise ToolError(
+                f"timed out: bash has not returned in {self._timeout} seconds and must be restarted"
+            )
+
         cmd_payload = f"{command}; echo '{self._sentinel}'\n"
         self._process.stdin.write(cmd_payload.encode())
         await self._process.stdin.drain()
@@ -57,7 +67,6 @@ class _BashSession:
                 while True:
                     await asyncio.sleep(self._output_delay)
                     assert self._process.stdout
-                    # Access internal buffer safely
                     buffer = getattr(self._process.stdout, "_buffer", bytearray())
                     output = buffer.decode(errors="replace")
                     if self._sentinel in output:
@@ -65,7 +74,7 @@ class _BashSession:
                         break
         except asyncio.TimeoutError:
             self._timed_out = True
-            raise ToolError(f"Bash command timed out after {self._timeout}s: {command}")
+            raise ToolError(f"timed out: bash has not returned in {self._timeout} seconds and must be restarted")
 
         error = ""
         if self._process.stderr:
@@ -98,8 +107,14 @@ class BashTool(BaseTool):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The command string to execute"},
-                    "restart": {"type": "boolean", "description": "Whether to restart the shell session"},
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command line to execute",
+                    },
+                    "restart": {
+                        "type": "boolean",
+                        "description": "Whether to restart the bash session",
+                    },
                 },
                 "required": ["command"],
             },
@@ -113,13 +128,22 @@ class BashTool(BaseTool):
                 self._session.stop()
             self._session = _BashSession()
             await self._session.start()
-            return ToolResult(system="Bash session restarted.")
+            return ToolResult(system="tool has been restarted.")
 
         if self._session is None:
             self._session = _BashSession()
             await self._session.start()
 
-        if command:
+        if command is not None:
             return await self._session.run(command)
 
-        raise ToolError("No command provided to BashTool.")
+        raise ToolError("no command provided.")
+
+
+class BashTool20250124(BashTool, BaseAnthropicTool):
+    api_type: Literal["bash_20250124"] = "bash_20250124"
+    name: Literal["bash"] = "bash"
+
+
+class BashTool20241022(BashTool20250124):
+    api_type: Literal["bash_20250124"] = "bash_20250124"

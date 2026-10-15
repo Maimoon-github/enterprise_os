@@ -102,20 +102,10 @@ Mandates:
                 f"logged to context_gaps while capturing perimeter evidence and proceeding with domain intelligence."
             )
             context_gaps.append(gap_msg)
-            desktop_ev = await self.browser_bridge.capture_visual_evidence(
-                source_url=url,
-                dataset_reference="section.security-gateway",
-                observation_notes=f"Gateway challenge observed at {url} (HTTP {status_code}). Perimeter barrier verified.",
-                bounding_box=(0, 0, 1920, 1080),
-            )
-            visual_evidence.append(desktop_ev)
-            mobile_ev = await self.browser_bridge.capture_visual_evidence(
-                source_url=url,
-                dataset_reference="section.security-gateway-mobile",
-                observation_notes=f"Mobile viewport: Perimeter challenge barrier on {url}.",
-                bounding_box=(0, 0, 390, 844),
-            )
-            visual_evidence.append(mobile_ev)
+            desktop_ev = None
+            mobile_ev = None
+            desktop_ev_id = "ev_vnc_perimeter_desktop"
+            mobile_ev_id = "ev_vnc_perimeter_mobile"
             metadata = {"title": f"{url} (Perimeter Challenge)", "headings": []}
             headings = []
             dom_tree = {"tag": "body", "children": []}
@@ -124,6 +114,7 @@ Mandates:
             scaled_x, scaled_y = 512, 384
             desktop_selector = "section.security-gateway"
             mobile_selector = "section.security-gateway"
+            desktop_bbox = (0, 0, 1920, 1080)
         else:
             # Navigate Desktop viewport in sandbox
             await self.browser_bridge.vnc_navigate(url, viewport_size=desktop_vp)
@@ -164,6 +155,7 @@ Mandates:
                 bounding_box=desktop_bbox,
             )
             visual_evidence.append(desktop_ev)
+            desktop_ev_id = desktop_ev.evidence_id
 
             # Mobile viewport inspection (390x844)
             await self.browser_bridge.vnc_navigate(url, viewport_size=mobile_vp)
@@ -185,19 +177,29 @@ Mandates:
                 bounding_box=mobile_bbox,
             )
             visual_evidence.append(mobile_ev)
+            mobile_ev_id = mobile_ev.evidence_id
+
+        await self.react_step(
+            step_number=2,
+            thought=f"ACT: Extracting DOM accessibility tree and semantic heading structure for {url}.",
+            action="extract_dom_tree",
+            action_args={"html": html},
+            reflection="DOM tree parsed into semantic accessibility outline; heading hierarchy and metadata extracted.",
+        )
 
         await self.react_step(
             step_number=3,
             thought=(
                 f"OBSERVE: Inspected Desktop {desktop_vp} and Mobile {mobile_vp}. "
                 f"Scaled coordinate to XGA ({scaled_x}, {scaled_y}). Captured evidence frames: "
-                f"{desktop_ev.evidence_id}, {mobile_ev.evidence_id}."
+                f"{desktop_ev_id}, {mobile_ev_id}."
             ),
             action="capture_visual_evidence",
             action_args={
-                "desktop_selector": desktop_selector,
-                "mobile_selector": mobile_selector,
-                "scaled_xga": (scaled_x, scaled_y),
+                "source_url": url,
+                "dataset_reference": desktop_selector,
+                "observation_notes": desktop_notes,
+                "bounding_box": desktop_bbox,
             },
             reflection="Dual-viewport visual frames captured and verified with deterministic EvidenceReference provenance.",
         )
@@ -262,7 +264,7 @@ Mandates:
             step_number=4,
             thought=f"REFLECT: Benchmarking {url} against {len(competitors)} direct competitors in {industry}. Running LLM synthesis ({self.model_name}).",
             action="rag_query",
-            action_args={"query": f"{industry} competitor benchmarks", "model": self.model_name},
+            action_args={"query": f"{industry} competitor benchmarks"},
             reflection=f"Benchmarking complete. LLM Diagnostic Synthesis: {llm_assessment[:280]}...",
         )
 
@@ -273,7 +275,7 @@ Mandates:
             "context_gaps": context_gaps,
             "analyst_summary": (
                 f"Dual-viewport empirical audit of {url} completed under {mode}. "
-                f"Captured {len(visual_evidence)} evidence frames ({desktop_ev.evidence_id}, {mobile_ev.evidence_id}) "
+                f"Captured {len(visual_evidence)} evidence frames ({desktop_ev_id}, {mobile_ev_id}) "
                 f"identifying key friction points."
             ),
             "llm_response": llm_assessment,

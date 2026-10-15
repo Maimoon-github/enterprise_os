@@ -613,6 +613,27 @@ class LongTermMemory:
                     return s["state_data"]
         return None
 
+    async def clear_tenant_data(self, tenant_id: str) -> None:
+        """Purges all records for a specific tenant to ensure test determinism and clean tenant lifecycles."""
+        if self.pool:
+            for tbl in [
+                "client_brand_profiles",
+                "verified_competitor_footprints",
+                "client_baselines",
+                "strategy_audit_logs",
+                "engine_sessions",
+            ]:
+                try:
+                    async with self.pool.acquire() as conn:
+                        await conn.execute(f"DELETE FROM {tbl} WHERE tenant_id = $1;", tenant_id)
+                except Exception as e:
+                    logger.debug("Error clearing table %s for tenant %s: %s", tbl, tenant_id, e)
+        self._fallback_brand_profiles = [p for p in self._fallback_brand_profiles if p.get("tenant_id") != tenant_id]
+        self._fallback_competitors = [c for c in self._fallback_competitors if c.get("tenant_id") != tenant_id]
+        self._fallback_baselines = [b for b in self._fallback_baselines if b.get("tenant_id") != tenant_id]
+        self._fallback_audit_logs = [a for a in self._fallback_audit_logs if a.get("tenant_id") != tenant_id]
+        self._fallback_sessions = [s for s in self._fallback_sessions if s.get("tenant_id") != tenant_id]
+
     async def close(self) -> None:
         """Closes active database connections."""
         if self.pool:

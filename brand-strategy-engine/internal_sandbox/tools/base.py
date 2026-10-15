@@ -19,6 +19,11 @@ class BaseTool(metaclass=ABCMeta):
         ...
 
 
+class BaseAnthropicTool(BaseTool):
+    """Abstract base class for Anthropic / Agent computer tools."""
+    pass
+
+
 @dataclass(kw_only=True, frozen=True)
 class ToolResult:
     """Represents the structured result of an action execution."""

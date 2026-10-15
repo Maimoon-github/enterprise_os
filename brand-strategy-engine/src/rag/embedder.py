@@ -34,7 +34,24 @@ class OllamaEmbedder:
         """Deterministic 768-dimensional token-projected embedding fallback when Ollama is offline."""
         import re
         vec = [0.0] * self.dimension
-        words = re.findall(r"\w+", text.lower())
+        stopwords = {
+            "a", "an", "the", "and", "or", "in", "on", "at", "to", "for", "with", "by",
+            "of", "from", "is", "are", "was", "were", "be", "been", "our", "your",
+            "their", "its", "per", "that", "this", "it"
+        }
+        raw_words = re.findall(r"\w+", text.lower())
+        words = []
+        for w in raw_words:
+            if w in stopwords:
+                continue
+            if len(w) > 4 and w.endswith("ing"):
+                w = w[:-3]
+            elif len(w) > 4 and w.endswith("ed"):
+                w = w[:-2]
+            elif len(w) > 4 and w.endswith("s") and not w.endswith("ss"):
+                w = w[:-1]
+            words.append(w)
+
         if not words:
             words = [text.lower().strip()] if text.strip() else ["empty"]
 
