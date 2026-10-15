@@ -629,7 +629,14 @@ Responsibilities:
                 "purged": len(purged),
             }
 
-        return {"stage": stage_number, "trace": trace, "telemetry": telemetry, "verdict": verdict, "cycle": cycle}
+        return {
+            "stage": stage_number,
+            "trace": trace,
+            "telemetry": telemetry,
+            "verdict": verdict,
+            "cycle": cycle,
+            "llm_response": out.get("llm_response"),
+        }
 
     async def _persist_completed_baselines(self, state: MasterEngineState, tid: str) -> None:
         """Persists brand profile, competitor footprints and approved KPI baselines (same as execute_audit)."""

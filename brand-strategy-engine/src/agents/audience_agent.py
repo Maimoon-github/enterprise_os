@@ -406,15 +406,32 @@ Mandates:
             persona_alignment_ratings=persona_alignment_ratings,
         )
 
+        # LLM Synthesis via qwen2.5:14b-instruct-q4_K_M
+        llm_prompt = (
+            f"You are the Audience Strategist. "
+            f"Analyze target market '{target_market}' in the '{industry}' sector under {mode}. "
+            f"Observed visitor friction: {friction_score}/10.0 with notes: '{notes}'. "
+            f"Critical journey bottleneck: '{journey.get('high_friction_node')}'. "
+            f"Synthesize: "
+            f"1) The primary ICP buyer psychology and decision drivers, "
+            f"2) The decisive conversion trigger vs drop-off barrier, "
+            f"3) Top 2 essential trust proof-points required to convert."
+        )
+        llm_response = await self.invoke_llm([
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": llm_prompt},
+        ], max_tokens=220)
+
         await self.react_step(
             step_number=4,
-            thought=f"REFLECT: Committing grounded ICP models, intent classifications, and quantified friction diagnostics to audience_analysis.",
+            thought=f"REFLECT: Committing grounded ICP models and running LLM audience synthesis ({self.model_name}).",
             action="query_market_demographics",
-            action_args={"primary_segment": demographics.get("primary_segment")},
-            reflection="Audience analysis synthesized and validated with strict evidence provenance binding.",
+            action_args={"primary_segment": demographics.get("primary_segment"), "model": self.model_name},
+            reflection=f"Audience analysis validated. LLM Synthesis: {llm_response[:280]}...",
         )
 
         return {
             "audience_analysis": audience_analysis.model_dump(),
             "context_gaps": context_gaps,
+            "llm_response": llm_response,
         }

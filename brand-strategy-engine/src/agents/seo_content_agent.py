@@ -251,6 +251,8 @@ Mandates:
         dom_slice = state_slice.get("dom_snapshot", {})
         dom_snapshots = state_slice.get("dom_snapshots", {})
         mode = state_slice.get("mode", "Mode_A_Personal")
+        url = state_slice.get("url") or state_slice.get("website_url") or "Target Website"
+        cms_platform = state_slice.get("cms_platform") or ("Shopify" if "eCommerce" in mode else "Webflow/Next.js")
         competitors = state_slice.get("competitor_profiles", [])
         brand_positioning = state_slice.get("brand_positioning", {})
         rag_citations = state_slice.get("rag_citations", [])
@@ -553,6 +555,23 @@ Mandates:
         evidence_citations = [primary_ev_id]
         self.validate_evidence_assurance(evidence_citations)
 
+        # LLM Synthesis via qwen2.5:14b-instruct-q4_K_M
+        tech_summary = [f"{i.category}: {i.description}" for i in technical_issues[:2]]
+        llm_prompt = (
+            f"You are the SEO & Content Strategist. "
+            f"Analyze brand website '{url}' under {mode} on platform '{cms_platform}'. "
+            f"Technical issue summary: {tech_summary}. "
+            f"Identified high-intent keywords: {high_intent_kw[:3]}. "
+            f"Synthesize: "
+            f"1) Organic search acquisition strategy for commercial search intent, "
+            f"2) Recommended technical SEO priority fix, "
+            f"3) Editorial blueprint for authoritative organic domain authority."
+        )
+        llm_response = await self.invoke_llm([
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": llm_prompt},
+        ], max_tokens=220)
+
         plan = SEOAndContentPlan(
             technical_health={
                 "schema_org": schema_status,
@@ -572,4 +591,5 @@ Mandates:
         return {
             "seo_and_content_plan": plan.model_dump(),
             "context_gaps": context_gaps,
+            "llm_response": llm_response,
         }

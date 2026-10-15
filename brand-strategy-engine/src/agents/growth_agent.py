@@ -320,9 +320,27 @@ Mandates:
             "Architectural_Bets": [initiative.recommendation_id] if priority_matrix.effort == PriorityLevel.HIGH else [],
         }
 
+        # LLM Synthesis via qwen2.5:14b-instruct-q4_K_M
+        llm_prompt = (
+            f"You are the Growth Strategist. "
+            f"Synthesize the strategic roadmap for initiative '{initiative.recommendation_id}' under {mode}. "
+            f"Finding: '{initiative.finding}'. "
+            f"Prescription: '{initiative.actionable_prescription}'. "
+            f"ICE Score: {priority_matrix.ice_score}/10.0 (Impact={priority_matrix.impact.value}, Confidence={priority_matrix.confidence}, Effort={priority_matrix.effort.value}). "
+            f"Synthesize: "
+            f"1) Expected business impact and revenue/conversion uplift justification, "
+            f"2) Core implementation milestones, "
+            f"3) Leading indicators to monitor during execution."
+        )
+        llm_response = await self.invoke_llm([
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": llm_prompt},
+        ], max_tokens=220)
+
         return {
             "growth_initiatives": [initiative],
             "synthesized_growth_initiatives": [initiative],
             "roadmap": roadmap,
             "context_gaps": context_gaps,
+            "llm_response": llm_response,
         }

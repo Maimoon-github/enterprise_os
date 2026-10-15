@@ -246,6 +246,20 @@ Mandates:
         passed_count = sum(1 for i in validated_initiatives if i.approval_status == ApprovalStatus.APPROVED)
         failed_count = sum(1 for i in validated_initiatives if i.approval_status != ApprovalStatus.APPROVED)
 
+        # LLM Synthesis via deepseek-r1:32b-qwen-distill-q4_K_M
+        llm_prompt = (
+            f"You are the Adversarial Strategy Validator. "
+            f"Audit verification summary: {len(validated_initiatives)} initiatives evaluated. "
+            f"Passed: {passed_count}, Failed/Needs Revision: {failed_count}. "
+            f"Audit gates applied: Provenance Verification, Logical Consistency, Metric Feasibility. "
+            f"Audit trail sample: {[e.model_dump() for e in audit_entries[:3]]}. "
+            f"Synthesize an authoritative adversarial audit verdict, addressing whether evidence standards are met and confirming strategic integrity."
+        )
+        llm_response = await self.invoke_llm([
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": llm_prompt},
+        ], max_tokens=220)
+
         report = ValidationReport(
             status="Approved" if not has_vetoes else "Failed_Needs_Revision",
             total_audited=len(validated_initiatives),
@@ -257,4 +271,5 @@ Mandates:
         return {
             "validation_report": report,
             "validated_initiatives": validated_initiatives,
+            "llm_response": llm_response,
         }

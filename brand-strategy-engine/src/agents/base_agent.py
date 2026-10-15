@@ -191,6 +191,7 @@ class BaseAgent(ABC):
         self,
         messages: List[Dict[str, str]],
         temperature: Optional[float] = None,
+        max_tokens: int = 250,
     ) -> str:
         """Sends chat request to local Ollama instance with fallback handling."""
         temp = temperature if temperature is not None else self.temperature
@@ -200,20 +201,23 @@ class BaseAgent(ABC):
             "options": {
                 "temperature": temp,
                 "num_ctx": self.context_window,
+                "num_predict": max_tokens,
             },
             "stream": False,
         }
 
         url = f"{self.ollama_base_url}/api/chat"
+        logger.info("[%s] Dispatching inference to local model '%s' at %s (num_predict=%d)...", self.name, self.model_name, url, max_tokens)
         try:
             async with httpx.AsyncClient(timeout=180.0) as client:
                 resp = await client.post(url, json=payload)
                 if resp.status_code == 200:
                     data = resp.json()
-                    msg = data.get("message", {}).get("content", "")
+                    msg = data.get("message", {}).get("content", "").strip()
+                    logger.info("[%s] Local model '%s' responded successfully (%d chars).", self.name, self.model_name, len(msg))
                     return msg
         except Exception as e:
-            logger.debug("Ollama model %s unavailable (%s); executing deterministic fallback", self.model_name, e)
+            logger.warning("[%s] Ollama model %s unavailable (%s); executing deterministic fallback", self.name, self.model_name, e)
 
         return self.fallback_execution(messages)
 

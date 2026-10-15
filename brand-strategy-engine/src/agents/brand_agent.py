@@ -226,6 +226,7 @@ Mandates:
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Audits brand positioning and establishes the Category of One strategy via 4-stage ReAct cycle."""
         mode = state_slice.get("mode", "Mode_A_Personal")
+        brand_name = state_slice.get("brand_name") or "Target Brand"
         headline = state_slice.get("headline") or "Full-Stack Developer & Passionate Problem Solver"
         subheadings = state_slice.get("subheadings") or []
         competitors = state_slice.get("competitors") or state_slice.get("competitor_messaging") or []
@@ -420,6 +421,21 @@ Mandates:
         evidence_citations = [primary_ev_id] + [cid for cid in rag_chunk_ids if cid.startswith("chk_")]
         self.validate_evidence_assurance(evidence_citations)
 
+        deficiency = uvp_critique.get("deficiency_diagnosis") if isinstance(uvp_critique, dict) else str(uvp_eval)
+        llm_prompt = (
+            f"You are the Brand Strategist. "
+            f"Analyze brand '{brand_name}' under {mode} with current headline: '{headline}'. "
+            f"Observed UVP deficiency: {deficiency}. "
+            f"Synthesize: "
+            f"1) A defensible 'Category of One' positioning statement, "
+            f"2) Three core brand narrative pillars, "
+            f"3) The highest-leverage identity improvement mandate."
+        )
+        llm_response = await self.invoke_llm([
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": llm_prompt},
+        ], max_tokens=220)
+
         brand_pos = BrandPositioning(
             category_of_one=category_of_one,
             core_messaging_hierarchy=core_messaging_hierarchy,
@@ -435,4 +451,5 @@ Mandates:
         return {
             "brand_positioning": brand_pos.model_dump(),
             "context_gaps": context_gaps,
+            "llm_response": llm_response,
         }
