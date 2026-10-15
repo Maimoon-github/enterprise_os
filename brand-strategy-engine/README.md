@@ -98,6 +98,7 @@ conda run -n strategy_engine pytest -v
 ### Run Audit via CLI
 
 ```bash
+cd "enterprise_os/brand-strategy-engine"
 conda run -n strategy_engine python -m src.runtime.cli \
   --mode Mode_A_Personal \
   --url "https://alexchen.dev"

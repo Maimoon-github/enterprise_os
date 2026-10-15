@@ -266,9 +266,9 @@ details summary{cursor:pointer;color:var(--mut);font-size:12px;margin:6px 0}
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const J = v => esc(JSON.stringify(v, null, 2));
-const API = (window.location.port === '8765')
+const API = (window.location.port === '8000')
   ? '/api/v1'
-  : `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname || '127.0.0.1'}:8765/api/v1`;
+  : `${window.location.protocol === 'https:' ? 'https:' : 'http:'}//${window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? window.location.hostname : '127.0.0.1'}:8000/api/v1`;
 const AGENTS = {1:'Website & Social Analyst',2:'Audience Strategist',3:'Brand Strategist',4:'SEO & Content',5:'Growth Strategist',6:'Strategy Validator'};
 const OUT_KEY = {2:'audience_analysis',3:'brand_positioning',4:'seo_and_content_plan',5:'growth_initiatives'};
 const SUBS = [['manager','Agent 0 · Manager'],['evidence','Evidence & VNC Sandbox'],['memory','Memory & Token Budget'],['dossier','Validated Strategy Dossier']];

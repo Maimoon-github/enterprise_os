@@ -258,11 +258,13 @@ async def _inspect_system_readiness() -> Dict[str, Any]:
 
 
 @app.get("/api/v1/system/status")
+@app.post("/api/v1/system/status")
 async def get_system_status() -> Dict[str, Any]:
     """Inspects live operational readiness across Ollama, pgvector DB, Docker VNC sandbox, and agents."""
     return await _inspect_system_readiness()
 
 
+@app.get("/api/v1/system/awaken")
 @app.post("/api/v1/system/awaken")
 async def awaken_system() -> Dict[str, Any]:
     """Unified awakening sequence: awakens Docker containers, Ollama daemon, pgvector DB, and agents."""
