@@ -94,9 +94,13 @@ class BrowserBridge:
 
         blob_path = storage_dir / f"{ev_id}.png"
         screenshot_uri = str(blob_path)
+        sha256_hex = None
         if res.base64_image:
             try:
-                blob_path.write_bytes(base64.b64decode(res.base64_image))
+                import hashlib
+                img_bytes = base64.b64decode(res.base64_image)
+                blob_path.write_bytes(img_bytes)
+                sha256_hex = hashlib.sha256(img_bytes).hexdigest()
             except Exception:
                 pass
 
@@ -108,6 +112,7 @@ class BrowserBridge:
             observation_notes=observation_notes,
             screenshot_uri=screenshot_uri,
             bounding_box=bounding_box,
+            sha256_hash=sha256_hex,
         )
 
     async def fetch_page_response(self, url: str) -> Tuple[str, int]:

@@ -36,10 +36,18 @@ class EvidenceReference(BaseModel):
         default=None,
         description="Visual bounding box [x1, y1, x2, y2] coordinates",
     )
+    sha256_hash: Optional[str] = Field(
+        default=None,
+        description="SHA-256 hex digest of the captured screenshot blob",
+    )
     timestamp: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC capture timestamp",
     )
+
+
+# Standard alias
+EvidenceItem = EvidenceReference
 
 
 class ChunkProvenance(BaseModel):

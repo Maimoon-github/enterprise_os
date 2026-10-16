@@ -191,23 +191,28 @@ class BaseAgent(ABC):
         self,
         messages: List[Dict[str, str]],
         temperature: Optional[float] = None,
-        max_tokens: int = 250,
+        max_tokens: int = 500,
+        json_format: bool = False,
     ) -> str:
-        """Sends chat request to local Ollama instance with fallback handling."""
+        """Sends chat request to local Ollama instance with strict error handling."""
+        # Route to primary local instruction model if llama3.2-vision architecture (mllama) is unsupported by Ollama binary
+        effective_model = "qwen2.5:14b-instruct-q4_K_M" if "llama3.2-vision" in self.model_name else self.model_name
         temp = temperature if temperature is not None else self.temperature
-        payload = {
-            "model": self.model_name,
+        payload: Dict[str, Any] = {
+            "model": effective_model,
             "messages": messages,
             "options": {
                 "temperature": temp,
-                "num_ctx": self.context_window,
+                "num_ctx": min(self.context_window, 8192),
                 "num_predict": max_tokens,
             },
             "stream": False,
         }
+        if json_format:
+            payload["format"] = "json"
 
         url = f"{self.ollama_base_url}/api/chat"
-        logger.info("[%s] Dispatching inference to local model '%s' at %s (num_predict=%d)...", self.name, self.model_name, url, max_tokens)
+        logger.info("[%s] Dispatching inference to local model '%s' at %s (num_predict=%d, json=%s)...", self.name, self.model_name, url, max_tokens, json_format)
         try:
             async with httpx.AsyncClient(timeout=180.0) as client:
                 resp = await client.post(url, json=payload)
@@ -216,15 +221,18 @@ class BaseAgent(ABC):
                     msg = data.get("message", {}).get("content", "").strip()
                     logger.info("[%s] Local model '%s' responded successfully (%d chars).", self.name, self.model_name, len(msg))
                     return msg
+                else:
+                    raise RuntimeError(f"Ollama returned HTTP {resp.status_code}: {resp.text}")
         except Exception as e:
-            logger.warning("[%s] Ollama model %s unavailable (%s); executing deterministic fallback", self.name, self.model_name, e)
+            logger.warning("[%s] Ollama model %s unavailable (%s); executing fallback", self.name, self.model_name, e)
+            return self.fallback_execution(messages)
 
-        return self.fallback_execution(messages)
-
-    @abstractmethod
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        """Deterministic response generator when running offline without active Ollama server."""
-        ...
+        """Explicitly raises runtime error when local Ollama inference fails."""
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     @abstractmethod
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
@@ -251,6 +259,7 @@ class BaseAgent(ABC):
             logger.warning("RBAC Policy Violation in %s: %s", self.agent_id, msg)
             raise PermissionError(msg)
 
+        res = None
         try:
             res = await self.invoke_tool(action, **action_args)
             observation = str(res)
@@ -285,6 +294,7 @@ class BaseAgent(ABC):
             observation=observation,
             reflection=reflection,
             error=error,
+            tool_result=res,
         )
         self.execution_trace.append(step_record)
         return step_record

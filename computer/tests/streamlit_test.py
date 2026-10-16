@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -14,7 +15,7 @@ from computer_use_demo.streamlit import (
 
 @pytest.fixture
 def streamlit_app():
-    return AppTest.from_file("computer_use_demo/streamlit.py")
+    return AppTest.from_file(str(Path(__file__).parent.parent / "computer_use_demo/streamlit.py"))
 
 
 def test_streamlit(streamlit_app: AppTest):

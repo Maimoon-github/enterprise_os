@@ -1,6 +1,6 @@
 """Schema exports for easy imports across the engine."""
 
-from src.schemas.evidence import ChunkProvenance, EvidenceReference
+from src.schemas.evidence import ChunkProvenance, EvidenceItem, EvidenceReference
 from src.schemas.initiative import (
     ApprovalStatus,
     PriorityLevel,
@@ -35,6 +35,7 @@ from src.schemas.validation import AuditEntry, ValidationReport
 __all__ = [
     "ChunkProvenance",
     "EvidenceReference",
+    "EvidenceItem",
     "PriorityLevel",
     "ApprovalStatus",
     "PriorityMatrix",

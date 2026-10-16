@@ -73,6 +73,7 @@ async def _run_audit_background(
             mode=mode,
             docs_dir=docs_dir,
             tenant_id=tenant_id,
+            session_id=session_id,
         )
         _SESSION_STATES[session_id] = state
         _SESSION_TASKS[session_id] = "Completed"
@@ -125,6 +126,7 @@ async def start_audit(
 
 
 @app.get("/api/v1/audit/status/{session_id}")
+@app.get("/api/v1/audit/{session_id}/status")
 async def get_audit_status(session_id: str) -> Dict[str, Any]:
     """Retrieves real-time status and stage progress for an active audit."""
     if session_id not in _SESSION_TASKS:
@@ -199,11 +201,14 @@ async def _inspect_system_readiness() -> Dict[str, Any]:
     vec_connected = bool(_ORCHESTRATOR.vector_store.pool)
     db_ready = ltm_connected and vec_connected
 
+    sandbox_container = os.getenv("VNC_CONTAINER", "engine-vnc-sandbox")
+    postgres_container = os.getenv("POSTGRES_CONTAINER", "engine-postgres")
+
     sandbox_running = False
     try:
         res = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=3.0)
         names = res.stdout.strip().split()
-        sandbox_running = "aio-sandbox" in names or "engine-vnc-sandbox" in names
+        sandbox_running = sandbox_container in names or "aio-sandbox" in names or "engine-vnc-sandbox" in names
     except Exception:
         sandbox_running = False
 
@@ -212,6 +217,12 @@ async def _inspect_system_readiness() -> Dict[str, Any]:
     )
 
     all_ready = ollama_ok and db_ready and sandbox_running and agents_ready
+
+    actual_sandbox_name = (
+        "engine-vnc-sandbox" if "engine-vnc-sandbox" in names else (
+            "aio-sandbox" if "aio-sandbox" in names else sandbox_container
+        )
+    ) if 'names' in locals() else sandbox_container
 
     return {
         "status": "AWAKENED" if all_ready else "STANDBY",
@@ -233,11 +244,11 @@ async def _inspect_system_readiness() -> Dict[str, Any]:
         },
         "sandbox": {
             "active": sandbox_running,
-            "container": "aio-sandbox",
-            "vnc_port": 5900,
-            "novnc_port": 6080,
-            "web_port": 8080,
-            "display": ":99.0",
+            "container": actual_sandbox_name,
+            "vnc_port": int(os.getenv("VNC_PORT", "5901")),
+            "novnc_port": int(os.getenv("NOVNC_PORT", "6080")),
+            "web_port": int(os.getenv("SANDBOX_WEB_PORT", "8080")),
+            "display": os.getenv("DISPLAY", ":1"),
         },
         "agents": {
             "ready": agents_ready,
@@ -269,10 +280,13 @@ async def get_system_status() -> Dict[str, Any]:
 async def awaken_system() -> Dict[str, Any]:
     """Unified awakening sequence: awakens Docker containers, Ollama daemon, pgvector DB, and agents."""
     events = []
+    sandbox_c = os.getenv("VNC_CONTAINER", "engine-vnc-sandbox")
+    postgres_c = os.getenv("POSTGRES_CONTAINER", "engine-postgres")
+
     # 1. Awaken Docker containers
     try:
-        subprocess.run(["docker", "start", "aio-sandbox", "enterprise-postgres"], capture_output=True, text=True, timeout=8.0)
-        events.append("Docker containers awakened: aio-sandbox (VNC browser), enterprise-postgres (pgvector)")
+        subprocess.run(["docker", "start", sandbox_c, postgres_c], capture_output=True, text=True, timeout=8.0)
+        events.append(f"Docker containers awakened: {sandbox_c} (VNC browser), {postgres_c} (pgvector)")
     except Exception as e:
         events.append(f"Docker container check notice: {e}")
 
@@ -295,17 +309,15 @@ async def awaken_system() -> Dict[str, Any]:
         except Exception as e:
             events.append(f"Ollama daemon startup notice: {e}")
 
-    # 3. Ensure required model aliases
+    # 3. Ensure required models are available
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             tags_resp = await client.get(f"{ollama_url}/api/tags")
             if tags_resp.status_code == 200:
                 tags = [m["name"] for m in tags_resp.json().get("models", [])]
-                if not any("deepseek-r1:32b" in t for t in tags) and any("qwen2.5:14b" in t for t in tags):
-                    subprocess.run(["ollama", "cp", "qwen2.5:14b-instruct-q4_K_M", "deepseek-r1:32b-qwen-distill-q4_K_M"], capture_output=True)
-                    events.append("DeepSeek-R1 validator model registered in Ollama")
+                events.append(f"Ollama models registered: {len(tags)} models active")
     except Exception as e:
-        events.append(f"Model registration notice: {e}")
+        events.append(f"Model registration check notice: {e}")
 
     # 4. Awaken Database & Vector Store
     try:

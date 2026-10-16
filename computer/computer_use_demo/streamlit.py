@@ -15,7 +15,7 @@ from functools import partial
 from pathlib import PosixPath
 from typing import Any, cast, get_args
 
-import httpx2 as httpx
+import httpx
 import streamlit as st
 from anthropic import RateLimitError
 from anthropic.types.beta import (

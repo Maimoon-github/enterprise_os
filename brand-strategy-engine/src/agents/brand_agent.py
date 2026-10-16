@@ -218,10 +218,10 @@ Mandates:
                 )
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        return json.dumps({
-            "category_of_one": "Production Distributed Systems Architect",
-            "differentiation": "Authoritative proof-of-work over commoditized generalist claims",
-        })
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Audits brand positioning and establishes the Category of One strategy via 4-stage ReAct cycle."""
@@ -434,7 +434,11 @@ Mandates:
         llm_response = await self.invoke_llm([
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": llm_prompt},
-        ], max_tokens=220)
+        ], max_tokens=150)
+
+        if llm_response:
+            narrative_pillars.append(f"Strategic Narrative: {llm_response[:120].strip()}")
+            core_messaging_hierarchy["llm_synthesis"] = llm_response[:180].strip()
 
         brand_pos = BrandPositioning(
             category_of_one=category_of_one,

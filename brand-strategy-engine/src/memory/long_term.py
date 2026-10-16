@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 import asyncpg
@@ -25,7 +26,11 @@ class LongTermMemory:
     ):
         env_dsn = os.getenv("DATABASE_URL")
         env_host = os.getenv("POSTGRES_HOST", host)
-        self.dsn = dsn or env_dsn or f"postgresql://{user}:{password}@{env_host}:{port}/{database}"
+        env_port = int(os.getenv("POSTGRES_PORT", str(port)))
+        env_user = os.getenv("POSTGRES_USER", user)
+        env_pass = os.getenv("POSTGRES_PASSWORD", password)
+        env_db = os.getenv("POSTGRES_DB", database)
+        self.dsn = dsn or env_dsn or f"postgresql://{env_user}:{env_pass}@{env_host}:{env_port}/{env_db}"
         self.pool: Optional[asyncpg.Pool] = None
         # In-memory storage fallback for local/test execution without active PostgreSQL
         self._fallback_baselines: List[Dict[str, Any]] = []
@@ -33,6 +38,33 @@ class LongTermMemory:
         self._fallback_sessions: List[Dict[str, Any]] = []
         self._fallback_brand_profiles: List[Dict[str, Any]] = []
         self._fallback_competitors: List[Dict[str, Any]] = []
+
+    @asynccontextmanager
+    async def _tenant_conn(self, tenant_id: str, client_id: Optional[str] = "default_client", ensure_parents: bool = True):
+        """Leases connection, configures RLS app.current_tenant, and guarantees parent records."""
+        cid = client_id or "default_client"
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT set_config('app.current_tenant', $1, true);", tenant_id)
+                if ensure_parents:
+                    await conn.execute(
+                        """
+                        INSERT INTO tenants (tenant_id, tenant_name)
+                        VALUES ($1, $1)
+                        ON CONFLICT (tenant_id) DO NOTHING;
+                        """,
+                        tenant_id,
+                    )
+                    await conn.execute(
+                        """
+                        INSERT INTO clients (client_id, tenant_id, client_name)
+                        VALUES ($1, $2, $1)
+                        ON CONFLICT (client_id) DO NOTHING;
+                        """,
+                        cid,
+                        tenant_id,
+                    )
+                yield conn
 
     @staticmethod
     def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
@@ -231,7 +263,7 @@ class LongTermMemory:
         }
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     await conn.execute(
                         """
                         INSERT INTO client_brand_profiles (
@@ -267,7 +299,7 @@ class LongTermMemory:
         """Retrieves tenant- and client-isolated brand profile."""
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     row = await conn.fetchrow(
                         """
                         SELECT * FROM client_brand_profiles
@@ -309,7 +341,7 @@ class LongTermMemory:
         }
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     emb_str = f"[{','.join(str(x) for x in embedding)}]" if embedding else None
                     await conn.execute(
                         """
@@ -342,7 +374,7 @@ class LongTermMemory:
         """Queries competitor footprints isolated by tenant and client, optionally ranked by embedding similarity."""
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     if query_embedding:
                         emb_str = f"[{','.join(str(x) for x in query_embedding)}]"
                         rows = await conn.fetch(
@@ -419,7 +451,7 @@ class LongTermMemory:
         }
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     await conn.execute(
                         """
                         INSERT INTO client_baselines (tenant_id, client_id, brand_name, website_url, kpi, baseline)
@@ -445,7 +477,7 @@ class LongTermMemory:
         """Retrieves tenant baselines with strict client and tenant isolation."""
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id or "default_client") as conn:
                     if client_id:
                         rows = await conn.fetch(
                             "SELECT * FROM client_baselines WHERE tenant_id = $1 AND client_id = $2 ORDER BY created_at DESC;",
@@ -486,7 +518,7 @@ class LongTermMemory:
         }
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     await conn.execute(
                         """
                         INSERT INTO strategy_audit_logs (session_id, tenant_id, client_id, recommendation_id, status, audit_data)
@@ -512,7 +544,7 @@ class LongTermMemory:
         """Fetches audit history isolated by tenant and client."""
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id or "default_client") as conn:
                     if client_id:
                         rows = await conn.fetch(
                             "SELECT * FROM strategy_audit_logs WHERE tenant_id = $1 AND client_id = $2 ORDER BY created_at DESC;",
@@ -549,7 +581,7 @@ class LongTermMemory:
         }
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
+                async with self._tenant_conn(tenant_id, client_id) as conn:
                     await conn.execute(
                         """
                         INSERT INTO engine_sessions (session_id, tenant_id, client_id, state_data, updated_at)
@@ -583,28 +615,33 @@ class LongTermMemory:
         """Retrieves persisted MasterEngineState snapshot."""
         if self.pool:
             try:
-                async with self.pool.acquire() as conn:
-                    if tenant_id and client_id:
-                        row = await conn.fetchrow(
-                            "SELECT state_data FROM engine_sessions WHERE session_id = $1 AND tenant_id = $2 AND client_id = $3;",
-                            session_id,
-                            tenant_id,
-                            client_id,
-                        )
-                    elif tenant_id:
-                        row = await conn.fetchrow(
-                            "SELECT state_data FROM engine_sessions WHERE session_id = $1 AND tenant_id = $2;",
-                            session_id,
-                            tenant_id,
-                        )
-                    else:
+                if tenant_id:
+                    async with self._tenant_conn(tenant_id, client_id or "default_client") as conn:
+                        if client_id:
+                            row = await conn.fetchrow(
+                                "SELECT state_data FROM engine_sessions WHERE session_id = $1 AND tenant_id = $2 AND client_id = $3;",
+                                session_id,
+                                tenant_id,
+                                client_id,
+                            )
+                        else:
+                            row = await conn.fetchrow(
+                                "SELECT state_data FROM engine_sessions WHERE session_id = $1 AND tenant_id = $2;",
+                                session_id,
+                                tenant_id,
+                            )
+                        if row:
+                            raw = row["state_data"]
+                            return json.loads(raw) if isinstance(raw, str) else dict(raw)
+                else:
+                    async with self.pool.acquire() as conn:
                         row = await conn.fetchrow(
                             "SELECT state_data FROM engine_sessions WHERE session_id = $1;",
                             session_id,
                         )
-                    if row:
-                        raw = row["state_data"]
-                        return json.loads(raw) if isinstance(raw, str) else dict(raw)
+                        if row:
+                            raw = row["state_data"]
+                            return json.loads(raw) if isinstance(raw, str) else dict(raw)
             except Exception as e:
                 logger.warning("Error reading session state from DB: %s", e)
         for s in self._fallback_sessions:
@@ -624,7 +661,7 @@ class LongTermMemory:
                 "engine_sessions",
             ]:
                 try:
-                    async with self.pool.acquire() as conn:
+                    async with self._tenant_conn(tenant_id, "default_client") as conn:
                         await conn.execute(f"DELETE FROM {tbl} WHERE tenant_id = $1;", tenant_id)
                 except Exception as e:
                     logger.debug("Error clearing table %s for tenant %s: %s", tbl, tenant_id, e)

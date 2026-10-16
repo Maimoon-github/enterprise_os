@@ -1,5 +1,6 @@
 """Agent 5: Growth Strategist."""
 
+import hashlib
 import json
 import logging
 from typing import Any, Callable, Dict, List, Optional
@@ -134,10 +135,10 @@ Mandates:
             raise ValueError(f"Metric Feasibility Violation: {reason}")
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        return json.dumps({
-            "action": "synthesize_initiatives",
-            "recommendation_count": 1,
-        })
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Synthesizes upstream diagnostic findings into fully grounded StrategicInitiative contracts."""
@@ -253,22 +254,43 @@ Mandates:
         # ----------------------------------------------------
         # ReAct Stage 4: ACT & REFLECT / Synthesize & Roadmap
         # ----------------------------------------------------
-        rec_id = "REC-A-001" if "Personal" in mode else "REC-B-001"
-        finding = (
-            "The hero section contains a generic headline ('Full-Stack Developer & Passionate Problem Solver') with no immediate proof of domain specialization or quantitative project impact."
-            if "Personal" in mode
-            else "Mobile PDP (Product Detail Page) hides customer reviews, sizing charts, and return policy information beneath three separate collapsed accordion menus requiring multiple manual taps."
+        target_url = ev_ref.source_url or "https://example.com"
+        url_hash = hashlib.md5(target_url.encode()).hexdigest()[:4].upper()
+        prefix = "REC-A" if "Personal" in mode else "REC-B"
+        rec_id = f"{prefix}-{url_hash}"
+
+        # Live LLM Strategy Synthesis
+        llm_prompt = (
+            f"You are the Growth Strategist. "
+            f"Target URL: '{target_url}' under {mode}. "
+            f"Evidence observation: '{ev_ref.observation_notes}'. "
+            f"Synthesize: "
+            f"1) Finding: The empirical bottleneck or friction observed on {target_url}, "
+            f"2) Business Implication: The quantified conversion/revenue risk, "
+            f"3) Actionable Prescription: High-impact prescriptive remediation."
         )
-        implication = (
-            "High bounce rates (estimated >65%) from high-value engineering leaders and enterprise clients seeking specialized distributed systems talent."
-            if "Personal" in mode
-            else "Significant mobile checkout abandonment and elevated pre-purchase friction for first-time visitors on high-consideration apparel items ($180+ AOV)."
-        )
-        prescription = (
-            "Rewrite hero copy to define a clear Category of One: 'Distributed Systems & High-Throughput Data Infrastructure Engineer'. Position a live interactive terminal preview and a 2-sentence case study link above the fold."
-            if "Personal" in mode
-            else "Implement a sticky 'Add to Bag' footer on mobile containing dynamic size selector, surface 4 key trust badges directly below the CTA, and convert the sizing guide into an overlay bottom-sheet."
-        )
+        llm_response = await self.invoke_llm([
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": llm_prompt},
+        ], max_tokens=150)
+
+        if "Personal" in mode:
+            base_finding = f"Hero section on {target_url} lacks immediate proof of domain specialization or quantitative project impact."
+            base_implication = f"High bounce rates from technical decision makers and clients on {target_url} seeking verified production expertise."
+            base_prescription = f"Rewrite hero copy on {target_url} to define a clear Category of One with verifiable benchmarks and interactive proof above the fold."
+        else:
+            base_finding = f"Mobile PDP on {target_url} hides customer reviews, sizing charts, and return policies beneath collapsed menus."
+            base_implication = f"Elevated mobile checkout abandonment and pre-purchase friction for visitors on {target_url}."
+            base_prescription = f"Implement a high-converting sticky CTA and trust badges directly visible on {target_url} mobile PDP."
+
+        if llm_response and len(llm_response) > 30:
+            finding = f"{base_finding} Analysis: {llm_response[:90].strip()}."
+            implication = f"{base_implication} Impact: {llm_response[90:180].strip()}."
+            prescription = f"{base_prescription} Action: {llm_response[180:270].strip()}."
+        else:
+            finding = base_finding
+            implication = base_implication
+            prescription = base_prescription
 
         priority_matrix = PriorityMatrix(
             impact=PriorityLevel.HIGH,
@@ -320,22 +342,8 @@ Mandates:
             "Architectural_Bets": [initiative.recommendation_id] if priority_matrix.effort == PriorityLevel.HIGH else [],
         }
 
-        # LLM Synthesis via qwen2.5:14b-instruct-q4_K_M
-        llm_prompt = (
-            f"You are the Growth Strategist. "
-            f"Synthesize the strategic roadmap for initiative '{initiative.recommendation_id}' under {mode}. "
-            f"Finding: '{initiative.finding}'. "
-            f"Prescription: '{initiative.actionable_prescription}'. "
-            f"ICE Score: {priority_matrix.ice_score}/10.0 (Impact={priority_matrix.impact.value}, Confidence={priority_matrix.confidence}, Effort={priority_matrix.effort.value}). "
-            f"Synthesize: "
-            f"1) Expected business impact and revenue/conversion uplift justification, "
-            f"2) Core implementation milestones, "
-            f"3) Leading indicators to monitor during execution."
-        )
-        llm_response = await self.invoke_llm([
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": llm_prompt},
-        ], max_tokens=220)
+        # Roadmap alignment
+        roadmap["Strategic_Synthesis"] = [llm_response[:120].strip()] if llm_response else []
 
         return {
             "growth_initiatives": [initiative],

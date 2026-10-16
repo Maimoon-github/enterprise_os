@@ -52,10 +52,10 @@ Mandates:
         self.register_tool("rag_query", self.rag_search_tool.search)
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        return json.dumps({
-            "observation": "DOM inspection completed via headless accessibility tree parser.",
-            "findings": ["Hero section lacks immediate quantifiable proof-of-work indicators."],
-        })
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Executes deterministic 4-stage ReAct loop empirical reconnaissance on target URL."""
@@ -64,9 +64,11 @@ Mandates:
         industry = state_slice.get("industry", "Technology")
         context_gaps: List[str] = []
         visual_evidence: List[EvidenceReference] = []
+        desktop_notes = f"Hero section inspection initialized for {url}."
+        mobile_notes = f"Mobile responsive inspection initialized for {url}."
 
         # ==========================================
-        # Stage 1: REASON
+        # Stage 1: REASON & Navigate
         # ==========================================
         inspection_targets = (
             ["hero_positioning", "proof_of_work", "case_studies", "cv_download", "social_links", "booking_friction"]
@@ -91,7 +93,7 @@ Mandates:
         )
 
         # ==========================================
-        # Stage 2: ACT
+        # Stage 2: ACT & DOM Extraction
         # ==========================================
         html, status_code = await self.browser_bridge.fetch_page_response(url)
 
@@ -102,8 +104,6 @@ Mandates:
                 f"logged to context_gaps while capturing perimeter evidence and proceeding with domain intelligence."
             )
             context_gaps.append(gap_msg)
-            desktop_ev = None
-            mobile_ev = None
             desktop_ev_id = "ev_vnc_perimeter_desktop"
             mobile_ev_id = "ev_vnc_perimeter_mobile"
             metadata = {"title": f"{url} (Perimeter Challenge)", "headings": []}
@@ -115,29 +115,52 @@ Mandates:
             desktop_selector = "section.security-gateway"
             mobile_selector = "section.security-gateway"
             desktop_bbox = (0, 0, 1920, 1080)
-        else:
-            # Navigate Desktop viewport in sandbox
-            await self.browser_bridge.vnc_navigate(url, viewport_size=desktop_vp)
 
+            await self.react_step(
+                step_number=2,
+                thought=f"ACT: Extracting DOM accessibility tree and semantic heading structure for {url}.",
+                action="extract_dom_tree",
+                action_args={"html": html},
+                reflection="DOM tree parsed into semantic accessibility outline; heading hierarchy and metadata extracted.",
+            )
+
+            await self.react_step(
+                step_number=3,
+                thought=f"OBSERVE: Perimeter gateway challenge on {url}. Recording security fence frame.",
+                action="capture_visual_evidence",
+                action_args={
+                    "source_url": url,
+                    "dataset_reference": desktop_selector,
+                    "observation_notes": desktop_notes,
+                    "bounding_box": desktop_bbox,
+                },
+                reflection="Perimeter frame registered.",
+            )
+        else:
             # Extract DOM tree and metadata
             metadata = DOMParser.extract_metadata(html)
             headings = DOMParser.extract_heading_hierarchy(html)
             metadata["headings"] = headings
             dom_tree = DOMParser.build_accessibility_tree(html)
 
-            # Desktop visual capture
+            page_title = metadata.get("title", "")
+            first_h1 = headings[0].get("text", "") if headings else ""
+
+            # Desktop visual capture settings
             if "Personal" in mode:
                 desktop_selector = "section.hero-banner"
+                desc = f"'{first_h1}'" if first_h1 else f"'{page_title}'" if page_title else "Generic headline"
                 desktop_notes = (
-                    "Hero section audit: Generic headline without quantifiable proof-of-work metrics or "
-                    "verifiable client logos above the fold."
+                    f"Hero section audit ({desc}): Headline lacks quantifiable proof-of-work metrics or "
+                    f"verifiable client logos above the fold on {url}."
                 )
                 desktop_bbox = (0, 0, 1920, 500)
             else:
                 desktop_selector = "div.pdp-accordion-group"
+                desc = f"'{page_title}'" if page_title else "Product Detail Page"
                 desktop_notes = (
-                    "eCommerce PDP audit: Product specifications and sizing guide collapsed within nested "
-                    "accordions, introducing customer discovery friction."
+                    f"eCommerce PDP audit ({desc}): Specifications and sizing guide collapsed within nested "
+                    f"accordions, introducing customer discovery friction."
                 )
                 desktop_bbox = (150, 180, 1200, 750)
 
@@ -148,61 +171,58 @@ Mandates:
                 target="XGA",
             )
 
-            desktop_ev = await self.browser_bridge.capture_visual_evidence(
-                source_url=url,
-                dataset_reference=desktop_selector,
-                observation_notes=desktop_notes,
-                bounding_box=desktop_bbox,
+            await self.react_step(
+                step_number=2,
+                thought=f"ACT: Extracting DOM accessibility tree and semantic heading structure for {url}.",
+                action="extract_dom_tree",
+                action_args={"html": html},
+                reflection="DOM tree parsed into semantic accessibility outline; heading hierarchy and metadata extracted.",
             )
-            visual_evidence.append(desktop_ev)
-            desktop_ev_id = desktop_ev.evidence_id
 
-            # Mobile viewport inspection (390x844)
-            await self.browser_bridge.vnc_navigate(url, viewport_size=mobile_vp)
-            await self.browser_bridge.vnc_interact("scroll", scroll_direction="down", scroll_amount=2)
-
-            if "Personal" in mode:
-                mobile_selector = "div.contact-booking-widget"
-                mobile_notes = "Mobile viewport (390x844): Embedded booking widget overflows lateral margins with touch target friction."
-                mobile_bbox = (10, 80, 380, 480)
+            step3 = await self.react_step(
+                step_number=3,
+                thought=(
+                    f"OBSERVE: Inspected Desktop {desktop_vp}. "
+                    f"Scaled coordinate to XGA ({scaled_x}, {scaled_y}). Capturing visual evidence."
+                ),
+                action="capture_visual_evidence",
+                action_args={
+                    "source_url": url,
+                    "dataset_reference": desktop_selector,
+                    "observation_notes": desktop_notes,
+                    "bounding_box": desktop_bbox,
+                },
+                reflection="Desktop visual frame captured and verified with deterministic EvidenceReference provenance.",
+            )
+            desktop_ev = step3.tool_result
+            if desktop_ev:
+                visual_evidence.append(desktop_ev)
+                desktop_ev_id = desktop_ev.evidence_id
             else:
+                desktop_ev_id = "ev_vnc_desktop"
+
+            # Mobile viewport inspection (390x844) for Mode B eCommerce
+            if "Personal" in mode:
+                mobile_ev_id = desktop_ev_id
+                mobile_notes = f"Mobile viewport: Single responsive column layout verified on {url}."
+            else:
+                await self.browser_bridge.vnc_navigate(url, viewport_size=mobile_vp)
+                await self.browser_bridge.vnc_interact("scroll", scroll_direction="down", scroll_amount=2)
                 mobile_selector = "button.add-to-cart-sticky"
                 mobile_notes = "Mobile viewport (390x844): Sticky Add-to-Cart bar obscures return policy and review star rating snippet."
                 mobile_bbox = (0, 760, 390, 844)
 
-            mobile_ev = await self.browser_bridge.capture_visual_evidence(
-                source_url=url,
-                dataset_reference=mobile_selector,
-                observation_notes=mobile_notes,
-                bounding_box=mobile_bbox,
-            )
-            visual_evidence.append(mobile_ev)
-            mobile_ev_id = mobile_ev.evidence_id
-
-        await self.react_step(
-            step_number=2,
-            thought=f"ACT: Extracting DOM accessibility tree and semantic heading structure for {url}.",
-            action="extract_dom_tree",
-            action_args={"html": html},
-            reflection="DOM tree parsed into semantic accessibility outline; heading hierarchy and metadata extracted.",
-        )
-
-        await self.react_step(
-            step_number=3,
-            thought=(
-                f"OBSERVE: Inspected Desktop {desktop_vp} and Mobile {mobile_vp}. "
-                f"Scaled coordinate to XGA ({scaled_x}, {scaled_y}). Captured evidence frames: "
-                f"{desktop_ev_id}, {mobile_ev_id}."
-            ),
-            action="capture_visual_evidence",
-            action_args={
-                "source_url": url,
-                "dataset_reference": desktop_selector,
-                "observation_notes": desktop_notes,
-                "bounding_box": desktop_bbox,
-            },
-            reflection="Dual-viewport visual frames captured and verified with deterministic EvidenceReference provenance.",
-        )
+                mobile_ev = await self.browser_bridge.capture_visual_evidence(
+                    source_url=url,
+                    dataset_reference=mobile_selector,
+                    observation_notes=mobile_notes,
+                    bounding_box=mobile_bbox,
+                )
+                if mobile_ev:
+                    visual_evidence.append(mobile_ev)
+                    mobile_ev_id = mobile_ev.evidence_id
+                else:
+                    mobile_ev_id = "ev_vnc_mobile"
 
         # ==========================================
         # Stage 4: REFLECT

@@ -25,6 +25,7 @@ class VNCClient:
         self.password = password
         self.timeout = timeout
         self.is_connected = False
+        self._remote_url = f"http://{self.host}:8080"
         self._computer_tool = ComputerTool()
 
     def check_socket(self) -> bool:
@@ -39,9 +40,26 @@ class VNCClient:
             return False
 
     async def connect(self) -> bool:
-        """Establishes authenticated handshake with internal RFB server."""
+        """Establishes authenticated handshake with internal RFB server or remote sandbox."""
         self.is_connected = self.check_socket()
         return self.is_connected
+
+    async def _try_remote_exec(self, endpoint: str, payload: Dict[str, Any]) -> Optional[ToolResult]:
+        """Attempts remote execution against containerized sandbox endpoint."""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(f"{self._remote_url}{endpoint}", json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    return ToolResult(
+                        output=data.get("output", ""),
+                        error=data.get("error"),
+                        base64_image=data.get("base64_image"),
+                    )
+        except Exception:
+            pass
+        return None
 
     async def navigate_browser(
         self,
@@ -49,11 +67,14 @@ class VNCClient:
         viewport_size: Tuple[int, int] = (1920, 1080),
     ) -> ToolResult:
         """Launches Firefox or directs active browser window to the designated target URL."""
+        remote_res = await self._try_remote_exec("/navigate", {"url": url, "viewport": viewport_size})
+        if remote_res:
+            return remote_res
+
         self._computer_tool.set_viewport(viewport_size[0], viewport_size[1])
-        # Execute sandboxed browser navigation via xdotool and firefox CLI
         nav_cmd = f"firefox-esr --new-window '{url}' >/dev/null 2>&1 &"
         await self._computer_tool.shell(nav_cmd)
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(1.0)
         return await self.capture_screen()
 
     async def send_click(self, x: int, y: int, button: int = 1) -> ToolResult:

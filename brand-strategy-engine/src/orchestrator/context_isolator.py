@@ -81,8 +81,8 @@ class ContextIsolator:
             for h in headings:
                 if isinstance(h, dict):
                     text = h.get("text", "")
-                    tag = h.get("tag", "").lower()
-                    if tag in ("h1", "hero") and not headline:
+                    lvl = (h.get("level") or h.get("tag") or "").lower()
+                    if lvl in ("h1", "hero") and not headline:
                         headline = text
                     elif text and text not in subheadings:
                         subheadings.append(text)

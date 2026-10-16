@@ -241,10 +241,10 @@ Mandates:
                 )
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        return json.dumps({
-            "technical_issues": ["Missing JSON-LD schema", "Unoptimized title tags"],
-            "content_gaps": ["Technical deep dive case studies"],
-        })
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Conducts on-page and semantic search gap analysis via 4-stage ReAct cycle."""
@@ -570,7 +570,10 @@ Mandates:
         llm_response = await self.invoke_llm([
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": llm_prompt},
-        ], max_tokens=220)
+        ], max_tokens=150)
+
+        if llm_response:
+            editorial.append(f"AI Topic Strategy: {llm_response[:100].strip()}")
 
         plan = SEOAndContentPlan(
             technical_health={
@@ -578,6 +581,7 @@ Mandates:
                 "title_tag": "Deficient: Currently lacks niche positioning keywords",
                 "canonical_tag": "Missing: Risk of duplicate parameter indexing",
                 "cms_feasibility": cms_feasibility,
+                "llm_synthesis": llm_response[:160].strip() if llm_response else "",
             },
             technical_issue_log=technical_issues,
             content_gap_inventory=content_gaps,

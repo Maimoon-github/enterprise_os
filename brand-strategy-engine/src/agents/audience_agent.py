@@ -155,11 +155,10 @@ Mandates:
         return True
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        return json.dumps({
-            "icp": "Specialized Enterprise Buyer",
-            "friction_score": 7.5,
-            "primary_drop_off": "Hero positioning lacks authoritative proof",
-        })
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Synthesizes grounded audience analysis from research slice via deterministic 4-stage ReAct loop."""
@@ -396,16 +395,6 @@ Mandates:
             valid_provenance_ids=[primary_ev_id] + visual_evidence_ids,
         )
 
-        audience_analysis = AudienceAnalysis(
-            icp_profile=icp_profile,
-            buyer_personas=buyer_personas,
-            intent_classification=intent_classification,
-            journey_touchpoints=journey_touchpoints,
-            friction_index=friction_score,
-            journey_breakdown=journey_breakdown,
-            persona_alignment_ratings=persona_alignment_ratings,
-        )
-
         # LLM Synthesis via qwen2.5:14b-instruct-q4_K_M
         llm_prompt = (
             f"You are the Audience Strategist. "
@@ -420,7 +409,21 @@ Mandates:
         llm_response = await self.invoke_llm([
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": llm_prompt},
-        ], max_tokens=220)
+        ], max_tokens=150)
+
+        if llm_response:
+            icp_profile["llm_insights"] = llm_response[:200]
+            journey_breakdown["llm_synthesis"] = llm_response[:180]
+
+        audience_analysis = AudienceAnalysis(
+            icp_profile=icp_profile,
+            buyer_personas=buyer_personas,
+            intent_classification=intent_classification,
+            journey_touchpoints=journey_touchpoints,
+            friction_index=friction_score,
+            journey_breakdown=journey_breakdown,
+            persona_alignment_ratings=persona_alignment_ratings,
+        )
 
         await self.react_step(
             step_number=4,

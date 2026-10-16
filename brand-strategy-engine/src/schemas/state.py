@@ -20,6 +20,7 @@ class ReActStep(BaseModel):
     observation: str = Field(default="", description="Observed outcome or tool output")
     reflection: str = Field(default="", description="Post-observation reflection and state evaluation")
     error: Optional[str] = Field(default=None, description="Error encountered during execution, if any")
+    tool_result: Optional[Any] = Field(default=None, description="Raw tool result object")
 
     def __getitem__(self, item: str) -> Any:
         return getattr(self, item)
@@ -420,4 +421,8 @@ class MasterEngineState(BaseModel):
         ge=0,
         le=3,
         description="Global revision cycle counter",
+    )
+    agent_outputs: Dict[str, List[Dict[str, Any]]] = Field(
+        default_factory=dict,
+        description="Recorded execution output payloads per agent for single-dispatch tracking",
     )

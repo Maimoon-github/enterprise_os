@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, cast
 
-import httpx2 as httpx
+import httpx
 from anthropic import (
     Anthropic,
     AnthropicBedrock,

@@ -32,11 +32,26 @@ from src.schemas.validation import AuditEntry, ValidationReport
 from src.tools.browser_bridge import BrowserBridge
 from src.tools.rag_search import RAGSearchTool
 
+import google.antigravity as ag
+from google.antigravity import (
+    Agent,
+    CapabilitiesConfig as SDKCapabilitiesConfig,
+    LocalAgentConfig as SDKLocalAgentConfig,
+    LocalOpenAIAgentConfig,
+)
+from google.antigravity.tools.tool_runner import ToolRunner
+from google.antigravity.connections.local import LocalConnectionStrategy
+
 logger = logging.getLogger(__name__)
 
 
-class CapabilitiesConfig:
+class CapabilitiesConfig(SDKCapabilitiesConfig):
     """Antigravity SDK RBAC capabilities configuration."""
+
+    allow_vnc_sandbox: bool = False
+    allow_terminal_exec: bool = False
+    allow_filesystem_edit: bool = False
+    whitelisted_tools: List[str] = []
 
     def __init__(
         self,
@@ -44,15 +59,23 @@ class CapabilitiesConfig:
         allow_terminal_exec: bool = False,
         allow_filesystem_edit: bool = False,
         whitelisted_tools: Optional[List[str]] = None,
+        **kwargs: Any,
     ):
-        self.allow_vnc_sandbox = allow_vnc_sandbox
-        self.allow_terminal_exec = allow_terminal_exec
-        self.allow_filesystem_edit = allow_filesystem_edit
-        self.whitelisted_tools = whitelisted_tools or []
+        super().__init__(
+            allow_vnc_sandbox=allow_vnc_sandbox,
+            allow_terminal_exec=allow_terminal_exec,
+            allow_filesystem_edit=allow_filesystem_edit,
+            whitelisted_tools=whitelisted_tools or [],
+            **kwargs,
+        )
 
 
-class LocalAgentConfig:
+class LocalAgentConfig(LocalOpenAIAgentConfig):
     """Antigravity SDK local agent configuration contract."""
+
+    model_name: str = "qwen2.5:14b-instruct-q4_K_M"
+    context_window: int = 32768
+    temperature: float = 0.1
 
     def __init__(
         self,
@@ -61,12 +84,19 @@ class LocalAgentConfig:
         context_window: int = 32768,
         temperature: float = 0.1,
         capabilities: Optional[CapabilitiesConfig] = None,
+        base_url: str = "http://localhost:11434/v1",
+        **kwargs: Any,
     ):
-        self.system_instructions = system_instructions
+        super().__init__(
+            model=model_name,
+            base_url=base_url,
+            system_instructions=system_instructions,
+            capabilities=capabilities or CapabilitiesConfig(),
+            **kwargs,
+        )
         self.model_name = model_name
         self.context_window = context_window
         self.temperature = temperature
-        self.capabilities = capabilities or CapabilitiesConfig()
 
 
 class StrategyOrchestrator(BaseAgent):
@@ -129,6 +159,24 @@ Responsibilities:
         self.register_tool("merge_agent_payload", self.merge_agent_payload)
         self.register_tool("route_revisions", self.route_revisions)
         self.register_tool("compile_strategy_dossier", self.compile_strategy_dossier)
+
+        # Wire official Google Antigravity SDK orchestration primitives
+        self.config = LocalAgentConfig(
+            system_instructions=self.SYSTEM_PROMPT,
+            model_name="qwen2.5:14b-instruct-q4_K_M",
+            capabilities=CapabilitiesConfig(
+                allow_vnc_sandbox=True,
+                whitelisted_tools=self.whitelisted_tool_names,
+            ),
+            base_url=f"{ollama_base_url}/v1",
+        )
+        self.connection_strategy = LocalConnectionStrategy()
+        self.tool_runner = ToolRunner(tools=[
+            self.delegate_task,
+            self.merge_agent_payload,
+            self.route_revisions,
+            self.compile_strategy_dossier,
+        ])
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
         """Deterministic supervisor fallback."""
@@ -196,6 +244,22 @@ Responsibilities:
         elif stage_name in ("Validator", PipelineStage.VALIDATOR.value):
             state.validation_report = payload["validation_report"]
             state.strategic_artifacts.growth_initiatives = payload["validated_initiatives"]
+        stage_to_agent = {
+            "Analyst": "Agent_1",
+            PipelineStage.ANALYST.value: "Agent_1",
+            "Audience": "Agent_2",
+            PipelineStage.AUDIENCE.value: "Agent_2",
+            "Brand": "Agent_3",
+            PipelineStage.BRAND.value: "Agent_3",
+            "SEO": "Agent_4",
+            PipelineStage.SEO.value: "Agent_4",
+            "Growth": "Agent_5",
+            PipelineStage.GROWTH.value: "Agent_5",
+            "Validator": "Agent_6",
+            PipelineStage.VALIDATOR.value: "Agent_6",
+        }
+        agent_key = stage_to_agent.get(stage_name, stage_name)
+        state.agent_outputs.setdefault(agent_key, []).append(payload)
         return state
 
     def route_revisions(
@@ -255,13 +319,15 @@ Responsibilities:
         mode: OperationalMode,
         docs_dir: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> MasterEngineState:
         """Executes full autonomous multi-agent audit lifecycle under Antigravity governance."""
-        session_id = str(uuid.uuid4())
+        session_id = session_id or str(uuid.uuid4())
         tid = tenant_id or f"tenant_{uuid.uuid4().hex[:8]}"
 
-        # Initialize long term memory connection
+        # Initialize storage connections
         await self.long_term_memory.connect()
+        await self.vector_store.connect()
 
         # Ingest documents if provided
         if docs_dir:
@@ -287,14 +353,14 @@ Responsibilities:
         # Stage 1: Empirical VNC Reconnaissance (Agent 1)
         StateMachine.advance_stage(state)
         analyst_slice = ContextIsolator.get_analyst_slice(state)
-        await self.react_step(
+        step1 = await self.react_step(
             step_number=1,
             thought="Inspecting initialization gate -> Stage 1 (Analyst). Delegating VNC reconnaissance.",
             action="delegate_task",
             action_args={"agent_id": "Agent_1", "target_slice": analyst_slice},
             reflection="Empirical VNC reconnaissance delegated to Agent 1; advancing state machine to Audience stage.",
         )
-        analyst_out = await self.delegate_task("Agent_1", analyst_slice)
+        analyst_out = step1.tool_result or {}
         self.merge_agent_payload(state, PipelineStage.ANALYST.value, analyst_out)
         await self.short_term_memory.save_stage_buffer(session_id, "analyst", analyst_out)
         await self.short_term_memory.add_graph_node(
@@ -308,14 +374,14 @@ Responsibilities:
         # Stage 2: Audience & Friction Modeling (Agent 2)
         StateMachine.advance_stage(state)
         audience_slice = ContextIsolator.get_audience_slice(state)
-        await self.react_step(
+        step2 = await self.react_step(
             step_number=2,
             thought="Advancing to Stage 2 (Audience). Delegating ICP and customer journey mapping.",
             action="delegate_task",
             action_args={"agent_id": "Agent_2", "target_slice": audience_slice},
             reflection="Audience ICP and user journey friction delegated to Agent 2; advancing state machine to Brand stage.",
         )
-        audience_out = await self.delegate_task("Agent_2", audience_slice)
+        audience_out = step2.tool_result or {}
         self.merge_agent_payload(state, PipelineStage.AUDIENCE.value, audience_out)
         await self.short_term_memory.save_stage_buffer(session_id, "audience", audience_out)
         await self.short_term_memory.add_graph_node(
@@ -329,14 +395,14 @@ Responsibilities:
         # Stage 3: Brand Positioning & Category of One (Agent 3)
         StateMachine.advance_stage(state)
         brand_slice = ContextIsolator.get_brand_slice(state)
-        await self.react_step(
+        step3 = await self.react_step(
             step_number=3,
             thought="Advancing to Stage 3 (Brand). Delegating Category of One differentiation analysis.",
             action="delegate_task",
             action_args={"agent_id": "Agent_3", "target_slice": brand_slice},
             reflection="Brand Category of One differentiation delegated to Agent 3; advancing state machine to SEO stage.",
         )
-        brand_out = await self.delegate_task("Agent_3", brand_slice)
+        brand_out = step3.tool_result or {}
         self.merge_agent_payload(state, PipelineStage.BRAND.value, brand_out)
         await self.short_term_memory.save_stage_buffer(session_id, "brand", brand_out)
         await self.short_term_memory.add_graph_node(
@@ -350,14 +416,14 @@ Responsibilities:
         # Stage 4: SEO & Content Gap Auditing (Agent 4)
         StateMachine.advance_stage(state)
         seo_slice = ContextIsolator.get_seo_slice(state)
-        await self.react_step(
+        step4 = await self.react_step(
             step_number=4,
             thought="Advancing to Stage 4 (SEO). Delegating technical audit and commercial search mapping.",
             action="delegate_task",
             action_args={"agent_id": "Agent_4", "target_slice": seo_slice},
             reflection="Technical SEO and semantic gap audit delegated to Agent 4; advancing state machine to Growth stage.",
         )
-        seo_out = await self.delegate_task("Agent_4", seo_slice)
+        seo_out = step4.tool_result or {}
         self.merge_agent_payload(state, PipelineStage.SEO.value, seo_out)
         await self.short_term_memory.save_stage_buffer(session_id, "seo", seo_out)
         await self.short_term_memory.add_graph_node(
@@ -373,14 +439,14 @@ Responsibilities:
             # Stage 5: Growth Strategist (Agent 5)
             state.current_stage = PipelineStage.GROWTH.value
             growth_slice = ContextIsolator.get_growth_slice(state)
-            await self.react_step(
+            step5 = await self.react_step(
                 step_number=5,
                 thought=f"Executing Stage 5 (Growth) in cycle {state.iteration_counter}. Synthesizing ICE initiatives.",
                 action="delegate_task",
                 action_args={"agent_id": "Agent_5", "target_slice": growth_slice},
                 reflection=f"Growth initiative synthesis delegated to Agent 5 in cycle {state.iteration_counter}; advancing to Validator.",
             )
-            growth_out = await self.delegate_task("Agent_5", growth_slice)
+            growth_out = step5.tool_result or {}
             self.merge_agent_payload(state, PipelineStage.GROWTH.value, growth_out)
             await self.short_term_memory.save_stage_buffer(session_id, f"growth_cycle_{state.iteration_counter}", growth_out)
             await self.short_term_memory.add_graph_node(
@@ -394,14 +460,14 @@ Responsibilities:
             # Stage 6: Strategy Validator (Agent 6)
             state.current_stage = PipelineStage.VALIDATOR.value
             validator_slice = ContextIsolator.get_validator_slice(state)
-            await self.react_step(
+            step6 = await self.react_step(
                 step_number=6,
                 thought="Advancing to Stage 6 (Validator). Executing adversarial audit and provenance check.",
                 action="delegate_task",
                 action_args={"agent_id": "Agent_6", "target_slice": validator_slice},
                 reflection="Adversarial audit and provenance verification delegated to Agent 6; awaiting verdict.",
             )
-            validator_out = await self.delegate_task("Agent_6", validator_slice)
+            validator_out = step6.tool_result or {}
             self.merge_agent_payload(state, PipelineStage.VALIDATOR.value, validator_out)
             await self.short_term_memory.add_graph_node(
                 session_id=session_id,
@@ -458,8 +524,8 @@ Responsibilities:
             await self.long_term_memory.save_competitor_footprint(
                 tenant_id=tid,
                 client_id="default_client",
-                competitor_name=comp.get("name", "Unknown"),
-                domain=comp.get("domain", ""),
+                competitor_name=comp.get("competitor_name") or comp.get("name", "Unknown"),
+                domain=comp.get("website_url") or comp.get("domain", ""),
                 positioning_summary=comp.get("positioning_summary", ""),
             )
 
@@ -508,6 +574,8 @@ Responsibilities:
             raise ValueError(reason)
         if not self.long_term_memory.pool:
             await self.long_term_memory.connect()
+        if not self.vector_store.pool:
+            await self.vector_store.connect()
 
         chunks = await self.ingest_user_documents(docs_dir, tenant_id=tid) if docs_dir else 0
         await self.short_term_memory.add_graph_node(
@@ -649,7 +717,8 @@ Responsibilities:
         for comp in state.research_repository.competitor_profiles:
             await self.long_term_memory.save_competitor_footprint(
                 tenant_id=tid, client_id="default_client",
-                competitor_name=comp.get("name", "Unknown"), domain=comp.get("domain", ""),
+                competitor_name=comp.get("competitor_name") or comp.get("name", "Unknown"),
+                domain=comp.get("website_url") or comp.get("domain", ""),
                 positioning_summary=comp.get("positioning_summary", ""),
             )
         for init in state.strategic_artifacts.growth_initiatives:
@@ -696,6 +765,14 @@ class AntigravityRuntimeHarness:
         ollama_base_url: str = "http://localhost:11434",
     ):
         self.orchestrator = orchestrator or StrategyOrchestrator(ollama_base_url=ollama_base_url)
+        self.ollama_base_url = ollama_base_url
+        self.connection_strategy = LocalConnectionStrategy()
+        self.tool_runner = ToolRunner(tools=[
+            self.orchestrator.delegate_task,
+            self.orchestrator.merge_agent_payload,
+            self.orchestrator.route_revisions,
+            self.orchestrator.compile_strategy_dossier,
+        ])
 
     async def execute_governed_pipeline(
         self,
@@ -703,6 +780,7 @@ class AntigravityRuntimeHarness:
         mode: OperationalMode,
         docs_dir: Optional[str] = None,
         tenant_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> MasterEngineState:
         """Executes full multi-agent workflow under Antigravity governance and lifecycle policies."""
         return await self.orchestrator.execute_audit(
@@ -710,4 +788,5 @@ class AntigravityRuntimeHarness:
             mode=mode,
             docs_dir=docs_dir,
             tenant_id=tenant_id,
+            session_id=session_id,
         )

@@ -51,6 +51,6 @@ host = "postgres-pgvector"
 port = 5432
 database = "brand_strategy_db"
 user = "engine_user"
-password = "engine_secure_pass"
+password = ""
 pool_size = 10
 vector_dimensions = 768

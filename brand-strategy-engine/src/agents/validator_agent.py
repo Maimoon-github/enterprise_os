@@ -102,7 +102,10 @@ Mandates:
         return {"recommendation_id": rec_id, "vetoed": True, "reasons": reasons}
 
     def fallback_execution(self, messages: List[Dict[str, str]]) -> str:
-        return json.dumps({"audit_decision": "passed", "reasons": []})
+        raise RuntimeError(
+            f"Inference failure for {self.name} ({self.agent_id}): "
+            f"Local Ollama model '{self.model_name}' is unreachable or failed to respond."
+        )
 
     async def run(self, state_slice: Dict[str, Any]) -> Dict[str, Any]:
         """Executes adversarial validation on all proposed growth initiatives."""
@@ -258,7 +261,7 @@ Mandates:
         llm_response = await self.invoke_llm([
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": llm_prompt},
-        ], max_tokens=220)
+        ], max_tokens=150)
 
         report = ValidationReport(
             status="Approved" if not has_vetoes else "Failed_Needs_Revision",
