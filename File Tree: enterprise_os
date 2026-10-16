@@ -26,8 +26,11 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 base.py
 │   │   │   ├── 🐍 bash.py
+│   │   │   ├── 🐍 collection.py
 │   │   │   ├── 🐍 computer.py
 │   │   │   ├── 🐍 edit.py
+│   │   │   ├── 🐍 groups.py
+│   │   │   ├── 🐍 run.py
 │   │   │   └── 🐍 vnc_client.py
 │   │   ├── 🐍 __init__.py
 │   │   └── 📄 entrypoint.sh
@@ -152,6 +155,7 @@ Root path: /home/maimoon-amin/Antigravity code/enterprise_os
 │   └── 📝 context.md
 ├── ⚙️ .gitignore
 ├── 📄 File Tree: enterprise_os
-└── ⚙️ pyrightconfig.json
+├── ⚙️ pyrightconfig.json
+└── 📦 strategy engine.zip
 
 ────────────────────────────────────────────────────────────────────────────────
