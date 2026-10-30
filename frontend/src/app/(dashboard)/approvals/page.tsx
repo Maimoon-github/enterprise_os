@@ -52,29 +52,29 @@ export default function ApprovalsQueuePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Human-in-the-Loop Approvals</h1>
-          <p className="text-slate-400 text-sm">
+          <h1 className="text-2xl font-bold tracking-tight text-bloodstone-text">Human-in-the-Loop Approvals</h1>
+          <p className="text-bloodstone-text-muted text-sm">
             Review interrupted LangGraph runs, inspect diffs, and resume executions via Command(resume=...).
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs font-medium">
+          <div className="flex bg-glass-base border border-glass-subtle rounded-lg p-0.5 text-xs font-medium">
             <button
               onClick={() => setActiveTab("pending")}
-              className={`px-3 py-1.5 rounded-md transition ${
+              className={`px-3 py-1.5 rounded-md transition duration-fast ease-out-expo ${
                 activeTab === "pending"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-glass-emerald border border-glass-specular text-bloodstone-mint shadow-bloodstone-glow"
+                  : "text-bloodstone-text-muted hover:text-bloodstone-text"
               }`}
             >
               Pending ({pendingApprovals.length})
             </button>
             <button
               onClick={() => setActiveTab("all")}
-              className={`px-3 py-1.5 rounded-md transition ${
+              className={`px-3 py-1.5 rounded-md transition duration-fast ease-out-expo ${
                 activeTab === "all"
-                  ? "bg-indigo-600 text-white"
-                  : "text-slate-400 hover:text-white"
+                  ? "bg-glass-emerald border border-glass-specular text-bloodstone-mint shadow-bloodstone-glow"
+                  : "text-bloodstone-text-muted hover:text-bloodstone-text"
               }`}
             >
               All ({approvals.length})
@@ -83,7 +83,7 @@ export default function ApprovalsQueuePage() {
           <button
             onClick={() => fetchApprovals()}
             disabled={loading}
-            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg transition"
+            className="px-3.5 py-1.5 bg-glass-base hover:bg-glass-elevated border border-glass-subtle text-xs font-semibold text-bloodstone-text rounded-lg transition duration-fast ease-out-expo"
           >
             {loading ? "Refreshing..." : "Refresh Queue"}
           </button>
@@ -91,14 +91,14 @@ export default function ApprovalsQueuePage() {
       </div>
 
       {diffApproval && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-3">
+        <div className="glass-panel-elevated rounded-xl p-6 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">
+            <h3 className="text-sm font-semibold text-bloodstone-text">
               Blueprint Diff Inspection • Run {diffApproval.run_id}
             </h3>
             <button
               onClick={() => setDiffApproval(null)}
-              className="text-xs text-slate-400 hover:text-slate-200"
+              className="text-xs text-bloodstone-text-muted hover:text-bloodstone-text"
             >
               Close Diff
             </button>
@@ -124,11 +124,11 @@ export default function ApprovalsQueuePage() {
 
       <div className="space-y-4">
         {loading && approvals.length === 0 ? (
-          <div className="p-8 text-center text-sm text-slate-500 bg-slate-900 border border-slate-800 rounded-xl">
+          <div className="p-8 text-center text-sm text-bloodstone-text-muted glass-panel rounded-xl">
             Loading approval requests from database...
           </div>
         ) : displayApprovals.length === 0 ? (
-          <div className="p-8 text-center text-sm text-slate-500 bg-slate-900 border border-slate-800 rounded-xl">
+          <div className="p-8 text-center text-sm text-bloodstone-text-muted glass-panel rounded-xl">
             {activeTab === "pending"
               ? "No pending human approvals in the queue. All LangGraph runs are running or finalized."
               : "No approval records found."}

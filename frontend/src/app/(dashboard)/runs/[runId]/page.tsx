@@ -68,12 +68,12 @@ export default function RunExecutionPage({
             <span
               className={`h-2.5 w-2.5 rounded-full ${
                 isFailed
-                  ? "bg-rose-500"
+                  ? "bg-bloodstone-crimson"
                   : isInterrupted
-                  ? "bg-amber-400"
+                  ? "bg-bloodstone-crimson shadow-crimson-glow"
                   : isCompleted
-                  ? "bg-emerald-400"
-                  : "bg-indigo-400 animate-pulse"
+                  ? "bg-bloodstone-mint shadow-[0_0_8px_#7bf0a7]"
+                  : "bg-bloodstone-mint animate-pulse"
               }`}
             />
             <span
@@ -81,10 +81,10 @@ export default function RunExecutionPage({
                 isFailed
                   ? "text-rose-400"
                   : isInterrupted
-                  ? "text-amber-400"
+                  ? "text-rose-300"
                   : isCompleted
-                  ? "text-emerald-400"
-                  : "text-indigo-400"
+                  ? "text-bloodstone-mint"
+                  : "text-bloodstone-mint"
               }`}
             >
               {isFailed
@@ -96,11 +96,11 @@ export default function RunExecutionPage({
                 : "Live LangGraph Execution Active"}
             </span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white mt-1">
+          <h1 className="text-2xl font-bold tracking-tight text-bloodstone-text mt-1">
             Run {runId.slice(0, 18)}
           </h1>
           {runDetails?.thread_id && (
-            <p className="text-xs text-slate-400 font-mono mt-0.5">
+            <p className="text-xs text-bloodstone-text-muted font-mono mt-0.5">
               Thread: {runDetails.thread_id} • Campaign: {String(runDetails.campaign_id).slice(0, 12)}
             </p>
           )}
@@ -108,14 +108,14 @@ export default function RunExecutionPage({
         <div className="flex items-center gap-3">
           <Link
             href="/campaigns"
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 rounded-lg transition"
+            className="px-3 py-1.5 bg-glass-base hover:bg-glass-elevated border border-glass-subtle text-xs font-medium text-bloodstone-text rounded-lg transition duration-fast ease-out-expo"
           >
             ← Campaigns
           </Link>
           {isInterrupted && (
             <Link
               href="/approvals"
-              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white rounded-lg transition"
+              className="px-3.5 py-1.5 glass-crimson text-xs font-semibold rounded-lg transition duration-fast ease-out-expo"
             >
               Open Approvals Queue →
             </Link>
@@ -124,23 +124,23 @@ export default function RunExecutionPage({
       </div>
 
       {isInterrupted && (
-        <div className="p-4 bg-amber-950/30 border border-amber-800 rounded-xl space-y-2">
+        <div className="p-4 glass-crimson rounded-xl space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+            <span className="text-xs font-bold text-bloodstone-text uppercase tracking-wider">
               Human-in-the-Loop Interrupt Active
             </span>
             <Link
               href="/approvals"
-              className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded font-medium transition"
+              className="text-xs px-3 py-1 bg-bloodstone-crimson hover:bg-red-700 text-bloodstone-text rounded-lg font-medium transition duration-fast ease-out-expo"
             >
               Review in Approvals Queue →
             </Link>
           </div>
-          <p className="text-xs text-amber-200/90 leading-relaxed">
-            Execution suspended at super-step boundary <code className="bg-amber-900/50 px-1 py-0.5 rounded font-mono">human_approval_gate_node</code>. Checkpoint snapshot safely persisted to PostgresSaver checkpointer.
+          <p className="text-xs text-bloodstone-text/90 leading-relaxed">
+            Execution suspended at super-step boundary <code className="bg-black/30 px-1 py-0.5 rounded font-mono">human_approval_gate_node</code>. Checkpoint snapshot safely persisted to PostgresSaver checkpointer.
           </p>
           {interruptedPayload && (
-            <pre className="mt-2 p-3 bg-amber-950/60 border border-amber-900/50 rounded-lg text-[11px] font-mono text-amber-200 overflow-x-auto">
+            <pre className="mt-2 p-3 bg-black/40 border border-red-500/30 rounded-lg text-[11px] font-mono text-bloodstone-text overflow-x-auto scrollbar-thin">
               {JSON.stringify(interruptedPayload, null, 2)}
             </pre>
           )}
@@ -148,46 +148,46 @@ export default function RunExecutionPage({
       )}
 
       {isFailed && (
-        <div className="p-4 bg-rose-950/40 border border-rose-800 rounded-xl text-rose-300 text-xs space-y-1">
+        <div className="p-4 glass-crimson rounded-xl text-rose-200 text-xs space-y-1">
           <span className="font-semibold uppercase tracking-wider">Execution Error</span>
           <p className="font-mono">{errorMessage || runDetails?.error_message || "Graph execution encountered an unhandled exception."}</p>
         </div>
       )}
 
       {isCompleted && (
-        <div className="p-4 bg-emerald-950/30 border border-emerald-800 rounded-xl text-emerald-300 text-xs flex items-center justify-between">
+        <div className="p-4 glass-emerald rounded-xl text-bloodstone-mint text-xs flex items-center justify-between">
           <div>
-            <span className="font-semibold uppercase tracking-wider">All Super-Steps Completed</span>
-            <p className="text-emerald-200/80 mt-0.5">Campaign blueprint generated, approved, and dispatched across platforms.</p>
+            <span className="font-semibold uppercase tracking-wider text-bloodstone-text">All Super-Steps Completed</span>
+            <p className="text-bloodstone-text-muted mt-0.5">Campaign blueprint generated, approved, and dispatched across platforms.</p>
           </div>
           {runDetails?.token_usage && (
-            <div className="text-right font-mono text-[11px] text-emerald-400">
+            <div className="text-right font-mono text-[11px] text-bloodstone-mint">
               Total Tokens: {Number(runDetails.token_usage.total_tokens || 0).toLocaleString()}
             </div>
           )}
         </div>
       )}
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-        <h2 className="text-sm font-semibold uppercase text-slate-400 tracking-wider">
+      <div className="glass-card p-6 space-y-4">
+        <h2 className="text-sm font-semibold uppercase text-bloodstone-text-muted tracking-wider">
           LangGraph Execution DAG
         </h2>
         <GraphVisualizer currentNode={currentNode} nodeStates={nodeStates} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+        <div className="glass-card p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase text-slate-400 tracking-wider">
+            <h2 className="text-sm font-semibold uppercase text-bloodstone-text-muted tracking-wider">
               Execution Event Stream
             </h2>
-            <span className="text-xs text-slate-500 font-mono">{events.length} event(s)</span>
+            <span className="text-xs text-bloodstone-text-dim font-mono">{events.length} event(s)</span>
           </div>
           <NodeTimeline events={events} />
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-          <h2 className="text-sm font-semibold uppercase text-slate-400 tracking-wider">
+        <div className="glass-card p-6 space-y-4">
+          <h2 className="text-sm font-semibold uppercase text-bloodstone-text-muted tracking-wider">
             Active Tool Call Inspector
           </h2>
           <ToolCallInspector toolCall={activeToolCall} />

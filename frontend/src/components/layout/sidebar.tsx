@@ -22,13 +22,13 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-slate-900 border-r border-slate-800 p-6 flex flex-col justify-between shrink-0">
+    <aside className="w-64 glass-panel border-r border-glass-subtle p-6 flex flex-col justify-between shrink-0">
       <div>
-        <div className="flex items-center gap-2 mb-8">
-          <div className="h-6 w-6 rounded bg-indigo-600 flex items-center justify-center font-bold text-xs text-white">
+        <div className="flex items-center gap-2.5 mb-8">
+          <div className="h-7 w-7 rounded-lg bg-bloodstone-crimson border border-rose-500/30 flex items-center justify-center font-bold text-xs text-bloodstone-text shadow-crimson-glow">
             AG
           </div>
-          <span className="font-semibold tracking-wide text-sm text-white">Marketing OS</span>
+          <span className="font-semibold tracking-wide text-sm text-bloodstone-text">Marketing OS</span>
         </div>
         <nav className="space-y-1">
           {NAV_ITEMS.map((item) => {
@@ -37,10 +37,10 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`block px-3 py-2 rounded-lg text-sm transition ${
+                className={`block px-3 py-2 rounded-lg text-sm transition-all duration-normal ease-out-expo ${
                   isActive
-                    ? "bg-slate-800 text-white font-medium"
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                    ? "bg-glass-emerald border border-glass-specular text-bloodstone-mint shadow-bloodstone-glow font-medium"
+                    : "text-bloodstone-text-muted hover:text-bloodstone-text hover:bg-glass-base"
                 }`}
               >
                 {item.label}
@@ -49,7 +49,7 @@ export function Sidebar() {
           })}
         </nav>
       </div>
-      <div className="pt-4 border-t border-slate-800 text-xs text-slate-500">
+      <div className="pt-4 border-t border-glass-dark text-xs text-bloodstone-text-dim">
         Self-Hosted • FastAPI + LangGraph
       </div>
     </aside>

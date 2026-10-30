@@ -19,18 +19,18 @@ export function UserNav() {
   return (
     <div className="flex items-center gap-3 text-xs">
       <div className="flex flex-col items-end">
-        <span className="font-semibold text-white">{session?.full_name || email.split("@")[0]}</span>
+        <span className="font-semibold text-bloodstone-text">{session?.full_name || email.split("@")[0]}</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-glass-emerald text-bloodstone-mint border border-glass-specular">
             {role}
           </span>
-          <span className="text-slate-500 hidden sm:inline">({email})</span>
+          <span className="text-bloodstone-text-dim hidden sm:inline">({email})</span>
         </div>
       </div>
       <button
         onClick={handleSignOut}
         title="Sign Out"
-        className="px-2 py-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition text-xs"
+        className="px-2 py-1 text-bloodstone-text-muted hover:text-bloodstone-text hover:bg-glass-base rounded transition duration-fast ease-out-expo text-xs"
       >
         Sign Out
       </button>

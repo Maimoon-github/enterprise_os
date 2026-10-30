@@ -102,18 +102,18 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-5">
+    <form onSubmit={handleSubmit} className="glass-card p-6 space-y-5">
       <div>
-        <label className="block text-xs uppercase font-semibold text-slate-400 mb-1.5">
+        <label className="block text-xs uppercase font-semibold text-bloodstone-text-muted mb-1.5">
           Brand Workspace
         </label>
         <select
           value={brandId}
           onChange={(e) => setBrandId(e.target.value)}
-          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="w-full glass-input px-3 py-2 text-sm text-bloodstone-text"
         >
           {brands.map((b) => (
-            <option key={b.id} value={b.id}>
+            <option key={b.id} value={b.id} className="bg-bloodstone-canvas text-bloodstone-text">
               {b.name} ({b.slug})
             </option>
           ))}
@@ -124,7 +124,7 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
       </div>
 
       <div>
-        <label className="block text-xs uppercase font-semibold text-slate-400 mb-1.5">
+        <label className="block text-xs uppercase font-semibold text-bloodstone-text-muted mb-1.5">
           Campaign Title
         </label>
         <input
@@ -132,7 +132,7 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Q4 Multi-Platform Platform Launch"
-          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="w-full glass-input px-3 py-2 text-sm text-bloodstone-text placeholder:text-bloodstone-text-dim"
         />
         {validationErrors.name && (
           <p className="text-xs text-rose-400 mt-1">{validationErrors.name}</p>
@@ -140,7 +140,7 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
       </div>
 
       <div>
-        <label className="block text-xs uppercase font-semibold text-slate-400 mb-1.5">
+        <label className="block text-xs uppercase font-semibold text-bloodstone-text-muted mb-1.5">
           Strategic Objective & Directives
         </label>
         <textarea
@@ -148,7 +148,7 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
           value={objective}
           onChange={(e) => setObjective(e.target.value)}
           placeholder="Describe positioning, target audience segments, key messaging, and conversion goals..."
-          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="w-full glass-input px-3 py-2 text-sm text-bloodstone-text placeholder:text-bloodstone-text-dim"
         />
         {validationErrors.objective && (
           <p className="text-xs text-rose-400 mt-1">{validationErrors.objective}</p>
@@ -156,7 +156,7 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
       </div>
 
       <div>
-        <label className="block text-xs uppercase font-semibold text-slate-400 mb-2">
+        <label className="block text-xs uppercase font-semibold text-bloodstone-text-muted mb-2">
           Target Platform Matrix ({selectedPlatforms.length} selected)
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -167,14 +167,14 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
                 type="button"
                 key={p.id}
                 onClick={() => togglePlatform(p.id)}
-                className={`px-3 py-2 rounded-lg border text-xs font-medium text-left transition flex items-center justify-between ${
+                className={`px-3 py-2 rounded-lg border text-xs font-medium text-left transition-all duration-fast flex items-center justify-between ${
                   isSelected
-                    ? "bg-indigo-950/60 border-indigo-500 text-white"
-                    : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                    ? "bg-glass-emerald border-glass-specular text-bloodstone-mint shadow-bloodstone-glow"
+                    : "bg-glass-base border-glass-subtle text-bloodstone-text-muted hover:text-bloodstone-text"
                 }`}
               >
                 <span>{p.label}</span>
-                <span className={`text-[10px] ${isSelected ? "text-indigo-400 font-bold" : "text-slate-600"}`}>
+                <span className={`text-[10px] ${isSelected ? "text-bloodstone-mint font-bold" : "text-bloodstone-text-dim"}`}>
                   {isSelected ? "✓" : "+"}
                 </span>
               </button>
@@ -190,7 +190,7 @@ export function CampaignForm({ onSubmit, isLoading = false }: CampaignFormProps)
         <button
           type="submit"
           disabled={isLoading}
-          className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
+          className="glass-emerald text-bloodstone-text disabled:opacity-50 px-5 py-2.5 rounded-lg text-sm font-medium transition duration-normal ease-out-expo"
         >
           {isLoading ? "Synthesizing Blueprint..." : "Synthesize Campaign Blueprint"}
         </button>

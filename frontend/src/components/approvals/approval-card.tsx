@@ -20,20 +20,20 @@ export function ApprovalCard({
     : 0;
 
   return (
-    <div className="p-5 bg-slate-900 border border-slate-800 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="p-5 glass-card flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-xs uppercase font-bold text-amber-400 tracking-wider">
+          <span className="text-xs uppercase font-bold text-bloodstone-mint tracking-wider">
             Awaiting Decision • {approval.step_name}
           </span>
-          <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">
+          <span className="text-xs px-2 py-0.5 rounded bg-glass-base border border-glass-subtle text-bloodstone-text-muted font-mono">
             Thread {approval.thread_id}
           </span>
         </div>
-        <div className="text-sm font-semibold text-white">
+        <div className="text-sm font-semibold text-bloodstone-text">
           {blueprint.objective || `Run ${approval.run_id}`}
         </div>
-        <div className="text-xs text-slate-400">
+        <div className="text-xs text-bloodstone-text-muted">
           {assetsCount > 0
             ? `${assetsCount} platform assets staged for review.`
             : "Platform assets staged with SHA-256 idempotency validation."}
@@ -44,20 +44,20 @@ export function ApprovalCard({
         {onInspectDiff && (
           <button
             onClick={() => onInspectDiff(approval)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded font-medium transition"
+            className="px-3 py-1.5 bg-glass-base hover:bg-glass-elevated border border-glass-subtle text-xs text-bloodstone-text rounded-lg font-medium transition duration-fast ease-out-expo"
           >
             Inspect Blueprint Diff
           </button>
         )}
         <button
           onClick={() => onReject(approval.id)}
-          className="px-3 py-1.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800 text-xs text-rose-200 rounded font-medium transition"
+          className="px-3 py-1.5 glass-crimson text-xs rounded-lg font-medium transition duration-fast ease-out-expo"
         >
           Request Revision
         </button>
         <button
           onClick={() => onApprove(approval.id)}
-          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-xs text-white rounded font-medium shadow transition"
+          className="px-3.5 py-1.5 glass-emerald text-xs rounded-lg font-medium transition duration-fast ease-out-expo"
         >
           Approve & Publish
         </button>

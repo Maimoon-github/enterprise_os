@@ -2,7 +2,242 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================================
+   BLOODSTONE GLASSMORPHISM DESIGN SYSTEM
+   Single Source of Truth for Design Tokens (Primitive, Semantic, Component)
+   ========================================================================= */
+
 :root {
-  --background: #020617;
-  --foreground: #f8fafc;
+  /* -----------------------------------------------------------------------
+     1. Primitive Tokens: Palette & Motion Core
+     ----------------------------------------------------------------------- */
+  --bloodstone-canvas: #041208;
+  --bloodstone-moss: #0d3819;
+  --bloodstone-emerald: #146132;
+  --bloodstone-crimson: #b32424;
+  --bloodstone-mint: #7bf0a7;
+  --bloodstone-text: #e2f7eb;
+  --bloodstone-text-muted: #8ebca0;
+  --bloodstone-text-dim: #5c886e;
+
+  /* Motion Primitives */
+  --duration-micro: 90ms;
+  --duration-fast: 160ms;
+  --duration-normal: 240ms;
+  --duration-slow: 320ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-settle: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* -----------------------------------------------------------------------
+     2. Semantic Tokens: Surfaces, Borders, Glows & Typography
+     ----------------------------------------------------------------------- */
+  --surface-glass-base: rgba(13, 56, 25, 0.45);
+  --surface-glass-elevated: rgba(13, 56, 25, 0.70);
+  --surface-glass-crimson: rgba(179, 36, 36, 0.75);
+  --surface-glass-emerald: rgba(20, 97, 50, 0.50);
+
+  --border-specular: rgba(123, 240, 167, 0.35);
+  --border-dark: rgba(4, 18, 8, 0.60);
+  --border-subtle: rgba(123, 240, 167, 0.15);
+  --border-crimson: rgba(179, 36, 36, 0.50);
+
+  --glow-ambient: rgba(20, 97, 50, 0.25);
+  --glow-crimson: rgba(179, 36, 36, 0.35);
+
+  --text-primary: var(--bloodstone-text);
+  --text-secondary: var(--bloodstone-text-muted);
+  --text-specular: var(--bloodstone-mint);
+  --text-crimson: #ff7b7b;
+
+  --focus-ring-color: var(--bloodstone-mint);
+  --focus-ring-offset: var(--bloodstone-canvas);
+
+  /* Default CSS Custom Properties */
+  --background: var(--bloodstone-canvas);
+  --foreground: var(--bloodstone-text);
+}
+
+/* -------------------------------------------------------------------------
+   Global Document Setup & Layer Depth Canvas
+   ------------------------------------------------------------------------- */
+html,
+body {
+  background-color: var(--bloodstone-canvas);
+  color: var(--text-primary);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  min-height: 100vh;
+}
+
+body {
+  background-image: 
+    radial-gradient(circle at 20% 0%, rgba(20, 97, 50, 0.28) 0%, transparent 50%),
+    radial-gradient(circle at 85% 90%, rgba(179, 36, 36, 0.18) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, rgba(13, 56, 25, 0.25) 0%, transparent 75%);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+/* -------------------------------------------------------------------------
+   3. Component Tokens & Utility Classes
+   ------------------------------------------------------------------------- */
+
+/* Primary Glass Panel */
+.glass-panel {
+  background-color: var(--surface-glass-base);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border-subtle);
+  border-top-color: var(--border-specular);
+  border-left-color: var(--border-specular);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(123, 240, 167, 0.25),
+    0 16px 36px -10px rgba(4, 18, 8, 0.70);
+  transition: border-color var(--duration-fast) var(--ease-out-expo),
+              box-shadow var(--duration-fast) var(--ease-out-expo),
+              transform var(--duration-fast) var(--ease-out-expo);
+}
+
+/* Interactive Glass Card with Specular Hover */
+.glass-card {
+  background-color: var(--surface-glass-base);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border-subtle);
+  border-top-color: var(--border-specular);
+  border-left-color: var(--border-specular);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(123, 240, 167, 0.25),
+    0 16px 32px -10px rgba(4, 18, 8, 0.65);
+  border-radius: 0.75rem;
+  transition: all var(--duration-normal) var(--ease-settle);
+}
+
+.glass-card:hover {
+  border-color: var(--border-specular);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(123, 240, 167, 0.40),
+    0 0 25px rgba(20, 97, 50, 0.30),
+    0 20px 40px -12px rgba(4, 18, 8, 0.85);
+  transform: translateY(-2px);
+}
+
+/* Elevated Glass (Modals, Dialogs, Dropdowns) */
+.glass-panel-elevated {
+  background-color: var(--surface-glass-elevated);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid var(--border-specular);
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(123, 240, 167, 0.35),
+    0 25px 50px -12px rgba(4, 18, 8, 0.90),
+    0 0 30px rgba(20, 97, 50, 0.20);
+}
+
+/* Crimson Accent Glass (Focal Actions, Alerts, Reject) */
+.glass-crimson {
+  background-color: var(--surface-glass-crimson);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border-crimson);
+  border-top-color: rgba(255, 120, 120, 0.6);
+  border-left-color: rgba(255, 120, 120, 0.6);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(255, 150, 150, 0.35),
+    0 0 25px var(--glow-crimson),
+    0 16px 32px -10px rgba(4, 18, 8, 0.75);
+  color: var(--bloodstone-text);
+}
+
+.glass-crimson:hover {
+  background-color: rgba(195, 40, 40, 0.85);
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(255, 180, 180, 0.5),
+    0 0 35px rgba(179, 36, 36, 0.55),
+    0 20px 40px -10px rgba(4, 18, 8, 0.85);
+  transform: translateY(-1px);
+}
+
+/* Emerald Accent Glass (Approve, Connect, Confirm) */
+.glass-emerald {
+  background-color: var(--surface-glass-emerald);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid var(--border-specular);
+  box-shadow: 
+    inset 0 1px 1px 0 rgba(123, 240, 167, 0.40),
+    0 0 25px var(--glow-ambient),
+    0 16px 32px -10px rgba(4, 18, 8, 0.75);
+  color: var(--bloodstone-text);
+}
+
+.glass-emerald:hover {
+  background-color: rgba(24, 115, 60, 0.70);
+  box-shadow: 
+    inset 0 1px 2px 0 rgba(123, 240, 167, 0.60),
+    0 0 35px rgba(123, 240, 167, 0.40),
+    0 20px 40px -10px rgba(4, 18, 8, 0.85);
+  transform: translateY(-1px);
+}
+
+/* Glass Input */
+.glass-input {
+  background-color: rgba(4, 18, 8, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  color: var(--bloodstone-text);
+  border-radius: 0.5rem;
+  transition: all var(--duration-fast) var(--ease-out-expo);
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: var(--bloodstone-mint);
+  box-shadow: var(--focus-ring);
+  background-color: rgba(13, 56, 25, 0.45);
+}
+
+.glass-input::placeholder {
+  color: var(--bloodstone-text-dim);
+}
+
+/* Universal Focus Ring */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--bloodstone-mint);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------
+   4. Fallbacks & Accessibility
+   ------------------------------------------------------------------------- */
+
+/* Fallback for environments without backdrop-filter (e.g. legacy Safari/Firefox) */
+@supports not ((-webkit-backdrop-filter: blur(20px)) or (backdrop-filter: blur(20px))) {
+  .glass-panel,
+  .glass-card,
+  .glass-panel-elevated {
+    background-color: #0b2e15 !important;
+  }
+  .glass-crimson {
+    background-color: #7a1818 !important;
+  }
+  .glass-emerald {
+    background-color: #114c27 !important;
+  }
+}
+
+/* Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

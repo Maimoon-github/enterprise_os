@@ -7,6 +7,7 @@ from app.observability.otel import get_tracer, setup_telemetry
 from app.orchestrator.checkpointer import close_checkpointer, init_checkpointer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 tracer = get_tracer("marketing-os-backend")
 
@@ -34,6 +35,10 @@ app.add_middleware(
 )
 
 app.include_router(api_v1_router, prefix="/api/v1")
+
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
 
 @app.get("/health", tags=["System"])
 async def health_check():

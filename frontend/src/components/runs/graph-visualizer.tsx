@@ -23,34 +23,34 @@ export function GraphVisualizer({
     const state = nodeStates[id];
     const status = state?.status;
 
-    if (status === "interrupted" || id === "human_approval_gate_node" && isCurrent) {
-      return "border-amber-500 bg-amber-950/60 text-amber-300 animate-pulse";
+    if (status === "interrupted" || (id === "human_approval_gate_node" && isCurrent)) {
+      return "border-bloodstone-crimson bg-glass-crimson text-bloodstone-text shadow-crimson-glow animate-pulse";
     }
     if (status === "executing" || isCurrent) {
-      return "border-indigo-500 bg-indigo-950/60 text-white ring-2 ring-indigo-500/40";
+      return "border-bloodstone-mint bg-glass-emerald text-bloodstone-text ring-2 ring-bloodstone-mint/50 shadow-bloodstone-glow";
     }
     if (status === "completed") {
-      return "border-emerald-700 bg-emerald-950/40 text-emerald-300";
+      return "border-glass-specular bg-glass-base text-bloodstone-mint shadow-specular-inset";
     }
-    return "border-slate-800 bg-slate-900 text-slate-400";
+    return "border-glass-subtle bg-glass-base text-bloodstone-text-muted";
   };
 
   return (
-    <div className="flex items-center gap-2 p-4 bg-slate-950 border border-slate-800 rounded-xl overflow-x-auto text-xs scrollbar-thin">
+    <div className="flex items-center gap-2 p-4 glass-panel rounded-xl overflow-x-auto text-xs scrollbar-thin">
       {dagNodes.map((n, i) => {
         const isCurrent = currentNode === n.id;
         const colorClass = getNodeColor(n.id, isCurrent);
 
         return (
           <div key={n.id} className="flex items-center gap-2 shrink-0">
-            <div className={`px-3 py-2.5 rounded-lg border font-mono transition-all duration-200 ${colorClass}`}>
+            <div className={`px-3 py-2.5 rounded-lg border font-mono transition-all duration-normal ease-settle ${colorClass}`}>
               <div className="font-semibold">{n.label}</div>
-              <div className="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">
+              <div className="text-[10px] text-bloodstone-text-dim uppercase tracking-wider mt-0.5">
                 {nodeStates[n.id]?.status || (isCurrent ? "active" : "idle")}
               </div>
             </div>
             {i < dagNodes.length - 1 && (
-              <span className="text-slate-600 font-bold px-0.5">→</span>
+              <span className="text-bloodstone-mint/40 font-bold px-0.5">→</span>
             )}
           </div>
         );
