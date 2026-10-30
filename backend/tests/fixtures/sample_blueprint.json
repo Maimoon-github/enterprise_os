@@ -1,0 +1,6 @@
+{
+  "campaign_id": "test_campaign_01",
+  "objective": "Launch autonomous platform with zero hallucinations",
+  "target_audience_segments": ["B2B SaaS Executives"],
+  "positioning_statement": "Deterministic agentic platform"
+}

@@ -1,0 +1,6 @@
+# Production Docker Compose Profile
+services:
+  backend:
+    restart: always
+    environment:
+      - ENVIRONMENT=production

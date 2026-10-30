@@ -1,0 +1,20 @@
+name: Offline Golden Suite Evaluation
+
+on:
+  pull_request:
+    paths:
+      - 'backend/app/orchestrator/**'
+      - 'backend/skills/**'
+      - 'backend/app/agents/**'
+
+jobs:
+  run-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run Trajectory and Rubric Evals
+        run: |
+          cd backend && python -m unittest discover tests/evals/

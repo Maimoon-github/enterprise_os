@@ -1,0 +1,12 @@
+# Development Docker Compose Overlay
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: infra/podman/worker.Containerfile
+    volumes:
+      - ./backend:/app:ro
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development

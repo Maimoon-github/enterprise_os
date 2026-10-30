@@ -1,0 +1,8 @@
+{
+  "dashboard": "Agentic Marketing OS Telemetry",
+  "panels": [
+    { "title": "Token Velocity (Ollama)", "metric": "llm.token_count.total" },
+    { "title": "Trajectory Evaluator Score", "metric": "trace.evaluations.0.evaluation.score" },
+    { "title": "Brand Voice Rubric Average", "metric": "rubric.voice_fidelity" }
+  ]
+}
