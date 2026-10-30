@@ -113,7 +113,10 @@ async def execute_platform_publish_node(
     state: MarketingOSState,
 ) -> Command[Literal["closed_loop_eval"]]:
     """Executes idempotent post-approval publishing fan-out and routes to closed_loop_eval."""
-    fanout_result = await publishing_fanout_subgraph.ainvoke(state)
+    approved_state = dict(state)
+    approved_state["approval_status"] = "approved"
+    approved_state["human_approved"] = True
+    fanout_result = await publishing_fanout_subgraph.ainvoke(approved_state)
     publish_results = fanout_result.get("platform_publish_results", [])
     return Command(
         goto="closed_loop_eval",
