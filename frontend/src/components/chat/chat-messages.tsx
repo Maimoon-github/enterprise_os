@@ -156,7 +156,11 @@ export function ChatMessages({
                 <div className="flex items-center gap-2 pb-1 border-b border-glass-subtle/60 text-[11px] text-bloodstone-text-muted">
                   <span className="h-2 w-2 rounded-full bg-bloodstone-mint animate-pulse"></span>
                   <span className="font-mono">
-                    {activeNode ? `Executing: ${activeNode}` : "Orchestrating Workflow..."}
+                    {activeNode
+                      ? `Executing: ${activeNode}`
+                      : activeRunId
+                      ? "Orchestrating Workflow..."
+                      : "Conversational Assistant"}
                   </span>
                   {activeRunId && (
                     <span className="font-mono text-bloodstone-text-dim">
@@ -166,7 +170,7 @@ export function ChatMessages({
                 </div>
 
                 <div className="whitespace-pre-wrap leading-relaxed">
-                  {streamingContent || "Initializing multi-agent pipeline..."}
+                  {streamingContent || (activeRunId ? "Initializing multi-agent pipeline..." : "Thinking...")}
                   <span className="inline-block animate-pulse text-bloodstone-mint ml-0.5">▋</span>
                 </div>
 

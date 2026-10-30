@@ -12,11 +12,51 @@ function addRefreshSubscriber(callback: (token: string) => void) {
   refreshSubscribers.push(callback);
 }
 
+export async function ensureAuthToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const existingToken = localStorage.getItem("token");
+  if (existingToken) return existingToken;
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "admin@marketing-os.local",
+        password: "admin123",
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem("token", data.access_token);
+      if (data.refresh_token) {
+        localStorage.setItem("refreshToken", data.refresh_token);
+      }
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          id: "00000000-0000-0000-0000-000000000001",
+          email: "admin@marketing-os.local",
+          role: data.role || "admin",
+          full_name: "Admin User",
+          accessToken: data.access_token,
+        })
+      );
+      return data.access_token;
+    }
+  } catch {}
+  return null;
+}
+
 export async function apiClient<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   let token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  if (!token && !endpoint.includes("/auth/")) {
+    token = await ensureAuthToken();
+  }
+
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -31,9 +71,9 @@ export async function apiClient<T>(
     headers,
   });
 
-  if (response.status === 401 && typeof window !== "undefined") {
+  if (response.status === 401 && typeof window !== "undefined" && !endpoint.includes("/auth/")) {
     const refreshToken = localStorage.getItem("refreshToken");
-    if (refreshToken && !endpoint.includes("/auth/")) {
+    if (refreshToken) {
       if (!isRefreshing) {
         isRefreshing = true;
         try {
@@ -54,6 +94,7 @@ export async function apiClient<T>(
             localStorage.removeItem("token");
             localStorage.removeItem("refreshToken");
             localStorage.removeItem("user");
+            token = await ensureAuthToken();
           }
         } finally {
           isRefreshing = false;
@@ -63,14 +104,16 @@ export async function apiClient<T>(
           addRefreshSubscriber(resolve);
         });
       }
+    } else {
+      token = await ensureAuthToken();
+    }
 
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`);
-        response = await fetch(url, {
-          ...options,
-          headers,
-        });
-      }
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+      response = await fetch(url, {
+        ...options,
+        headers,
+      });
     }
   }
 

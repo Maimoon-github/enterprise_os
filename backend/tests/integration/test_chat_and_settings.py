@@ -168,3 +168,50 @@ async def test_analytics_empty_state_contract():
         assert kpi_data["impressions_total"] == 0
         assert kpi_data["clicks_total"] == 0
         assert kpi_data["ctr_average"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_conversational_vs_operational_intent_decision():
+    transport = ASGITransport(app=app)
+    admin_token = create_access_token({"sub": "admin_test_5", "email": "admin5@ex.com", "role": UserRole.ADMIN.value})
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        session_res = await ac.post(
+            "/api/v1/chat/sessions",
+            headers=headers,
+            json={"title": "Intent Test Chat"},
+        )
+        session_id = session_res.json()["id"]
+
+        # 1. Test conversational query: should answer directly without creating a Run
+        chat_res = await ac.post(
+            f"/api/v1/chat/sessions/{session_id}/messages",
+            headers=headers,
+            json={
+                "content": "What is our brand positioning?",
+                "stream": False,
+            },
+        )
+        assert chat_res.status_code == 200
+        chat_data = chat_res.json()
+        assert chat_data["role"] == "assistant"
+        assert chat_data["run_id"] is None
+        assert chat_data["metadata"].get("intent") == "conversational"
+        assert len(chat_data["content"]) > 20
+
+        # 2. Test operational execution command: should autonomously create a Run
+        exec_res = await ac.post(
+            f"/api/v1/chat/sessions/{session_id}/messages",
+            headers=headers,
+            json={
+                "content": "Synthesize a multi-platform launch plan for brand awareness.",
+                "stream": False,
+            },
+        )
+        assert exec_res.status_code == 200
+        exec_data = exec_res.json()
+        assert exec_data["role"] == "assistant"
+        assert exec_data["run_id"] is not None
+        assert exec_data["metadata"].get("intent") == "operational"
+

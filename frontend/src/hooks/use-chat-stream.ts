@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { useChatStore } from "@/stores/chat-store";
 import { chatApi } from "@/lib/api/endpoints/chat";
+import { ensureAuthToken } from "@/lib/api/client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -21,7 +22,10 @@ export function useChatStream() {
     async (sessionId: string, content: string) => {
       if (!content.trim() || isStreaming) return;
 
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      let token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) {
+        token = await ensureAuthToken();
+      }
 
       // Optimistically append user message to local state
       const tempUserMsg = {
