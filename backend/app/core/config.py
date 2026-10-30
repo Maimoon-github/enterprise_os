@@ -47,8 +47,8 @@ class Settings(BaseSettings):
 
     # Ollama
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL_SUPERVISOR: str = "llama3.3:70b"
-    OLLAMA_MODEL_WORKER: str = "qwen2.5:14b"
+    OLLAMA_MODEL_SUPERVISOR: str = "qwen2.5:14b"
+    OLLAMA_MODEL_WORKER: str = "qwen2.5:7b"
     OLLAMA_MODEL_EMBEDDING: str = "nomic-embed-text"
 
     # Qdrant

@@ -14,35 +14,57 @@ export default function AgentsFleetPage() {
   const [agents, setAgents] = useState<AgentItem[]>([
     {
       name: "Master Orchestrator (Supervisor)",
-      model: "ollama:llama3.3:70b",
+      model: "ollama:qwen2.5:14b",
       role: "Routing, State & Approval Governance",
       queue: "orchestrator_queue",
     },
     {
       name: "Research & Recon Specialist",
-      model: "ollama:qwen2.5:14b",
+      model: "ollama:qwen2.5:7b",
       role: "Market Intelligence, Competitor Analysis",
       queue: "orchestrator_queue",
     },
     {
       name: "Creative Blueprint Architect",
-      model: "ollama:llama3.3:70b",
+      model: "ollama:qwen2.5:14b",
       role: "Copy Synthesis, Voice Consistency",
       queue: "orchestrator_queue",
     },
     {
       name: "Platform Fan-Out Publisher",
-      model: "ollama:qwen2.5:14b",
+      model: "ollama:qwen2.5:7b",
       role: "Map-Reduce Publishing to 8 Channels",
       queue: "publishing_queue",
     },
     {
       name: "Closed-Loop Analytics Judge",
-      model: "ollama:qwen2.5:14b",
+      model: "ollama:qwen2.5:7b",
       role: "ReWOO Metric Anomaly Detection",
       queue: "analytics_queue",
     },
   ]);
+
+  useEffect(() => {
+    apiClient<any[]>("/agents")
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setAgents(
+            data.map((a) => ({
+              name: a.name,
+              model: a.model,
+              role: a.role,
+              queue:
+                a.id === "agent_fanout"
+                  ? "publishing_queue"
+                  : a.id === "agent_analytics"
+                  ? "analytics_queue"
+                  : "orchestrator_queue",
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const queues = [
     { name: "orchestrator_queue", concurrency: 4, tasks: "Graph Steps & HITL Resumes", speed: "High" },

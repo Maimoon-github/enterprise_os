@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.api.deps import get_current_user, require_role
+from app.core.config import settings
 from app.core.rbac import UserRole
 from app.schemas.agent import AgentConfigUpdate, AgentSummary
 from fastapi import APIRouter, Depends
@@ -14,7 +15,7 @@ async def list_agents(current_user: dict[str, Any] = Depends(get_current_user)):
         AgentSummary(
             id="agent_supervisor",
             name="Master Orchestrator Supervisor",
-            model="ollama:llama3.3:70b",
+            model=f"ollama:{settings.OLLAMA_MODEL_SUPERVISOR}",
             role="Global Routing & Approval Governance",
             active_workers=4,
             status="online",
@@ -22,7 +23,7 @@ async def list_agents(current_user: dict[str, Any] = Depends(get_current_user)):
         AgentSummary(
             id="agent_research",
             name="Research & Recon Specialist",
-            model="ollama:qwen2.5:14b",
+            model=f"ollama:{settings.OLLAMA_MODEL_WORKER}",
             role="Brand RAG Retrieval & Playwright Scraping",
             active_workers=1,
             status="online",
@@ -30,7 +31,7 @@ async def list_agents(current_user: dict[str, Any] = Depends(get_current_user)):
         AgentSummary(
             id="agent_creative",
             name="Creative Blueprint Architect",
-            model="ollama:llama3.3:70b",
+            model=f"ollama:{settings.OLLAMA_MODEL_SUPERVISOR}",
             role="Plan-and-Solve Copy & Media Dispatches",
             active_workers=2,
             status="online",
@@ -38,7 +39,7 @@ async def list_agents(current_user: dict[str, Any] = Depends(get_current_user)):
         AgentSummary(
             id="agent_fanout",
             name="Multi-Platform Fan-Out Worker",
-            model="ollama:qwen2.5:14b",
+            model=f"ollama:{settings.OLLAMA_MODEL_WORKER}",
             role="Map-Reduce Publishing to 8 Channels",
             active_workers=8,
             status="online",
@@ -46,7 +47,7 @@ async def list_agents(current_user: dict[str, Any] = Depends(get_current_user)):
         AgentSummary(
             id="agent_analytics",
             name="Closed-Loop Analytics Evaluator",
-            model="ollama:qwen2.5:14b",
+            model=f"ollama:{settings.OLLAMA_MODEL_WORKER}",
             role="ReWOO Polars Z-Score Anomaly Ingestion",
             active_workers=1,
             status="online",

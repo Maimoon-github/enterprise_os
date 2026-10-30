@@ -1,8 +1,9 @@
-.PHONY: help setup infra-up infra-down backend-dev worker beat frontend-dev migrate seed test lint skills-validate dev dev-backend dev-worker dev-beat dev-frontend validate-skills
+.PHONY: help setup infra-up infra-down backend-dev worker beat frontend-dev migrate seed test lint skills-validate dev dev-backend dev-worker dev-beat dev-frontend validate-skills awaken
 
 help:
 	@echo "Agentic Brand Marketing OS - Command Suite"
 	@echo "-------------------------------------------"
+	@echo "awaken           Discover local Qwen models, verify infrastructure, and seed demo brand"
 	@echo "setup            Initialize uv workspace and install dependencies"
 	@echo "infra-up         Start PostgreSQL, Redis, MinIO, Qdrant, Ollama, Langfuse, and OTel Collector"
 	@echo "infra-down       Tear down backing infrastructure containers"
@@ -38,6 +39,9 @@ beat:
 
 frontend-dev:
 	cd frontend && npm run dev
+
+awaken:
+	export PATH="$$HOME/.local/bin:$$PATH" && uv run python backend/scripts/awaken_infrastructure.py
 
 migrate:
 	cd backend && export PATH="$$HOME/.local/bin:$$PATH" && uv run alembic upgrade head
