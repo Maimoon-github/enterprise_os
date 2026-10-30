@@ -9,11 +9,15 @@ export interface NodeState {
 
 interface RunStore {
   activeRunId: string | null;
+  runStatus: string | null;
+  errorMessage: string | null;
   nodeStates: Record<string, NodeState>;
   events: RunStreamEvent[];
   activeToolCall: { tool: string; args: Record<string, unknown> } | null;
   interruptedPayload: Record<string, unknown> | null;
   setActiveRunId: (id: string | null) => void;
+  setRunStatus: (status: string | null) => void;
+  setErrorMessage: (msg: string | null) => void;
   updateNodeState: (node: string, state: NodeState) => void;
   addEvent: (event: RunStreamEvent) => void;
   setActiveToolCall: (toolCall: { tool: string; args: Record<string, unknown> } | null) => void;
@@ -23,11 +27,15 @@ interface RunStore {
 
 export const useRunStore = create<RunStore>((set) => ({
   activeRunId: null,
+  runStatus: null,
+  errorMessage: null,
   nodeStates: {},
   events: [],
   activeToolCall: null,
   interruptedPayload: null,
   setActiveRunId: (id) => set({ activeRunId: id }),
+  setRunStatus: (status) => set({ runStatus: status }),
+  setErrorMessage: (msg) => set({ errorMessage: msg }),
   updateNodeState: (node, state) =>
     set((prev) => ({
       nodeStates: { ...prev.nodeStates, [node]: state },
@@ -41,6 +49,8 @@ export const useRunStore = create<RunStore>((set) => ({
   reset: () =>
     set({
       activeRunId: null,
+      runStatus: null,
+      errorMessage: null,
       nodeStates: {},
       events: [],
       activeToolCall: null,

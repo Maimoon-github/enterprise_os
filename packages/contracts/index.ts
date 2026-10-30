@@ -3,6 +3,16 @@ import type { components } from "./generated/schema";
 
 export type SchemaMap = components["schemas"];
 
+export type PlatformType =
+  | "linkedin"
+  | "youtube"
+  | "instagram"
+  | "threads"
+  | "facebook"
+  | "x"
+  | "pinterest"
+  | "google_business_profile";
+
 export type LoginRequest = components["schemas"]["LoginRequest"];
 export type RefreshTokenRequest = components["schemas"]["RefreshTokenRequest"];
 export type TokenResponse = components["schemas"]["TokenResponse"];
@@ -48,3 +58,6 @@ export type SettingsUpdateRequest = components["schemas"]["SettingsUpdateRequest
 
 export type ObservabilityTraceResponse = components["schemas"]["ObservabilityTraceResponse"];
 export type ObservabilityStatsResponse = components["schemas"]["ObservabilityStatsResponse"];
+export type ObservabilityEvaluationItem = components["schemas"]["ObservabilityEvaluationItem"];
+export type ObservabilityEvaluationsResponse = components["schemas"]["ObservabilityEvaluationsResponse"];
+export type GoldenRegressionRunResponse = components["schemas"]["GoldenRegressionRunResponse"];

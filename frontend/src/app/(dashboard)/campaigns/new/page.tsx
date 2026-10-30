@@ -2,52 +2,49 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CampaignForm } from "@/components/campaigns/campaign-form";
+import { campaignsApi } from "@/lib/api/endpoints/campaigns";
+import { CampaignCreate } from "@marketing-os/contracts";
 
 export default function NewCampaignPage() {
-  const [name, setName] = useState("");
-  const [objective, setObjective] = useState("");
   const router = useRouter();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    router.push("/campaigns");
+  const handleCreateCampaign = async (payload: CampaignCreate) => {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const created = await campaignsApi.create(payload);
+      if (created?.id) {
+        router.push(`/campaigns/${created.id}`);
+      } else {
+        router.push("/campaigns");
+      }
+    } catch (err: any) {
+      console.error("Failed to create campaign:", err);
+      setErrorMessage(err?.message || "Failed to initialize campaign execution. Check API connection.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Synthesize New Campaign Blueprint</h1>
-        <p className="text-slate-400 text-sm">Define target objective. The LangGraph supervisor will coordinate research and creative subgraphs.</p>
+        <p className="text-slate-400 text-sm">
+          Define strategic directives and platform targets. The LangGraph supervisor will coordinate research and creative subgraphs.
+        </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-        <div>
-          <label className="block text-xs uppercase font-semibold text-slate-400 mb-1">Campaign Title</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Q4 Multi-Platform Product Launch"
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-          />
+      {errorMessage && (
+        <div className="p-4 bg-rose-950/40 border border-rose-800 rounded-xl text-rose-300 text-xs">
+          {errorMessage}
         </div>
-        <div>
-          <label className="block text-xs uppercase font-semibold text-slate-400 mb-1">Strategic Objective & Directives</label>
-          <textarea
-            rows={4}
-            value={objective}
-            onChange={(e) => setObjective(e.target.value)}
-            placeholder="Describe positioning, target audience segments, and core conversions..."
-            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-        <button
-          type="submit"
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition"
-        >
-          Initialize LangGraph Execution
-        </button>
-      </form>
+      )}
+
+      <CampaignForm onSubmit={handleCreateCampaign} isLoading={isSubmitting} />
     </div>
   );
 }

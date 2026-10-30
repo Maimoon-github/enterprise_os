@@ -13,6 +13,7 @@ export default function ApprovalsQueuePage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isApprovalAction, setIsApprovalAction] = useState(true);
   const [diffApproval, setDiffApproval] = useState<ApprovalResponse | null>(null);
+  const [activeTab, setActiveTab] = useState<"pending" | "all">("pending");
 
   useEffect(() => {
     fetchApprovals();
@@ -41,9 +42,11 @@ export default function ApprovalsQueuePage() {
     await resume(selectedApproval.id, approved, notes);
     setIsDialogOpen(false);
     setSelectedApproval(null);
+    await fetchApprovals();
   };
 
   const pendingApprovals = approvals.filter((a) => a.status === "pending");
+  const displayApprovals = activeTab === "pending" ? pendingApprovals : approvals;
 
   return (
     <div className="space-y-6">
@@ -54,13 +57,37 @@ export default function ApprovalsQueuePage() {
             Review interrupted LangGraph runs, inspect diffs, and resume executions via Command(resume=...).
           </p>
         </div>
-        <button
-          onClick={() => fetchApprovals()}
-          disabled={loading}
-          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg transition"
-        >
-          {loading ? "Refreshing..." : "Refresh Queue"}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs font-medium">
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`px-3 py-1.5 rounded-md transition ${
+                activeTab === "pending"
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Pending ({pendingApprovals.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("all")}
+              className={`px-3 py-1.5 rounded-md transition ${
+                activeTab === "all"
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              All ({approvals.length})
+            </button>
+          </div>
+          <button
+            onClick={() => fetchApprovals()}
+            disabled={loading}
+            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg transition"
+          >
+            {loading ? "Refreshing..." : "Refresh Queue"}
+          </button>
+        </div>
       </div>
 
       {diffApproval && (
@@ -78,13 +105,13 @@ export default function ApprovalsQueuePage() {
           </div>
           <DiffViewer
             beforeText={JSON.stringify(
-              (diffApproval.payload as any)?.campaign_blueprint || {},
+              (diffApproval.payload as any)?.campaign_blueprint || diffApproval.payload || {},
               null,
               2
             )}
             afterText={JSON.stringify(
               {
-                ...(diffApproval.payload as any)?.campaign_blueprint,
+                ...((diffApproval.payload as any)?.campaign_blueprint || diffApproval.payload),
                 reviewed_with_compliance: true,
                 target_state: "execute_platform_publish_node",
               },
@@ -96,23 +123,32 @@ export default function ApprovalsQueuePage() {
       )}
 
       <div className="space-y-4">
-        {loading && pendingApprovals.length === 0 ? (
+        {loading && approvals.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500 bg-slate-900 border border-slate-800 rounded-xl">
-            Loading pending approvals...
+            Loading approval requests from database...
           </div>
-        ) : pendingApprovals.length === 0 ? (
+        ) : displayApprovals.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500 bg-slate-900 border border-slate-800 rounded-xl">
-            No pending human approvals in the queue. All LangGraph runs are running or finalized.
+            {activeTab === "pending"
+              ? "No pending human approvals in the queue. All LangGraph runs are running or finalized."
+              : "No approval records found."}
           </div>
         ) : (
-          pendingApprovals.map((appr) => (
-            <ApprovalCard
-              key={appr.id}
-              approval={appr}
-              onApprove={handleApprove}
-              onReject={handleReject}
-              onInspectDiff={(a) => setDiffApproval(a)}
-            />
+          displayApprovals.map((appr) => (
+            <div key={appr.id} className="space-y-2">
+              <ApprovalCard
+                approval={appr}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                onInspectDiff={(a) => setDiffApproval(a)}
+              />
+              {appr.status !== "pending" && appr.decision_notes && (
+                <div className="mx-4 p-2.5 bg-slate-950 border border-slate-800/80 rounded-lg text-xs text-slate-400 flex items-center gap-2">
+                  <span className="font-semibold text-slate-300">Decision Notes:</span>
+                  <span>{appr.decision_notes}</span>
+                </div>
+              )}
+            </div>
           ))
         )}
       </div>

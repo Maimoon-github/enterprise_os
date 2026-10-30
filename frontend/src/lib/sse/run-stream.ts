@@ -6,8 +6,13 @@ export function subscribeToRunStream(
   runId: string,
   onEvent: (event: RunStreamEvent) => void,
   onError?: (err: unknown) => void
-) {
-  const eventSource = new EventSource(`${API_BASE}/runs/${runId}/stream`);
+): () => void {
+  if (typeof window === "undefined" || !runId) {
+    return () => {};
+  }
+
+  const url = `${API_BASE}/runs/${encodeURIComponent(runId)}/stream`;
+  const eventSource = new EventSource(url);
 
   const eventTypes: RunStreamEventType[] = [
     "node_start",
@@ -37,5 +42,7 @@ export function subscribeToRunStream(
     eventSource.close();
   };
 
-  return () => eventSource.close();
+  return () => {
+    eventSource.close();
+  };
 }
