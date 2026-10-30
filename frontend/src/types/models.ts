@@ -76,9 +76,36 @@ export interface ScheduleModel {
   platform: string;
   cron_expression?: string | null;
   scheduled_utc?: string | null;
-  status: "scheduled" | "active" | "paused" | string;
+  status: "scheduled" | "active" | "paused" | "published" | string;
   idempotency_key: string;
   created_at: string;
+}
+
+export interface BeatScheduleModel {
+  name: string;
+  task: string;
+  schedule: string;
+  queue: string;
+  status: string;
+}
+
+export interface SandboxStatusModel {
+  engine: string;
+  image: string;
+  memory_limit: string;
+  cpu_limit: string;
+  network_default: string;
+  security_opt: string;
+  cap_drop: string;
+  mount_mode: string;
+  podman_installed: boolean;
+}
+
+export interface WorkerQueueMetricModel {
+  queue: string;
+  routing_key: string;
+  worker_concurrency: number;
+  active_tasks: number;
 }
 
 export interface AnalyticsEventModel {

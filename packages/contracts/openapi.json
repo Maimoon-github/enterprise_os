@@ -1899,6 +1899,7 @@
           "Schedules"
         ],
         "summary": "List Schedules",
+        "description": "List scheduled posts, optionally filtered by campaign.",
         "operationId": "list_schedules_api_v1_schedules_get",
         "security": [
           {
@@ -1979,6 +1980,7 @@
           "Schedules"
         ],
         "summary": "Create Schedule",
+        "description": "Register a scheduled post with deterministic SHA-256 idempotency key.",
         "operationId": "create_schedule_api_v1_schedules_post",
         "security": [
           {
@@ -2019,12 +2021,95 @@
         }
       }
     },
+    "/api/v1/schedules/beat": {
+      "get": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "List Beat Schedules",
+        "description": "Retrieve registered Celery Beat periodic background schedules.",
+        "operationId": "list_beat_schedules_api_v1_schedules_beat_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List Beat Schedules Api V1 Schedules Beat Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/schedules/beat/{schedule_name}/trigger": {
+      "post": {
+        "tags": [
+          "Schedules"
+        ],
+        "summary": "Trigger Beat Schedule",
+        "description": "Manually dispatch a Celery Beat periodic task immediately.",
+        "operationId": "trigger_beat_schedule_api_v1_schedules_beat__schedule_name__trigger_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "schedule_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Schedule Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Trigger Beat Schedule Api V1 Schedules Beat  Schedule Name  Trigger Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/schedules/{schedule_id}": {
       "delete": {
         "tags": [
           "Schedules"
         ],
         "summary": "Delete Schedule",
+        "description": "Delete a scheduled post.",
         "operationId": "delete_schedule_api_v1_schedules__schedule_id__delete",
         "security": [
           {
@@ -2066,6 +2151,7 @@
           "Settings"
         ],
         "summary": "Get Settings",
+        "description": "Retrieve platform security, Celery queues, and Podman sandbox configuration.",
         "operationId": "get_settings_api_v1_settings_get",
         "responses": {
           "200": {
@@ -2090,6 +2176,7 @@
           "Settings"
         ],
         "summary": "Update Settings",
+        "description": "Update system settings.",
         "operationId": "update_settings_api_v1_settings_patch",
         "requestBody": {
           "content": {
@@ -3515,6 +3602,23 @@
             },
             "type": "array",
             "title": "Allowed Platforms"
+          },
+          "sandbox_limits": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Sandbox Limits"
+          },
+          "celery_queues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Celery Queues"
+          },
+          "beat_schedules_count": {
+            "type": "integer",
+            "title": "Beat Schedules Count",
+            "default": 3
           }
         },
         "type": "object",

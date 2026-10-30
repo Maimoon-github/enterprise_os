@@ -54,6 +54,9 @@ class SettingsResponse(BaseSchema):
     checkpointer: str = "PostgresSaver (Async)"
     target_platforms_count: int = 8
     allowed_platforms: list[PlatformType] = Field(default_factory=lambda: list(SUPPORTED_PLATFORMS))
+    sandbox_limits: dict[str, Any] = Field(default_factory=dict)
+    celery_queues: list[str] = Field(default_factory=list)
+    beat_schedules_count: int = 3
 
 
 class SettingsUpdateRequest(BaseSchema):

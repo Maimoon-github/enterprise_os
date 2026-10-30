@@ -22,6 +22,7 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-# Backward-compatible alias
+# Backward-compatible aliases
 get_db_session = get_async_session
+async_session_factory = AsyncSessionLocal
 

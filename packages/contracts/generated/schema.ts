@@ -497,11 +497,57 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Schedules */
+        /**
+         * List Schedules
+         * @description List scheduled posts, optionally filtered by campaign.
+         */
         get: operations["list_schedules_api_v1_schedules_get"];
         put?: never;
-        /** Create Schedule */
+        /**
+         * Create Schedule
+         * @description Register a scheduled post with deterministic SHA-256 idempotency key.
+         */
         post: operations["create_schedule_api_v1_schedules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/beat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Beat Schedules
+         * @description Retrieve registered Celery Beat periodic background schedules.
+         */
+        get: operations["list_beat_schedules_api_v1_schedules_beat_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedules/beat/{schedule_name}/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Beat Schedule
+         * @description Manually dispatch a Celery Beat periodic task immediately.
+         */
+        post: operations["trigger_beat_schedule_api_v1_schedules_beat__schedule_name__trigger_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -518,7 +564,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Schedule */
+        /**
+         * Delete Schedule
+         * @description Delete a scheduled post.
+         */
         delete: operations["delete_schedule_api_v1_schedules__schedule_id__delete"];
         options?: never;
         head?: never;
@@ -532,14 +581,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Settings */
+        /**
+         * Get Settings
+         * @description Retrieve platform security, Celery queues, and Podman sandbox configuration.
+         */
         get: operations["get_settings_api_v1_settings_get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Settings */
+        /**
+         * Update Settings
+         * @description Update system settings.
+         */
         patch: operations["update_settings_api_v1_settings_patch"];
         trace?: never;
     };
@@ -1127,6 +1182,17 @@ export interface components {
             target_platforms_count: number;
             /** Allowed Platforms */
             allowed_platforms?: ("linkedin" | "youtube" | "instagram" | "threads" | "facebook" | "x" | "pinterest" | "google_business_profile")[];
+            /** Sandbox Limits */
+            sandbox_limits?: {
+                [key: string]: unknown;
+            };
+            /** Celery Queues */
+            celery_queues?: string[];
+            /**
+             * Beat Schedules Count
+             * @default 3
+             */
+            beat_schedules_count: number;
         };
         /** SettingsUpdateRequest */
         SettingsUpdateRequest: {
@@ -2342,6 +2408,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_beat_schedules_api_v1_schedules_beat_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    trigger_beat_schedule_api_v1_schedules_beat__schedule_name__trigger_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
