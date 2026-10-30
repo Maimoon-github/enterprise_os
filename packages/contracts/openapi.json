@@ -1190,6 +1190,7 @@
           "MCP Servers"
         ],
         "summary": "List Mcp Servers",
+        "description": "Retrieve list and capabilities of registered FastMCP servers compliant with MCP 2026-07-28.",
         "operationId": "list_mcp_servers_api_v1_mcp_servers_get",
         "responses": {
           "200": {
@@ -1220,6 +1221,7 @@
           "MCP Servers"
         ],
         "summary": "Sync Mcp Server",
+        "description": "Trigger server/discover and update local tool/resource inventory.",
         "operationId": "sync_mcp_server_api_v1_mcp_servers__server_id__sync_post",
         "security": [
           {

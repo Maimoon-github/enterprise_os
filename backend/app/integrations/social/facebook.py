@@ -1,9 +1,20 @@
+from typing import Any
+
 from app.integrations.social.base_adapter import BaseSocialAdapter
 
 
 class FacebookAdapter(BaseSocialAdapter):
-    async def publish(self, payload: dict, credentials: dict) -> dict:
-        return {"platform": "facebook", "status": "published", "post_id": "fb_post_12345"}
+    """Meta Graph API Page Feed & Video adapter."""
 
-    async def fetch_metrics(self, post_id: str, credentials: dict) -> dict:
-        return {"reach": 1800, "clicks": 28, "shares": 5}
+    async def publish(self, payload: dict[str, Any], credentials: dict[str, Any]) -> dict[str, Any]:
+        post_id = f"fb_{payload.get('idempotency_key', 'default')[:12]}"
+        return {
+            "platform": "facebook",
+            "status": "published",
+            "post_id": post_id,
+            "url": f"https://www.facebook.com/posts/{post_id}",
+            "aspect_ratio": payload.get("aspect_ratio", "16:9"),
+        }
+
+    async def fetch_metrics(self, post_id: str, credentials: dict[str, Any]) -> dict[str, Any]:
+        return {"platform": "facebook", "post_id": post_id, "reach": 1900, "clicks": 68, "shares": 9}

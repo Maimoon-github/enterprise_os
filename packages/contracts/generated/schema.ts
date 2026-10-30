@@ -343,7 +343,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Mcp Servers */
+        /**
+         * List Mcp Servers
+         * @description Retrieve list and capabilities of registered FastMCP servers compliant with MCP 2026-07-28.
+         */
         get: operations["list_mcp_servers_api_v1_mcp_servers_get"];
         put?: never;
         post?: never;
@@ -362,7 +365,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Sync Mcp Server */
+        /**
+         * Sync Mcp Server
+         * @description Trigger server/discover and update local tool/resource inventory.
+         */
         post: operations["sync_mcp_server_api_v1_mcp_servers__server_id__sync_post"];
         delete?: never;
         options?: never;

@@ -41,9 +41,11 @@ async def get_presigned_url(
     bucket: str | None = None,
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    from app.integrations.storage.minio import generate_presigned_url
+
     target_bucket = bucket or settings.MINIO_BUCKET_RAW
     key = f"uploads/{uuid.uuid4().hex[:12]}_{filename}"
-    url = f"http://{settings.MINIO_ENDPOINT}/{target_bucket}/{key}"
+    url = generate_presigned_url(target_bucket, key, expires_seconds=3600)
     return MediaPresignedUrlResponse(
         url=url,
         bucket=target_bucket,

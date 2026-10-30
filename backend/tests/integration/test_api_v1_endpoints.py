@@ -120,3 +120,66 @@ async def test_schedules_beat_endpoints():
         assert trigger_res.status_code == 200
         trigger_data = trigger_res.json()
         assert trigger_data["schedule_name"] == "midnight-brand-compliance-audit"
+
+
+@pytest.mark.asyncio
+async def test_mcp_servers_api():
+    """Verify GET /api/v1/mcp-servers and POST /api/v1/mcp-servers/{id}/sync."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin_token = create_access_token({"sub": "admin_1", "email": "a@ex.com", "role": "admin"})
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        res = await ac.get("/api/v1/mcp-servers", headers=headers)
+        assert res.status_code == 200
+        servers = res.json()
+        assert len(servers) == 4
+        names = {s["name"] for s in servers}
+        assert "brand_rag_server" in names
+        assert "social_gateway_server" in names
+        assert "media_studio_server" in names
+        assert "analytics_server" in names
+
+        # Test sync discovery endpoint
+        sync_res = await ac.post("/api/v1/mcp-servers/brand_rag_server/sync", headers=headers)
+        assert sync_res.status_code == 200
+        sync_data = sync_res.json()
+        assert sync_data["status"] == "synced"
+        assert sync_data["server_id"] == "brand_rag_server"
+        assert sync_data["tools_synced"] >= 3
+
+
+@pytest.mark.asyncio
+async def test_media_and_analytics_endpoints():
+    """Verify /api/v1/media presigned URL generation and /api/v1/analytics KPIs and anomalies."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin_token = create_access_token({"sub": "admin_1", "email": "a@ex.com", "role": "admin"})
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        # Media presigned
+        presigned_res = await ac.get("/api/v1/media/presigned?filename=hero_banner.png", headers=headers)
+        assert presigned_res.status_code == 200
+        presigned = presigned_res.json()
+        assert "hero_banner.png" in presigned["key"]
+        assert presigned["bucket"] is not None
+        assert presigned["url"] is not None
+
+        # Media list
+        media_list = await ac.get("/api/v1/media", headers=headers)
+        assert media_list.status_code == 200
+        assert isinstance(media_list.json(), list)
+
+        # Analytics KPIs
+        kpi_res = await ac.get("/api/v1/analytics/kpis", headers=headers)
+        assert kpi_res.status_code == 200
+        kpis = kpi_res.json()
+        assert kpis["impressions_total"] > 0
+        assert kpis["platforms_active"] == 8
+
+        # Analytics Anomalies
+        anom_res = await ac.get("/api/v1/analytics/anomalies", headers=headers)
+        assert anom_res.status_code == 200
+        anomalies = anom_res.json()
+        assert isinstance(anomalies, list)
+

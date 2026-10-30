@@ -164,3 +164,136 @@ def test_publishing_task_idempotency_deduplication():
     res2 = dispatch_platform_post("linkedin", payload, key)
     assert res2["status"] == "skipped_duplicate"
     assert res2["idempotency_key"] == key
+
+
+def test_secret_service_aes_256_gcm():
+    """Verify SecretService AES-256-GCM encryption, decryption, and tampering rejection."""
+    from app.services.secret_service import secret_service
+
+    raw = "oauth_token_secret_xyz123"
+    enc = secret_service.encrypt(raw)
+    assert enc.startswith("aes256gcm_")
+    assert enc != raw
+
+    dec = secret_service.decrypt(enc)
+    assert dec == raw
+
+    # Unique nonces per call
+    enc2 = secret_service.encrypt(raw)
+    assert enc != enc2
+    assert secret_service.decrypt(enc2) == raw
+
+    # Tampered ciphertext fails
+    with pytest.raises(ValueError):
+        secret_service.decrypt(enc[:-4] + "AAAA")
+
+
+def test_mcp_meta_protocol_and_client_envelope():
+    """Verify MCP 2026-07-28 stateless _meta envelope structure and client injection."""
+    from app.mcp.client import MCPClient
+
+    client = MCPClient("test_server", "http://localhost:8081/mcp")
+    meta = client._meta_envelope()
+    assert meta["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
+    assert meta["io.modelcontextprotocol/clientInfo"]["name"] == "marketing-os-worker"
+    assert "elicitation" in meta["io.modelcontextprotocol/clientCapabilities"]
+
+    payload = client._wrap_meta({"method": "tools/call", "params": {"name": "test"}})
+    assert "_meta" in payload
+    assert payload["_meta"]["io.modelcontextprotocol/protocolVersion"] == "2026-07-28"
+
+
+@pytest.mark.asyncio
+async def test_mcp_discovery_caching_and_subscriptions():
+    """Verify server/discover ttlMs caching and subscriptions/listen for toolsListChanged."""
+    from app.mcp.discovery import MCPDiscovery
+
+    discovery = MCPDiscovery()
+    caps = await discovery.discover_capabilities("http://localhost:8081/mcp")
+    assert caps["protocolVersion"] == "2026-07-28"
+    assert caps["ttlMs"] == 300000
+    assert "tools" in caps
+
+    # Subscribed to change notifications
+    sub = await discovery.subscribe_notifications("brand_rag_server", "http://localhost:8081/mcp")
+    assert sub["subscribed"] is True
+    assert sub["notifications"]["toolsListChanged"] is True
+
+
+@pytest.mark.asyncio
+async def test_fastmcp_servers_and_tools_execution():
+    """Verify all 4 FastMCP servers, their tools, resources, and tasks handles."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+    from mcp_servers.analytics_server.tools import detect_metric_anomalies, query_aggregated_kpis
+    from mcp_servers.brand_rag_server.resources import get_brand_guidelines
+    from mcp_servers.brand_rag_server.tools import search_brand_knowledge, store_campaign_learnings
+    from mcp_servers.media_studio_server.tasks_extension import (
+        burn_subtitles,
+        poll_media_job_status,
+        submit_image_generation_job,
+    )
+    from mcp_servers.social_gateway_server.tools import publish_to_platform, verify_platform_post
+
+    # 1. Brand RAG Server
+    rag_res = search_brand_knowledge("tone of voice guidelines", "b-01")
+    assert len(rag_res) > 0
+    assert "content" in rag_res[0]
+
+    learn_res = store_campaign_learnings("c-01", "Highlighting ROI yields +24% CTR", 0.92)
+    assert learn_res["status"] == "stored"
+
+    guide = get_brand_guidelines("b-01")
+    assert "Brand Voice" in guide
+
+    # 2. Social Gateway Server (with idempotency and mock secret)
+    pub_res = await publish_to_platform("linkedin", {"text": "MCP test post"}, idempotency_key="mcp_idemp_001")
+    assert pub_res["status"] == "published"
+    assert pub_res["idempotency_key"] == "mcp_idemp_001"
+
+    dup_res = await publish_to_platform("linkedin", {"text": "MCP test post"}, idempotency_key="mcp_idemp_001")
+    assert dup_res["status"] == "skipped_duplicate"
+
+    ver_res = await verify_platform_post("linkedin", pub_res["post_id"])
+    assert ver_res["verified"] is True
+
+    # 3. Media Studio Server & Tasks Extension
+    job = await submit_image_generation_job("Cinematic futuristic office", "16:9")
+    assert job["status"] == "submitted"
+    task_id = job["task_id"]
+
+    status = await poll_media_job_status(task_id)
+    assert status["status"] in ("submitted", "processing", "in_progress", "completed")
+
+    sub_res = await burn_subtitles("minio://raw/video.mp4", "minio://raw/subs.srt")
+    assert "result_uri" in sub_res
+
+    # 4. Analytics Server (Polars Z-score)
+    kpis = query_aggregated_kpis("2026-10-01", "2026-10-30", ["linkedin", "youtube"])
+    assert kpis["total_impressions"] > 0
+
+    anomalies = detect_metric_anomalies(
+        metric_series=[10.0, 10.5, 9.8, 10.2, 10.1, 9.9, 25.0],
+        platforms=["youtube"] * 7,
+    )
+    assert len(anomalies) >= 1
+    assert anomalies[0]["z_score"] > 1.5
+
+
+def test_worker_tool_retry_policy():
+    """Verify Pydantic AI worker retry policies: 3 for read/RAG, 1 for mutating publish."""
+    from app.orchestrator.workers.retry_policies import (
+        MUTATING_PUBLISH_MAX_RETRIES,
+        READ_TOOLS_MAX_RETRIES,
+        get_tool_retry_policy,
+    )
+
+    assert READ_TOOLS_MAX_RETRIES == 3
+    assert MUTATING_PUBLISH_MAX_RETRIES == 1
+
+    assert get_tool_retry_policy("search_brand_knowledge") == 3
+    assert get_tool_retry_policy("retrieve_winning_campaigns") == 3
+    assert get_tool_retry_policy("publish_to_platform") == 1
+    assert get_tool_retry_policy("dispatch_platform_post") == 1
+

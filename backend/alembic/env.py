@@ -1,9 +1,9 @@
 import asyncio
 from logging.config import fileConfig
 
+import app.db  # noqa: F401
 from alembic import context
 from app.core.config import settings
-import app.db  # noqa: F401
 from app.db.base import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -18,11 +18,8 @@ target_metadata = Base.metadata
 
 
 def include_name(name: str | None, type_: str, parent_names: dict) -> bool:
-    if type_ == "table" and name:
-        # Ignore LangGraph PostgresSaver checkpointer tables
-        if name.startswith("checkpoint"):
-            return False
-    return True
+    # Ignore LangGraph PostgresSaver checkpointer tables
+    return not (type_ == "table" and name and name.startswith("checkpoint"))
 
 
 def run_migrations_offline() -> None:
