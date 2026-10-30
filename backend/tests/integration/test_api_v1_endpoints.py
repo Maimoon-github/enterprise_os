@@ -170,12 +170,28 @@ async def test_media_and_analytics_endpoints():
         assert media_list.status_code == 200
         assert isinstance(media_list.json(), list)
 
+        # Post real analytics event
+        brand_list = await ac.get("/api/v1/brands", headers=headers)
+        brand_id = brand_list.json()[0]["id"]
+        post_res = await ac.post(
+            "/api/v1/analytics/events",
+            headers=headers,
+            json={
+                "brand_id": brand_id,
+                "platform": "linkedin",
+                "external_post_id": "post_test_1",
+                "metric_type": "impressions",
+                "metric_value": 1500,
+            },
+        )
+        assert post_res.status_code == 201
+
         # Analytics KPIs
         kpi_res = await ac.get("/api/v1/analytics/kpis", headers=headers)
         assert kpi_res.status_code == 200
         kpis = kpi_res.json()
-        assert kpis["impressions_total"] > 0
-        assert kpis["platforms_active"] == 8
+        assert kpis["impressions_total"] >= 1500
+        assert kpis["platforms_active"] >= 1
 
         # Analytics Anomalies
         anom_res = await ac.get("/api/v1/analytics/anomalies", headers=headers)

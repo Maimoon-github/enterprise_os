@@ -144,6 +144,80 @@ export interface paths {
         patch: operations["update_campaign_api_v1_campaigns__campaign_id__patch"];
         trace?: never;
     };
+    "/api/v1/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Chat Sessions
+         * @description List chat sessions for the current user with pinning, archiving, and search filters.
+         */
+        get: operations["list_chat_sessions_api_v1_chat_sessions_get"];
+        put?: never;
+        /**
+         * Create Chat Session
+         * @description Create a new orchestrator chat session scoped to the authenticated user.
+         */
+        post: operations["create_chat_session_api_v1_chat_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Chat Session
+         * @description Retrieve chat session details and all historical messages.
+         */
+        get: operations["get_chat_session_api_v1_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Chat Session
+         * @description Delete a chat session and all attached messages.
+         */
+        delete: operations["delete_chat_session_api_v1_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Chat Session
+         * @description Update chat session title, pinned status, archive state, or project tag.
+         */
+        patch: operations["update_chat_session_api_v1_chat_sessions__session_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/chat/sessions/{session_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Chat Message
+         * @description Send user instruction to the orchestrator chat.
+         *
+         *     Supports SSE streaming (`stream=true`) or synchronous execution (`stream=false`).
+         */
+        post: operations["send_chat_message_api_v1_chat_sessions__session_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -477,7 +551,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Kpis */
+        /**
+         * Get Kpis
+         * @description Calculate aggregated cross-platform KPIs dynamically from actual database records.
+         *
+         *     Returns zero-state when no events have been ingested (no demo/mock data).
+         */
         get: operations["get_kpis_api_v1_analytics_kpis_get"];
         put?: never;
         post?: never;
@@ -494,8 +573,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Anomalies */
+        /**
+         * Get Anomalies
+         * @description Retrieve statistical anomalies from recorded analytics events.
+         *
+         *     Returns empty list when baseline sample size is insufficient or no variance exists.
+         */
         get: operations["get_anomalies_api_v1_analytics_anomalies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analytics/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Analytics Channels
+         * @description Provide visibility into connection status and real analytics event counts across all 8 platforms.
+         */
+        get: operations["get_analytics_channels_api_v1_analytics_channels_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -625,9 +729,97 @@ export interface paths {
         head?: never;
         /**
          * Update Settings
-         * @description Update system settings.
+         * @description Update system settings with allowlisted keys.
          */
         patch: operations["update_settings_api_v1_settings_patch"];
+        trace?: never;
+    };
+    "/api/v1/settings/platforms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Platform Connections
+         * @description List connection states across all 8 target platforms with secrets masked.
+         */
+        get: operations["list_platform_connections_api_v1_settings_platforms_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/platforms/{platform}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Configure Platform Connection
+         * @description Store encrypted credentials for a platform using zero-trust AES-256-GCM. Plaintext is never persisted.
+         */
+        put: operations["configure_platform_connection_api_v1_settings_platforms__platform__put"];
+        post?: never;
+        /**
+         * Disconnect Platform
+         * @description Disconnect platform and securely purge all stored credentials.
+         */
+        delete: operations["disconnect_platform_api_v1_settings_platforms__platform__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/platforms/{platform}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Platform Connection
+         * @description Verify platform connection health and credential decryptability safely without external API dependencies.
+         */
+        post: operations["test_platform_connection_api_v1_settings_platforms__platform__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Preferences
+         * @description Get authenticated user UI and orchestrator preferences.
+         */
+        get: operations["get_user_preferences_api_v1_settings_preferences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update User Preferences
+         * @description Update user UI and orchestrator preferences.
+         */
+        patch: operations["update_user_preferences_api_v1_settings_preferences_patch"];
         trace?: never;
     };
     "/api/v1/observability/traces": {
@@ -767,6 +959,21 @@ export interface components {
              * @default online
              */
             status: string;
+        };
+        /** AnalyticsChannelState */
+        AnalyticsChannelState: {
+            /** Platform */
+            platform: string;
+            /** Is Connected */
+            is_connected: boolean;
+            /** Events Count */
+            events_count: number;
+            /** Impressions */
+            impressions: number;
+            /** Clicks */
+            clicks: number;
+            /** Last Synced At */
+            last_synced_at?: string | null;
         };
         /** AnalyticsEventCreate */
         AnalyticsEventCreate: {
@@ -979,6 +1186,176 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ChatMessageCreate */
+        ChatMessageCreate: {
+            /**
+             * Content
+             * @description User instruction or orchestrator command
+             */
+            content: string;
+            /**
+             * Skills Override
+             * @description Optional skills allowlist override
+             */
+            skills_override?: string[] | null;
+            /**
+             * Campaign Id
+             * @description Linked campaign ID
+             */
+            campaign_id?: string | null;
+            /**
+             * Brand Id
+             * @description Brand workspace context
+             */
+            brand_id?: string | null;
+            /**
+             * Stream
+             * @description Whether to stream response via SSE
+             * @default true
+             */
+            stream: boolean;
+        };
+        /** ChatMessageResponse */
+        ChatMessageResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Session Id
+             * Format: uuid
+             */
+            session_id: string;
+            /** Role */
+            role: string;
+            /** Content */
+            content: string;
+            /** Run Id */
+            run_id?: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ChatSessionCreate */
+        ChatSessionCreate: {
+            /**
+             * Title
+             * @description Optional chat session title
+             */
+            title?: string | null;
+            /**
+             * Project Id
+             * @description Optional project or folder tag
+             */
+            project_id?: string | null;
+            /**
+             * Brand Id
+             * @description Scoped brand workspace ID
+             */
+            brand_id?: string | null;
+        };
+        /** ChatSessionDetailResponse */
+        ChatSessionDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** User Id */
+            user_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Is Pinned
+             * @default false
+             */
+            is_pinned: boolean;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Project Id */
+            project_id?: string | null;
+            /** Brand Id */
+            brand_id?: string | null;
+            /**
+             * Messages Count
+             * @default 0
+             */
+            messages_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Messages */
+            messages?: components["schemas"]["ChatMessageResponse"][];
+        };
+        /** ChatSessionResponse */
+        ChatSessionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** User Id */
+            user_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Is Pinned
+             * @default false
+             */
+            is_pinned: boolean;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Project Id */
+            project_id?: string | null;
+            /** Brand Id */
+            brand_id?: string | null;
+            /**
+             * Messages Count
+             * @default 0
+             */
+            messages_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ChatSessionUpdate */
+        ChatSessionUpdate: {
+            /** Title */
+            title?: string | null;
+            /** Is Pinned */
+            is_pinned?: boolean | null;
+            /** Is Archived */
+            is_archived?: boolean | null;
+            /** Project Id */
+            project_id?: string | null;
+        };
         /** CrossPlatformKPIs */
         CrossPlatformKPIs: {
             /** Impressions Total */
@@ -1154,6 +1531,53 @@ export interface components {
             openinference_conventions: string;
             /** Total Spans Today */
             total_spans_today: number;
+        };
+        /** PlatformConnectionResponse */
+        PlatformConnectionResponse: {
+            /** Platform */
+            platform: string;
+            /** Is Connected */
+            is_connected: boolean;
+            /** Account Name */
+            account_name?: string | null;
+            /** Masked Client Id */
+            masked_client_id?: string | null;
+            /** Last Synced At */
+            last_synced_at?: string | null;
+        };
+        /** PlatformConnectionTestResult */
+        PlatformConnectionTestResult: {
+            /** Platform */
+            platform: string;
+            /** Is Valid */
+            is_valid: boolean;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Message */
+            message: string;
+        };
+        /** PlatformConnectionUpdate */
+        PlatformConnectionUpdate: {
+            /**
+             * Client Id
+             * @description Platform client/app ID
+             */
+            client_id?: string | null;
+            /**
+             * Client Secret
+             * @description Platform client secret (stored encrypted)
+             */
+            client_secret?: string | null;
+            /**
+             * Access Token
+             * @description Platform access/bearer token (stored encrypted)
+             */
+            access_token?: string | null;
+            /**
+             * Account Name
+             * @description Display name for account
+             */
+            account_name?: string | null;
         };
         /** RefreshTokenRequest */
         RefreshTokenRequest: {
@@ -1457,6 +1881,37 @@ export interface components {
              * @default viewer
              */
             role: string;
+        };
+        /** UserPreferencesResponse */
+        UserPreferencesResponse: {
+            /**
+             * Theme
+             * @default bloodstone
+             */
+            theme: string;
+            /**
+             * Notifications Enabled
+             * @default true
+             */
+            notifications_enabled: boolean;
+            /**
+             * Auto Stream Chat
+             * @default true
+             */
+            auto_stream_chat: boolean;
+            /** Default Brand Id */
+            default_brand_id?: string | null;
+        };
+        /** UserPreferencesUpdate */
+        UserPreferencesUpdate: {
+            /** Theme */
+            theme?: string | null;
+            /** Notifications Enabled */
+            notifications_enabled?: boolean | null;
+            /** Auto Stream Chat */
+            auto_stream_chat?: boolean | null;
+            /** Default Brand Id */
+            default_brand_id?: string | null;
         };
         /** UserProfile */
         UserProfile: {
@@ -1870,6 +2325,204 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CampaignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_api_v1_chat_sessions_get: {
+        parameters: {
+            query?: {
+                is_pinned?: boolean | null;
+                is_archived?: boolean | null;
+                search?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_chat_session_api_v1_chat_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatSessionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_api_v1_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_api_v1_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_chat_session_api_v1_chat_sessions__session_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatSessionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_chat_message_api_v1_chat_sessions__session_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2503,6 +3156,26 @@ export interface operations {
             };
         };
     };
+    get_analytics_channels_api_v1_analytics_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsChannelState"][];
+                };
+            };
+        };
+    };
     list_analytics_events_api_v1_analytics_events_get: {
         parameters: {
             query?: {
@@ -2762,6 +3435,174 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_platform_connections_api_v1_settings_platforms_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformConnectionResponse"][];
+                };
+            };
+        };
+    };
+    configure_platform_connection_api_v1_settings_platforms__platform__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformConnectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformConnectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_platform_api_v1_settings_platforms__platform__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_platform_connection_api_v1_settings_platforms__platform__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformConnectionTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_preferences_api_v1_settings_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPreferencesResponse"];
+                };
+            };
+        };
+    };
+    update_user_preferences_api_v1_settings_preferences_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserPreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserPreferencesResponse"];
                 };
             };
             /** @description Validation Error */

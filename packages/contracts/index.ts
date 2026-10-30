@@ -56,6 +56,20 @@ export type MCPSyncResponse = components["schemas"]["MCPSyncResponse"];
 export type SettingsResponse = components["schemas"]["SettingsResponse"];
 export type SettingsUpdateRequest = components["schemas"]["SettingsUpdateRequest"];
 
+export type ChatSessionCreate = components["schemas"]["ChatSessionCreate"];
+export type ChatSessionResponse = components["schemas"]["ChatSessionResponse"];
+export type ChatSessionDetailResponse = components["schemas"]["ChatSessionDetailResponse"];
+export type ChatSessionUpdate = components["schemas"]["ChatSessionUpdate"];
+export type ChatMessageCreate = components["schemas"]["ChatMessageCreate"];
+export type ChatMessageResponse = components["schemas"]["ChatMessageResponse"];
+
+export type PlatformConnectionResponse = components["schemas"]["PlatformConnectionResponse"];
+export type PlatformConnectionUpdate = components["schemas"]["PlatformConnectionUpdate"];
+export type PlatformConnectionTestResult = components["schemas"]["PlatformConnectionTestResult"];
+export type AnalyticsChannelState = components["schemas"]["AnalyticsChannelState"];
+export type UserPreferencesResponse = components["schemas"]["UserPreferencesResponse"];
+export type UserPreferencesUpdate = components["schemas"]["UserPreferencesUpdate"];
+
 export type ObservabilityTraceResponse = components["schemas"]["ObservabilityTraceResponse"];
 export type ObservabilityStatsResponse = components["schemas"]["ObservabilityStatsResponse"];
 export type ObservabilityEvaluationItem = components["schemas"]["ObservabilityEvaluationItem"];

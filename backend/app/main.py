@@ -3,6 +3,20 @@ from contextlib import asynccontextmanager
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.db.base import Base
+from app.db.models import (  # noqa: F401
+    analytics_event,
+    approval,
+    brand,
+    campaign,
+    chat,
+    media_asset,
+    platform_connection,
+    run,
+    schedule,
+    user,
+)
+from app.db.session import engine
 from app.observability.otel import get_tracer, setup_telemetry
 from app.orchestrator.checkpointer import close_checkpointer, init_checkpointer
 from fastapi import FastAPI
@@ -15,6 +29,8 @@ tracer = get_tracer("marketing-os-backend")
 async def lifespan(app: FastAPI):
     setup_logging()
     setup_telemetry()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     await init_checkpointer()
     yield
     await close_checkpointer()

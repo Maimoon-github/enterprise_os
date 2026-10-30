@@ -5,6 +5,7 @@ from app.api.v1 import (
     auth,
     brands,
     campaigns,
+    chat,
     mcp_servers,
     media,
     observability,
@@ -22,6 +23,7 @@ api_v1_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_v1_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_v1_router.include_router(brands.router, prefix="/brands", tags=["Brands"])
 api_v1_router.include_router(campaigns.router, prefix="/campaigns", tags=["Campaigns"])
+api_v1_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
 api_v1_router.include_router(runs.router, prefix="/runs", tags=["Runs"])
 api_v1_router.include_router(approvals.router, prefix="/approvals", tags=["Approvals"])
 api_v1_router.include_router(agents.router, prefix="/agents", tags=["Agents"])
