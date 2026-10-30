@@ -1,16 +1,23 @@
 import uuid
-from datetime import datetime
 
-from pydantic import BaseModel
+from app.schemas.common import BaseSchema, TimestampedSchema
 
 
-class MediaAssetResponse(BaseModel):
-    id: uuid.UUID
+class MediaAssetResponse(TimestampedSchema):
     brand_id: uuid.UUID
-    campaign_id: uuid.UUID | None
+    campaign_id: uuid.UUID | None = None
     minio_bucket: str
     minio_key: str
     content_hash: str
     mime_type: str
-    aspect_ratio: str | None
-    created_at: datetime
+    width: int | None = None
+    height: int | None = None
+    aspect_ratio: str | None = None
+    prompt_lineage: str | None = None
+
+
+class MediaPresignedUrlResponse(BaseSchema):
+    url: str
+    bucket: str
+    key: str
+    expires_in: int = 3600

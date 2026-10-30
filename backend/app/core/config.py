@@ -1,13 +1,40 @@
+import json
+from typing import Any
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file="../.env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file="../.env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     PROJECT_NAME: str = "Agentic Brand Marketing OS"
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "change_this_to_a_secure_random_64_char_hex_string"
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ALLOWED_ORIGINS: Any = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    @field_validator("ALLOWED_ORIGINS", mode="after")
+    @classmethod
+    def assemble_cors_origins(cls, v: Any) -> list[str]:
+
+        if isinstance(v, str):
+            if v.strip().startswith("["):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [i.strip() for i in v.split(",") if i.strip()]
+        if isinstance(v, list):
+            return v
+        return ["http://localhost:3000", "http://127.0.0.1:3000"]
+
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://marketing_os:marketing_os_secret@localhost:5432/marketing_os_db"

@@ -1,14 +1,20 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from app.schemas.common import BaseSchema, PlatformType, TimestampedSchema
 
 
-class ScheduleResponse(BaseModel):
-    id: uuid.UUID
+class ScheduleCreate(BaseSchema):
     campaign_id: uuid.UUID
-    platform: str
-    cron_expression: str | None
-    scheduled_utc: datetime | None
-    status: str
+    platform: PlatformType
+    cron_expression: str | None = None
+    scheduled_utc: datetime | None = None
+
+
+class ScheduleResponse(TimestampedSchema):
+    campaign_id: uuid.UUID
+    platform: PlatformType
+    cron_expression: str | None = None
+    scheduled_utc: datetime | None = None
+    status: str = "scheduled"
     idempotency_key: str

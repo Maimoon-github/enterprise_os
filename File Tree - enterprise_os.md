@@ -8,8 +8,10 @@
 ├── 📁 backend
 │   ├── 📁 alembic
 │   │   ├── 📁 versions
-│   │   │   └── ⚙️ .gitkeep
-│   │   └── 🐍 env.py
+│   │   │   ├── ⚙️ .gitkeep
+│   │   │   └── 🐍 0001_initial_schema.py
+│   │   ├── 🐍 env.py
+│   │   └── 📄 script.py.mako
 │   ├── 📁 app
 │   │   ├── 📁 agents
 │   │   │   ├── 📁 prompts
@@ -68,6 +70,7 @@
 │   │   │   │   ├── 🐍 campaign_repo.py
 │   │   │   │   ├── 🐍 media_repo.py
 │   │   │   │   └── 🐍 run_repo.py
+│   │   │   ├── 🐍 __init__.py
 │   │   │   ├── 🐍 base.py
 │   │   │   └── 🐍 session.py
 │   │   ├── 📁 integrations
@@ -198,8 +201,10 @@
 │   │   ├── 📁 fixtures
 │   │   │   └── ⚙️ sample_blueprint.json
 │   │   ├── 📁 integration
+│   │   │   ├── 🐍 test_api_v1_endpoints.py
 │   │   │   └── 🐍 test_graph.py
 │   │   └── 📁 unit
+│   │       ├── 🐍 test_phase2_security_models.py
 │   │       └── 🐍 test_state.py
 │   ├── ⚙️ alembic.ini
 │   └── ⚙️ pyproject.toml
@@ -304,6 +309,7 @@
 │   │       ├── 📄 graph.ts
 │   │       └── 📄 models.ts
 │   ├── 📄 next.config.ts
+│   ├── ⚙️ package-lock.json
 │   ├── ⚙️ package.json
 │   └── ⚙️ tsconfig.json
 ├── 📁 infra
@@ -332,16 +338,20 @@
 │   │   └── ⚙️ langfuse-overview.json
 │   ├── 📁 langfuse
 │   │   └── ⚙️ .gitkeep
-│   └── 📁 otel-collector
-│       └── ⚙️ config.yaml
+│   ├── 📁 otel-collector
+│   │   └── ⚙️ config.yaml
+│   └── 📝 README.md
 ├── 📁 packages
 │   └── 📁 contracts
 │       ├── 📁 generated
 │       │   └── 📄 schema.ts
+│       ├── 📄 index.ts
 │       ├── ⚙️ openapi.json
+│       ├── ⚙️ package-lock.json
 │       └── ⚙️ package.json
 ├── ⚙️ .gitignore
 ├── 📝 Architecture Blueprint & Directory Specification.md
+├── 📝 File Tree - enterprise_os.md
 ├── 📄 Makefile
 ├── 📝 README.md
 ├── 📝 agentic_brand_marketing_architecture_specification.md
