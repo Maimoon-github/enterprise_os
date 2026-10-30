@@ -1,8 +1,20 @@
-from fastapi import APIRouter
 from app.api.v1 import (
-    auth, users, brands, campaigns, runs, approvals,
-    agents, skills, mcp_servers, media, analytics, schedules, settings, observability
+    agents,
+    analytics,
+    approvals,
+    auth,
+    brands,
+    campaigns,
+    mcp_servers,
+    media,
+    observability,
+    runs,
+    schedules,
+    settings,
+    skills,
+    users,
 )
+from fastapi import APIRouter
 
 api_v1_router = APIRouter()
 

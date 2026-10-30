@@ -1,5 +1,7 @@
 from typing import Literal
+
 from app.orchestrator.state import MarketingOSState
+
 
 def supervisor_router(state: MarketingOSState) -> Literal[
     "research_strategy", "campaign_creative", "human_approval_gate", "publishing_fanout", "closed_loop_eval", "__end__"

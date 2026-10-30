@@ -1,7 +1,9 @@
 from typing import Annotated
-from langchain_core.tools import tool, BaseTool, InjectedToolCallId
+
+from langchain_core.tools import BaseTool, InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
+
 
 def create_scoped_subgraph_handoff(
     *, subgraph_name: str, tool_name: str, description: str

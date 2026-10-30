@@ -1,6 +1,7 @@
 import operator
 from datetime import datetime
 from typing import Annotated, Literal, TypedDict
+
 from pydantic import BaseModel, Field
 
 PlatformType = Literal[

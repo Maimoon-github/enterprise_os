@@ -1,9 +1,11 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Float, DateTime, ForeignKey
+
+from app.db.base import Base
+from sqlalchemy import DateTime, Float, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from app.db.base import Base
+
 
 class AnalyticsEvent(Base):
     __tablename__ = "analytics_events"

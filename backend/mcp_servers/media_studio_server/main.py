@@ -1,8 +1,9 @@
 """Media Studio FastMCP Server (Streamable HTTP + Tasks Extension)
 Handles MinIO asset storage and asynchronous media generation handles.
 """
-from fastmcp import FastMCP
 import uuid
+
+from fastmcp import FastMCP
 
 mcp = FastMCP("MediaStudioServer")
 

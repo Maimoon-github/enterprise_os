@@ -136,6 +136,8 @@ next-env.d.ts
 dump.rdb
 
 # Container & Service Mount Data (preserve directory structure via .gitkeep)
+data/
+*.log
 infra/postgres/data/
 infra/redis/data/
 infra/minio/data/

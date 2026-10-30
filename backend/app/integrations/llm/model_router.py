@@ -1,5 +1,6 @@
 from app.core.config import settings
 
+
 def route_model_for_task(task_type: str) -> str:
     """Selects appropriate local Ollama model based on task complexity."""
     if task_type in ["supervisor_routing", "creative_synthesis", "rubric_evaluation"]:

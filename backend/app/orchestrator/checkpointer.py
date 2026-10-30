@@ -1,5 +1,4 @@
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.core.config import settings
 
 checkpointer_instance: AsyncPostgresSaver | None = None
 

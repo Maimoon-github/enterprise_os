@@ -1,5 +1,6 @@
 name: Offline Golden Suite Evaluation
 
+# Gated for Phase 4+ regression evaluation
 on:
   pull_request:
     paths:
@@ -9,6 +10,8 @@ on:
 
 jobs:
   run-evals:
+    # Deferred to Phase 4+ when agent graphs and evaluators are fully implemented
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

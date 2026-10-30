@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class CrossPlatformKPIs(BaseModel):
     impressions_total: int
     clicks_total: int

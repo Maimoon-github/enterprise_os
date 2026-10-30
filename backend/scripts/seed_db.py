@@ -1,9 +1,11 @@
 import asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
 from app.core.config import settings
-from app.db.models.user import User
-from app.db.models.brand import Brand
 from app.core.security import get_password_hash
+from app.db.models.brand import Brand
+from app.db.models.user import User
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 
 async def seed():
     engine = create_async_engine(settings.DATABASE_URL)

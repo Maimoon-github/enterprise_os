@@ -1,5 +1,6 @@
 from app.integrations.social.base_adapter import BaseSocialAdapter
 
+
 class ThreadsAdapter(BaseSocialAdapter):
     async def publish(self, payload: dict, credentials: dict) -> dict:
         return {"platform": "threads", "status": "published", "post_id": "th_post_12345"}

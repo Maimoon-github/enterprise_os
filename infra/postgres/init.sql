@@ -1,6 +1,11 @@
 -- PostgreSQL Initialization Script
+-- Enable required extensions for marketing_os_db
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- Provision dedicated database for Langfuse if running on shared Postgres instance
+SELECT 'CREATE DATABASE langfuse'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'langfuse')\gexec
 
 -- Core Platform Tables
 CREATE TABLE IF NOT EXISTS users (

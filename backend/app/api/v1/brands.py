@@ -1,9 +1,9 @@
+from app.api.deps import get_current_user, get_db
+from app.db.models.brand import Brand
+from app.db.repositories.base_repo import BaseRepository
+from app.schemas.brand import BrandCreate, BrandResponse
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db, get_current_user
-from app.schemas.brand import BrandCreate, BrandResponse
-from app.db.repositories.base_repo import BaseRepository
-from app.db.models.brand import Brand
 
 router = APIRouter()
 

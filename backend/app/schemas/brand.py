@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
-import uuid
+
 from app.schemas.common import TimestampedSchema
+from pydantic import BaseModel, Field
+
 
 class BrandBase(BaseModel):
     name: str = Field(..., max_length=100)

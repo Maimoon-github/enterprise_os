@@ -1,5 +1,6 @@
-from minio import Minio
 from app.core.config import settings
+from minio import Minio
+
 
 def get_minio_client() -> Minio:
     return Minio(

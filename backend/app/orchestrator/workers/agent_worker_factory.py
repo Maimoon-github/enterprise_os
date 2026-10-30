@@ -1,11 +1,12 @@
-from typing import Type
+
 from pydantic import BaseModel
+
 
 class AgentWorkerFactory:
     """Factory creating ephemeral workers with Pydantic BaseModel output validation."""
 
     @staticmethod
-    def create_worker(name: str, model_tag: str, output_type: Type[BaseModel]):
+    def create_worker(name: str, model_tag: str, output_type: type[BaseModel]):
         return {
             "worker_name": name,
             "model": model_tag,

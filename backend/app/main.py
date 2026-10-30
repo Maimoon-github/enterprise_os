@@ -1,11 +1,14 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.core.telemetry import setup_telemetry
-from app.api.v1.router import api_v1_router
+from app.observability.otel import get_tracer, setup_telemetry
 from app.orchestrator.checkpointer import init_checkpointer
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+tracer = get_tracer("marketing-os-backend")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,8 +36,19 @@ app.include_router(api_v1_router, prefix="/api/v1")
 
 @app.get("/health", tags=["System"])
 async def health_check():
+    with tracer.start_as_current_span("health_smoke_trace") as span:
+        span.set_attribute("service.name", settings.PROJECT_NAME)
+        span.set_attribute("environment", settings.ENVIRONMENT)
+        span.set_attribute("health.status", "healthy")
+        return {
+            "status": "healthy",
+            "service": settings.PROJECT_NAME,
+            "environment": settings.ENVIRONMENT,
+        }
+
+@app.get("/ready", tags=["System"])
+async def ready_check():
     return {
-        "status": "healthy",
+        "status": "ready",
         "service": settings.PROJECT_NAME,
-        "environment": settings.ENVIRONMENT,
     }

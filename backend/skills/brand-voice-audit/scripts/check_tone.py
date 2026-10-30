@@ -1,5 +1,6 @@
-import sys
 import json
+import sys
+
 
 def audit_tone(text: str) -> dict:
     # Rule-based tone check for prohibited buzzwords

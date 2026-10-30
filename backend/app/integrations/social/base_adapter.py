@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class BaseSocialAdapter(ABC):
     @abstractmethod
     async def publish(self, payload: dict, credentials: dict) -> dict:

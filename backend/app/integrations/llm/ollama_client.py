@@ -1,6 +1,7 @@
 import httpx
 from app.core.config import settings
 
+
 class OllamaClient:
     def __init__(self, base_url: str = settings.OLLAMA_BASE_URL):
         self.base_url = base_url

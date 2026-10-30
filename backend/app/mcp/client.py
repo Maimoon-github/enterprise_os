@@ -1,5 +1,6 @@
 import httpx
 
+
 class MCPClient:
     """Connects to FastMCP servers over Streamable HTTP with stateless _meta header."""
     def __init__(self, server_url: str):

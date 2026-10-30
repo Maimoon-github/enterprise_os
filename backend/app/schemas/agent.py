@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class AgentConfig(BaseModel):
     id: str
     name: str

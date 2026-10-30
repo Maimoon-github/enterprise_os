@@ -1,10 +1,11 @@
+import uuid
+
+from app.api.deps import get_current_user, get_db
+from app.db.models.approval import Approval
+from app.db.repositories.base_repo import BaseRepository
+from app.schemas.approval import ApprovalResponse, ApprovalResumeRequest
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-import uuid
-from app.api.deps import get_db, get_current_user
-from app.schemas.approval import ApprovalResponse, ApprovalResumeRequest
-from app.db.repositories.base_repo import BaseRepository
-from app.db.models.approval import Approval
 
 router = APIRouter()
 

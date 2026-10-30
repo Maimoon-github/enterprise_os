@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class SkillSummary(BaseModel):
     name: str
     description: str

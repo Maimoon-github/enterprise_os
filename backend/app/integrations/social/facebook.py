@@ -1,5 +1,6 @@
 from app.integrations.social.base_adapter import BaseSocialAdapter
 
+
 class FacebookAdapter(BaseSocialAdapter):
     async def publish(self, payload: dict, credentials: dict) -> dict:
         return {"platform": "facebook", "status": "published", "post_id": "fb_post_12345"}

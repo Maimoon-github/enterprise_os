@@ -1,10 +1,12 @@
+from collections.abc import AsyncGenerator
+
+from app.core.config import settings
+from app.core.security import ALGORITHM
+from app.db.session import get_db_session
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import get_db_session
-from app.core.security import ALGORITHM
-from app.core.config import settings
-from jose import jwt, JWTError
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -24,6 +26,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     except JWTError:
         raise credentials_exception
 
-async def get_db() -> AsyncSession:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_db_session():
         yield session

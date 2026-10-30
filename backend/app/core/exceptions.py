@@ -1,5 +1,6 @@
 from fastapi import HTTPException, status
 
+
 class EntityNotFoundError(HTTPException):
     def __init__(self, entity_name: str, entity_id: str):
         super().__init__(

@@ -1,5 +1,6 @@
-import sys
 import json
+import sys
+
 
 def parse_serp(raw_html: str) -> list[dict]:
     return [{"rank": 1, "title": "Top Competitor Campaign", "snippet": "Market breakdown"}]

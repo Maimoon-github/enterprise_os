@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class MCPServerStatus(BaseModel):
     name: str
     transport: str

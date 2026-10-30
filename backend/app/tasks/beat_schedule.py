@@ -1,5 +1,5 @@
-from celery.schedules import crontab
 from app.tasks.celery_app import celery_app
+from celery.schedules import crontab
 
 celery_app.conf.beat_schedule = {
     "ingest-social-metrics-every-6-hours": {

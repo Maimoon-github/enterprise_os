@@ -1,5 +1,5 @@
 import subprocess
-import sys
+
 
 def run():
     print("Starting Celery worker for marketing OS...")

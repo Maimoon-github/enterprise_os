@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends
 from app.api.deps import get_current_user
-from app.core.rbac import check_permission, UserRole
+from app.core.rbac import UserRole, check_permission
+from fastapi import APIRouter, Depends
 
 router = APIRouter()
 

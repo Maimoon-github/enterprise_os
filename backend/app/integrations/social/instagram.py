@@ -1,5 +1,6 @@
 from app.integrations.social.base_adapter import BaseSocialAdapter
 
+
 class InstagramAdapter(BaseSocialAdapter):
     async def publish(self, payload: dict, credentials: dict) -> dict:
         return {"platform": "instagram", "status": "published", "post_id": "ig_media_12345"}

@@ -1,5 +1,6 @@
 from app.integrations.social.base_adapter import BaseSocialAdapter
 
+
 class XTwitterAdapter(BaseSocialAdapter):
     async def publish(self, payload: dict, credentials: dict) -> dict:
         return {"platform": "x", "status": "published", "tweet_id": "184920492019"}

@@ -1,5 +1,6 @@
 from app.integrations.social.base_adapter import BaseSocialAdapter
 
+
 class LinkedInAdapter(BaseSocialAdapter):
     async def publish(self, payload: dict, credentials: dict) -> dict:
         return {"platform": "linkedin", "status": "published", "post_id": "urn:li:share:12345"}

@@ -1,5 +1,6 @@
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 
+
 class PlatformOAuthManager:
     @staticmethod
     def get_oauth_client(platform: str, client_id: str, client_secret: str) -> AsyncOAuth2Client:

@@ -1,6 +1,92 @@
 # Production Docker Compose Profile
 services:
   backend:
+    build:
+      context: .
+      dockerfile: infra/podman/worker.Containerfile
+    container_name: marketing-os-backend-prod
     restart: always
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    working_dir: /workspace
+    ports:
+      - "8000:8000"
     environment:
       - ENVIRONMENT=production
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=minio:9000
+      - QDRANT_HOST=qdrant
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - marketing-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/podman/worker.Containerfile
+    container_name: marketing-os-worker-prod
+    restart: always
+    command: ["celery", "-A", "app.tasks.celery_app", "worker", "-l", "info", "-Q", "orchestrator_queue,publishing_queue,media_queue,analytics_queue"]
+    working_dir: /workspace
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - MINIO_ENDPOINT=minio:9000
+      - QDRANT_HOST=qdrant
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - marketing-net
+
+  beat:
+    build:
+      context: .
+      dockerfile: infra/podman/worker.Containerfile
+    container_name: marketing-os-beat-prod
+    restart: always
+    command: ["celery", "-A", "app.tasks.celery_app", "beat", "-l", "info"]
+    working_dir: /workspace
+    environment:
+      - ENVIRONMENT=production
+      - REDIS_HOST=redis
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - marketing-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/podman/frontend.Containerfile
+    container_name: marketing-os-frontend-prod
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - marketing-net

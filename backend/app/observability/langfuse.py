@@ -1,5 +1,6 @@
-from langfuse import Langfuse
 from app.core.config import settings
+from langfuse import Langfuse
+
 
 def get_langfuse_client() -> Langfuse:
     return Langfuse(

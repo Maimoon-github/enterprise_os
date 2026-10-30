@@ -1,7 +1,7 @@
+from app.api.deps import get_current_user, get_db
+from app.core.rbac import UserRole, check_permission
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db, get_current_user
-from app.core.rbac import check_permission, UserRole
 
 router = APIRouter()
 

@@ -1,5 +1,7 @@
 from enum import Enum
+
 from fastapi import HTTPException, status
+
 
 class UserRole(str, Enum):
     ADMIN = "admin"

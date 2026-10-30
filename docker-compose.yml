@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marketing_os_secret}
       POSTGRES_DB: ${POSTGRES_DB:-marketing_os_db}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -16,14 +16,17 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marketing_os} -d ${POSTGRES_DB:-marketing_os_db}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 5s
+    networks:
+      - marketing-net
 
   redis:
     image: redis:7-alpine
     container_name: marketing-os-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -31,19 +34,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  qdrant:
-    image: qdrant/qdrant:v1.12.0
-    container_name: marketing-os-qdrant
-    restart: unless-stopped
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
+    networks:
+      - marketing-net
 
   minio:
-    image: minio/minio:RELEASE.2024-10-02T17-50-41Z
+    image: minio/minio:latest
     container_name: marketing-os-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -55,6 +50,49 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r resp <&3 && [[ \"$$resp\" == *'200 OK'* ]]"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - marketing-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: marketing-os-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/6333 && printf 'GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r resp <&3 && [[ \"$$resp\" == *'200 OK'* ]]"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - marketing-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: marketing-os-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - marketing-net
 
   langfuse:
     image: ghcr.io/langfuse/langfuse:2
@@ -63,14 +101,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "3001:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-marketing_os}:${POSTGRES_PASSWORD:-marketing_os_secret}@postgres:5432/${POSTGRES_DB:-marketing_os_db}
+      HOSTNAME: "0.0.0.0"
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:-postgresql://marketing_os:marketing_os_secret@postgres:5432/langfuse}
       NEXTAUTH_SECRET: ${SECRET_KEY:-change_this_to_a_secure_random_64_char_hex_string}
       SALT: ${SECRET_KEY:-change_this_to_a_secure_random_64_char_hex_string}
       NEXTAUTH_URL: http://localhost:3001
       TELEMETRY_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:3000/api/public/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - marketing-net
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.111.0
@@ -78,13 +127,23 @@ services:
     restart: unless-stopped
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
-      - ./infra/observability/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./observability/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
+    depends_on:
+      langfuse:
+        condition: service_healthy
+    networks:
+      - marketing-net
+
+networks:
+  marketing-net:
+    driver: bridge
 
 volumes:
   postgres_data:
   redis_data:
   qdrant_data:
   minio_data:
+  ollama_data:

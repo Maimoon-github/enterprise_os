@@ -1,6 +1,6 @@
+from app.core.security import create_access_token
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, EmailStr
-from app.core.security import create_access_token, get_password_hash, verify_password
 
 router = APIRouter()
 

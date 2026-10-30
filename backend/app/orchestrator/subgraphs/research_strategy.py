@@ -1,5 +1,6 @@
-from langgraph.graph import StateGraph, START, END
 from app.orchestrator.state import MarketingOSState
+from langgraph.graph import END, START, StateGraph
+
 
 async def market_recon_node(state: MarketingOSState) -> dict:
     # ReAct reconnaissance node - queries Qdrant BrandRAG and competitor signals
