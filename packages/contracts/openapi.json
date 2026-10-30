@@ -2323,6 +2323,58 @@
         ]
       }
     },
+    "/api/v1/observability/evaluations": {
+      "get": {
+        "tags": [
+          "Observability"
+        ],
+        "summary": "List Evaluations",
+        "operationId": "list_evaluations_api_v1_observability_evaluations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservabilityEvaluationsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/observability/evaluations/run": {
+      "post": {
+        "tags": [
+          "Observability"
+        ],
+        "summary": "Run Evaluations",
+        "operationId": "run_evaluations_api_v1_observability_evaluations_run_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoldenRegressionRunResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -3062,6 +3114,43 @@
         ],
         "title": "CrossPlatformKPIs"
       },
+      "GoldenRegressionRunResponse": {
+        "properties": {
+          "total_scenarios": {
+            "type": "integer",
+            "title": "Total Scenarios"
+          },
+          "passed": {
+            "type": "integer",
+            "title": "Passed"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "pass_rate": {
+            "type": "number",
+            "title": "Pass Rate"
+          },
+          "results": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_scenarios",
+          "passed",
+          "failed",
+          "pass_rate",
+          "results"
+        ],
+        "title": "GoldenRegressionRunResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3301,6 +3390,87 @@
           "key"
         ],
         "title": "MediaPresignedUrlResponse"
+      },
+      "ObservabilityEvaluationItem": {
+        "properties": {
+          "trace_id": {
+            "type": "string",
+            "title": "Trace Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "annotator_kind": {
+            "type": "string",
+            "title": "Annotator Kind"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trace_id",
+          "name",
+          "score",
+          "label",
+          "annotator_kind"
+        ],
+        "title": "ObservabilityEvaluationItem"
+      },
+      "ObservabilityEvaluationsResponse": {
+        "properties": {
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/ObservabilityEvaluationItem"
+            },
+            "type": "array",
+            "title": "Evaluations"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "pass_rate": {
+            "type": "number",
+            "title": "Pass Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "evaluations",
+          "total",
+          "pass_rate"
+        ],
+        "title": "ObservabilityEvaluationsResponse"
       },
       "ObservabilityStatsResponse": {
         "properties": {

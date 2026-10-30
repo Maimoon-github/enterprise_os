@@ -664,6 +664,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/observability/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Evaluations */
+        get: operations["list_evaluations_api_v1_observability_evaluations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/observability/evaluations/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Evaluations */
+        post: operations["run_evaluations_api_v1_observability_evaluations_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -958,6 +992,21 @@ export interface components {
             /** Platforms Active */
             platforms_active: number;
         };
+        /** GoldenRegressionRunResponse */
+        GoldenRegressionRunResponse: {
+            /** Total Scenarios */
+            total_scenarios: number;
+            /** Passed */
+            passed: number;
+            /** Failed */
+            failed: number;
+            /** Pass Rate */
+            pass_rate: number;
+            /** Results */
+            results: {
+                [key: string]: unknown;
+            }[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1059,6 +1108,32 @@ export interface components {
              * @default 3600
              */
             expires_in: number;
+        };
+        /** ObservabilityEvaluationItem */
+        ObservabilityEvaluationItem: {
+            /** Trace Id */
+            trace_id: string;
+            /** Name */
+            name: string;
+            /** Score */
+            score: number;
+            /** Label */
+            label: string;
+            /** Annotator Kind */
+            annotator_kind: string;
+            /** Comment */
+            comment?: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /** ObservabilityEvaluationsResponse */
+        ObservabilityEvaluationsResponse: {
+            /** Evaluations */
+            evaluations: components["schemas"]["ObservabilityEvaluationItem"][];
+            /** Total */
+            total: number;
+            /** Pass Rate */
+            pass_rate: number;
         };
         /** ObservabilityStatsResponse */
         ObservabilityStatsResponse: {
@@ -2736,6 +2811,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ObservabilityStatsResponse"];
+                };
+            };
+        };
+    };
+    list_evaluations_api_v1_observability_evaluations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservabilityEvaluationsResponse"];
+                };
+            };
+        };
+    };
+    run_evaluations_api_v1_observability_evaluations_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoldenRegressionRunResponse"];
                 };
             };
         };

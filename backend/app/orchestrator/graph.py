@@ -1,6 +1,12 @@
 from typing import Any, Literal
 
 from app.core.idempotency import generate_schedule_idempotency_key
+from app.observability.otel import (
+    SPAN_KIND_AGENT,
+    SPAN_KIND_CHAIN,
+    SPAN_KIND_EVALUATOR,
+    openinference_span,
+)
 from app.orchestrator.checkpointer import DynamicCheckpointer, get_checkpointer
 from app.orchestrator.routing import supervisor_router
 from app.orchestrator.state import MarketingOSState
@@ -16,19 +22,31 @@ DEFAULT_RECURSION_LIMIT: int = 25
 
 async def research_strategy_node(state: MarketingOSState) -> dict[str, Any]:
     """Execute research strategy subgraph and return isolated research dossier."""
-    out = await research_strategy_subgraph.ainvoke(state)
-    return {
-        "research_dossier": out.get("research_dossier", {}),
-    }
+    with openinference_span(
+        "research_strategy",
+        span_kind=SPAN_KIND_AGENT,
+        session_id=state.get("thread_id"),
+        attributes={"agent.name": "research_strategy", "graph.node.id": "research_strategy"},
+    ):
+        out = await research_strategy_subgraph.ainvoke(state)
+        return {
+            "research_dossier": out.get("research_dossier", {}),
+        }
 
 
 async def campaign_creative_node(state: MarketingOSState) -> dict[str, Any]:
     """Execute creative planner subgraph and return updated blueprint without duplicating reduced channels."""
-    out = await campaign_creative_subgraph.ainvoke(state)
-    return {
-        "campaign_blueprint": out.get("campaign_blueprint", {}),
-        "approval_status": "pending",
-    }
+    with openinference_span(
+        "campaign_creative",
+        span_kind=SPAN_KIND_AGENT,
+        session_id=state.get("thread_id"),
+        attributes={"agent.name": "campaign_creative", "graph.node.id": "campaign_creative"},
+    ):
+        out = await campaign_creative_subgraph.ainvoke(state)
+        return {
+            "campaign_blueprint": out.get("campaign_blueprint", {}),
+            "approval_status": "pending",
+        }
 
 
 async def prepare_publish_payload_node(state: MarketingOSState) -> dict[str, Any]:
@@ -36,26 +54,32 @@ async def prepare_publish_payload_node(state: MarketingOSState) -> dict[str, Any
 
     and staging the review payload for human inspection.
     """
-    blueprint = dict(state.get("campaign_blueprint") or {})
-    campaign_id = state.get("campaign_id") or blueprint.get("campaign_id", "default_campaign")
-    raw_assets = blueprint.get("platform_assets") or []
+    with openinference_span(
+        "prepare_publish_payload_node",
+        span_kind=SPAN_KIND_CHAIN,
+        session_id=state.get("thread_id"),
+        attributes={"graph.node.id": "prepare_publish_payload_node"},
+    ):
+        blueprint = dict(state.get("campaign_blueprint") or {})
+        campaign_id = state.get("campaign_id") or blueprint.get("campaign_id", "default_campaign")
+        raw_assets = blueprint.get("platform_assets") or []
 
-    validated_assets: list[dict[str, Any]] = []
-    for asset in raw_assets:
-        asset_dict = dict(asset) if isinstance(asset, dict) else asset.model_dump(mode="json")
-        if not asset_dict.get("idempotency_key"):
-            asset_dict["idempotency_key"] = generate_schedule_idempotency_key(
-                campaign_id=campaign_id,
-                platform=asset_dict.get("platform", "linkedin"),
-                scheduled_utc=asset_dict.get("scheduled_utc"),
-            )
-        validated_assets.append(asset_dict)
+        validated_assets: list[dict[str, Any]] = []
+        for asset in raw_assets:
+            asset_dict = dict(asset) if isinstance(asset, dict) else asset.model_dump(mode="json")
+            if not asset_dict.get("idempotency_key"):
+                asset_dict["idempotency_key"] = generate_schedule_idempotency_key(
+                    campaign_id=campaign_id,
+                    platform=asset_dict.get("platform", "linkedin"),
+                    scheduled_utc=asset_dict.get("scheduled_utc"),
+                )
+            validated_assets.append(asset_dict)
 
-    blueprint["platform_assets"] = validated_assets
-    return {
-        "campaign_blueprint": blueprint,
-        "approval_status": "pending",
-    }
+        blueprint["platform_assets"] = validated_assets
+        return {
+            "campaign_blueprint": blueprint,
+            "approval_status": "pending",
+        }
 
 
 async def human_approval_gate_node(
@@ -113,19 +137,25 @@ async def execute_platform_publish_node(
     state: MarketingOSState,
 ) -> Command[Literal["closed_loop_eval"]]:
     """Executes idempotent post-approval publishing fan-out and routes to closed_loop_eval."""
-    approved_state = dict(state)
-    approved_state["approval_status"] = "approved"
-    approved_state["human_approved"] = True
-    fanout_result = await publishing_fanout_subgraph.ainvoke(approved_state)
-    publish_results = fanout_result.get("platform_publish_results", [])
-    return Command(
-        goto="closed_loop_eval",
-        update={
-            "platform_publish_results": publish_results,
-            "approval_status": "approved",
-            "human_approved": True,
-        },
-    )
+    with openinference_span(
+        "execute_platform_publish_node",
+        span_kind=SPAN_KIND_CHAIN,
+        session_id=state.get("thread_id"),
+        attributes={"graph.node.id": "execute_platform_publish_node"},
+    ):
+        approved_state = dict(state)
+        approved_state["approval_status"] = "approved"
+        approved_state["human_approved"] = True
+        fanout_result = await publishing_fanout_subgraph.ainvoke(approved_state)
+        publish_results = fanout_result.get("platform_publish_results", [])
+        return Command(
+            goto="closed_loop_eval",
+            update={
+                "platform_publish_results": publish_results,
+                "approval_status": "approved",
+                "human_approved": True,
+            },
+        )
 
 
 async def campaign_creative_revision_node(
@@ -155,10 +185,16 @@ async def campaign_creative_revision_node(
 
 async def closed_loop_eval_node(state: MarketingOSState) -> dict[str, Any]:
     """Execute closed loop evaluation and return anomalies."""
-    out = await closed_loop_eval_subgraph.ainvoke(state)
-    return {
-        "analytics_anomalies": out.get("analytics_anomalies", []),
-    }
+    with openinference_span(
+        "closed_loop_eval_node",
+        span_kind=SPAN_KIND_EVALUATOR,
+        session_id=state.get("thread_id"),
+        attributes={"graph.node.id": "closed_loop_eval_node"},
+    ):
+        out = await closed_loop_eval_subgraph.ainvoke(state)
+        return {
+            "analytics_anomalies": out.get("analytics_anomalies", []),
+        }
 
 
 builder = StateGraph(MarketingOSState)

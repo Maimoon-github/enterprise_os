@@ -234,3 +234,45 @@ async def test_skills_api_lifecycle():
         assert len(inv_data["errors"]) > 0
 
 
+@pytest.mark.asyncio
+async def test_observability_endpoints():
+    """Verify OpenTelemetry and Langfuse observability traces, stats, evaluations, and golden suite run."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin_token = create_access_token({"sub": "admin_1", "email": "a@ex.com", "role": "admin"})
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        # Traces
+        traces_res = await ac.get("/api/v1/observability/traces", headers=headers)
+        assert traces_res.status_code == 200
+        traces_data = traces_res.json()
+        assert traces_data["openinference_conventions"] == "enabled"
+        assert "Langfuse" in traces_data["exporter"]
+
+        # Stats
+        stats_res = await ac.get("/api/v1/observability/stats", headers=headers)
+        assert stats_res.status_code == 200
+        stats_data = stats_res.json()
+        assert "trajectory_gate_pass_rate" in stats_data
+        assert "brand_voice_rubric_avg" in stats_data
+        assert stats_data["token_velocity_per_min"] > 0
+
+        # Run golden regression suite
+        run_res = await ac.post("/api/v1/observability/evaluations/run", headers=headers)
+        assert run_res.status_code == 200
+        run_data = run_res.json()
+        assert run_data["total_scenarios"] == 3
+        assert run_data["passed"] >= 2
+        assert len(run_data["results"]) == 3
+
+        # List recorded evaluations
+        evals_res = await ac.get("/api/v1/observability/evaluations", headers=headers)
+        assert evals_res.status_code == 200
+        evals_data = evals_res.json()
+        assert evals_data["total"] >= 1
+        assert len(evals_data["evaluations"]) >= 1
+        kinds = {e["annotator_kind"] for e in evals_data["evaluations"]}
+        assert "CODE" in kinds or "LLM" in kinds
+
+
+

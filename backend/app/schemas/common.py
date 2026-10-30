@@ -75,3 +75,27 @@ class ObservabilityStatsResponse(BaseSchema):
     trajectory_gate_pass_rate: float
     brand_voice_rubric_avg: float
     token_velocity_per_min: int
+
+
+class ObservabilityEvaluationItem(BaseSchema):
+    trace_id: str
+    name: str
+    score: float
+    label: str
+    annotator_kind: str
+    comment: str | None = None
+    created_at: str | None = None
+
+
+class ObservabilityEvaluationsResponse(BaseSchema):
+    evaluations: list[ObservabilityEvaluationItem]
+    total: int
+    pass_rate: float
+
+
+class GoldenRegressionRunResponse(BaseSchema):
+    total_scenarios: int
+    passed: int
+    failed: int
+    pass_rate: float
+    results: list[dict[str, Any]]
