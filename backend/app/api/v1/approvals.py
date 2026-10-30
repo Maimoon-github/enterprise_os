@@ -1,6 +1,5 @@
 import contextlib
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from app.api.deps import get_current_user, get_db, require_role
@@ -8,10 +7,12 @@ from app.core.exceptions import EntityNotFoundError
 from app.core.rbac import UserRole
 from app.db.repositories.approval_repo import ApprovalRepository
 from app.schemas.approval import ApprovalResponse, ApprovalResumeRequest
+from app.services.approval_service import ApprovalService
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+approval_service = ApprovalService()
 
 
 @router.get("", response_model=list[ApprovalResponse])
@@ -22,6 +23,7 @@ async def list_approvals(
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    """List approval requests, optionally filtered by status ('pending')."""
     repo = ApprovalRepository(db)
     if status_filter == "pending":
         return await repo.list_pending()
@@ -34,6 +36,7 @@ async def get_approval(
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    """Retrieve details for a single approval gate request."""
     repo = ApprovalRepository(db)
     approval = await repo.get(approval_id)
     if not approval:
@@ -48,31 +51,16 @@ async def resume_approval(
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_role(UserRole.OPERATOR)),
 ):
-    repo = ApprovalRepository(db)
-    approval = await repo.get(approval_id)
-    if not approval:
-        raise EntityNotFoundError("Approval", str(approval_id))
-
+    """Resume a paused LangGraph execution with an operator decision (approved or rejected)."""
     reviewer_id = None
     with contextlib.suppress(ValueError, TypeError):
         reviewer_id = uuid.UUID(current_user["id"])
 
-    new_status = "approved" if payload.approved else "rejected"
-
-    now = datetime.now(UTC)
-
-    await repo.update(
-        approval_id,
-        status=new_status,
-        decision_notes=payload.notes,
-        reviewed_by=reviewer_id,
-        resolved_at=now,
+    return await approval_service.process_decision(
+        approval_id=approval_id,
+        approved=payload.approved,
+        db=db,
+        notes=payload.notes,
+        modifications=payload.modifications,
+        reviewer_id=reviewer_id,
     )
-
-    return {
-        "status": "resumed",
-        "approval_id": str(approval_id),
-        "thread_id": approval.thread_id,
-        "decision": new_status,
-        "resolved_at": now.isoformat(),
-    }

@@ -1,27 +1,35 @@
+import { RunStreamEvent, RunStreamEventType } from "@/types/graph";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export function subscribeToRunStream(
   runId: string,
-  onEvent: (event: { event: string; data: any }) => void,
-  onError?: (err: any) => void
+  onEvent: (event: RunStreamEvent) => void,
+  onError?: (err: unknown) => void
 ) {
   const eventSource = new EventSource(`${API_BASE}/runs/${runId}/stream`);
 
-  eventSource.addEventListener("node_transition", (e) => {
-    try {
-      onEvent({ event: "node_transition", data: JSON.parse(e.data) });
-    } catch {
-      onEvent({ event: "node_transition", data: e.data });
-    }
-  });
+  const eventTypes: RunStreamEventType[] = [
+    "node_start",
+    "node_transition",
+    "tool_call",
+    "interrupt",
+    "node_finish",
+    "complete",
+  ];
 
-  eventSource.addEventListener("complete", (e) => {
-    try {
-      onEvent({ event: "complete", data: JSON.parse(e.data) });
-    } catch {
-      onEvent({ event: "complete", data: e.data });
-    }
-    eventSource.close();
+  eventTypes.forEach((type) => {
+    eventSource.addEventListener(type, (e: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        onEvent({ event: type, data: parsed });
+      } catch {
+        onEvent({ event: type, data: { raw: e.data } });
+      }
+      if (type === "complete") {
+        eventSource.close();
+      }
+    });
   });
 
   eventSource.onerror = (err) => {

@@ -151,10 +151,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Runs */
+        /**
+         * List Runs
+         * @description List runs filtered by campaign or paginated.
+         */
         get: operations["list_runs_api_v1_runs_get"];
         put?: never;
-        /** Dispatch Run */
+        /**
+         * Dispatch Run
+         * @description Dispatch a new orchestrator run for a campaign.
+         */
         post: operations["dispatch_run_api_v1_runs_post"];
         delete?: never;
         options?: never;
@@ -169,7 +175,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Run */
+        /**
+         * Get Run
+         * @description Retrieve run by UUID or thread_id.
+         */
         get: operations["get_run_api_v1_runs__run_id__get"];
         put?: never;
         post?: never;
@@ -186,7 +195,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream Run Execution */
+        /**
+         * Stream Run Execution
+         * @description Stream LangGraph execution events via Server-Sent Events (SSE).
+         */
         get: operations["stream_run_execution_api_v1_runs__run_id__stream_get"];
         put?: never;
         post?: never;
@@ -203,7 +215,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Approvals */
+        /**
+         * List Approvals
+         * @description List approval requests, optionally filtered by status ('pending').
+         */
         get: operations["list_approvals_api_v1_approvals_get"];
         put?: never;
         post?: never;
@@ -220,7 +235,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Approval */
+        /**
+         * Get Approval
+         * @description Retrieve details for a single approval gate request.
+         */
         get: operations["get_approval_api_v1_approvals__approval_id__get"];
         put?: never;
         post?: never;
@@ -239,7 +257,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Resume Approval */
+        /**
+         * Resume Approval
+         * @description Resume a paused LangGraph execution with an operator decision (approved or rejected).
+         */
         post: operations["resume_approval_api_v1_approvals__approval_id__resume_post"];
         delete?: never;
         options?: never;

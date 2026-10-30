@@ -19,10 +19,19 @@ export function useApprovals() {
     }
   }, []);
 
-  const resume = async (id: string, approved: boolean, notes?: string) => {
+  const resume = async (
+    id: string,
+    approved: boolean,
+    notes?: string,
+    modifications?: Record<string, unknown>
+  ) => {
     setLoading(true);
     try {
-      const res = await approvalsApi.resume(id, { approved, notes });
+      const res = await approvalsApi.resume(id, {
+        approved,
+        notes: notes || null,
+        modifications: modifications || null,
+      });
       setApprovals((prev) => prev.filter((a) => a.id !== id));
       return res;
     } finally {

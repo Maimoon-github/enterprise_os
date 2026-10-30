@@ -616,6 +616,7 @@
           "Runs"
         ],
         "summary": "Dispatch Run",
+        "description": "Dispatch a new orchestrator run for a campaign.",
         "operationId": "dispatch_run_api_v1_runs_post",
         "security": [
           {
@@ -660,6 +661,7 @@
           "Runs"
         ],
         "summary": "List Runs",
+        "description": "List runs filtered by campaign or paginated.",
         "operationId": "list_runs_api_v1_runs_get",
         "security": [
           {
@@ -742,6 +744,7 @@
           "Runs"
         ],
         "summary": "Get Run",
+        "description": "Retrieve run by UUID or thread_id.",
         "operationId": "get_run_api_v1_runs__run_id__get",
         "security": [
           {
@@ -789,6 +792,7 @@
           "Runs"
         ],
         "summary": "Stream Run Execution",
+        "description": "Stream LangGraph execution events via Server-Sent Events (SSE).",
         "operationId": "stream_run_execution_api_v1_runs__run_id__stream_get",
         "parameters": [
           {
@@ -829,6 +833,7 @@
           "Approvals"
         ],
         "summary": "List Approvals",
+        "description": "List approval requests, optionally filtered by status ('pending').",
         "operationId": "list_approvals_api_v1_approvals_get",
         "security": [
           {
@@ -910,6 +915,7 @@
           "Approvals"
         ],
         "summary": "Get Approval",
+        "description": "Retrieve details for a single approval gate request.",
         "operationId": "get_approval_api_v1_approvals__approval_id__get",
         "security": [
           {
@@ -958,6 +964,7 @@
           "Approvals"
         ],
         "summary": "Resume Approval",
+        "description": "Resume a paused LangGraph execution with an operator decision (approved or rejected).",
         "operationId": "resume_approval_api_v1_approvals__approval_id__resume_post",
         "security": [
           {

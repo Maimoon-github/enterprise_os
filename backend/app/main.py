@@ -4,7 +4,7 @@ from app.api.v1.router import api_v1_router
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.observability.otel import get_tracer, setup_telemetry
-from app.orchestrator.checkpointer import init_checkpointer
+from app.orchestrator.checkpointer import close_checkpointer, init_checkpointer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,6 +16,7 @@ async def lifespan(app: FastAPI):
     setup_telemetry()
     await init_checkpointer()
     yield
+    await close_checkpointer()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

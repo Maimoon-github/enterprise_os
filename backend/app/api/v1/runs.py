@@ -1,5 +1,3 @@
-import asyncio
-import json
 import uuid
 from typing import Any
 
@@ -8,11 +6,13 @@ from app.core.exceptions import EntityNotFoundError
 from app.core.rbac import UserRole
 from app.db.repositories.run_repo import RunRepository
 from app.schemas.run import RunCreate, RunResponse
+from app.services.run_service import RunService
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+run_service = RunService()
 
 
 @router.post("", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -21,17 +21,13 @@ async def dispatch_run(
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(require_role(UserRole.OPERATOR)),
 ):
-    thread_id = f"thread_{uuid.uuid4().hex[:16]}"
-    repo = RunRepository(db)
-    run = await repo.create(
+    """Dispatch a new orchestrator run for a campaign."""
+    return await run_service.dispatch_orchestrator(
         campaign_id=payload.campaign_id,
-        thread_id=thread_id,
-        status="running",
-        trigger_type="manual",
-        current_node="supervisor_router",
-        token_usage={},
+        db=db,
+        user_command=payload.user_command,
+        skills_override=payload.skills_override,
     )
-    return run
 
 
 @router.get("", response_model=list[RunResponse])
@@ -42,6 +38,7 @@ async def list_runs(
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    """List runs filtered by campaign or paginated."""
     repo = RunRepository(db)
     if campaign_id:
         return await repo.list_by_campaign(campaign_id)
@@ -54,6 +51,7 @@ async def get_run(
     db: AsyncSession = Depends(get_db),
     current_user: dict[str, Any] = Depends(get_current_user),
 ):
+    """Retrieve run by UUID or thread_id."""
     repo = RunRepository(db)
     try:
         run_uuid = uuid.UUID(run_id)
@@ -71,31 +69,14 @@ async def stream_run_execution(
     run_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    async def event_generator():
-        nodes = [
-            "supervisor_router",
-            "research_strategy",
-            "campaign_creative",
-            "human_approval_gate",
-        ]
-        for idx, node in enumerate(nodes):
-            await asyncio.sleep(0.3)
-            payload = {
-                "run_id": run_id,
-                "node": node,
-                "step": idx + 1,
-                "status": "executing",
-            }
-            yield f"event: node_transition\ndata: {json.dumps(payload)}\n\n"
-
-        yield 'event: complete\ndata: {"status": "interrupted", "reason": "human_approval_required"}\n\n'
-
+    """Stream LangGraph execution events via Server-Sent Events (SSE)."""
     return StreamingResponse(
-        event_generator(),
+        run_service.stream_run_execution(run_id=run_id, db=db),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "Content-Type": "text/event-stream",
+            "X-Accel-Buffering": "no",
         },
     )

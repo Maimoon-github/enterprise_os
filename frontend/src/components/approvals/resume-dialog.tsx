@@ -2,32 +2,78 @@
 
 import { useState } from "react";
 
+interface ResumeDialogProps {
+  isOpen: boolean;
+  approvalId?: string;
+  isApprovalAction?: boolean;
+  onClose: () => void;
+  onResume: (notes: string, approved: boolean) => void;
+}
+
 export function ResumeDialog({
   isOpen,
+  approvalId,
+  isApprovalAction = true,
   onClose,
   onResume,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  onResume: (notes: string) => void;
-}) {
+}: ResumeDialogProps) {
   const [notes, setNotes] = useState("");
 
   if (!isOpen) return null;
 
+  const handleSubmit = () => {
+    onResume(notes, isApprovalAction);
+    setNotes("");
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full space-y-4">
-        <h3 className="text-base font-semibold text-white">Resume Execution Decision</h3>
+    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">
+            {isApprovalAction ? "Confirm Approval & Trigger Fan-Out" : "Request Creative Revision"}
+          </h3>
+          <span className="text-xs text-slate-400 font-mono">
+            {approvalId ? `Approval: ${approvalId.slice(0, 8)}...` : ""}
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-400 leading-normal">
+          {isApprovalAction
+            ? "Approving will resume the interrupted LangGraph node, trigger idempotent post-approval platform publishing fan-out across all 8 channels, and record audit lineage."
+            : "Requesting revision increments the Reflexion counter (max 2 revisions) and feeds your critique back into the Campaign Creative sub-graph."}
+        </p>
+
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Enter revision notes or approval context..."
-          className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white"
+          placeholder={
+            isApprovalAction
+              ? "Optional approval context or sign-off notes..."
+              : "Specify required adjustments (e.g., tone refinement, hook adjustment, CTA modification)..."
+          }
+          rows={4}
+          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
         />
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-xs text-slate-400">Cancel</button>
-          <button onClick={() => onResume(notes)} className="px-3 py-1.5 bg-indigo-600 text-xs text-white rounded">Submit</button>
+
+        <div className="flex justify-end gap-2.5 pt-2">
+          <button
+            onClick={onClose}
+            className="px-3.5 py-1.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className={`px-4 py-1.5 text-xs font-semibold rounded shadow transition ${
+              isApprovalAction
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                : "bg-rose-700 hover:bg-rose-600 text-white"
+            }`}
+          >
+            {isApprovalAction ? "Submit Approval & Resume" : "Submit Critique & Loop"}
+          </button>
         </div>
       </div>
     </div>
