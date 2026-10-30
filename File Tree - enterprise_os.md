@@ -175,6 +175,7 @@
 │   │       ├── 🐍 main.py
 │   │       └── 🐍 tools.py
 │   ├── 📁 scripts
+│   │   ├── 🐍 awaken_infrastructure.py
 │   │   ├── 🐍 run_local_worker.py
 │   │   ├── 🐍 seed_db.py
 │   │   └── 🐍 validate_skills.py
