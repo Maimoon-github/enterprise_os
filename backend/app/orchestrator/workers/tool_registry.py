@@ -31,5 +31,16 @@ class ToolRegistry:
     def list_all(self) -> list[str]:
         return list(self._tools.keys())
 
+    def get_scoped_tools(self, allowed_tools: list[str] | None = None) -> list[str]:
+        """Filter registered tools against an explicit allowed-tools scope list."""
+        all_tools = self.list_all()
+        if not allowed_tools:
+            return all_tools
+        return [
+            t
+            for t in all_tools
+            if t in allowed_tools or any(t in a for a in allowed_tools)
+        ]
+
 
 tool_registry = ToolRegistry()

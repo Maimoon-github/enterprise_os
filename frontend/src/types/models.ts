@@ -117,3 +117,22 @@ export interface AnalyticsEventModel {
   metric_value: number;
   recorded_at: string;
 }
+
+export interface SkillModel {
+  name: string;
+  path?: string | null;
+  description: string;
+  compatibility?: string | null;
+  allowed_tools: string[];
+  tier: string;
+  status: string;
+  valid: boolean;
+  lines_count: number;
+  token_estimate: number;
+  tier3_resources: string[];
+}
+
+export interface SkillDetailModel extends SkillModel {
+  content: string;
+  tier2_body: string;
+}

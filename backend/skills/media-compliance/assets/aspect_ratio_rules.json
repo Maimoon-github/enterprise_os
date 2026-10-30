@@ -5,6 +5,56 @@
   "threads": ["1:1", "9:16"],
   "facebook": ["1:1", "16:9", "9:16"],
   "x": ["16:9", "1:1"],
-  "pinterest": ["2:3", "1000x1500"],
-  "google_business_profile": ["4:3", "1:1"]
+  "pinterest": ["2:3", "1:1"],
+  "google_business_profile": ["1:1", "16:9", "4:5"],
+  "platform_specs": {
+    "linkedin": {
+      "allowed_aspect_ratios": ["1:1", "16:9", "4:5"],
+      "recommended_ratio": "1:1",
+      "max_file_size_mb": 100,
+      "allowed_mimes": ["image/png", "image/jpeg", "video/mp4"]
+    },
+    "youtube": {
+      "allowed_aspect_ratios": ["16:9", "9:16"],
+      "recommended_ratio": "16:9",
+      "max_file_size_mb": 256,
+      "allowed_mimes": ["video/mp4"]
+    },
+    "instagram": {
+      "allowed_aspect_ratios": ["1:1", "4:5", "9:16"],
+      "recommended_ratio": "9:16",
+      "max_file_size_mb": 100,
+      "allowed_mimes": ["image/png", "image/jpeg", "video/mp4"]
+    },
+    "threads": {
+      "allowed_aspect_ratios": ["1:1", "9:16"],
+      "recommended_ratio": "1:1",
+      "max_file_size_mb": 50,
+      "allowed_mimes": ["image/png", "image/jpeg", "video/mp4"]
+    },
+    "facebook": {
+      "allowed_aspect_ratios": ["1:1", "16:9", "9:16"],
+      "recommended_ratio": "1:1",
+      "max_file_size_mb": 100,
+      "allowed_mimes": ["image/png", "image/jpeg", "video/mp4"]
+    },
+    "x": {
+      "allowed_aspect_ratios": ["16:9", "1:1"],
+      "recommended_ratio": "16:9",
+      "max_file_size_mb": 50,
+      "allowed_mimes": ["image/png", "image/jpeg", "video/mp4"]
+    },
+    "pinterest": {
+      "allowed_aspect_ratios": ["2:3", "1:1"],
+      "recommended_ratio": "2:3",
+      "max_file_size_mb": 32,
+      "allowed_mimes": ["image/png", "image/jpeg"]
+    },
+    "google_business_profile": {
+      "allowed_aspect_ratios": ["1:1", "16:9", "4:5"],
+      "recommended_ratio": "1:1",
+      "max_file_size_mb": 25,
+      "allowed_mimes": ["image/png", "image/jpeg"]
+    }
+  }
 }

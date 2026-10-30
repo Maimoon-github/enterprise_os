@@ -1114,6 +1114,7 @@
           "Skills"
         ],
         "summary": "List Skills",
+        "description": "Retrieve catalog of all agent skills with Tier 1 metadata and validation badges.",
         "operationId": "list_skills_api_v1_skills_get",
         "responses": {
           "200": {
@@ -1138,12 +1139,61 @@
         ]
       }
     },
+    "/api/v1/skills/{skill_name}": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "Get Skill",
+        "description": "Retrieve full skill specification including Tier 2 instructions and Tier 3 resources.",
+        "operationId": "get_skill_api_v1_skills__skill_name__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skill_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Skill Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/skills/validate": {
       "post": {
         "tags": [
           "Skills"
         ],
         "summary": "Validate Skill",
+        "description": "Validate skill content against the agentskills.io progressive-disclosure specification.",
         "operationId": "validate_skill_api_v1_skills_validate_post",
         "requestBody": {
           "content": {
@@ -3640,6 +3690,95 @@
         ],
         "title": "SettingsUpdateRequest"
       },
+      "SkillDetailResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "compatibility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compatibility"
+          },
+          "allowed_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Tools"
+          },
+          "tier": {
+            "type": "string",
+            "title": "Tier",
+            "default": "Tier 1/2/3"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "validated"
+          },
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "default": true
+          },
+          "lines_count": {
+            "type": "integer",
+            "title": "Lines Count",
+            "default": 0
+          },
+          "token_estimate": {
+            "type": "integer",
+            "title": "Token Estimate",
+            "default": 0
+          },
+          "tier3_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tier3 Resources"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "default": ""
+          },
+          "tier2_body": {
+            "type": "string",
+            "title": "Tier2 Body",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SkillDetailResponse"
+      },
       "SkillSummary": {
         "properties": {
           "name": {
@@ -3683,12 +3822,34 @@
           "tier": {
             "type": "string",
             "title": "Tier",
-            "default": "progressive_disclosure"
+            "default": "Tier 1/2/3"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "validated"
           },
           "valid": {
             "type": "boolean",
             "title": "Valid",
             "default": true
+          },
+          "lines_count": {
+            "type": "integer",
+            "title": "Lines Count",
+            "default": 0
+          },
+          "token_estimate": {
+            "type": "integer",
+            "title": "Token Estimate",
+            "default": 0
+          },
+          "tier3_resources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tier3 Resources"
           }
         },
         "type": "object",
@@ -3706,6 +3867,17 @@
           "content": {
             "type": "string",
             "title": "Content"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           }
         },
         "type": "object",
@@ -3731,6 +3903,11 @@
           "token_estimate": {
             "type": "integer",
             "title": "Token Estimate",
+            "default": 0
+          },
+          "lines_count": {
+            "type": "integer",
+            "title": "Lines Count",
             "default": 0
           }
         },

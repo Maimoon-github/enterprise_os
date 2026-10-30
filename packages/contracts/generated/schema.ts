@@ -309,8 +309,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Skills */
+        /**
+         * List Skills
+         * @description Retrieve catalog of all agent skills with Tier 1 metadata and validation badges.
+         */
         get: operations["list_skills_api_v1_skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{skill_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Skill
+         * @description Retrieve full skill specification including Tier 2 instructions and Tier 3 resources.
+         */
+        get: operations["get_skill_api_v1_skills__skill_name__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -328,7 +351,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Validate Skill */
+        /**
+         * Validate Skill
+         * @description Validate skill content against the agentskills.io progressive-disclosure specification.
+         */
         post: operations["validate_skill_api_v1_skills_validate_post"];
         delete?: never;
         options?: never;
@@ -1207,6 +1233,59 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** SkillDetailResponse */
+        SkillDetailResponse: {
+            /** Name */
+            name: string;
+            /** Path */
+            path?: string | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Compatibility */
+            compatibility?: string | null;
+            /** Allowed Tools */
+            allowed_tools?: string[];
+            /**
+             * Tier
+             * @default Tier 1/2/3
+             */
+            tier: string;
+            /**
+             * Status
+             * @default validated
+             */
+            status: string;
+            /**
+             * Valid
+             * @default true
+             */
+            valid: boolean;
+            /**
+             * Lines Count
+             * @default 0
+             */
+            lines_count: number;
+            /**
+             * Token Estimate
+             * @default 0
+             */
+            token_estimate: number;
+            /** Tier3 Resources */
+            tier3_resources?: string[];
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /**
+             * Tier2 Body
+             * @default
+             */
+            tier2_body: string;
+        };
         /** SkillSummary */
         SkillSummary: {
             /** Name */
@@ -1224,14 +1303,31 @@ export interface components {
             allowed_tools?: string[];
             /**
              * Tier
-             * @default progressive_disclosure
+             * @default Tier 1/2/3
              */
             tier: string;
+            /**
+             * Status
+             * @default validated
+             */
+            status: string;
             /**
              * Valid
              * @default true
              */
             valid: boolean;
+            /**
+             * Lines Count
+             * @default 0
+             */
+            lines_count: number;
+            /**
+             * Token Estimate
+             * @default 0
+             */
+            token_estimate: number;
+            /** Tier3 Resources */
+            tier3_resources?: string[];
         };
         /** SkillValidateRequest */
         SkillValidateRequest: {
@@ -1239,6 +1335,8 @@ export interface components {
             name: string;
             /** Content */
             content: string;
+            /** Path */
+            path?: string | null;
         };
         /** SkillValidateResponse */
         SkillValidateResponse: {
@@ -1251,6 +1349,11 @@ export interface components {
              * @default 0
              */
             token_estimate: number;
+            /**
+             * Lines Count
+             * @default 0
+             */
+            lines_count: number;
         };
         /** TokenResponse */
         TokenResponse: {
@@ -2007,6 +2110,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSummary"][];
+                };
+            };
+        };
+    };
+    get_skill_api_v1_skills__skill_name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

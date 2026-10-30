@@ -183,3 +183,54 @@ async def test_media_and_analytics_endpoints():
         anomalies = anom_res.json()
         assert isinstance(anomalies, list)
 
+
+@pytest.mark.asyncio
+async def test_skills_api_lifecycle():
+    """Verify GET /api/v1/skills, GET /api/v1/skills/{name}, and POST /api/v1/skills/validate."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        admin_token = create_access_token({"sub": "admin_1", "email": "a@ex.com", "role": "admin"})
+        headers = {"Authorization": f"Bearer {admin_token}"}
+
+        # List skills
+        res = await ac.get("/api/v1/skills", headers=headers)
+        assert res.status_code == 200
+        skills = res.json()
+        assert len(skills) >= 4
+        names = {s["name"] for s in skills}
+        assert "brand-voice-audit" in names
+        assert "multi-platform-copy" in names
+        assert "competitor-recon" in names
+        assert "media-compliance" in names
+
+        # Get skill detail
+        detail_res = await ac.get("/api/v1/skills/brand-voice-audit", headers=headers)
+        assert detail_res.status_code == 200
+        detail = detail_res.json()
+        assert detail["name"] == "brand-voice-audit"
+        assert "Brand Voice Audit Skill" in detail["tier2_body"]
+        assert "scripts/check_tone.py" in detail["tier3_resources"]
+
+        # Validate valid skill
+        val_payload = {
+            "name": "custom-audit-skill",
+            "content": "---\nname: custom-audit-skill\ndescription: Custom audit playbook. Activate when testing.\nallowed-tools: none\n---\n\n# Custom Audit\nInstructions",
+        }
+        val_res = await ac.post("/api/v1/skills/validate", json=val_payload, headers=headers)
+        assert val_res.status_code == 200
+        val_data = val_res.json()
+        assert val_data["valid"] is True
+        assert len(val_data["errors"]) == 0
+
+        # Validate invalid skill (missing delimiter, name mismatch)
+        invalid_payload = {
+            "name": "custom-audit-skill",
+            "content": "Not YAML frontmatter",
+        }
+        inv_res = await ac.post("/api/v1/skills/validate", json=invalid_payload, headers=headers)
+        assert inv_res.status_code == 200
+        inv_data = inv_res.json()
+        assert inv_data["valid"] is False
+        assert len(inv_data["errors"]) > 0
+
+

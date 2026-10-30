@@ -1,9 +1,15 @@
-from pathlib import Path
 from typing import Any
 
 from app.api.deps import get_current_user, require_role
+from app.core.exceptions import EntityNotFoundError
 from app.core.rbac import UserRole
-from app.schemas.skill import SkillSummary, SkillValidateRequest, SkillValidateResponse
+from app.schemas.skill import (
+    SkillDetailResponse,
+    SkillSummary,
+    SkillValidateRequest,
+    SkillValidateResponse,
+)
+from app.services.skill_service import skill_service
 from fastapi import APIRouter, Depends
 
 router = APIRouter()
@@ -11,39 +17,20 @@ router = APIRouter()
 
 @router.get("", response_model=list[SkillSummary])
 async def list_skills(current_user: dict[str, Any] = Depends(get_current_user)):
-    skills_dir = Path("skills")
-    results = []
-    if skills_dir.exists():
-        for skill_path in sorted(skills_dir.iterdir()):
-            if skill_path.is_dir() and (skill_path / "SKILL.md").exists():
-                results.append(
-                    SkillSummary(
-                        name=skill_path.name,
-                        path=str(skill_path / "SKILL.md"),
-                        description=f"Skill package for {skill_path.name}",
-                        status="valid",
-                        tier="progressive_disclosure",
-                        valid=True,
-                    )
-                )
-    if not results:
-        results = [
-            SkillSummary(
-                name="brand_voice_guidelines",
-                path="skills/brand_voice_guidelines/SKILL.md",
-                description="Tone of voice and stylistic guardrails",
-                tier="progressive_disclosure",
-                valid=True,
-            ),
-            SkillSummary(
-                name="creative_copy_generation",
-                path="skills/creative_copy_generation/SKILL.md",
-                description="Structured post crafting across 8 channels",
-                tier="progressive_disclosure",
-                valid=True,
-            ),
-        ]
-    return results
+    """Retrieve catalog of all agent skills with Tier 1 metadata and validation badges."""
+    return skill_service.list_skills()
+
+
+@router.get("/{skill_name}", response_model=SkillDetailResponse)
+async def get_skill(
+    skill_name: str,
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Retrieve full skill specification including Tier 2 instructions and Tier 3 resources."""
+    skill = skill_service.get_skill(skill_name)
+    if not skill:
+        raise EntityNotFoundError("Skill", skill_name)
+    return skill
 
 
 @router.post("/validate", response_model=SkillValidateResponse)
@@ -51,15 +38,5 @@ async def validate_skill(
     payload: SkillValidateRequest,
     current_user: dict[str, Any] = Depends(require_role(UserRole.OPERATOR)),
 ):
-    errors = []
-    if not payload.name:
-        errors.append("Skill name cannot be empty")
-    if not payload.content or "---" not in payload.content:
-        errors.append("Skill content must contain YAML frontmatter delimited by '---'")
-
-    token_estimate = len(payload.content.split()) * 2
-    return SkillValidateResponse(
-        valid=len(errors) == 0,
-        errors=errors,
-        token_estimate=token_estimate,
-    )
+    """Validate skill content against the agentskills.io progressive-disclosure specification."""
+    return skill_service.validate_skill_content(payload.name, payload.content)

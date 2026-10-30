@@ -297,3 +297,93 @@ def test_worker_tool_retry_policy():
     assert get_tool_retry_policy("publish_to_platform") == 1
     assert get_tool_retry_policy("dispatch_platform_post") == 1
 
+
+def test_skill_validator_and_packages():
+    """Verify validate_skills.py enforces agentskills.io YAML schema, directories, and budgets."""
+    import sys
+    from pathlib import Path
+
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    sys.path.insert(0, str(backend_dir))
+
+    from scripts.validate_skills import validate_all_skills, validate_single_skill
+
+    skills_dir = backend_dir / "skills"
+    res = validate_all_skills(skills_dir)
+    assert res["valid"] is True
+    assert len(res["skills"]) == 4
+
+    skill_names = {s["name"] for s in res["skills"]}
+    assert skill_names == {
+        "brand-voice-audit",
+        "multi-platform-copy",
+        "competitor-recon",
+        "media-compliance",
+    }
+
+    # Verify invalid naming rejection (uppercase, underscore)
+    invalid_res = validate_single_skill(skills_dir / "brand-voice-audit")
+    assert invalid_res["valid"] is True
+
+
+def test_skill_service_progressive_disclosure_and_sandbox_execution():
+    """Verify SkillService 3-tier progressive disclosure, path traversal defense, and sandboxed script execution."""
+    from app.services.skill_service import skill_service
+
+    # Tier 1 Catalog
+    tier1 = skill_service.get_tier1_catalog()
+    assert len(tier1) >= 4
+    names = {s["name"] for s in tier1}
+    assert "brand-voice-audit" in names
+
+    # Tier 2 On-Demand Loading
+    body = skill_service.load_skill_body("multi-platform-copy")
+    assert "# Multi-Platform Copy Skill" in body
+    assert "---" not in body  # Frontmatter stripped
+
+    # Tier 3 Resource Loading
+    limits = skill_service.load_tier3_resource("multi-platform-copy", "references/PLATFORM_LIMITS.md")
+    assert "LinkedIn" in limits
+    assert "YouTube" in limits
+
+    # Path traversal protection
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        skill_service.load_tier3_resource("multi-platform-copy", "../../../etc/passwd")
+
+    with pytest.raises(ValueError, match="Path traversal detected"):
+        skill_service.load_tier3_resource("multi-platform-copy", "references/../../outside.txt")
+
+    # Tier 3 Script Execution via SandboxService
+    exec_res = skill_service.execute_skill_script(
+        "brand-voice-audit",
+        "check_tone.py",
+        stdin_data="Our game-changer synergy creates a paradigm shift.",
+    )
+    assert exec_res["exit_code"] == 0
+    assert exec_res["parsed_json"] is not None
+    assert exec_res["parsed_json"]["passed"] is False
+    assert len(exec_res["parsed_json"]["violations"]) > 0
+
+
+def test_agent_worker_progressive_disclosure():
+    """Verify AgentWorkerFactory injects Tier 1 catalog by default and scopes tools to active skills."""
+    from app.orchestrator.workers.agent_worker_factory import AgentWorkerFactory
+    from pydantic import BaseModel
+
+    class DummyContract(BaseModel):
+        msg: str
+
+    # Worker with active skill specifying allowed-tools
+    worker = AgentWorkerFactory.create_worker(
+        name="creative_reviewer",
+        model_tag="ollama:qwen2.5:14b",
+        output_type=DummyContract,
+        toolset_name="campaign_creative",
+        active_skills=["brand-voice-audit"],
+    )
+
+    assert len(worker["tier1_skills"]) >= 4
+    assert "brand-voice-audit" in worker["tier2_instructions"]
+    assert "Brand Voice Audit" in worker["tier2_instructions"]["brand-voice-audit"]
+
+
