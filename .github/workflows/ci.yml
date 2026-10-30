@@ -35,6 +35,12 @@ jobs:
       - name: Run Mypy Type Checks
         run: |
           uv run mypy backend
+      - name: Run Backend Test Suites
+        run: |
+          uv run pytest backend/tests/
+      - name: Smoke Test Database Seeding
+        run: |
+          uv run python backend/scripts/seed_db.py
       - name: Validate Compose Config
         run: |
           docker compose config

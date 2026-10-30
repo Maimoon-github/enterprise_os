@@ -33,6 +33,7 @@ GOLDEN_TEST_SCENARIOS: list[dict[str, Any]] = [
             "campaign_creative",
             "prepare_publish_payload_node",
             "human_approval_gate_node",
+            "execute_platform_publish_node",
             "closed_loop_eval",
         ],
         "sample_copy": (
@@ -121,3 +122,21 @@ def run_golden_suite_regression() -> dict[str, Any]:
         "pass_rate": pass_rate,
         "results": results,
     }
+
+
+if __name__ == "__main__":
+    import json
+    import sys
+
+    res = run_golden_suite_regression()
+    print("=== Golden Suite Regression Report ===")
+    print(
+        f"Scenarios: {res['total_scenarios']} | Passed: {res['passed']} | Failed: {res['failed']} | Pass Rate: {res['pass_rate'] * 100:.1f}%"
+    )
+    print(json.dumps(res, indent=2))
+    if res["pass_rate"] < 0.66:
+        print("❌ Golden suite regression failed pass threshold (< 66%)")
+        sys.exit(1)
+    print("✅ Golden suite regression passed all regression checks.")
+    sys.exit(0)
+

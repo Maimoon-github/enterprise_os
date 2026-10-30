@@ -5,7 +5,12 @@ BRAND_VOICE_REGISTRY: dict[str, dict[str, Any]] = {
         "voice": "Authoritative, insightful, data-driven, and forward-looking.",
         "banned_phrases": ["game-changer", "paradigm shift", "synergy", "disruptive"],
         "primary_pillars": ["Zero Hallucinations", "Deterministic State", "Human Governance"],
-    }
+    },
+    "apex-horizon": {
+        "voice": "Authoritative, insightful, data-driven, with complete human governance and deterministic state.",
+        "banned_phrases": ["game-changer", "paradigm shift", "synergy", "disruptive", "revolutionary", "deep dive"],
+        "primary_pillars": ["Zero Hallucinations", "Deterministic State", "Human Governance", "Auditable Lineage"],
+    },
 }
 
 PERSONA_REGISTRY: dict[str, dict[str, Any]] = {
@@ -18,6 +23,11 @@ PERSONA_REGISTRY: dict[str, dict[str, Any]] = {
         "name": "Growth & Performance Marketers",
         "pain_points": ["Multi-platform distribution friction", "Creative fatigue", "Manual scheduling"],
         "preferred_hooks": ["Autonomous multi-channel fan-out", "ReWOO anomaly loops", "Zero-prompt workflows"],
+    },
+    "platform_eng": {
+        "name": "Platform & DevOps Engineers",
+        "pain_points": ["Black-box agent systems", "Lack of state persistence", "Security leaks"],
+        "preferred_hooks": ["Deterministic LangGraph checkpointers", "Rootless Podman sandbox", "W3C trace context"],
     },
 }
 

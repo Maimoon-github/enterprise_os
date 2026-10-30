@@ -89,3 +89,21 @@ def store_campaign_learnings(
         "campaign_id": campaign_id,
         "records_total": len(_STORED_CAMPAIGN_LEARNINGS),
     }
+
+
+def index_brand_document(doc: dict[str, Any]) -> dict[str, Any]:
+    """Index or update a brand guideline document in the Brand RAG knowledge base."""
+    doc_id = doc.get("id") or f"doc_{len(_IN_MEMORY_BRAND_DOCS) + 1:02d}"
+    existing = next((d for d in _IN_MEMORY_BRAND_DOCS if d["id"] == doc_id), None)
+    if existing:
+        existing.update(doc)
+    else:
+        _IN_MEMORY_BRAND_DOCS.append(doc)
+    logger.info("Indexed brand document '%s' (total=%d)", doc_id, len(_IN_MEMORY_BRAND_DOCS))
+    return {
+        "status": "indexed",
+        "id": doc_id,
+        "collection": doc.get("collection", "brand_guidelines"),
+        "total_docs": len(_IN_MEMORY_BRAND_DOCS),
+    }
+

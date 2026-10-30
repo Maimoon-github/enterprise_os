@@ -37,11 +37,17 @@ def evaluate_trajectory(
         idxs = [
             i
             for i, step in enumerate(executed_steps)
-            if target.lower() in step.lower()
-            or (target == "BrandRAG" and any(k in step.lower() for k in ("research", "rag", "recon")))
-            or (target == "DraftCopy" and any(k in step.lower() for k in ("creative", "draft", "planner")))
-            or (target == "ApprovalGate" and any(k in step.lower() for k in ("approval", "interrupt", "gate")))
-            or (target == "Publish" and any(k in step.lower() for k in ("publish", "fanout", "dispatch")))
+            if (
+                (target.lower() in step.lower() and not (target == "Publish" and step.lower().startswith("prepare_")))
+                or (target == "BrandRAG" and any(k in step.lower() for k in ("research", "rag", "recon")))
+                or (target == "DraftCopy" and any(k in step.lower() for k in ("creative", "draft", "planner")))
+                or (target == "ApprovalGate" and any(k in step.lower() for k in ("approval", "interrupt", "gate")))
+                or (
+                    target == "Publish"
+                    and not step.lower().startswith("prepare_")
+                    and any(k in step.lower() for k in ("publish", "fanout", "dispatch"))
+                )
+            )
         ]
         if idxs:
             matched_indices[target] = idxs

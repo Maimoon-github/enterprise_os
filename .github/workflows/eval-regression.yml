@@ -1,23 +1,30 @@
 name: Offline Golden Suite Evaluation
 
-# Gated for Phase 4+ regression evaluation
 on:
   pull_request:
     paths:
       - 'backend/app/orchestrator/**'
       - 'backend/skills/**'
       - 'backend/app/agents/**'
+      - 'backend/app/observability/**'
+  push:
+    branches: [main]
 
 jobs:
   run-evals:
-    # Deferred to Phase 4+ when agent graphs and evaluators are fully implemented
-    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run Trajectory and Rubric Evals
+      - name: Install uv and sync dependencies
         run: |
-          cd backend && python -m unittest discover tests/evals/
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv sync --frozen --all-packages
+      - name: Run Trajectory & Deterministic Schema Evals
+        run: |
+          uv run pytest backend/tests/evals/test_trajectory.py
+      - name: Run Offline Golden Suite Regression
+        run: |
+          cd backend && uv run python -m app.observability.evals.golden_suite

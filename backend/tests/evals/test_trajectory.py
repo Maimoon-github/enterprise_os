@@ -1,3 +1,4 @@
+import pytest
 from app.observability.evals.golden_suite import run_golden_suite_regression
 from app.observability.evals.rubric_judges import run_rubric_judge
 from app.observability.evals.trajectory_evals import (
@@ -6,6 +7,9 @@ from app.observability.evals.trajectory_evals import (
     evaluate_trajectory,
     evaluate_trajectory_order,
 )
+from mcp_servers.brand_rag_server.resources import get_brand_voice_guidelines
+from mcp_servers.brand_rag_server.tools import search_brand_knowledge
+from scripts.seed_db import seed
 
 
 def test_trajectory_evaluator_legacy():
@@ -45,10 +49,10 @@ def test_layer1_deterministic_schema_and_constraints():
     assert constraint_res["valid"] is True
     assert constraint_res["score"] == 1.0
 
-    # Platform constraints: twitter exceeding 280 chars
+    # Platform constraints: x exceeding 280 chars
     long_assets = [
         {
-            "platform": "twitter",
+            "platform": "x",
             "copy_text": "X" * 350,
             "aspect_ratio": "16:9",
         }
@@ -59,10 +63,11 @@ def test_layer1_deterministic_schema_and_constraints():
 
 
 def test_layer2_trajectory_evaluator():
-    # Valid lifecycle order
+    # Valid lifecycle order with payload stager
     valid_steps = [
         "research_strategy_node",
         "campaign_creative_node",
+        "prepare_publish_payload_node",
         "human_approval_gate_node",
         "execute_platform_publish_node",
     ]
@@ -81,6 +86,12 @@ def test_layer2_trajectory_evaluator():
     inverted_res = evaluate_trajectory(inverted_steps)
     assert inverted_res["valid"] is False
     assert len(inverted_res["violations"]) > 0
+
+    # Incomplete lifecycle: missing gate and publish
+    incomplete_steps = ["research_strategy_node", "campaign_creative_node"]
+    incomplete_res = evaluate_trajectory(incomplete_steps)
+    assert incomplete_res["valid"] is False
+    assert incomplete_res["recall"] == 0.5
 
 
 def test_layer3_rubric_judges():
@@ -115,6 +126,33 @@ def test_layer3_rubric_judges():
 def test_layer4_golden_suite_regression():
     reg_res = run_golden_suite_regression()
     assert reg_res["total_scenarios"] == 3
-    assert reg_res["passed"] >= 2
-    assert reg_res["pass_rate"] >= 0.66
+    assert reg_res["passed"] == 3
+    assert reg_res["pass_rate"] == 1.0
     assert len(reg_res["results"]) == 3
+
+
+def test_brand_rag_preindexed_guidelines():
+    """Verify seeded guidelines and personas are retrievable through Brand RAG tools and resources."""
+    guidelines = get_brand_voice_guidelines("apex-horizon")
+    assert "apex-horizon" in guidelines
+    assert "Zero Hallucinations" in guidelines
+    assert "Prohibited Phrases" in guidelines
+
+    search_res = search_brand_knowledge("deterministic governance", limit=2)
+    assert len(search_res) >= 1
+    assert any("governance" in (doc["title"] + " " + doc["snippet"]).lower() for doc in search_res)
+
+
+@pytest.mark.asyncio
+async def test_seed_db_idempotency():
+    """Verify seed_db runs idempotently multiple times without duplicate key violations."""
+    res1 = await seed()
+    assert res1["admin_user"] == "admin@marketing-os.local"
+    assert res1["brand_slug"] == "apex-horizon"
+    assert res1["guidelines_indexed"] == 3
+
+    # Re-run: must succeed with 0 errors and preserve state
+    res2 = await seed()
+    assert res2["admin_user"] == "admin@marketing-os.local"
+    assert res2["brand_slug"] == "apex-horizon"
+    assert res2["guidelines_indexed"] == 3
