@@ -1,0 +1,13 @@
+{
+  "name": "@marketing-os/contracts",
+  "version": "0.1.0",
+  "description": "Shared OpenAPI schemas and generated TypeScript type contracts",
+  "main": "generated/schema.ts",
+  "types": "generated/schema.ts",
+  "scripts": {
+    "generate": "openapi-typescript openapi.json -o generated/schema.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.3"
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Agentic Brand Marketing OS API",
+    "version": "1.0.0",
+    "description": "Control plane API for managing brand marketing campaigns, agent graphs, approvals, skills, and media."
+  },
+  "paths": {
+    "/api/v1/campaigns": {
+      "get": {
+        "summary": "List Campaigns",
+        "operationId": "list_campaigns",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/CampaignResponse" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Campaign",
+        "operationId": "create_campaign",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CampaignCreate" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CampaignResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs": {
+      "post": {
+        "summary": "Dispatch Run",
+        "operationId": "dispatch_run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RunCreate" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RunResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/approvals": {
+      "get": {
+        "summary": "List Approvals",
+        "operationId": "list_approvals",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ApprovalResponse" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/approvals/{id}/resume": {
+      "post": {
+        "summary": "Resume Interrupted Run",
+        "operationId": "resume_approval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ApprovalResumeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resumed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RunResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CampaignCreate": {
+        "type": "object",
+        "required": ["brand_id", "name", "objective"],
+        "properties": {
+          "brand_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "objective": { "type": "string" },
+          "target_platforms": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "CampaignResponse": {
+        "type": "object",
+        "required": ["id", "brand_id", "name", "status", "objective", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "brand_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "status": { "type": "string" },
+          "objective": { "type": "string" },
+          "blueprint": { "type": "object", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RunCreate": {
+        "type": "object",
+        "required": ["campaign_id"],
+        "properties": {
+          "campaign_id": { "type": "string", "format": "uuid" },
+          "user_command": { "type": "string", "nullable": true },
+          "skills_override": {
+            "type": "array",
+            "items": { "type": "string" },
+            "nullable": true
+          }
+        }
+      },
+      "RunResponse": {
+        "type": "object",
+        "required": ["id", "thread_id", "campaign_id", "status", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "thread_id": { "type": "string" },
+          "campaign_id": { "type": "string", "format": "uuid" },
+          "status": { "type": "string" },
+          "current_node": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApprovalResponse": {
+        "type": "object",
+        "required": ["id", "run_id", "thread_id", "status", "step_name", "payload", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "run_id": { "type": "string", "format": "uuid" },
+          "thread_id": { "type": "string" },
+          "status": { "type": "string" },
+          "step_name": { "type": "string" },
+          "payload": { "type": "object" },
+          "decision_notes": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApprovalResumeRequest": {
+        "type": "object",
+        "required": ["approved"],
+        "properties": {
+          "approved": { "type": "boolean" },
+          "notes": { "type": "string", "nullable": true },
+          "modifications": { "type": "object", "nullable": true }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+name: CI & Regression Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate SKILL.md progressive-disclosure packages
+        run: |
+          python backend/scripts/validate_skills.py
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv and dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          cd backend && uv venv && uv sync
+      - name: Run Ruff Lint Checks
+        run: |
+          cd backend && uv run ruff check .
+
+  frontend-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install and Build Contracts
+        run: |
+          cd packages/contracts && npm install
+      - name: Typecheck Frontend
+        run: |
+          cd frontend && npm install && npm run build
