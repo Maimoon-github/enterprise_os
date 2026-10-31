@@ -18,6 +18,7 @@ export type RefreshTokenRequest = components["schemas"]["RefreshTokenRequest"];
 export type TokenResponse = components["schemas"]["TokenResponse"];
 export type UserProfile = components["schemas"]["UserProfile"];
 export type UserCreate = components["schemas"]["UserCreate"];
+export type AuthProviderStatus = components["schemas"]["AuthProviderStatus"];
 
 export type BrandCreate = components["schemas"]["BrandCreate"];
 export type BrandResponse = components["schemas"]["BrandResponse"];

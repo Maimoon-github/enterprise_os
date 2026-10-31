@@ -17,34 +17,25 @@ export async function ensureAuthToken(): Promise<string | null> {
   const existingToken = localStorage.getItem("token");
   if (existingToken) return existingToken;
 
-  try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: "admin@marketing-os.local",
-        password: "admin123",
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      localStorage.setItem("token", data.access_token);
-      if (data.refresh_token) {
-        localStorage.setItem("refreshToken", data.refresh_token);
+  const refreshToken = localStorage.getItem("refreshToken");
+  if (refreshToken) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        localStorage.setItem("token", data.access_token);
+        if (data.refresh_token) {
+          localStorage.setItem("refreshToken", data.refresh_token);
+        }
+        return data.access_token;
       }
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          id: "00000000-0000-0000-0000-000000000001",
-          email: "admin@marketing-os.local",
-          role: data.role || "admin",
-          full_name: "Admin User",
-          accessToken: data.access_token,
-        })
-      );
-      return data.access_token;
-    }
-  } catch {}
+    } catch {}
+  }
+
   return null;
 }
 

@@ -42,3 +42,12 @@ class UserProfile(TimestampedSchema):
     is_active: bool = True
     created_at: datetime
 
+
+class AuthProviderStatus(BaseSchema):
+    id: str
+    name: str
+    enabled: bool
+    configured: bool
+    client_id_preview: str | None = None
+
+

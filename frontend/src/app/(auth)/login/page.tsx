@@ -7,8 +7,8 @@ import { setStoredSession, TokenResponse } from "@/types/api";
 import { useUIStore } from "@/stores/ui-store";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@marketing-os.local");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -25,7 +25,7 @@ export default function LoginPage() {
       });
 
       const session = {
-        id: email === "admin@marketing-os.local" ? "00000000-0000-0000-0000-000000000001" : "",
+        id: "",
         email,
         role: data.role,
         accessToken: data.access_token,
@@ -61,6 +61,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@marketing-os.local"
               required
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
             />
@@ -71,6 +72,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
               required
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
             />

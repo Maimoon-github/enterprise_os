@@ -11,22 +11,7 @@ export default function CampaignsPage() {
     fetchCampaigns().catch(() => {});
   }, [fetchCampaigns]);
 
-  const displayCampaigns = campaigns.length > 0 ? campaigns : [
-    {
-      id: "c1",
-      name: "Q4 Autonomous Platform Launch",
-      brand_id: "apex-horizon",
-      status: "review",
-      blueprint: { target_platforms: ["linkedin", "x", "instagram", "threads"] },
-    },
-    {
-      id: "c2",
-      name: "B2B Thought Leadership Series",
-      brand_id: "apex-horizon",
-      status: "published",
-      blueprint: { target_platforms: ["linkedin", "x"] },
-    },
-  ];
+  const displayCampaigns = campaigns;
 
   return (
     <div className="space-y-6">
@@ -59,6 +44,15 @@ export default function CampaignsPage() {
               <tr>
                 <td colSpan={5} className="px-6 py-8 text-center text-xs text-slate-500">
                   Loading campaigns from database...
+                </td>
+              </tr>
+            ) : displayCampaigns.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-6 py-12 text-center">
+                  <p className="text-slate-400 text-sm font-medium">No campaigns created yet</p>
+                  <p className="text-slate-500 text-xs mt-1">
+                    Design a blueprint via &quot;New Campaign&quot; or dispatch a campaign command in Orchestrator Chat.
+                  </p>
                 </td>
               </tr>
             ) : (

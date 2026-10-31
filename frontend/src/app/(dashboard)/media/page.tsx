@@ -57,16 +57,8 @@ export default function MediaStudioPage() {
         {assets.length > 0 ? (
           <AssetGrid assets={assets} />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {["1:1 Square Feed (Instagram/LinkedIn)", "9:16 Vertical Reel (YouTube Shorts/Reels)", "16:9 Landscape Video (YouTube)"].map((slot) => (
-              <div key={slot} className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-                <div className="h-36 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-center text-xs text-slate-500 font-mono">
-                  MinIO Asset Preview
-                </div>
-                <div className="text-sm font-medium text-white">{slot}</div>
-                <div className="text-xs text-slate-400">Content Hash: <span className="font-mono text-slate-300">sha256_8f92a1...</span></div>
-              </div>
-            ))}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-sm text-slate-400">
+            No media assets staged yet. Upload an asset above or run an Orchestrator campaign workflow to stage creative assets.
           </div>
         )}
       </div>

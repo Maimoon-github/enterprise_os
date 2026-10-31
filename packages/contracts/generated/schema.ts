@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/api/v1/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Auth Providers
+         * @description Return explicit status for social authentication providers.
+         *
+         *     All unconfigured providers are explicitly marked, and client IDs are safely masked.
+         */
+        get: operations["get_auth_providers_api_v1_auth_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -1088,6 +1110,19 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** AuthProviderStatus */
+        AuthProviderStatus: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Configured */
+            configured: boolean;
+            /** Client Id Preview */
+            client_id_preview?: string | null;
+        };
         /** BrandCreate */
         BrandCreate: {
             /** Name */
@@ -1959,6 +1994,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_auth_providers_api_v1_auth_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviderStatus"][];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;

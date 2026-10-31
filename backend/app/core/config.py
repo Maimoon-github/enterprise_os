@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,38 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALLOWED_ORIGINS: Any = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    # Authentication & Invariant Defaults
+    DEFAULT_ADMIN_EMAIL: str = "admin@marketing-os.local"
+    DEFAULT_ADMIN_PASSWORD: str = "admin123"
+
+    # Social Authentication Providers (explicit, non-fabricated, masked)
+    GOOGLE_CLIENT_ID: str | None = None
+    GOOGLE_CLIENT_SECRET: str | None = None
+    GITHUB_CLIENT_ID: str | None = None
+    GITHUB_CLIENT_SECRET: str | None = None
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        env_lower = self.ENVIRONMENT.lower()
+        if env_lower not in ("development", "test", "testing", "dev", "local"):
+            insecure_keys = (
+                "change_this_to_a_secure_random_64_char_hex_string",
+                "secret",
+                "insecure",
+                "",
+            )
+            if self.SECRET_KEY in insecure_keys or len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    "FATAL: Insecure or default SECRET_KEY detected in non-development environment. "
+                    "You must provide a secure 64-character secret key."
+                )
+            if self.DEFAULT_ADMIN_PASSWORD in ("admin123", "password", "admin", ""):
+                raise ValueError(
+                    "FATAL: Insecure DEFAULT_ADMIN_PASSWORD detected in non-development environment. "
+                    "Configure a strong admin password via environment variables."
+                )
+        return self
 
     @field_validator("ALLOWED_ORIGINS", mode="after")
     @classmethod
