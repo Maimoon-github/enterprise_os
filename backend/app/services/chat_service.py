@@ -11,7 +11,7 @@ import httpx
 from app.core.config import settings
 from app.core.exceptions import EntityNotFoundError
 from app.db.models.campaign import Campaign
-from app.db.models.chat import ChatMessage, ChatSession
+from app.db.models.chat import ChatSession
 from app.db.repositories.approval_repo import ApprovalRepository
 from app.db.repositories.brand_repo import BrandRepository
 from app.db.repositories.campaign_repo import CampaignRepository
@@ -336,9 +336,11 @@ class ChatService:
 
         generated_any = False
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=2.5, read=40.0, write=5.0, pool=5.0)) as client:
-                async with client.stream("POST", f"{OLLAMA_BASE_URL}/api/generate", json=payload) as resp:
-                    if resp.status_code == 200:
+            async with (
+                httpx.AsyncClient(timeout=httpx.Timeout(connect=2.5, read=40.0, write=5.0, pool=5.0)) as client,
+                client.stream("POST", f"{OLLAMA_BASE_URL}/api/generate", json=payload) as resp,
+            ):
+                if resp.status_code == 200:
                         async for line in resp.aiter_lines():
                             if not line.strip():
                                 continue
@@ -426,7 +428,7 @@ class ChatService:
             raise EntityNotFoundError("ChatSession", str(session_id))
 
         # 1. Store user message
-        user_msg = await chat_repo.create_message(
+        await chat_repo.create_message(
             session_id=session.id,
             role="user",
             content=payload.content,
@@ -513,7 +515,7 @@ class ChatService:
             raise EntityNotFoundError("ChatSession", str(session_id))
 
         # 1. Save user message
-        user_msg = await chat_repo.create_message(
+        await chat_repo.create_message(
             session_id=session.id,
             role="user",
             content=payload.content,
@@ -593,7 +595,6 @@ class ChatService:
         }
 
         step_idx = 0
-        final_text = "Execution completed successfully."
         interrupted_approval_id: str | None = None
 
         try:
@@ -640,7 +641,6 @@ class ChatService:
                         yield f"event: interrupt\ndata: {json.dumps(interrupt_data)}\n\n"
                         yield f'event: delta\ndata: {json.dumps({"text": "\n\n⚠️ **Human-in-the-Loop Interrupt Gate Active:** Campaign blueprint and staged platform assets require human review and sign-off before dispatch."})}\n\n'
 
-                        final_text = "Paused at Human-in-the-Loop approval gate. Blueprint review required."
                         assistant_msg.content = f"{decision_text}\n\nOrchestrator generated multi-platform campaign blueprint for '{campaign.name}'. Halted at Human Approval Gate prior to non-idempotent publish fanout."
                         assistant_msg.msg_metadata = {
                             "thread_id": thread_id,
@@ -670,7 +670,7 @@ class ChatService:
             assistant_msg.msg_metadata = {"thread_id": thread_id, "status": "completed", "run_id": str(run.id), "intent": "operational"}
             await db.commit()
 
-            yield f'event: delta\ndata: {json.dumps({"text": f"\n\n✅ Orchestration completed. All pipeline stages finalized."})}\n\n'
+            yield f'event: delta\ndata: {json.dumps({"text": "\n\n✅ Orchestration completed. All pipeline stages finalized."})}\n\n'
             yield f'event: complete\ndata: {json.dumps({"run_id": str(run.id), "status": "completed"})}\n\n'
 
         except Exception as exc:

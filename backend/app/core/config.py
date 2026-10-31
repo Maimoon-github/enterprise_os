@@ -50,6 +50,18 @@ class Settings(BaseSettings):
                     "FATAL: Insecure DEFAULT_ADMIN_PASSWORD detected in non-development environment. "
                     "Configure a strong admin password via environment variables."
                 )
+            if "marketing_os_secret" in self.DATABASE_URL or "marketing_os_secret" in self.SYNC_DATABASE_URL:
+                raise ValueError(
+                    "FATAL: Insecure or default database password detected in non-development environment."
+                )
+            if self.MINIO_ROOT_PASSWORD in ("minio_admin_secret", "password", "admin", ""):
+                raise ValueError(
+                    "FATAL: Insecure or default MINIO_ROOT_PASSWORD detected in non-development environment."
+                )
+            if self.LANGFUSE_SECRET_KEY in ("sk-lf-local-secret", ""):
+                raise ValueError(
+                    "FATAL: Insecure or default LANGFUSE_SECRET_KEY detected in non-development environment."
+                )
         return self
 
     @field_validator("ALLOWED_ORIGINS", mode="after")
@@ -82,6 +94,13 @@ class Settings(BaseSettings):
     OLLAMA_MODEL_SUPERVISOR: str = "qwen2.5:14b"
     OLLAMA_MODEL_WORKER: str = "qwen2.5:7b"
     OLLAMA_MODEL_EMBEDDING: str = "nomic-embed-text"
+    OLLAMA_MAX_LOADED_MODELS: int = 2
+    OLLAMA_NUM_PARALLEL: int = 2
+
+    # Cryptography & Vault
+    VAULT_MASTER_KEY: str | None = None
+    WORKER_HMAC_SECRET: str = "default_worker_hmac_secret_key_32_bytes_min"
+    PUBLIC_MEDIA_STAGING_BASE_URL: str = "http://localhost:9000/marketing-generated-assets"
 
     # Qdrant
     QDRANT_HOST: str = "localhost"

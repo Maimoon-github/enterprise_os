@@ -1065,6 +1065,21 @@ export interface components {
             /** Recommendation */
             recommendation: string;
         };
+        /** OptimizationProposal */
+        OptimizationProposal: {
+            proposal_id: string;
+            cohort_size: number;
+            anomalies_count: number;
+            actions: string[];
+            proposed_changes: Record<string, string[]>;
+            created_at?: string | null;
+        };
+        /** AnalyticsOverviewResponse */
+        AnalyticsOverviewResponse: {
+            kpis: components["schemas"]["CrossPlatformKPIs"];
+            outliers: components["schemas"]["AnomalyAlert"][];
+            proposals: components["schemas"]["OptimizationProposal"][];
+        };
         /** ApprovalResponse */
         ApprovalResponse: {
             /**

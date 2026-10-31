@@ -1,5 +1,6 @@
 import json
 import uuid
+
 import pytest
 from app.core.rbac import UserRole
 from app.core.security import create_access_token

@@ -197,9 +197,99 @@ async def closed_loop_eval_node(state: MarketingOSState) -> dict[str, Any]:
         }
 
 
+async def strategy_approval_gate_node(
+    state: MarketingOSState,
+) -> Command[Literal["campaign_creative", "research_strategy"]]:
+    """Super-step replay-safe Human-in-the-Loop interrupt gate for Strategy (HITL-01).
+
+    CRITICAL SAFETY CONSTRAINT:
+    Zero non-idempotent side effects exist prior to interrupt().
+    Resuming re-enters this node deterministically.
+    """
+    payload = {
+        "message": "Human approval required for research strategy and brand dossier.",
+        "campaign_id": state.get("campaign_id"),
+        "thread_id": state.get("thread_id"),
+        "research_dossier": state.get("research_dossier"),
+        "step_name": "strategy_approval_gate_node",
+    }
+    decision = interrupt(payload)
+
+    is_approved = False
+    notes = "Strategy revision requested"
+    if isinstance(decision, dict):
+        is_approved = bool(decision.get("approved"))
+        notes = decision.get("notes") or notes
+    elif isinstance(decision, bool):
+        is_approved = decision
+
+    if is_approved:
+        return Command(
+            goto="campaign_creative",
+            update={
+                "strategy_approved": True,
+            },
+        )
+    return Command(
+        goto="research_strategy",
+        update={
+            "strategy_approved": False,
+            "critique_history": [notes],
+        },
+    )
+
+
+async def optimization_approval_gate_node(
+    state: MarketingOSState,
+) -> Command[Literal["__end__"]]:
+    """Super-step replay-safe Human-in-the-Loop interrupt gate for Optimization Proposal (HITL-03).
+
+    CRITICAL SAFETY CONSTRAINT:
+    Zero non-idempotent side effects exist prior to interrupt().
+    """
+    payload = {
+        "message": "Human approval required for closed-loop optimization proposals and budget adjustments.",
+        "campaign_id": state.get("campaign_id"),
+        "thread_id": state.get("thread_id"),
+        "analytics_anomalies": state.get("analytics_anomalies"),
+        "step_name": "optimization_approval_gate_node",
+    }
+    decision = interrupt(payload)
+
+    is_approved = False
+    if isinstance(decision, dict):
+        is_approved = bool(decision.get("approved"))
+    elif isinstance(decision, bool):
+        is_approved = decision
+
+    return Command(
+        goto="__end__",
+        update={
+            "optimization_approved": is_approved,
+        },
+    )
+
+
+def route_post_research(
+    state: MarketingOSState,
+) -> Literal["strategy_approval_gate_node", "campaign_creative"]:
+    if state.get("require_strategy_approval") and not state.get("strategy_approved"):
+        return "strategy_approval_gate_node"
+    return "campaign_creative"
+
+
+def route_post_closed_loop(
+    state: MarketingOSState,
+) -> Literal["optimization_approval_gate_node", "__end__"]:
+    if state.get("require_optimization_approval") and not state.get("optimization_approved"):
+        return "optimization_approval_gate_node"
+    return "__end__"
+
+
 builder = StateGraph(MarketingOSState)
 
 builder.add_node("research_strategy", research_strategy_node)
+builder.add_node("strategy_approval_gate_node", strategy_approval_gate_node)
 builder.add_node("campaign_creative", campaign_creative_node)
 builder.add_node("prepare_publish_payload_node", prepare_publish_payload_node)
 builder.add_node("human_approval_gate_node", human_approval_gate_node)
@@ -207,26 +297,44 @@ builder.add_node("execute_platform_publish_node", execute_platform_publish_node)
 builder.add_node("campaign_creative_revision_node", campaign_creative_revision_node)
 builder.add_node("publishing_fanout", publishing_fanout_subgraph)
 builder.add_node("closed_loop_eval", closed_loop_eval_node)
+builder.add_node("optimization_approval_gate_node", optimization_approval_gate_node)
 
 builder.add_conditional_edges(
     START,
     supervisor_router,
     {
         "research_strategy": "research_strategy",
+        "strategy_approval_gate_node": "strategy_approval_gate_node",
         "campaign_creative": "campaign_creative",
         "prepare_publish_payload_node": "prepare_publish_payload_node",
         "human_approval_gate_node": "human_approval_gate_node",
         "execute_platform_publish_node": "execute_platform_publish_node",
         "closed_loop_eval": "closed_loop_eval",
+        "optimization_approval_gate_node": "optimization_approval_gate_node",
         "__end__": END,
     },
 )
 
-builder.add_edge("research_strategy", "campaign_creative")
+builder.add_conditional_edges(
+    "research_strategy",
+    route_post_research,
+    {
+        "strategy_approval_gate_node": "strategy_approval_gate_node",
+        "campaign_creative": "campaign_creative",
+    },
+)
 builder.add_edge("campaign_creative", "prepare_publish_payload_node")
 builder.add_edge("prepare_publish_payload_node", "human_approval_gate_node")
 builder.add_edge("publishing_fanout", "closed_loop_eval")
-builder.add_edge("closed_loop_eval", END)
+builder.add_conditional_edges(
+    "closed_loop_eval",
+    route_post_closed_loop,
+    {
+        "optimization_approval_gate_node": "optimization_approval_gate_node",
+        "__end__": END,
+    },
+)
+builder.add_edge("optimization_approval_gate_node", END)
 
 MasterOrchestratorGraph = builder.compile(checkpointer=DynamicCheckpointer(get_checkpointer))
 master_orchestrator_graph = MasterOrchestratorGraph

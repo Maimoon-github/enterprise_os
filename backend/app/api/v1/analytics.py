@@ -9,8 +9,10 @@ from app.db.repositories.platform_connection_repo import PlatformConnectionRepos
 from app.schemas.analytics import (
     AnalyticsEventCreate,
     AnalyticsEventResponse,
+    AnalyticsOverviewResponse,
     AnomalyAlert,
     CrossPlatformKPIs,
+    OptimizationProposal,
 )
 from app.schemas.settings import AnalyticsChannelState
 from fastapi import APIRouter, Depends, Query, status
@@ -89,7 +91,7 @@ async def get_anomalies(
 ):
     """Retrieve statistical anomalies from recorded analytics events.
 
-    Returns empty list when baseline sample size is insufficient or no variance exists.
+    Enforces minimum sample size N >= 5 and Engagement Velocity rolling Z-score threshold |Z| > 1.5.
     """
     query = select(AnalyticsEvent)
     if brand_id:
@@ -97,12 +99,11 @@ async def get_anomalies(
     res = await db.execute(query)
     events = list(res.scalars().all())
 
-    # Only report anomalies if substantial real data exists (e.g. z-score calculation)
-    # Never return fabricated anomaly fixtures
-    if len(events) < 10:
+    # Only report anomalies if minimum baseline sample size N >= 5 is met
+    if len(events) < 5:
         return []
 
-    # Calculate actual z-score anomalies if present
+    # Calculate actual z-score anomalies with |Z| > 1.5 per blueprint
     import numpy as np
 
     values = [e.metric_value for e in events]
@@ -114,7 +115,8 @@ async def get_anomalies(
     alerts: list[AnomalyAlert] = []
     for e in events:
         z = (e.metric_value - mean) / std
-        if abs(z) >= 2.5:
+        if abs(z) > 1.5:
+            direction = "breakout performance" if z > 1.5 else "underperformance"
             alerts.append(
                 AnomalyAlert(
                     platform=e.platform,
@@ -122,10 +124,52 @@ async def get_anomalies(
                     z_score=round(float(z), 2),
                     observed_value=float(e.metric_value),
                     baseline_mean=round(mean, 2),
-                    recommendation=f"Statistical outlier detected on {e.platform} ({e.metric_type}): investigate performance spike or drop.",
+                    recommendation=f"Statistical {direction} detected on {e.platform} ({e.metric_type}, Z={z:+0.2f}): automated optimization proposed.",
                 )
             )
-    return alerts[:5]
+    return alerts[:10]
+
+
+@router.get("/overview", response_model=AnalyticsOverviewResponse)
+async def get_analytics_overview(
+    brand_id: uuid.UUID | None = None,
+    window_days: int = Query(30, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict[str, Any] = Depends(get_current_user),
+):
+    """Serves aggregated cross-platform telemetry, cohort Z-scores, and pending OptimizationProposal diffs."""
+    kpis = await get_kpis(brand_id=brand_id, db=db, current_user=current_user)
+    outliers = await get_anomalies(brand_id=brand_id, db=db, current_user=current_user)
+
+    # Derive optimization proposals from detected outliers
+    proposals: list[OptimizationProposal] = []
+    if outliers:
+        scale_platforms = [o.platform for o in outliers if o.z_score > 1.5]
+        revise_platforms = [o.platform for o in outliers if o.z_score < -1.5]
+        actions: list[str] = []
+        if scale_platforms:
+            actions.append(f"Scale publishing cadence and budget on breakout channels: {', '.join(scale_platforms)}")
+        if revise_platforms:
+            actions.append(f"Re-evaluate creative hook and aspect ratios on underperforming channels: {', '.join(revise_platforms)}")
+
+        proposals.append(
+            OptimizationProposal(
+                proposal_id=f"opt_{uuid.uuid4().hex[:8]}",
+                cohort_size=len(outliers),
+                anomalies_count=len(outliers),
+                actions=actions or ["Maintain nominal campaign allocation across channels."],
+                proposed_changes={
+                    "scale_platforms": scale_platforms,
+                    "revise_platforms": revise_platforms,
+                },
+            )
+        )
+
+    return AnalyticsOverviewResponse(
+        kpis=kpis,
+        outliers=outliers,
+        proposals=proposals,
+    )
 
 
 @router.get("/channels", response_model=list[AnalyticsChannelState])

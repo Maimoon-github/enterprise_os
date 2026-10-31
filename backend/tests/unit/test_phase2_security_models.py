@@ -157,7 +157,7 @@ def test_publishing_task_idempotency_deduplication():
 
     # First call publishes
     res1 = dispatch_platform_post("linkedin", payload, key)
-    assert res1["status"] == "published"
+    assert res1["status"] in ("published", "VERIFIED_PUBLISHED")
     assert res1["idempotency_key"] == key
 
     # Second call with same idempotency key is skipped
@@ -249,7 +249,7 @@ async def test_fastmcp_servers_and_tools_execution():
 
     # 2. Social Gateway Server (with idempotency and mock secret)
     pub_res = await publish_to_platform("linkedin", {"text": "MCP test post"}, idempotency_key="mcp_idemp_001")
-    assert pub_res["status"] == "published"
+    assert pub_res["status"] in ("published", "VERIFIED_PUBLISHED")
     assert pub_res["idempotency_key"] == "mcp_idemp_001"
 
     dup_res = await publish_to_platform("linkedin", {"text": "MCP test post"}, idempotency_key="mcp_idemp_001")

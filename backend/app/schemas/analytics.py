@@ -21,6 +21,21 @@ class AnomalyAlert(BaseSchema):
     recommendation: str
 
 
+class OptimizationProposal(BaseSchema):
+    proposal_id: str
+    cohort_size: int
+    anomalies_count: int
+    actions: list[str]
+    proposed_changes: dict[str, list[str]]
+    created_at: datetime | None = None
+
+
+class AnalyticsOverviewResponse(BaseSchema):
+    kpis: CrossPlatformKPIs
+    outliers: list[AnomalyAlert]
+    proposals: list[OptimizationProposal]
+
+
 class AnalyticsEventCreate(BaseSchema):
     brand_id: uuid.UUID
     platform: PlatformType

@@ -1,6 +1,6 @@
 interface DiffViewerProps {
-  beforeText?: string;
-  afterText?: string;
+  beforeText?: string | Record<string, unknown>;
+  afterText?: string | Record<string, unknown>;
   beforeTitle?: string;
   afterTitle?: string;
 }
@@ -11,6 +11,14 @@ export function DiffViewer({
   beforeTitle = "Previous Blueprint",
   afterTitle = "Reflexion Revised Draft",
 }: DiffViewerProps) {
+  const formatContent = (val: string | Record<string, unknown> | undefined) => {
+    if (!val) return "";
+    if (typeof val === "object") {
+      return JSON.stringify(val, null, 2);
+    }
+    return val;
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
       <div className="p-4 bg-rose-950/20 border border-rose-900/40 rounded-lg text-rose-200 space-y-2">
@@ -20,8 +28,8 @@ export function DiffViewer({
             Original
           </span>
         </div>
-        <pre className="whitespace-pre-wrap font-sans text-xs text-rose-100/90 leading-relaxed overflow-x-auto">
-          {beforeText}
+        <pre className="whitespace-pre-wrap font-sans text-xs text-rose-100/90 leading-relaxed overflow-x-auto scrollbar-thin">
+          {formatContent(beforeText)}
         </pre>
       </div>
 
@@ -32,8 +40,8 @@ export function DiffViewer({
             Proposed Revision
           </span>
         </div>
-        <pre className="whitespace-pre-wrap font-sans text-xs text-emerald-100/90 leading-relaxed overflow-x-auto">
-          {afterText}
+        <pre className="whitespace-pre-wrap font-sans text-xs text-emerald-100/90 leading-relaxed overflow-x-auto scrollbar-thin">
+          {formatContent(afterText)}
         </pre>
       </div>
     </div>

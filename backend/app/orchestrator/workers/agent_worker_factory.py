@@ -2,6 +2,7 @@ from typing import Any
 
 from app.mcp.registries.toolset_registry import toolset_registry
 from app.orchestrator.workers.retry_policies import RetryPolicy
+from app.services.sandbox_service import SandboxService
 from app.services.skill_service import skill_service
 from pydantic import BaseModel
 
@@ -53,11 +54,18 @@ class AgentWorkerFactory:
                 "max_retries": RetryPolicy.get_max_retries(tool_name),
             })
 
+        capability_token = SandboxService.sign_capability_token(
+            worker_id=name,
+            allowed_tools=[t["name"] for t in scoped_tools],
+            ttl_seconds=180,
+        )
+
         return {
             "worker_name": name,
             "model": model_tag,
             "output_contract": output_type.__name__,
             "toolset": scoped_tools,
+            "capability_token": capability_token,
             "tier1_skills": tier1_catalog,
             "tier2_instructions": tier2_instructions,
             "active_skills": active_skills or [],

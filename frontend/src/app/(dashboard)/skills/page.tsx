@@ -92,7 +92,7 @@ export default function SkillsPage() {
           );
         });
     }
-  }, [selectedSkill?.name]);
+  }, [selectedSkill]);
 
   return (
     <div className="space-y-6">

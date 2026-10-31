@@ -98,8 +98,19 @@ async def rewoo_solver_node(state: MarketingOSState) -> dict[str, Any]:
         })
 
     logger.info("ReWOO Solver: Discovered %d statistically significant anomalies.", len(enriched_anomalies))
+    proposal = {
+        "proposal_id": f"opt_{str(state.get('campaign_id', 'cmp'))[:8]}",
+        "cohort_size": len(metric_series),
+        "anomalies_count": len(enriched_anomalies),
+        "actions": [a["recommendation"] for a in enriched_anomalies],
+        "proposed_changes": {
+            "scale_platforms": [a["platform"] for a in enriched_anomalies if a.get("anomaly_type") == "breakout"],
+            "revise_platforms": [a["platform"] for a in enriched_anomalies if a.get("anomaly_type") == "underperformance"],
+        },
+    }
     return {
         "analytics_anomalies": enriched_anomalies,
+        "optimization_proposal": proposal,
     }
 
 

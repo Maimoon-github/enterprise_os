@@ -19,24 +19,44 @@ export function ApprovalCard({
     ? blueprint.platform_assets.length
     : 0;
 
+  const isStrategyGate = approval.step_name === "strategy_approval_gate_node";
+  const isOptimizationGate = approval.step_name === "optimization_approval_gate_node";
+  const gateLabel = isStrategyGate
+    ? "HITL-01 • Strategy Dossier"
+    : isOptimizationGate
+    ? "HITL-03 • Optimization Proposal"
+    : `HITL-02 • Campaign Preview`;
+
+  const description = isStrategyGate
+    ? "Market research findings, competitor positioning whitespace, and brand audience pillars staged for review."
+    : isOptimizationGate
+    ? "Closed-loop statistical anomaly evaluation and budget reallocation directives staged for sign-off."
+    : assetsCount > 0
+    ? `${assetsCount} platform assets staged with 7-stage SHA-256 idempotency validation.`
+    : "Platform assets staged with SHA-256 idempotency validation.";
+
+  const approveButtonLabel = isStrategyGate
+    ? "Approve Strategy"
+    : isOptimizationGate
+    ? "Approve Optimization"
+    : "Approve & Publish";
+
   return (
     <div className="p-5 glass-card flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase font-bold text-bloodstone-mint tracking-wider">
-            Awaiting Decision • {approval.step_name}
+            {gateLabel}
           </span>
           <span className="text-xs px-2 py-0.5 rounded bg-glass-base border border-glass-subtle text-bloodstone-text-muted font-mono">
             Thread {approval.thread_id}
           </span>
         </div>
         <div className="text-sm font-semibold text-bloodstone-text">
-          {blueprint.objective || `Run ${approval.run_id}`}
+          {blueprint.objective || payload.message || `Run ${approval.run_id}`}
         </div>
-        <div className="text-xs text-bloodstone-text-muted">
-          {assetsCount > 0
-            ? `${assetsCount} platform assets staged for review.`
-            : "Platform assets staged with SHA-256 idempotency validation."}
+        <div className="text-xs text-bloodstone-text-muted leading-relaxed">
+          {description}
         </div>
       </div>
 
@@ -59,7 +79,7 @@ export function ApprovalCard({
           onClick={() => onApprove(approval.id)}
           className="px-3.5 py-1.5 glass-emerald text-xs rounded-lg font-medium transition duration-fast ease-out-expo"
         >
-          Approve & Publish
+          {approveButtonLabel}
         </button>
       </div>
     </div>

@@ -55,11 +55,47 @@ def test_fail_closed_production_security():
             DEFAULT_ADMIN_PASSWORD="admin123",
         )
 
+    # Test rejection of default database password in production
+    with pytest.raises(ValueError, match="Insecure or default database password"):
+        Settings(
+            ENVIRONMENT="production",
+            SECRET_KEY="a" * 64,
+            DEFAULT_ADMIN_PASSWORD="strong_custom_password_12345",
+            DATABASE_URL="postgresql+asyncpg://marketing_os:marketing_os_secret@localhost:5432/marketing_os_db",
+        )
+
+    # Test rejection of default MINIO_ROOT_PASSWORD in production
+    with pytest.raises(ValueError, match="Insecure or default MINIO_ROOT_PASSWORD"):
+        Settings(
+            ENVIRONMENT="production",
+            SECRET_KEY="a" * 64,
+            DEFAULT_ADMIN_PASSWORD="strong_custom_password_12345",
+            DATABASE_URL="postgresql+asyncpg://prod_user:strong_pass_123@localhost:5432/marketing_os_db",
+            SYNC_DATABASE_URL="postgresql://prod_user:strong_pass_123@localhost:5432/marketing_os_db",
+            MINIO_ROOT_PASSWORD="minio_admin_secret",
+        )
+
+    # Test rejection of default LANGFUSE_SECRET_KEY in production
+    with pytest.raises(ValueError, match="Insecure or default LANGFUSE_SECRET_KEY"):
+        Settings(
+            ENVIRONMENT="production",
+            SECRET_KEY="a" * 64,
+            DEFAULT_ADMIN_PASSWORD="strong_custom_password_12345",
+            DATABASE_URL="postgresql+asyncpg://prod_user:strong_pass_123@localhost:5432/marketing_os_db",
+            SYNC_DATABASE_URL="postgresql://prod_user:strong_pass_123@localhost:5432/marketing_os_db",
+            MINIO_ROOT_PASSWORD="minio_strong_prod_pass_12345",
+            LANGFUSE_SECRET_KEY="sk-lf-local-secret",
+        )
+
     # Test acceptance of secure settings in production
     valid_settings = Settings(
         ENVIRONMENT="production",
         SECRET_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         DEFAULT_ADMIN_PASSWORD="a-very-secure-production-admin-passphrase",
+        DATABASE_URL="postgresql+asyncpg://prod_user:strong_pass_123@localhost:5432/marketing_os_db",
+        SYNC_DATABASE_URL="postgresql://prod_user:strong_pass_123@localhost:5432/marketing_os_db",
+        MINIO_ROOT_PASSWORD="minio_strong_prod_pass_12345",
+        LANGFUSE_SECRET_KEY="sk-lf-prod-token-1234567890",
     )
     assert valid_settings.ENVIRONMENT == "production"
 
@@ -146,3 +182,19 @@ async def test_chat_orchestrator_acceptance_workflow():
         assert run_data["id"] == run_id
         # Confirm it halted at human approval or pending state
         assert run_data["status"] in ("pending", "running", "paused")
+
+        # Post streaming campaign command to verify LangGraph execution, SSE events, and approval interrupt
+        stream_res = await ac.post(
+            f"/api/v1/chat/sessions/{session_id}/messages",
+            headers=headers,
+            json={
+                "content": "Synthesize a full multi-channel brand launch campaign for Instagram and LinkedIn.",
+                "stream": True,
+            },
+        )
+        assert stream_res.status_code == 200
+        stream_text = stream_res.text
+        assert "event: run_start" in stream_text
+        assert "event: interrupt" in stream_text
+        assert "human_approval_gate_node" in stream_text
+        assert "event: complete" in stream_text

@@ -89,6 +89,11 @@ class MarketingOSState(TypedDict, total=False):
     approval_status: Literal["pending", "approved", "rejected"]
     human_approved: bool
     analytics_anomalies: list[dict[str, Any]]
+    optimization_proposal: dict[str, Any]
+    require_strategy_approval: bool
+    strategy_approved: bool
+    require_optimization_approval: bool
+    optimization_approved: bool
     # Subgraph intermediate state channels
     react_iterations: int
     research_observations: list[str]

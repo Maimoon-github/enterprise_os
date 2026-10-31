@@ -47,7 +47,7 @@ export default function AnalyticsPage() {
           </p>
         </div>
         <div className="text-xs glass-panel px-3 py-1.5 rounded-lg text-bloodstone-mint font-mono">
-          Engine: Polars Rolling Z-Score (|Z| &gt; 2.5)
+          Engine: Polars Rolling Z-Score (|Z| &gt; 1.5, N &ge; 5)
         </div>
       </div>
 

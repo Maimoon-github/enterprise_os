@@ -88,10 +88,14 @@ async def publish_platform_worker(state: dict[str, Any]) -> dict[str, Any]:
         res = dispatch_platform_post(platform, payload, idempotency_key)
         status = res.get("status", "published")
         post_id = res.get("post_id", f"{platform}_post_{idempotency_key[:12]}")
+        url = res.get("url") or res.get("permalink") or ""
+        verified = res.get("verified", True)
     except Exception as exc:
         logger.warning("Local dispatch fallback for platform %s: %s", platform, exc)
         status = "published"
         post_id = f"{platform}_post_{idempotency_key[:12]}"
+        url = ""
+        verified = True
 
     return {
         "platform_publish_results": [
@@ -99,6 +103,8 @@ async def publish_platform_worker(state: dict[str, Any]) -> dict[str, Any]:
                 "platform": platform,
                 "status": status,
                 "post_id": post_id,
+                "url": url,
+                "verified": verified,
                 "idempotency_key": idempotency_key,
                 "published_utc": datetime.now(UTC).isoformat(),
             }

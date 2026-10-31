@@ -2,7 +2,6 @@ import json
 from typing import Any
 
 from app.api.deps import get_current_user, get_db, require_role
-from app.core.exceptions import EntityNotFoundError
 from app.core.rbac import UserRole
 from app.db.repositories.platform_connection_repo import PlatformConnectionRepository
 from app.schemas.common import SettingsResponse, SettingsUpdateRequest

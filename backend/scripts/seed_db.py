@@ -68,14 +68,14 @@ async def seed(session: AsyncSession | None = None) -> dict[str, Any]:
 
     async def _execute_seed(s: AsyncSession) -> dict[str, Any]:
         # 1. Idempotent Admin User
-        user_stmt = select(User).where(User.email == "admin@marketing-os.local")
+        user_stmt = select(User).where(User.email == settings.DEFAULT_ADMIN_EMAIL)
         result = await s.execute(user_stmt)
         admin = result.scalars().first()
 
         if not admin:
             admin = User(
-                email="admin@marketing-os.local",
-                hashed_password=get_password_hash("admin123"),
+                email=settings.DEFAULT_ADMIN_EMAIL,
+                hashed_password=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
                 full_name="Platform Administrator",
                 role="admin",
                 is_active=True,

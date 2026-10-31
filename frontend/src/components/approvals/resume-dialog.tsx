@@ -5,6 +5,7 @@ import { useState } from "react";
 interface ResumeDialogProps {
   isOpen: boolean;
   approvalId?: string;
+  stepName?: string;
   isApprovalAction?: boolean;
   onClose: () => void;
   onResume: (notes: string, approved: boolean) => void;
@@ -13,6 +14,7 @@ interface ResumeDialogProps {
 export function ResumeDialog({
   isOpen,
   approvalId,
+  stepName,
   isApprovalAction = true,
   onClose,
   onResume,
@@ -27,12 +29,31 @@ export function ResumeDialog({
     onClose();
   };
 
+  const isStrategy = stepName === "strategy_approval_gate_node";
+  const isOptimization = stepName === "optimization_approval_gate_node";
+
+  const dialogTitle = isApprovalAction
+    ? isStrategy
+      ? "Approve Strategy Dossier (HITL-01)"
+      : isOptimization
+      ? "Approve Optimization Proposal (HITL-03)"
+      : "Confirm Approval & Trigger Fan-Out (HITL-02)"
+    : "Request Revision & Feedback Loop";
+
+  const dialogDescription = isApprovalAction
+    ? isStrategy
+      ? "Approving will resume execution, persist brand research findings, and proceed into creative campaign synthesis."
+      : isOptimization
+      ? "Approving will apply the recommended statistical optimization directives to future campaign iterations."
+      : "Approving will resume the interrupted LangGraph node, trigger idempotent post-approval 7-stage platform publishing fan-out across all 8 channels with read-after-write verification, and record audit lineage."
+    : "Requesting revision increments the Reflexion counter (max 2 revisions) and feeds your critique back into the agentic reasoning loop.";
+
   return (
     <div className="fixed inset-0 bg-bloodstone-canvas/80 backdrop-blur-md flex items-center justify-center p-4 z-50">
       <div className="glass-panel-elevated rounded-xl p-6 max-w-lg w-full space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold text-bloodstone-text">
-            {isApprovalAction ? "Confirm Approval & Trigger Fan-Out" : "Request Creative Revision"}
+            {dialogTitle}
           </h3>
           <span className="text-xs text-bloodstone-text-muted font-mono">
             {approvalId ? `Approval: ${approvalId.slice(0, 8)}...` : ""}
@@ -40,9 +61,7 @@ export function ResumeDialog({
         </div>
 
         <p className="text-xs text-bloodstone-text-muted leading-normal">
-          {isApprovalAction
-            ? "Approving will resume the interrupted LangGraph node, trigger idempotent post-approval platform publishing fan-out across all 8 channels, and record audit lineage."
-            : "Requesting revision increments the Reflexion counter (max 2 revisions) and feeds your critique back into the Campaign Creative sub-graph."}
+          {dialogDescription}
         </p>
 
         <textarea

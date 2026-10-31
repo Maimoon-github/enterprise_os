@@ -16,4 +16,9 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/5"),
         "options": {"queue": "publishing_queue"},
     },
+    "weekly-analytics-backup-sunday": {
+        "task": "app.tasks.analytics_tasks.export_weekly_analytics_backup",
+        "schedule": crontab(minute=0, hour=2, day_of_week=0),  # Sunday at 02:00 UTC
+        "options": {"queue": "analytics_queue"},
+    },
 }

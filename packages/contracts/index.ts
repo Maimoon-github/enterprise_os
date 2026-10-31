@@ -41,6 +41,8 @@ export type ScheduleResponse = components["schemas"]["ScheduleResponse"];
 
 export type CrossPlatformKPIs = components["schemas"]["CrossPlatformKPIs"];
 export type AnomalyAlert = components["schemas"]["AnomalyAlert"];
+export type OptimizationProposal = components["schemas"]["OptimizationProposal"];
+export type AnalyticsOverviewResponse = components["schemas"]["AnalyticsOverviewResponse"];
 export type AnalyticsEventCreate = components["schemas"]["AnalyticsEventCreate"];
 export type AnalyticsEventResponse = components["schemas"]["AnalyticsEventResponse"];
 

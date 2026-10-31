@@ -13,8 +13,9 @@ class SecretService:
 
     @classmethod
     def _get_aes_key(cls) -> bytes:
-        """Derive deterministic 256-bit key from application SECRET_KEY via SHA-256."""
-        return hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+        """Derive deterministic 256-bit key from VAULT_MASTER_KEY or application SECRET_KEY via SHA-256."""
+        raw_key = settings.VAULT_MASTER_KEY or settings.SECRET_KEY
+        return hashlib.sha256(raw_key.encode("utf-8")).digest()
 
     @classmethod
     def encrypt_secret(cls, raw_secret: str) -> str:

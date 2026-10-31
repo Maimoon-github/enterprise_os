@@ -70,18 +70,20 @@ class ApprovalService:
                     interrupt_val if isinstance(interrupt_val, dict) else {"message": str(interrupt_val)}
                 )
 
+                step_name = interrupt_payload.get("step_name", "human_approval_gate_node")
+
                 # Create subsequent approval gate record
                 await approval_repo.create(
                     run_id=approval.run_id,
                     thread_id=approval.thread_id,
                     status="pending",
-                    step_name="human_approval_gate_node",
+                    step_name=step_name,
                     payload=interrupt_payload,
                 )
                 await run_repo.update(
                     approval.run_id,
                     status="interrupted",
-                    current_node="human_approval_gate_node",
+                    current_node=step_name,
                 )
                 graph_status = "interrupted"
             else:

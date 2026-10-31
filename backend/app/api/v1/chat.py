@@ -4,7 +4,6 @@ from typing import Any
 from app.api.deps import get_current_user, get_db
 from app.schemas.chat import (
     ChatMessageCreate,
-    ChatMessageResponse,
     ChatSessionCreate,
     ChatSessionDetailResponse,
     ChatSessionResponse,

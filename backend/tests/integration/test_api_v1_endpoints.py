@@ -106,11 +106,12 @@ async def test_schedules_beat_endpoints():
         )
         assert res.status_code == 200
         schedules = res.json()
-        assert len(schedules) == 3
+        assert len(schedules) >= 3
         schedule_names = {s["name"] for s in schedules}
         assert "ingest-social-metrics-every-6-hours" in schedule_names
         assert "midnight-brand-compliance-audit" in schedule_names
         assert "poll-due-schedules-every-5-minutes" in schedule_names
+        assert "weekly-analytics-backup-sunday" in schedule_names
 
         # Test trigger
         trigger_res = await ac.post(
@@ -198,6 +199,14 @@ async def test_media_and_analytics_endpoints():
         assert anom_res.status_code == 200
         anomalies = anom_res.json()
         assert isinstance(anomalies, list)
+
+        # Analytics Overview
+        overview_res = await ac.get("/api/v1/analytics/overview", headers=headers)
+        assert overview_res.status_code == 200
+        overview = overview_res.json()
+        assert "kpis" in overview
+        assert "outliers" in overview
+        assert "proposals" in overview
 
 
 @pytest.mark.asyncio

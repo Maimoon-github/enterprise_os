@@ -156,6 +156,7 @@ export default function ApprovalsQueuePage() {
       <ResumeDialog
         isOpen={isDialogOpen}
         approvalId={selectedApproval?.id}
+        stepName={selectedApproval?.step_name}
         isApprovalAction={isApprovalAction}
         onClose={() => {
           setIsDialogOpen(false);
