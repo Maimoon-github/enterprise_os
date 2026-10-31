@@ -1,8 +1,11 @@
-.PHONY: help setup infra-up infra-down backend-dev worker beat frontend-dev migrate seed test lint skills-validate dev dev-backend dev-worker dev-beat dev-frontend validate-skills awaken
+.PHONY: help setup infra-up infra-down backend-dev worker beat frontend-dev migrate seed test lint skills-validate dev dev-backend dev-worker dev-beat dev-frontend validate-skills awaken start stop restart status
 
 help:
 	@echo "Agentic Brand Marketing OS - Command Suite"
 	@echo "-------------------------------------------"
+	@echo "start            Start entire agentic system (Infra, DB, Models, Backend, Worker, UI)"
+	@echo "stop             Stop application control plane services cleanly"
+	@echo "status           Inspect running state of all containers, ports, and models"
 	@echo "awaken           Discover local Qwen models, verify infrastructure, and seed demo brand"
 	@echo "setup            Initialize uv workspace and install dependencies"
 	@echo "infra-up         Start PostgreSQL, Redis, MinIO, Qdrant, Ollama, Langfuse, and OTel Collector"
@@ -66,3 +69,15 @@ dev-worker: worker
 dev-beat: beat
 dev-frontend: frontend-dev
 validate-skills: skills-validate
+
+start:
+	./start.sh --detach
+
+stop:
+	./start.sh --stop
+
+restart:
+	./start.sh --restart
+
+status:
+	./start.sh --status

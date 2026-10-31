@@ -132,7 +132,7 @@ async def verify_and_prewarm(model_name: str) -> bool:
     print(f"🔥 Awakening and pre-warming Qwen model: {model_name}...")
     try:
         async with httpx.AsyncClient(base_url=OLLAMA_BASE_URL, timeout=60.0) as client:
-            payload = {"model": model_name, "prompt": "Ready check", "stream": False}
+            payload = {"model": model_name, "prompt": "Ready check", "stream": False, "options": {"num_predict": 1}}
             res = await client.post("/api/generate", json=payload)
             if res.status_code == 200:
                 print(f"✅ Model {model_name} awakened and ready for inference.")

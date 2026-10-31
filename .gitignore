@@ -98,9 +98,10 @@ dmypy.json
 */.ipynb_checkpoints/*
 
 # Celery & Background Workers
-celerybeat-schedule
-celerybeat-schedule.db
+celerybeat-schedule*
 celerybeat.pid
+.pids/
+logs/
 
 # ------------------------------------------------------------------------------
 # Node.js, Next.js & Frontend Tooling
