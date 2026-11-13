@@ -1,0 +1,656 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GaxiosError } from "gaxios";
+import { createTestLogger } from "@/__tests__/helpers";
+
+const envMock = vi.hoisted(() => ({
+  NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED: true,
+}));
+
+vi.mock("@/env", () => ({
+  env: envMock,
+}));
+
+import { ContactsAccessDeniedError } from "@/utils/email/contact";
+import { listContactPhotos, searchContacts } from "./contact";
+
+describe("searchContacts", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  beforeEach(() => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = true;
+  });
+
+  it.each([
+    ["saved", "response"],
+    ["other", "response"],
+    ["saved", "cause"],
+    ["other", "cause"],
+  ] as const)("recovers a cold %s source with Google details in the %s", async (source, shape) => {
+    vi.useFakeTimers();
+    const details = {
+      code: 400,
+      status: "FAILED_PRECONDITION",
+      message: "Request failed due to cold cache data",
+    };
+    const error =
+      shape === "cause"
+        ? new GaxiosError(
+            "Bad Request",
+            {
+              url: new URL("https://people.googleapis.com"),
+              headers: new Headers(),
+            },
+            undefined,
+            details,
+          )
+        : Object.assign(new Error("Bad Request"), {
+            response: { status: 400, data: { error: details } },
+          });
+    const cold = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { results: [] } })
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            { person: { emailAddresses: [{ value: "found@example.com" }] } },
+          ],
+        },
+      });
+    const { client, searchContactsMock, searchOtherContactsMock } =
+      createPeopleClient({
+        ...(source === "saved"
+          ? { searchContactsMock: cold }
+          : { searchOtherContactsMock: cold }),
+      });
+    const pending = searchContacts(client, "contact", createTestLogger());
+    const assertion = expect(pending).resolves.toEqual([
+      expect.objectContaining({ emailAddress: "found@example.com" }),
+    ]);
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+    expect(cold.mock.calls.map(([params]) => params.query)).toEqual([
+      "",
+      "contact",
+      "contact",
+    ]);
+    expect(
+      source === "saved" ? searchOtherContactsMock : searchContactsMock,
+    ).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps all usable Google contact addresses to compose suggestions", async () => {
+    const searchContactsMock = vi.fn().mockResolvedValue({
+      data: {
+        results: [
+          {
+            person: {
+              names: [{ displayName: "First Contact" }],
+              emailAddresses: [
+                { value: "first@example.com" },
+                { value: "alternate@example.com" },
+              ],
+              photos: [{ url: "https://example.com/photo.jpg" }],
+            },
+          },
+          { person: { emailAddresses: [{ value: "invalid" }] } },
+        ],
+      },
+    });
+    const { client, searchOtherContactsMock } = createPeopleClient({
+      searchContactsMock,
+    });
+
+    const result = await searchContacts(client, "first", createTestLogger());
+
+    expect(searchContactsMock).toHaveBeenCalledWith({
+      query: "first",
+      readMask: "names,emailAddresses,photos",
+      pageSize: 10,
+    });
+    expect(searchOtherContactsMock).toHaveBeenCalledWith({
+      query: "first",
+      readMask: "names,emailAddresses,photos",
+      pageSize: 10,
+    });
+    expect(result).toEqual([
+      {
+        emailAddress: "first@example.com",
+        name: "First Contact",
+        profilePictureUrl: "https://example.com/photo.jpg",
+      },
+      {
+        emailAddress: "alternate@example.com",
+        name: "First Contact",
+        profilePictureUrl: "https://example.com/photo.jpg",
+      },
+    ]);
+  });
+
+  it("warms each contact source before searching and discards warmup results", async () => {
+    const createSearch = (emailAddress: string) => {
+      let warmed = false;
+      return vi.fn().mockImplementation(async ({ query }) => {
+        if (query === "") {
+          warmed = true;
+          return {
+            data: {
+              results: [
+                {
+                  person: { emailAddresses: [{ value: "warmup@example.com" }] },
+                },
+              ],
+            },
+          };
+        }
+        if (!warmed) throw new Error("Request failed due to cold cache data");
+        return {
+          data: {
+            results: [
+              { person: { emailAddresses: [{ value: emailAddress }] } },
+            ],
+          },
+        };
+      });
+    };
+    const saved = createSearch("saved@example.com");
+    const other = createSearch("other@example.com");
+    const { client } = createPeopleClient({
+      searchContactsMock: saved,
+      searchOtherContactsMock: other,
+    });
+
+    const result = await searchContacts(client, "contact", createTestLogger());
+
+    expect(result.map((contact) => contact.emailAddress)).toEqual([
+      "saved@example.com",
+      "other@example.com",
+    ]);
+    expect(saved.mock.calls.map(([params]) => params.query)).toEqual([
+      "",
+      "contact",
+    ]);
+    expect(other.mock.calls.map(([params]) => params.query)).toEqual([
+      "",
+      "contact",
+    ]);
+  });
+
+  it("waits for lazy contact caches that are still cold after warmup", async () => {
+    vi.useFakeTimers();
+    const readyAt = Date.now() + 5000;
+    const createSearch = (emailAddress: string) =>
+      vi.fn().mockImplementation(async ({ query }) => {
+        if (query === "") return { data: { results: [] } };
+        if (Date.now() < readyAt) {
+          throw Object.assign(
+            new Error(
+              "FAILED_PRECONDITION: Request failed due to cold cache data. Please retry in 5 seconds",
+            ),
+            { code: 400 },
+          );
+        }
+        return {
+          data: {
+            results: [
+              { person: { emailAddresses: [{ value: emailAddress }] } },
+            ],
+          },
+        };
+      });
+    const saved = createSearch("saved@example.com");
+    const other = createSearch("other@example.com");
+    const { client } = createPeopleClient({
+      searchContactsMock: saved,
+      searchOtherContactsMock: other,
+    });
+
+    const result = searchContacts(client, "contact", createTestLogger());
+    const assertion = expect(result).resolves.toEqual([
+      expect.objectContaining({ emailAddress: "saved@example.com" }),
+      expect.objectContaining({ emailAddress: "other@example.com" }),
+    ]);
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(saved).toHaveBeenCalledTimes(2);
+    expect(other).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    expect(saved).toHaveBeenCalledTimes(3);
+    expect(other).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops after one delayed retry when a contact cache remains cold", async () => {
+    vi.useFakeTimers();
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = false;
+    const error = Object.assign(
+      new Error("FAILED_PRECONDITION: Request failed due to cold cache data"),
+      { code: 400 },
+    );
+    const saved = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { results: [] } })
+      .mockRejectedValue(error);
+    const { client } = createPeopleClient({ searchContactsMock: saved });
+
+    const assertion = expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toBe(error);
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect(saved).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry unrelated search errors after warmup", async () => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = false;
+    const error = Object.assign(new Error("Other precondition failure"), {
+      code: 400,
+    });
+    const saved = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { results: [] } })
+      .mockRejectedValue(error);
+    const { client } = createPeopleClient({ searchContactsMock: saved });
+
+    await expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toBe(error);
+    expect(saved).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns no suggestions without calling Google for queries longer than it accepts", async () => {
+    const { client, searchContactsMock, searchOtherContactsMock } =
+      createPeopleClient({});
+
+    const result = await searchContacts(
+      client,
+      "a".repeat(101),
+      createTestLogger(),
+    );
+
+    expect(result).toEqual([]);
+    expect(searchContactsMock).not.toHaveBeenCalled();
+    expect(searchOtherContactsMock).not.toHaveBeenCalled();
+  });
+
+  it("includes people and their photos from Gmail other contacts, skipping generated placeholder photos", async () => {
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockResolvedValue({
+        data: {
+          results: [
+            {
+              person: {
+                names: [{ displayName: "Saved Contact" }],
+                emailAddresses: [{ value: "saved@example.com" }],
+                photos: [
+                  { url: "https://example.com/generated.jpg", default: true },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      searchOtherContactsMock: vi.fn().mockResolvedValue({
+        data: {
+          results: [
+            {
+              person: {
+                names: [{ displayName: "Recent Correspondent" }],
+                emailAddresses: [{ value: "recent@example.com" }],
+                photos: [{ url: "https://example.com/recent.jpg" }],
+              },
+            },
+          ],
+        },
+      }),
+    });
+
+    const result = await searchContacts(client, "re", createTestLogger());
+
+    expect(result).toEqual([
+      {
+        emailAddress: "saved@example.com",
+        name: "Saved Contact",
+        profilePictureUrl: undefined,
+      },
+      {
+        emailAddress: "recent@example.com",
+        name: "Recent Correspondent",
+        profilePictureUrl: "https://example.com/recent.jpg",
+      },
+    ]);
+  });
+
+  it("falls back to other contacts when saved contacts are not permitted", async () => {
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockRejectedValue(
+        Object.assign(
+          new Error("Request had insufficient authentication scopes."),
+          {
+            errors: [{ reason: "insufficientPermissions" }],
+          },
+        ),
+      ),
+      searchOtherContactsMock: vi.fn().mockResolvedValue({
+        data: {
+          results: [
+            {
+              person: {
+                names: [{ displayName: "Recent Correspondent" }],
+                emailAddresses: [{ value: "recent@example.com" }],
+              },
+            },
+          ],
+        },
+      }),
+    });
+
+    await expect(
+      searchContacts(client, "re", createTestLogger()),
+    ).resolves.toEqual([
+      {
+        emailAddress: "recent@example.com",
+        name: "Recent Correspondent",
+        profilePictureUrl: undefined,
+      },
+    ]);
+  });
+
+  it("still returns saved contacts when other contacts are not permitted", async () => {
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockResolvedValue({
+        data: {
+          results: [
+            {
+              person: {
+                names: [{ displayName: "Saved Contact" }],
+                emailAddresses: [{ value: "saved@example.com" }],
+              },
+            },
+          ],
+        },
+      }),
+      searchOtherContactsMock: vi.fn().mockRejectedValue({
+        status: "PERMISSION_DENIED",
+        message: "Request had insufficient authentication scopes.",
+      }),
+    });
+
+    await expect(
+      searchContacts(client, "sa", createTestLogger()),
+    ).resolves.toEqual([
+      {
+        emailAddress: "saved@example.com",
+        name: "Saved Contact",
+        profilePictureUrl: undefined,
+      },
+    ]);
+  });
+
+  it("throws when neither Gmail contact source is permitted", async () => {
+    const savedError = Object.assign(new Error("Access denied"), {
+      errors: [{ reason: "insufficientPermissions" }],
+    });
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockRejectedValue(savedError),
+      searchOtherContactsMock: vi.fn().mockRejectedValue({
+        status: "PERMISSION_DENIED",
+      }),
+    });
+
+    await expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toThrow(ContactsAccessDeniedError);
+  });
+
+  it("does not treat a Gmail rate-limit as missing contact access", async () => {
+    const rateLimitError = Object.assign(new Error("Rate Limit Exceeded"), {
+      errors: [{ reason: "userRateLimitExceeded" }],
+      code: 403,
+    });
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockRejectedValue(rateLimitError),
+    });
+
+    await expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toBe(rateLimitError);
+  });
+
+  it.each([
+    "rateLimitExceeded",
+    "userRateLimitExceeded",
+    "quotaExceeded",
+  ] as const)("does not treat a nested %s PERMISSION_DENIED error as missing contact access", async (reason) => {
+    const rateLimitError = Object.assign(new Error("Rate Limit Exceeded"), {
+      errors: [{ reason }],
+      code: 403,
+      status: "PERMISSION_DENIED",
+      response: {
+        data: {
+          error: {
+            code: 403,
+            message: "Rate Limit Exceeded",
+            errors: [{ reason }],
+            status: "PERMISSION_DENIED",
+          },
+        },
+      },
+    });
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockRejectedValue(rateLimitError),
+    });
+
+    await expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toBe(rateLimitError);
+  });
+
+  it("does not search Other Contacts when that flag is off", async () => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = false;
+    const { client, searchContactsMock, searchOtherContactsMock } =
+      createPeopleClient({
+        searchContactsMock: vi.fn().mockResolvedValue({
+          data: {
+            results: [
+              {
+                person: {
+                  names: [{ displayName: "Saved Contact" }],
+                  emailAddresses: [{ value: "saved@example.com" }],
+                },
+              },
+            ],
+          },
+        }),
+      });
+
+    await expect(
+      searchContacts(client, "sa", createTestLogger()),
+    ).resolves.toEqual([
+      {
+        emailAddress: "saved@example.com",
+        name: "Saved Contact",
+        profilePictureUrl: undefined,
+      },
+    ]);
+    expect(searchContactsMock).toHaveBeenCalled();
+    expect(searchOtherContactsMock).not.toHaveBeenCalled();
+  });
+
+  it("reports missing access when saved contacts are the only source", async () => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = false;
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockRejectedValue(
+        Object.assign(new Error("Access denied"), {
+          errors: [{ reason: "insufficientPermissions" }],
+        }),
+      ),
+    });
+
+    await expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toThrow(ContactsAccessDeniedError);
+  });
+
+  it("propagates unrelated failures when saved contacts are the only source", async () => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = false;
+    const providerError = new Error("People API exploded");
+    const { client } = createPeopleClient({
+      searchContactsMock: vi.fn().mockRejectedValue(providerError),
+    });
+
+    await expect(
+      searchContacts(client, "contact", createTestLogger()),
+    ).rejects.toBe(providerError);
+  });
+});
+
+describe("listContactPhotos", () => {
+  beforeEach(() => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = true;
+  });
+
+  it("maps real photos by canonical address across pages, preferring saved contacts", async () => {
+    const connectionsListMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          connections: [
+            {
+              emailAddresses: [{ value: "Saved@Example.com" }],
+              photos: [{ url: "https://example.com/saved.jpg" }],
+            },
+            {
+              emailAddresses: [{ value: "placeholder@example.com" }],
+              photos: [{ url: "https://example.com/tile.jpg", default: true }],
+            },
+          ],
+          nextPageToken: "page-2",
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          connections: [
+            {
+              emailAddresses: [{ value: "second-page@example.com" }],
+              photos: [{ url: "https://example.com/second.jpg" }],
+            },
+          ],
+        },
+      });
+    const otherContactsListMock = vi.fn().mockResolvedValue({
+      data: {
+        otherContacts: [
+          {
+            emailAddresses: [
+              { value: "saved@example.com" },
+              { value: "other@example.com" },
+            ],
+            photos: [{ url: "https://example.com/other.jpg" }],
+          },
+        ],
+      },
+    });
+
+    const photos = await listContactPhotos(
+      createPhotoClient({ connectionsListMock, otherContactsListMock }),
+      createTestLogger(),
+    );
+
+    expect(connectionsListMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pageToken: "page-2" }),
+    );
+    expect(photos).toEqual({
+      "saved@example.com": "https://example.com/saved.jpg",
+      "second-page@example.com": "https://example.com/second.jpg",
+      "other@example.com": "https://example.com/other.jpg",
+    });
+  });
+
+  it("returns the photos it can read when one contact source is not permitted", async () => {
+    const photos = await listContactPhotos(
+      createPhotoClient({
+        connectionsListMock: vi
+          .fn()
+          .mockRejectedValue({ status: "PERMISSION_DENIED" }),
+        otherContactsListMock: vi.fn().mockResolvedValue({
+          data: {
+            otherContacts: [
+              {
+                emailAddresses: [{ value: "other@example.com" }],
+                photos: [{ url: "https://example.com/other.jpg" }],
+              },
+            ],
+          },
+        }),
+      }),
+      createTestLogger(),
+    );
+
+    expect(photos).toEqual({
+      "other@example.com": "https://example.com/other.jpg",
+    });
+  });
+
+  it("fails instead of reporting no photos when every source is denied", async () => {
+    const denied = { status: "PERMISSION_DENIED" };
+
+    await expect(
+      listContactPhotos(
+        createPhotoClient({
+          connectionsListMock: vi.fn().mockRejectedValue(denied),
+          otherContactsListMock: vi.fn().mockRejectedValue(denied),
+        }),
+        createTestLogger(),
+      ),
+    ).rejects.toBe(denied);
+  });
+
+  it("does not read Other Contacts when that flag is off", async () => {
+    envMock.NEXT_PUBLIC_GMAIL_OTHER_CONTACTS_ENABLED = false;
+    const otherContactsListMock = vi.fn();
+
+    await listContactPhotos(
+      createPhotoClient({
+        connectionsListMock: vi.fn().mockResolvedValue({ data: {} }),
+        otherContactsListMock,
+      }),
+      createTestLogger(),
+    );
+
+    expect(otherContactsListMock).not.toHaveBeenCalled();
+  });
+});
+
+function createPhotoClient({
+  connectionsListMock,
+  otherContactsListMock,
+}: {
+  connectionsListMock: ReturnType<typeof vi.fn>;
+  otherContactsListMock: ReturnType<typeof vi.fn>;
+}) {
+  return {
+    people: { connections: { list: connectionsListMock } },
+    otherContacts: { list: otherContactsListMock },
+  } as never;
+}
+
+function createPeopleClient({
+  searchContactsMock = vi.fn().mockResolvedValue({ data: { results: [] } }),
+  searchOtherContactsMock = vi.fn().mockResolvedValue({
+    data: { results: [] },
+  }),
+}: {
+  searchContactsMock?: ReturnType<typeof vi.fn>;
+  searchOtherContactsMock?: ReturnType<typeof vi.fn>;
+} = {}) {
+  return {
+    client: {
+      people: { searchContacts: searchContactsMock },
+      otherContacts: { search: searchOtherContactsMock },
+    } as never,
+    searchContactsMock,
+    searchOtherContactsMock,
+  };
+}

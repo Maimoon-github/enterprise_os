@@ -1,0 +1,200 @@
+// @vitest-environment jsdom
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { DashboardActivationCard } from "./dashboard-activation-card";
+import { UpgradePlanDialogProvider } from "./upgrade-plan-dialog-context";
+import { announceTestCallEnded, registerTestWindow } from "@/lib/test-window";
+import { createRecordedBrowserTelemetry } from "@/lib/telemetry-testing";
+
+const telemetryRef = vi.hoisted(() => ({ current: null as ReturnType<typeof createRecordedBrowserTelemetry> | null }));
+vi.mock("@/components/product-analytics", () => ({ useTelemetry: () => telemetryRef.current!.telemetry }));
+const router = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string, values?: { number?: string }) => values?.number ? `${key}:${values.number}` : key, i18n: { language: "en" } }) }));
+
+const clients: QueryClient[] = [];
+let store: Record<string, string>;
+
+beforeEach(() => {
+  telemetryRef.current = createRecordedBrowserTelemetry();
+  store = {};
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+  });
+});
+
+afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+type Activation = {
+  deploymentMode: string;
+  plan: string;
+  paidPlanLive: boolean;
+  hasDedicatedNumber: boolean;
+  completedWebCalls: number;
+  websiteImport: { status: string; websiteUrl: string; importedCount: number; indexedCount: number } | null;
+};
+
+function activationBody(activation: Partial<Activation>): Activation {
+  return {
+    deploymentMode: "cloud",
+    plan: "free_cloud",
+    paidPlanLive: false,
+    hasDedicatedNumber: false,
+    completedWebCalls: 0,
+    websiteImport: null,
+    ...activation,
+  };
+}
+
+function setup(activation: Partial<Activation>, trial: Record<string, unknown> = { status: "none" }) {
+  const body = activationBody(activation);
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(String(url).startsWith("/api/number-trial") ? { trial } : body)));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  clients.push(client);
+  const onOpen = vi.fn();
+  render(
+    <QueryClientProvider client={client}>
+      <UpgradePlanDialogProvider onOpen={onOpen}>
+        <DashboardActivationCard businessId="business" />
+      </UpgradePlanDialogProvider>
+    </QueryClientProvider>,
+  );
+  return onOpen;
+}
+
+/**
+ * Waiting for fetch to be called is not enough for a card that renders
+ * nothing: the response and the effects it triggers land later, so an
+ * assertion that nothing fired would pass before anything could.
+ */
+async function activationLoaded() {
+  await waitFor(() => expect(clients.at(-1)!.getQueryState(["activation", "business"])?.status).toBe("success"));
+  await act(async () => {});
+}
+
+describe("dashboard activation card", () => {
+  it("offers the free trial number to a free workspace that can still start one", async () => {
+    setup({ completedWebCalls: 1 }, { status: "available" });
+    expect(await screen.findByText("activation.freeTrial.title")).toBeTruthy();
+    // The number step opens on the workspace the offer was shown in, even if another tab switched away.
+    await userEvent.click(screen.getByRole("button", { name: "activation.freeTrial.cta" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/onboarding/number"));
+    expect(vi.mocked(fetch).mock.calls.some(([url, init]) => url === "/api/businesses/switch" && JSON.parse(String(init?.body)).businessId === "business")).toBe(true);
+    expect(telemetryRef.current!.events.filter(event => event.name === "web.activation.upgrade_prompt_shown")).toHaveLength(0);
+  });
+
+  it("asks a trial owner to forward missed calls to the trial number, not to buy one", async () => {
+    setup({ completedWebCalls: 1 }, { status: "active", e164: "+15818927672", daysLeft: 12, minutesExhausted: false, forwardTo: null });
+    expect(await screen.findByText("activation.forwardTrial.title:(581) 892-7672")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "activation.forwardTrial.cta" }));
+    expect(await screen.findByText("forwarding.title:(581) 892-7672")).toBeTruthy();
+    expect(screen.queryByText("activation.upgrade.title")).toBeNull();
+    expect(telemetryRef.current!.events.filter(event => event.name === "web.activation.upgrade_prompt_shown")).toHaveLength(0);
+  });
+
+  it("shows crawl progress while the website import is still running", async () => {
+    setup({ websiteImport: { status: "crawling", websiteUrl: "https://example.com", importedCount: 4, indexedCount: 0 } });
+    expect(await screen.findByText("websiteImport.runningTitle")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("invites the operator to hear the agent once the import finishes", async () => {
+    const stop = registerTestWindow(vi.fn());
+    setup({ websiteImport: { status: "completed", websiteUrl: "https://example.com", importedCount: 12, indexedCount: 11 } });
+    expect(await screen.findByText("activation.hearIt.title")).toBeTruthy();
+    expect(screen.getByText("activation.hearIt.descriptionWithPages")).toBeTruthy();
+    stop();
+  });
+
+  it("opens the test window", async () => {
+    const start = vi.fn();
+    const stop = registerTestWindow(start);
+    setup({});
+    await userEvent.click(await screen.findByRole("button", { name: /activation.hearIt.cta/ }));
+    expect(start).toHaveBeenCalledOnce();
+    stop();
+  });
+
+  it("records the first completed call and shows the upgrade prompt after it", async () => {
+    const onOpen = setup({ completedWebCalls: 1 });
+    expect(await screen.findByText("activation.upgrade.title")).toBeTruthy();
+    telemetryRef.current!.expectEvent("web.activation.first_call_completed", { businessId: "business", transport: "web_voice" });
+    telemetryRef.current!.expectEvent("web.activation.upgrade_prompt_shown", { businessId: "business", trigger: "first_call_completed" });
+
+    await userEvent.click(screen.getByRole("button", { name: "activation.upgrade.cta" }));
+    telemetryRef.current!.expectEvent("web.activation.upgrade_prompt_clicked", { businessId: "business", trigger: "first_call_completed" });
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("reports the first completed call once per browser", async () => {
+    setup({ completedWebCalls: 1 });
+    await screen.findByText("activation.upgrade.title");
+    cleanup();
+    setup({ completedWebCalls: 3 });
+    await screen.findByText("activation.upgrade.title");
+    expect(telemetryRef.current!.events.filter(event => event.name === "web.activation.first_call_completed")).toHaveLength(1);
+  });
+
+  it("stays hidden once the business has its own phone number", async () => {
+    setup({ hasDedicatedNumber: true, completedWebCalls: 2 });
+    await activationLoaded();
+    expect(screen.queryByText("activation.upgrade.title")).toBeNull();
+    expect(telemetryRef.current!.events).toHaveLength(0);
+  });
+
+  it("stays hidden for a self-hosted workspace, whatever its billing row says", async () => {
+    setup({ deploymentMode: "self_hosted_standard", plan: "free_cloud", completedWebCalls: 1 });
+    await activationLoaded();
+    expect(screen.queryByText("activation.upgrade.title")).toBeNull();
+    expect(screen.queryByText("activation.hearIt.title")).toBeNull();
+    expect(telemetryRef.current!.events).toHaveLength(0);
+  });
+
+  it("keeps the first-call report for when the card can actually show", async () => {
+    // A workspace that has a number reports nothing, so the browser marker must
+    // stay unset: otherwise the real report is lost if the number goes away.
+    setup({ hasDedicatedNumber: true, completedWebCalls: 1 });
+    await activationLoaded();
+    cleanup();
+    telemetryRef.current = createRecordedBrowserTelemetry();
+    setup({ completedWebCalls: 1 });
+    await activationLoaded();
+    telemetryRef.current!.expectEvent("web.activation.first_call_completed", { businessId: "business", transport: "web_voice" });
+  });
+
+  it("sends a paying operator without a number to claiming instead of checkout", async () => {
+    setup({ plan: "starter", paidPlanLive: true, completedWebCalls: 1 });
+    expect(await screen.findByText("activation.claimNumber.title")).toBeTruthy();
+    expect(screen.getByText("activation.claimNumber.cta").closest("a")?.getAttribute("href")).toBe("/agents/primary/channels/phone");
+    expect(screen.queryByText("activation.upgrade.title")).toBeNull();
+    expect(telemetryRef.current!.events.filter(event => event.name === "web.activation.upgrade_prompt_shown")).toHaveLength(0);
+    telemetryRef.current!.expectEvent("web.activation.first_call_completed", { businessId: "business", transport: "web_voice" });
+  });
+
+  it("re-checks activation after a call ends in this tab", async () => {
+    const stop = registerTestWindow(vi.fn());
+    let completedWebCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(activationBody({ completedWebCalls }))));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    clients.push(client);
+    render(
+      <QueryClientProvider client={client}>
+        <UpgradePlanDialogProvider onOpen={vi.fn()}>
+          <DashboardActivationCard businessId="business" />
+        </UpgradePlanDialogProvider>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("activation.hearIt.title");
+
+    completedWebCalls = 1;
+    announceTestCallEnded();
+
+    expect(await screen.findByText("activation.upgrade.title", {}, { timeout: 5000 })).toBeTruthy();
+    stop();
+  });
+});

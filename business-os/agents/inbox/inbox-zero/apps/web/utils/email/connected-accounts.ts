@@ -1,0 +1,39 @@
+import prisma from "@/utils/prisma";
+import { EMAIL_ACCOUNT_ORDER_BY } from "@/utils/email-account-order";
+
+export async function getConnectedEmailAccounts({
+  userId,
+  accountId,
+  includeInAllAccounts,
+}: {
+  userId: string;
+  accountId?: string;
+  includeInAllAccounts?: boolean;
+}) {
+  const accounts = await prisma.emailAccount.findMany({
+    where: {
+      ...(accountId ? { id: accountId } : {}),
+      ...(includeInAllAccounts ? { includeInAllAccounts: true } : {}),
+      userId,
+      account: { disconnectedAt: null },
+    },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      image: true,
+      account: {
+        select: { provider: true },
+      },
+    },
+    orderBy: EMAIL_ACCOUNT_ORDER_BY,
+  });
+
+  return accounts.map((account) => ({
+    id: account.id,
+    email: account.email,
+    name: account.name,
+    image: account.image,
+    provider: account.account.provider,
+  }));
+}

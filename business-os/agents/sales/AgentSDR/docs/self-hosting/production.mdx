@@ -1,0 +1,231 @@
+---
+title: "Going to production"
+description: "Checklist for a live AgentSDR: domain and HTTPS, sign-up policy, email, scheduled jobs, webhooks, database connections, backups and upgrades."
+icon: "rocket"
+---
+
+Do these once your install works locally or on a server and you are ready for real people and real sending. Each item links to the detail below.
+
+<Info>
+**What you need**
+
+- A running install ([Docker Compose](/self-hosting/docker-compose), [from source](/self-hosting/from-source) or [Dokploy](/self-hosting/dokploy)).
+- A domain you control and a Resend account.
+- About 30 minutes, plus DNS propagation.
+</Info>
+
+## Checklist
+
+1. [Domain, HTTPS and the public URL](#domain-https-and-the-public-url)
+2. [Sign-up policy](#who-may-sign-up) and the operator
+3. [Transactional email (Resend)](#transactional-email-resend)
+4. [Scheduled jobs](#scheduled-jobs)
+5. [Webhooks](#webhooks)
+6. [Database connections](#database-connections)
+7. [Backups](#backups-and-restore)
+8. [Know how to upgrade](#upgrading) and the [PAUSE switches](#pause-switches)
+
+## Domain, HTTPS and the public URL
+
+Put the app behind a reverse proxy or platform router (Caddy, nginx, a load balancer, Traefik on Dokploy) that terminates TLS and forwards to port 3000. Point a DNS record at it.
+
+`BETTER_AUTH_URL` is the one required public-origin setting (for example `https://sdr.example.com`, no trailing slash). It is read at runtime and used for sign-in and Better Auth's trusted origin, email links (including unsubscribe links in sent campaigns), and Unipile hosted-auth redirect and notify URLs. One image therefore works for any domain: change the variable and restart.
+
+`NEXT_PUBLIC_APP_URL` is a legacy fallback, used only if `BETTER_AUTH_URL` is unset; it is inlined at build time, so prefer `BETTER_AUTH_URL`.
+
+A `localhost` value works for development but is not reachable by Unipile or by the recipients of your email. Unipile webhooks are not registered while the origin is a local address (see [Webhooks](#webhooks)).
+
+You need a public HTTPS origin if you want webhooks to reach you (Unipile, Gmail push) and email links to work for other people.
+
+## Who may sign up
+
+The first account on a fresh install can always be created. After that, `AUTH_SIGNUP` controls it:
+
+- `invite-only` (default): the instance's very first account can always be created. After that an account is created only for an email address with a pending, unexpired invitation; any other sign-up gets Better Auth's normal "check your email" response and no account is created (the sign-up page shows an invite-only notice, and the sign-in page no longer offers "Create one"). Only owners and admins of the first organization (or the first user, before any organization exists) can create organizations. This covers Google sign-in too.
+- `open`: anyone who can reach the instance can create an account and an organization. Suited to a public, multi-customer deployment; set it explicitly.
+
+Invitations work in both modes. Invite teammates from Settings, Members; an invitation is sent by email and expires after 7 days.
+
+The "platform operator" is an owner or admin of the organization flagged `initial` (installs migrated from the single-workspace version), otherwise of the **oldest** organization. On a fresh install that is the first organization you create. Only the operator sees system-wide job logs (Settings, LinkedIn jobs); everything else is per organization.
+
+## Transactional email (Resend)
+
+Invitations, sign-up verification and password reset are sent through [Resend](https://resend.com). Set `RESEND_API_KEY` and `AUTH_EMAIL_FROM` (an address on a domain you have verified in Resend), for example `AgentSDR <auth@yourdomain.com>`. Setup steps: [Resend](/integrations/resend).
+
+Without `RESEND_API_KEY`, verification, reset and invitation emails are written to the server log (with a one-time warning in production) instead of sent. The first admin account, created on the setup page, needs none of them; you need Resend before inviting anyone, since invited people must confirm their email before password sign-in works.
+
+This is separate from the email your campaigns send, which goes out through the Gmail accounts you connect ([Google Workspace](/integrations/google-workspace)).
+
+Optional: set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to add "Continue with Google" ([Google sign-in](/integrations/google-sign-in)). The OAuth redirect URI is `<BETTER_AUTH_URL>/api/auth/callback/google`.
+
+## Scheduled jobs
+
+The scheduled jobs run inside the app, so there is nothing to set up: no cron container, no Dokploy Schedule Jobs, no secrets. They run only in production (`bun run start`, or the Docker image), never in a demo deployment, and `INTERNAL_SCHEDULER=false` turns them off if you would rather call the endpoints from an external cron ([examples](/self-hosting/from-source#scheduled-jobs-from-outside)).
+
+### The jobs
+
+| Job | When | What it does |
+|---|---|---|
+| Daily rollover | Once a day per organization, at the start of that organization's day | Builds the organization's email send queues, renews its Gmail push watches (only needed for [Gmail reply sync](/integrations/gmail-reply-sync)) and resets its LinkedIn accounts' daily limits. **Without it nothing is sent.** |
+| LinkedIn outreach | Every 30 minutes (:00 and :30, UTC) | Syncs accounts, resolves profiles, sends invitations and follow-ups. Each account's working hours and daily limits still apply. |
+| LinkedIn webhook replay | Every 10 minutes | Re-processes failed or abandoned webhook deliveries. |
+| History pruning | Daily at 00:00 UTC | Deletes LinkedIn job history older than 1 day and scheduler records older than 30 days. |
+
+The LinkedIn search queue is not scheduled: it runs when someone clicks Run.
+
+The daily rollover follows each organization's clock. Set it in **Settings, Organization, Defaults**: **Time zone** (an IANA name such as `Europe/Berlin`, default `UTC`) and **New day starts at** (`HH:MM`, default `00:00`). Daylight saving is handled. The first-run setup page stores the browser's time zone for the first organization. Changing the zone or time never repeats the same day's rollover, except that moving the start of the day later can give a second rollover within 24 hours, because it is a new day under the new setting.
+
+Each run is claimed in the database (table `scheduled_job_runs`), so a scheduled slot runs once however many times the app restarts, even while two instances overlap during a deploy. After downtime only the latest missed slot runs. After upgrading, a job with no recorded run waits for its next slot, so the daily work an old cron already did today is not repeated. The app logs one line per run, for example `[scheduler] linkedin-run-outreach @ 2026-10-08T09:30:00.000Z ok in 1.2s`, or `FAILED` with the error.
+
+<Warning>
+Until the `scheduled_job_runs` table exists, the app runs **no** scheduled jobs and logs a `[scheduler] Table scheduled_job_runs is missing` warning. A fresh install creates it automatically; an upgraded one needs the migration under [Upgrading](#upgrading).
+</Warning>
+
+### Also in the app
+
+Started from `src/instrumentation.ts` when the server boots:
+
+| Worker | What it does | Notes |
+|---|---|---|
+| Outreach scheduler | Sends the next queued email for each mailbox every minute (`OUTREACH_TICK_INTERVAL_MS`, default 60000). | **Production only** (`NODE_ENV=production`). Single instance only. |
+| WhatsApp campaign sender | Sends WhatsApp campaign steps, one step per number per tick. | Production only, single instance. Paused by `PAUSE_WHATSAPP_OUTBOUND`. |
+| Enrichment (grid) worker | Runs queued cells of Tables. | Safe with several instances (`FOR UPDATE SKIP LOCKED`). Also runs in development. |
+| CRM worker | Classifies replies and drafts responses from the durable job queue. | Safe with several instances. |
+
+### Running a job by hand, or from outside
+
+The same work is available as endpoints, for a manual run or an external cron (needed only with `INTERNAL_SCHEDULER=false`). Every request is `POST`; replace `$APP` with your public origin. `CRON_SECRET` and `OUTREACH_TICK_SECRET` are optional: set one only to call its endpoints from outside. Unset, the endpoints refuse every secret call. In Docker Compose, add them to the `environment` block of `docker-compose.yml`.
+
+| Endpoint | Auth | Runs |
+|---|---|---|
+| `/api/outreach/build-queue` | `OUTREACH_TICK_SECRET` | Rebuilds each mailbox's send queue and resets daily send counters. |
+| `/api/outreach/mailboxes/watch` | `OUTREACH_TICK_SECRET` | Renews Gmail push watches, which expire after about 7 days. |
+| `/api/linkedin/jobs/reset-daily-limits` | `CRON_SECRET` | Resets LinkedIn daily counters and prunes old history. |
+| `/api/linkedin/jobs/run-outreach` | `CRON_SECRET` | The LinkedIn outreach run. |
+| `/api/linkedin/jobs/replay-webhooks` | `CRON_SECRET` | The LinkedIn webhook replay. |
+| `/api/linkedin/jobs/run-search-queue` | `CRON_SECRET` | Works queued lead searches. Skips if a previous run is still going. |
+| `/api/outreach/tick` | `OUTREACH_TICK_SECRET` | **Do not schedule.** One send tick; the in-app scheduler already does this, and scheduling it as well double-ticks. |
+
+With the in-app scheduler on, these calls do not repeat its work:
+
+- `run-outreach` and `replay-webhooks` share the scheduler's slot. If it already ran, they answer `{ "ok": true, "skipped": "already ran for slot ..." }`.
+- `build-queue`, `mailboxes/watch` and `reset-daily-limits` skip organizations whose daily rollover already ran today (the JSON lists them under `alreadyRolledOver`) and do the rest.
+- Add `?force=1` to any of them to skip this check.
+
+With the scheduler off, or on a development server, they behave as plain endpoints.
+
+Authentication:
+
+- `OUTREACH_TICK_SECRET` endpoints take the secret as `?secret=...` or the `x-tick-secret` header. The endpoint answers 401 (`{"error":"unauthorized"}`) when the variable is unset or does not match.
+- `CRON_SECRET` endpoints take `Authorization: Bearer $CRON_SECRET`. With the secret the call serves every organization; a signed-in member calling the same route only runs their own organization.
+
+## Webhooks
+
+These endpoints are public (no session cookie) and need your instance to be reachable from the internet.
+
+| Endpoint | Caller | Protection |
+|---|---|---|
+| `/api/webhooks/connection-accepted` | Unipile (LinkedIn `new_relation`) | `?secret=` checked against the organization's stored Unipile webhook secret when present; a request with no secret is accepted and logged as a warning. |
+| `/api/webhooks/message-received` | Unipile (LinkedIn `message_received`) | Same as above. |
+| `/api/webhooks/whatsapp-message` | Unipile (WhatsApp messages) | `?secret=` or `x-unipile-secret` required. |
+| `/api/webhooks/unipile-account` | Unipile hosted-auth `notify_url` | `?secret=` required; `?org=` names the organization. |
+| `/api/outreach/webhooks/gmail-watch` | Google Cloud Pub/Sub push subscription | None; only addresses of connected mailboxes are acted on. |
+| `/api/call-recorder/*` | The WhatsApp recorder browser extension | Per-call bearer token. |
+| `/unsubscribe`, `/api/outreach/unsubscribe` | Recipients of your email | Signed token (`UNSUBSCRIBE_SECRET`). |
+
+Do not expose `/api/webhooks/[id]` publicly; it is behind sign-in on purpose.
+
+**Unipile registers itself.** Saving the Unipile integration registers the two webhooks (`connection-accepted` and `unipile-message`) in your Unipile workspace, each URL carrying `org=<organization id>` and each delivery the generated secret as `x-unipile-secret`. Registration is skipped when the origin is `localhost`, so save the integration again after the app runs at its public address. See [Unipile](/integrations/unipile). A single `/api/webhooks/unipile-message` receives every Unipile messaging event and routes by account type; the two paths above stay live for hand-made registrations and the LinkedIn replay job.
+
+**Gmail push** is optional and set up in Google Cloud: a Pub/Sub subscription pushing to `/api/outreach/webhooks/gmail-watch`. Follow [Gmail reply sync](/integrations/gmail-reply-sync), the daily rollover renews the watch.
+
+### WhatsApp call recorder extension
+
+Calls placed from AgentSDR are recorded by the Chrome extension in `extensions/whatsapp-recorder/`. The extension only talks to AgentSDR addresses it knows. To use it with your own domain:
+
+1. Build it with `bun run build:recorder` and load `extensions/whatsapp-recorder/dist` as an unpacked extension in Chrome (`chrome://extensions`, Developer mode, Load unpacked).
+2. Open the extension's **Options** (`chrome://extensions`, Details, Extension options), add your AgentSDR address (for example `https://sdr.yourcompany.com`), and allow access when Chrome asks.
+3. Reload any AgentSDR tab that was already open.
+
+Each person who places calls does this once in their own Chrome; nothing is rebuilt per domain. Recordings are stored in your Cloudflare R2 bucket ([Cloudflare R2](/integrations/cloudflare-r2)); see [WhatsApp calling](/whatsapp/calling).
+
+## Database connections
+
+The app uses one connection pool of at most `DB_POOL_MAX` connections (default 8). PostgreSQL's `max_connections` is shared by everything that points at the server. When it is exhausted, every query fails at once with `remaining connection slots are reserved for roles with the SUPERUSER attribute`: that means capacity, not a bug. Before raising `DB_POOL_MAX`, check `select count(*) from pg_stat_activity`, and allow for a rolling deploy briefly running two containers (two pools).
+
+## Backups and restore
+
+Back up the PostgreSQL database; it holds everything, including the encrypted integration credentials. Keep a copy of `INTEGRATION_CREDENTIALS_KEY` separately: without it the stored credentials cannot be decrypted and every integration has to be reconnected.
+
+```sh
+pg_dump --format=custom --no-owner --no-privileges --file agentsdr.dump "$DATABASE_URL"
+```
+
+`pg_dump` must be at least as new as the server. Restore into an empty database with:
+
+```sh
+pg_restore --no-owner --dbname "$DATABASE_URL" agentsdr.dump
+```
+
+Call recordings live in R2, not in the database; back that bucket up separately. With the bundled Compose database the data is in the `db-data` volume: `docker compose down -v` deletes it.
+
+## Upgrading
+
+Upgrading an existing install is **not** done with `db:setup`, and the app's start-up setup does not do it either: both only initialise an empty database. On an existing one the app prints `Database already initialised — nothing to do.` and changes nothing.
+
+1. Back up the database ([above](#backups-and-restore)).
+2. `git pull` (or pull the new image tag).
+3. Find the migrations added since your last version: the schema history is the set of scripts in `scripts/`, applied in the order they were committed. This lists the scripts added between two versions:
+
+   ```sh
+   git log --diff-filter=A --name-only --format= OLD..NEW -- scripts/
+   ```
+
+   The release notes in [CHANGELOG.md](https://github.com/Kandid-ai/AgentSDR/blob/main/CHANGELOG.md) name any migration you must run.
+4. Run each new migration against your database, for example `bun scripts/<name>.ts` (older ones are plain JavaScript, run with `node scripts/<name>.js`). They load `.env.local` and connect with `DATABASE_URL`, are guarded with `IF NOT EXISTS` / `IF EXISTS`, and are safe to re-run. The Docker image contains only `scripts/db/setup.ts` and `scripts/create-scheduled-job-runs.ts`, so run other migrations from a checkout of the repository that can reach your database. For the scheduler's migration on Docker Compose:
+
+   ```sh
+   docker compose exec app agentsdr-entrypoint bun scripts/create-scheduled-job-runs.ts
+   ```
+
+   The entrypoint supplies `DATABASE_URL` for the bundled database.
+5. Rebuild and restart: `bun run build && bun run start`, or `docker compose up -d --build` (or `docker compose pull && docker compose up -d` if you use a prebuilt image).
+6. Optionally verify: `bun run db:check` audits the database against the tenancy registry.
+
+Never change `INTEGRATION_CREDENTIALS_KEY` or `BETTER_AUTH_SECRET` during an upgrade (see the [configuration reference](/configuration)). To rotate the integration key deliberately, use `bun run rotate:integration-credentials` (new key in `INTEGRATION_CREDENTIALS_KEY`, old one in `LEGACY_INTEGRATION_CREDENTIALS_KEYS`).
+
+## PAUSE switches
+
+Operational kill switches, off by default. A value of `1`, `true`, `yes` or `on` (case-insensitive) turns one on. They are re-read on every call. Setting `PAUSE_EMAIL_OUTBOUND=true` and restarting stops sending without touching data, which makes them an emergency brake.
+
+| Variable | Effect when on |
+|---|---|
+| `PEOPLE_MIGRATION_MODE` | Master switch: pauses every writer below and answers 503 to campaign, import and manual-send mutations. Inbound webhooks and reads keep working. |
+| `PAUSE_CAMPAIGN_MUTATIONS` | Only the 503 on those mutation routes. |
+| `PAUSE_EMAIL_OUTBOUND` | Stops outgoing email sends. |
+| `PAUSE_LINKEDIN_OUTBOUND` | Stops LinkedIn invitations and messages. |
+| `PAUSE_WHATSAPP_OUTBOUND` | Stops WhatsApp sends. |
+| `PAUSE_LINKEDIN_RESOLUTION` | Stops LinkedIn profile resolution. |
+| `PAUSE_LINKEDIN_SEARCH` | Stops the LinkedIn search queue. |
+| `PAUSE_GRID_WORKER` | Stops the enrichment worker. |
+
+<Warning>
+`PEOPLE_MIGRATION_MODE` and `PAUSE_CAMPAIGN_MUTATIONS` also return 503 for `POST` calls to `/api/linkedin/jobs/*` and `/api/outreach/mailboxes/*`, which an external cron would call. They also stop the in-app LinkedIn jobs and the rollover's Gmail-watch and LinkedIn-reset parts. `PAUSE_EMAIL_OUTBOUND` and the other switches still apply inside the jobs. Leave them off in normal operation.
+</Warning>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Integrations" icon="plug" href="/integrations">
+    Connect the services each channel needs.
+  </Card>
+  <Card title="Troubleshooting" icon="life-buoy" href="/self-hosting/troubleshooting">
+    Exact messages and fixes.
+  </Card>
+  <Card title="Configuration reference" icon="sliders-horizontal" href="/configuration">
+    Every environment variable.
+  </Card>
+  <Card title="Responsible use" icon="shield-check" href="/responsible-use">
+    Sending limits and compliance.
+  </Card>
+</CardGroup>

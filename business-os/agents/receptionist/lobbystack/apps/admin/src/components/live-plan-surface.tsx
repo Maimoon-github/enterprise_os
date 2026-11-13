@@ -1,0 +1,398 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { billingPlanCatalog, type BillingPlanSlug } from "@lobbystack/shared";
+import { ArrowUpRight, Check } from "lucide-react";
+import { toast } from "sonner";
+import { requestJson } from "@/lib/request-json";
+import { useActiveBusiness } from "@/hooks/use-active-business";
+import type { BillingPermissions } from "./billing-past-due-banner";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
+
+import { BillingAddOns, BillingAddOnsSkeleton } from "./billing-add-ons";
+import { CancelPlanDialog } from "./cancel-plan-dialog";
+import { PageSurface } from "./page-surface";
+import { SectionBlock } from "./section-block";
+import { Button } from "./ui/button";
+import { useOpenUpgradePlanDialog } from "./upgrade-plan-dialog-context";
+import { formatMoney, SpendingCapSection } from "./billing-spending-cap";
+import { SectionSkeleton } from "./loading-skeletons";
+import { Skeleton } from "./ui/skeleton";
+import { Surface } from "./ui/surface";
+import { Table, TableBody, TableCard, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { formatDateTime, intlLocale } from "@/lib/locale";
+
+type Billing = {
+  availableCheckoutPlans: Array<"starter" | "pro">;
+  availableCheckoutIntervals: { starter: string[]; pro: string[] };
+  permissions: BillingPermissions;
+  effectivePlan: BillingPlanSlug;
+  planEndsAt?: string | null;
+  account: { plan: string | null; billingKey: string; subscriptionId?: string | null; billingInterval: string | null; subscriptionState: string | null; currentPeriodStart: string | null; currentPeriodEnd: string | null; overageSpendingCapCents: number | null } | null;
+  usage: Array<{ periodKey: string; usageKind: string; quantity: number; syncStatus: string }>;
+  transactions: Array<{ kind: string; sourceId: string; status: string; amountCents: number; refundedAmountCents: number; currency: string; description: string | null; invoiceUrl: string | null; occurredAt: string }>;
+  usageStatus: { usageComplete: boolean; voiceBlocked: boolean; alertSmsBlocked: boolean; outboundCallAttemptsBlocked: boolean; overageSpendingCapReached: boolean; overageSpendCents: number; overageSpendingCapCents: number | null } | null;
+};
+
+function formatBillingDate(value: string | null, locale = "en"): string { return value ? formatDateTime(value, locale, { month: "short", day: "numeric", year: "numeric" }) : "—"; }
+
+
+export function LivePlanSurface() {
+  const { i18n, t } = useTranslation("settings");
+  const money = (cents: number, currency = "usd") => formatMoney(cents, currency, i18n.language);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const openUpgradePlanDialog = useOpenUpgradePlanDialog();
+  const [portalPending, setPortalPending] = useState(false);
+  const [canceled, setCanceled] = useState<{ businessId: string; endsAt: string | null } | null>(null);
+  const { businesses, business } = useActiveBusiness();
+  const billing = useQuery({ queryKey: ["billing", business?.businessId], queryFn: () => requestJson<Billing>(`/api/billing?businessId=${encodeURIComponent(business!.businessId)}`), enabled: Boolean(business?.businessId) });
+
+  // Checkouts opened before the success page existed still return here.
+  const returnRequestId = searchParams.get("checkout") === "success" ? searchParams.get("requestId") : null;
+  useEffect(() => { if (returnRequestId) router.replace(`/billing/success?requestId=${encodeURIComponent(returnRequestId)}`); }, [returnRequestId, router]);
+
+  async function openPortal() { if (!business) return; setPortalPending(true); try { const result = await requestJson<{ url: string }>(`/api/billing/portal?businessId=${encodeURIComponent(business.businessId)}`, { method: "POST", body: JSON.stringify({}) }); window.location.assign(result.url); } catch { toast.error(t("billing.toast.portalFailed")); } finally { setPortalPending(false); } }
+
+  if (businesses.isLoading || billing.isLoading) return <PageSurface title={t("sections.billing")}><BillingSkeleton t={t} /></PageSurface>;
+  if (businesses.isError || billing.isError || !business || !billing.data) return <PageSurface title={t("sections.billing")}><Surface className="flex flex-col items-start gap-4 p-6"><p role="alert">{t("billing.usage.unavailable")}</p><Button variant="outline" onClick={() => { if (businesses.isError || !business) void businesses.refetch(); else void billing.refetch(); }}>{t("billing.actions.retry")}</Button></Surface></PageSurface>;
+
+  const account = billing.data?.account;
+  const plan = billing.data.effectivePlan;
+  const catalog = billingPlanCatalog[plan];
+  const monthlyPrice = account?.billingInterval === "annual" ? catalog.annualEffectiveMonthlyChargeCents : catalog.monthlyChargeCents;
+  const included = [catalog.voiceSecondsIncluded === null ? t("billing.currentPlan.includedVoiceCustom") : `${Math.round(catalog.voiceSecondsIncluded / 60)} ${t("billing.currentPlan.includedVoiceLabel")}`, catalog.outboundCallAttemptsIncluded === null ? t("billing.currentPlan.includedOutboundCustom") : `${catalog.outboundCallAttemptsIncluded} ${t("billing.currentPlan.includedOutboundLabel")}`, catalog.alertSmsSegmentsIncluded === null ? t("billing.currentPlan.includedSmsCustom") : `${catalog.alertSmsSegmentsIncluded} ${t("billing.currentPlan.includedSmsLabel")}`, catalog.knowledgeStorageBytes === null ? t("billing.currentPlan.includedStorageCustom") : t("billing.currentPlan.includedStorage", { amount: (catalog.knowledgeStorageBytes / (catalog.knowledgeStorageBytes >= 1024 ** 3 ? 1024 ** 3 : 1024 ** 2)).toLocaleString(intlLocale(i18n.language)), unit: catalog.knowledgeStorageBytes >= 1024 ** 3 ? "GB" : "MB" })];
+  const permissions = billing.data?.permissions;
+  // A paying business changes plans in the customer portal; checkout refuses it.
+  const canUpgrade = permissions?.hasCheckoutAccess && plan === "free_cloud" && billing.data?.availableCheckoutPlans.some(target => billing.data.availableCheckoutIntervals[target].length > 0);
+  const canManage = permissions?.hasCustomerPortalAccess === true;
+  const ended = canceled?.businessId === business.businessId ? canceled : null;
+  const endsAt = ended ? ended.endsAt : billing.data.planEndsAt ?? null;
+  const canCancel = canManage && !ended && !endsAt && (plan === "starter" || plan === "pro") && Boolean(account?.subscriptionId) && ["active", "trialing"].includes(account?.subscriptionState ?? "");
+
+  return <PageSurface title={t("sections.billing")}>
+    <div className="flex w-full flex-col gap-10">
+    <SectionBlock title={t("billing.currentPlan.title")}>
+      <Surface className="px-6 py-5">
+        <div className="flex flex-col gap-6">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-3">
+              <span className="type-section-title">
+                {t(`billing.planLabels.${plan === "free_cloud" ? "freeCloudCard" : plan === "self_host" ? "selfHost" : plan === "starter" ? "starterCard" : plan === "pro" ? "proCard" : "enterpriseCard"}`)}
+              </span>
+              <div className="flex flex-col items-start gap-0.5">
+                <div className="flex flex-wrap items-end gap-2">
+                  {monthlyPrice !== null ? (
+                    <span className="type-metric">
+                      {money(monthlyPrice!)}
+                    </span>
+                  ) : (
+                    <span className="type-body-lg text-muted-foreground">
+                      {t("billing.currentPlan.customPricing")}
+                    </span>
+                  )}
+                  {monthlyPrice !== null ? (
+                    <span className="pb-1 type-body-lg text-muted-foreground">
+                      {account?.billingInterval === "annual"
+                        ? t("billing.currentPlan.annualEffectiveSuffix")
+                        : t("billing.currentPlan.monthlySuffix")}
+                    </span>
+                  ) : null}
+                </div>
+                {(plan === "starter" || plan === "pro") && (
+                  <span className="type-body-lg text-muted-foreground">
+                    {t("billing.currentPlan.paygMonthlySuffix")}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <span className="type-card-title text-foreground">
+                {t("billing.currentPlan.includedTitle")}
+              </span>
+              <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                {included.map((item) => (
+                  <div key={item} className="flex items-start gap-2.5">
+                    <Check className="mt-0.5 size-4 text-emerald-500" />
+                    <span className="type-body text-foreground">{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {endsAt && (plan === "starter" || plan === "pro") ? (
+            <p className="type-body-muted">{t("billing.cancel.endsOn", { plan: t(`billing.planLabels.${plan}`), date: formatDateTime(endsAt, i18n.language, { month: "long", day: "numeric", year: "numeric" }) })}</p>
+          ) : null}
+          {(canUpgrade || canManage) && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              {canUpgrade && (
+                <Button
+                  className="w-full sm:w-auto"
+                  size="sm"
+                  variant="outline"
+                  onClick={openUpgradePlanDialog}
+                >
+                  {t("billing.actions.upgradeToPro")}
+                </Button>
+              )}
+              {canManage && (
+                <Button
+                  className="w-full sm:w-auto"
+                  size="sm"
+                  variant="outline"
+                  disabled={portalPending}
+                  onClick={() => void openPortal()}
+                >
+                  {portalPending
+                    ? t("billing.actions.openingPortal")
+                    : t("billing.actions.manageSubscription")}
+                  <ArrowUpRight className="size-3.5" />
+                </Button>
+              )}
+              {canCancel && (
+                <CancelPlanDialog
+                  businessId={business.businessId}
+                  onCanceled={(endsAt) => setCanceled({ businessId: business.businessId, endsAt })}
+                  periodEnd={account?.currentPeriodEnd ?? null}
+                  plan={t(`billing.planLabels.${plan}`)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </Surface>
+    </SectionBlock>
+    <BillingAddOns businessId={business.businessId} canManage={permissions?.hasBillingManagementAccess === true} plan={plan} />
+    {plan !== "self_host" ? <><SpendingCapSection key={business.businessId} businessId={business.businessId} locale={i18n.language} t={(key, options) => t(key, options ?? {})} status={{ plan, overageSpendingCapCents: account?.overageSpendingCapCents ?? null, overageSpendCents: billing.data?.usageStatus?.overageSpendCents ?? 0, overageSpendCentsComplete: billing.data?.usageStatus?.usageComplete ?? true, overageSpendingCapReached: billing.data?.usageStatus?.overageSpendingCapReached ?? false, hasBillingManagementAccess: permissions?.hasBillingManagementAccess === true }} /><Transactions locale={i18n.language} transactions={billing.data?.transactions ?? []} t={t} /></> : null}
+    </div>
+  </PageSurface>;
+}
+
+type Translate = ReturnType<typeof useTranslation>["t"];
+function Transactions({ transactions, t, locale }: { transactions: Billing["transactions"]; t: Translate; locale: string }) {
+  if (!transactions || transactions.length === 0) return null;
+
+  return (
+    <SectionBlock
+      title={t("billing.transactions.title")}
+      description={t("billing.transactions.description")}
+    >
+      <TableCard>
+        <Table className="min-w-[42rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                {t("billing.transactions.columns.date")}
+              </TableHead>
+              <TableHead>
+                {t("billing.transactions.columns.description")}
+              </TableHead>
+              <TableHead className="text-right">
+                {t("billing.transactions.columns.amount")}
+              </TableHead>
+              <TableHead>
+                {t("billing.transactions.columns.status")}
+              </TableHead>
+              <TableHead className="text-right">
+                {t("billing.transactions.columns.invoice")}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {transactions.map((tx) => {
+              const isRefund = tx.kind === "refund";
+              return (
+                <TableRow key={tx.sourceId}>
+                  <TableCell className="type-body-muted tabular-nums">
+                    {formatBillingDate(tx.occurredAt, locale)}
+                  </TableCell>
+                  <TableCell className="type-body text-foreground">
+                    {tx.description ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right type-title tabular-nums text-foreground">
+                    {isRefund ? "−" : ""}
+                    {formatMoney(tx.amountCents, tx.currency, locale)}
+                    {tx.refundedAmountCents > 0 ? (
+                      <div className="type-caption text-muted-foreground">
+                        {t("billing.transactions.refundedAmount", { amount: formatMoney(tx.refundedAmountCents, tx.currency, locale) })}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>
+                    <span className="type-body-muted capitalize">
+                      {tx.status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {tx.invoiceUrl ? (
+                      <Button
+                        render={
+                          <a
+                            aria-label={t("billing.transactions.invoice")}
+                            href={tx.invoiceUrl}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                          />
+                        }
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto gap-1 px-1.5 py-0.5 type-caption text-muted-foreground hover:text-foreground"
+                      >
+                        {t("billing.transactions.invoice")}
+                        <ArrowUpRight className="size-3" />
+                      </Button>
+                    ) : (
+                      <span className="type-body-muted">—</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableCard>
+    </SectionBlock>
+  );
+}
+
+function PlanSectionSkeleton({
+  t,
+}: {
+  t: Translate;
+}) {
+  return (
+    <SectionSkeleton title={t("billing.currentPlan.title")}>
+      <Surface className="px-6 py-5">
+        <div className="flex flex-col gap-6">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-3">
+              <div className="flex h-7 items-center"><Skeleton className="h-5 w-32" /></div>
+              <div className="flex items-end gap-2">
+                <Skeleton className="h-10 w-28" />
+                <Skeleton className="mb-1 h-5 w-16" />
+              </div>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div aria-hidden="true" className="type-card-title">
+                <Skeleton className="h-6 w-fit"><span className="invisible">{t("billing.currentPlan.includedTitle")}</span></Skeleton>
+              </div>
+              <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div className="flex items-start gap-2.5" key={index}>
+                    <Skeleton className="mt-0.5 size-4 rounded-full" />
+                    <div className="flex h-6 flex-1 items-center"><Skeleton className="h-4 w-32 max-w-full" /></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Skeleton className="h-8 w-full sm:w-32" />
+            <Skeleton className="h-8 w-full sm:w-44" />
+          </div>
+        </div>
+      </Surface>
+    </SectionSkeleton>
+  );
+}
+
+function SpendingCapSectionSkeleton({
+  t,
+}: {
+  t: Translate;
+}) {
+  return (
+    <SectionSkeleton title={t("billing.spendingCap.title")}>
+      <Surface className="px-6 py-5">
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between gap-2">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-5 w-24" />
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex w-full max-w-xs flex-col gap-2">
+              <div aria-hidden="true" className="type-title">
+                <Skeleton className="h-4 w-fit"><span className="invisible">{t("billing.spendingCap.amountLabel")}</span></Skeleton>
+              </div>
+              <Skeleton className="h-10 w-full rounded-xl" />
+            </div>
+            <Skeleton className="h-8 w-20" />
+          </div>
+        </div>
+      </Surface>
+    </SectionSkeleton>
+  );
+}
+
+function TransactionsSectionSkeleton({
+  t,
+}: {
+  t: Translate;
+}) {
+  return (
+    <SectionSkeleton description={t("billing.transactions.description")} title={t("billing.transactions.title")}>
+      <TableCard>
+        <Table className="min-w-[42rem]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                {t("billing.transactions.columns.date")}
+              </TableHead>
+              <TableHead>
+                {t("billing.transactions.columns.description")}
+              </TableHead>
+              <TableHead className="text-right">
+                {t("billing.transactions.columns.amount")}
+              </TableHead>
+              <TableHead>
+                {t("billing.transactions.columns.status")}
+              </TableHead>
+              <TableHead className="text-right">
+                {t("billing.transactions.columns.invoice")}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <TableRow key={index}>
+                <TableCell>
+                  <Skeleton className="h-4 w-20" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-40" />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Skeleton className="ml-auto h-4 w-16" />
+                </TableCell>
+                <TableCell>
+                  <Skeleton className="h-4 w-16" />
+                </TableCell>
+                <TableCell className="text-right">
+                  <Skeleton className="ml-auto h-4 w-12" />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableCard>
+    </SectionSkeleton>
+  );
+}
+
+function BillingSkeleton({
+  t,
+}: {
+  t: Translate;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-10">
+      <PlanSectionSkeleton t={t} />
+      <BillingAddOnsSkeleton />
+      <SpendingCapSectionSkeleton t={t} />
+      <TransactionsSectionSkeleton t={t} />
+    </div>
+  );
+}

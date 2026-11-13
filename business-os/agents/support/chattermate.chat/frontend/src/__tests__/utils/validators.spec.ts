@@ -1,0 +1,102 @@
+/*
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+import { describe, it, expect } from 'vitest'
+import {
+  isInternalPath,
+  validatePassword,
+  validateEmail,
+  validateName,
+  validateOrgName
+} from '../../utils/validators'
+
+describe('validatePassword', () => {
+  it('returns correct score for weak password', () => {
+    const result = validatePassword('weak')
+    expect(result.score).toBe(1) // has lowercase only
+    expect(result.hasMinLength).toBe(false)
+    expect(result.hasLowerCase).toBe(true)
+    expect(result.hasUpperCase).toBe(false)
+    expect(result.hasNumber).toBe(false)
+    expect(result.hasSpecialChar).toBe(false)
+  })
+
+  it('returns correct score for strong password', () => {
+    const result = validatePassword('StrongP@ss123')
+    expect(result.score).toBe(5) // has all requirements
+    expect(result.hasMinLength).toBe(true)
+    expect(result.hasLowerCase).toBe(true)
+    expect(result.hasUpperCase).toBe(true)
+    expect(result.hasNumber).toBe(true)
+    expect(result.hasSpecialChar).toBe(true)
+  })
+})
+
+describe('validateEmail', () => {
+  it('validates correct email addresses', () => {
+    expect(validateEmail('user@example.com')).toBe(true)
+    expect(validateEmail('user.name+tag@example.co.uk')).toBe(true)
+  })
+
+  it('rejects invalid email addresses', () => {
+    expect(validateEmail('invalid')).toBe(false)
+    expect(validateEmail('invalid@')).toBe(false)
+    expect(validateEmail('@invalid.com')).toBe(false)
+  })
+})
+
+describe('validateName', () => {
+  it('validates correct names', () => {
+    expect(validateName('John')).toBe(true)
+    expect(validateName('John Doe')).toBe(true)
+    expect(validateName('Mary-Jane')).toBe(true)
+  })
+
+  it('rejects invalid names', () => {
+    expect(validateName('a')).toBe(false) // too short
+    expect(validateName('J@hn')).toBe(false) // special characters
+    expect(validateName('a'.repeat(101))).toBe(false) // too long
+  })
+})
+
+describe('validateOrgName', () => {
+  it('validates correct organization names', () => {
+    expect(validateOrgName('Acme Corp')).toBe(true)
+    expect(validateOrgName('Johnson & Johnson')).toBe(true)
+    expect(validateOrgName('Tech-Co Inc.')).toBe(true)
+  })
+
+  it('rejects invalid organization names', () => {
+    expect(validateOrgName('a')).toBe(false) // too short
+    expect(validateOrgName('Corp@')).toBe(false) // invalid special characters
+    expect(validateOrgName('a'.repeat(101))).toBe(false) // too long
+  })
+}) 
+
+describe('isInternalPath', () => {
+  it('accepts a page of the dashboard', () => {
+    expect(isInternalPath('/conversations')).toBe(true)
+    expect(isInternalPath('/shopify/agent-selection?shop_id=7')).toBe(true)
+  })
+
+  it('refuses anything a browser would take to another site', () => {
+    for (const value of ['//evil.example', '/\\evil.example', 'https://evil.example', 'evil', '', null, undefined, 42,
+      // Browsers strip tabs and newlines before parsing: these are //evil.example.
+      '/\t/evil.example', '/\n/evil.example', '/\r/evil.example', '/ /evil.example']) {
+      expect(isInternalPath(value)).toBe(false)
+    }
+  })
+})

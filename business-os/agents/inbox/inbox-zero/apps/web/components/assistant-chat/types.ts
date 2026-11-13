@@ -1,0 +1,93 @@
+import type { UIMessage } from "ai";
+import type { AddToKnowledgeBaseTool } from "@/utils/ai/assistant/tools/rules/add-to-knowledge-base-tool";
+import type { CreateRuleTool } from "@/utils/ai/assistant/tools/rules/create-rule-tool";
+import type { GetLearnedPatternsTool } from "@/utils/ai/assistant/tools/rules/get-learned-patterns-tool";
+import type { GetRuleExecutionForMessageTool } from "@/utils/ai/assistant/tools/rules/get-rule-execution-for-message-tool";
+import type { TestRulesOnEmailTool } from "@/utils/ai/assistant/tools/rules/test-rules-on-email-tool";
+import type { GetUserRulesAndSettingsTool } from "@/utils/ai/assistant/tools/rules/get-user-rules-and-settings-tool";
+import type { UpdatePersonalInstructionsTool } from "@/utils/ai/assistant/tools/rules/update-personal-instructions-tool";
+import type { UpdateLearnedPatternsTool } from "@/utils/ai/assistant/tools/rules/update-learned-patterns-tool";
+import type { UpdateRuleTool } from "@/utils/ai/assistant/tools/rules/update-rule-tool";
+import type { DeleteRuleTool } from "@/utils/ai/assistant/tools/rules/delete-rule-tool";
+import type { GetAssistantCapabilitiesTool } from "@/utils/ai/assistant/tools/settings/get-assistant-capabilities-tool";
+import type { UpdateAssistantSettingsTool } from "@/utils/ai/assistant/tools/settings/update-assistant-settings-tool";
+import type {
+  ForwardEmailTool,
+  GetAccountOverviewTool,
+  GetSenderCategorizationStatusTool,
+  GetSenderCategoryOverviewTool,
+  ManageInboxTool,
+  ManageSenderCategoryTool,
+  ReadAttachmentTool,
+  ReadEmailTool,
+  ReplyEmailTool,
+  SearchInboxTool,
+  SendEmailTool,
+  StartSenderCategorizationTool,
+} from "@/utils/ai/assistant/chat-inbox-tools";
+import type {
+  SaveMemoryTool,
+  SearchMemoriesTool,
+} from "@/utils/ai/assistant/chat-memory-tools";
+import type { GetCalendarEventsTool } from "@/utils/ai/assistant/chat-calendar-tools";
+import type { ControlMailScreenTool } from "@/utils/ai/assistant/chat-mail-screen-tool";
+import type { ManageSplitInboxTool } from "@/utils/ai/assistant/chat-split-inbox-tool";
+import type { BulkManageInboxTool } from "@/utils/ai/assistant/chat-bulk-inbox-tool";
+
+// export type DataPart = { type: "append-message"; message: string };
+
+// export const messageMetadataSchema = z.object({ createdAt: z.string() });
+
+// export type MessageMetadata = z.infer<typeof messageMetadataSchema>;
+
+export type ChatTools = {
+  getAssistantCapabilities: GetAssistantCapabilitiesTool;
+  updateAssistantSettings: UpdateAssistantSettingsTool;
+  getAccountOverview: GetAccountOverviewTool;
+  getSenderCategoryOverview: GetSenderCategoryOverviewTool;
+  startSenderCategorization: StartSenderCategorizationTool;
+  getSenderCategorizationStatus: GetSenderCategorizationStatusTool;
+  manageSenderCategory: ManageSenderCategoryTool;
+  searchInbox: SearchInboxTool;
+  readEmail: ReadEmailTool;
+  manageInbox: ManageInboxTool;
+  bulkManageInbox: BulkManageInboxTool;
+  getUserRulesAndSettings: GetUserRulesAndSettingsTool;
+  getRuleExecutionForMessage: GetRuleExecutionForMessageTool;
+  getLearnedPatterns: GetLearnedPatternsTool;
+  testRulesOnEmail: TestRulesOnEmailTool;
+  createRule: CreateRuleTool;
+  updateRule: UpdateRuleTool;
+  deleteRule: DeleteRuleTool;
+  updateLearnedPatterns: UpdateLearnedPatternsTool;
+  updatePersonalInstructions: UpdatePersonalInstructionsTool;
+  addToKnowledgeBase: AddToKnowledgeBaseTool;
+  saveMemory: SaveMemoryTool;
+  searchMemories: SearchMemoriesTool;
+  sendEmail: SendEmailTool;
+  replyEmail: ReplyEmailTool;
+  forwardEmail: ForwardEmailTool;
+  getCalendarEvents: GetCalendarEventsTool;
+  readAttachment: ReadAttachmentTool;
+  controlMailScreen: ControlMailScreenTool;
+  manageSplitInbox: ManageSplitInboxTool;
+};
+
+// biome-ignore lint/complexity/noBannedTypes: ignore
+export type CustomUIDataTypes = {
+  // textDelta: string;
+  // // suggestion: Suggestion;
+  // appendMessage: string;
+  // id: string;
+  // title: string;
+  // clear: null;
+  // finish: null;
+  // ruleId: string | null;
+};
+
+export type ChatMessage = UIMessage<
+  // biome-ignore lint/complexity/noBannedTypes: ignore
+  {}, // MessageMetadata,
+  CustomUIDataTypes,
+  ChatTools
+>;

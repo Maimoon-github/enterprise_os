@@ -1,0 +1,111 @@
+---
+title: "Custom fields"
+description: "Add your own fields to people and companies, and rename, retype, remove or delete them from Settings."
+icon: "columns-3"
+---
+
+Custom fields let you store data on a person or company beyond the built-in ones: a plan tier, a region, a renewal date. They are defined per [organization](/workspace/organizations), so each organization manages its own list.
+
+You manage them in **Settings, Lead columns**. You can also reach it from the Leads page: open the **More options** menu and choose **Manage lead columns**.
+
+## The Lead columns page
+
+The page is titled **Lead columns** ("The fields on People and Companies, including ones you add."). Two toggles at the top switch between **People** and **Companies**, each with a count of its active fields.
+
+Each row shows the field's name, its key and its type.
+
+<Frame caption="Built-in fields are locked to their type. New fields are added from the box at the top.">
+  <img src="/assets/screenshots/app/lead-columns.png" alt="Settings, Lead columns page showing the People fields tab with built-in fields such as Email, LinkedIn URL and First Name, and a box to add a new person field" />
+</Frame>
+
+### Built-in fields
+
+Every organization gets the same built-in fields the first time the page is opened.
+
+- **People:** Email, LinkedIn URL, First Name, Last Name, Full Name, Job Title, Profile Picture, Phone.
+- **Companies:** Domain, Company Name, Company LinkedIn.
+
+Built-in fields show a **Built-in** badge with their type. You can rename them (the label is cosmetic), but you can't change their type, remove them or delete them. Importers and the matching rules depend on them.
+
+## Add a field
+
+<Steps>
+  <Step title="Choose People or Companies">
+    Use the toggle above the list.
+  </Step>
+  <Step title="Name it">
+    Type the name in the **New person field...** or **New company field...** box. Names must be unique within People or within Companies, ignoring case.
+  </Step>
+  <Step title="Pick a type">
+    Choose from Text, Number, Currency, Checkbox, Date, URL, Email, Image from URL, Select, Multi-select or JSON.
+  </Step>
+  <Step title="Click Add field">
+    The field is created straight away.
+  </Step>
+</Steps>
+
+### Keys never change
+
+Every field gets a **key** made from its name when you create it. It starts with `x_`, followed by the name in lowercase with other characters turned into underscores, for example `Company Size (2024)` becomes `x_company_size_2024`. If that key is taken, a number is added.
+
+The key is permanent. Renaming a field changes only its label, never its key. That keeps anything that points at the key stable.
+
+## Rename a field
+
+Click the name in the row, edit it, then press Enter or click away. Press Escape to cancel. A rename only touches the label.
+
+## Change a field's type
+
+Use the type dropdown on the row. Only these conversions are supported:
+
+- Any type to **Text**.
+- **Text** to Number, Checkbox, Date or Multi-select.
+
+Anything else, for example Number to Checkbox, is refused with a message telling you to add a new field and re-import.
+
+Before the change is made AgentSDR checks how many stored values would convert. Text values convert like this:
+
+- **Number:** only plain numbers such as `42` or `-3.5`.
+- **Checkbox:** `true`, `t`, `yes`, `y`, `1` for yes and `false`, `f`, `no`, `n`, `0` for no.
+- **Date:** values that start with `YYYY-MM-DD`.
+- **Multi-select:** the text split on commas.
+
+<Warning>
+If any value in the field can't be converted, the type change is refused and nothing is touched. Fix or clear those values first, or add a new field. The confirmation dialog warns that unconvertible values "will be permanently cleared", but the server doesn't clear them. It rejects the whole change.
+</Warning>
+
+## Remove, restore and delete
+
+Removing and deleting are two separate steps on purpose.
+
+- **Remove** hides the field everywhere but keeps its data. It's reversible. Removed fields collect under **Removed fields** at the bottom of the page.
+- **Restore** brings a removed field back with its data.
+- **Delete permanently** erases the field and strips its values from every person (or company) in your organization. It can't be undone, and restoring a field you re-create later won't bring the data back. A field must be removed before it can be deleted.
+
+Built-in fields can't be removed or deleted.
+
+## Where the values live and how you find them
+
+Custom values are stored on each person or company under their field key, so adding, renaming, retyping or removing a field never alters the underlying database table. Searching on the Leads page also looks inside these values.
+
+## Using data as merge fields
+
+Merge fields in your messages come from the columns you kept when importing a list, not from this page. An unmapped column such as `Job Title` is saved as `jobTitle` and used as `{{jobTitle}}`. See [Import leads](/leads/import) for the rules, and [Email campaigns](/email/campaigns) for using them in a sequence.
+
+<Info>
+In the code today, the values of fields defined on this page aren't resolved as merge fields, and the Leads table doesn't show them as columns. Use this page to define and organize fields, and use imported columns for merge fields.
+</Info>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Leads" icon="users" href="/leads/overview">
+    The people and companies these fields belong to.
+  </Card>
+  <Card title="Import leads" icon="upload" href="/leads/import">
+    How extra columns become merge fields.
+  </Card>
+  <Card title="Organizations" icon="building-2" href="/workspace/organizations">
+    Fields are separate for each organization.
+  </Card>
+</CardGroup>

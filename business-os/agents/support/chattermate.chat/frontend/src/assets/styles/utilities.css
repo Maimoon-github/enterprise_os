@@ -1,0 +1,95 @@
+/* Layout */
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--space-xl);
+  min-height: 100vh;
+}
+
+.container-fluid {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--space-xl);
+}
+
+/* Responsive containers */
+@media (max-width: 1366px) {
+  .container,
+  .container-fluid {
+    max-width: 1200px;
+    padding: 0 var(--space-lg);
+  }
+}
+
+@media (max-width: 1280px) {
+  .container,
+  .container-fluid {
+    padding: 0 var(--space-md);
+  }
+}
+
+@media (max-width: 768px) {
+  .container,
+  .container-fluid {
+    padding: 0 var(--space-sm);
+  }
+}
+
+/* Flexbox */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-sm { gap: var(--space-sm); }
+.gap-md { gap: var(--space-md); }
+.gap-lg { gap: var(--space-lg); }
+
+/* Spacing */
+.m-0 { margin: 0; }
+.mt-lg { margin-top: var(--space-lg); }
+.mb-lg { margin-bottom: var(--space-lg); }
+.mx-auto { margin-left: auto; margin-right: auto; }
+
+/* Text */
+.text-center { text-align: center; }
+.text-sm { font-size: var(--text-sm); }
+.text-lg { font-size: var(--text-lg); }
+.font-bold { font-weight: 600; }
+.opacity-80 { opacity: 0.8; }
+
+/* Responsive visibility utilities */
+.hidden { display: none !important; }
+.visible { display: block !important; }
+
+/* Show/hide on specific screen sizes */
+@media (max-width: 1366px) {
+  .hidden-laptop-13 { display: none !important; }
+  .visible-laptop-13 { display: block !important; }
+}
+
+@media (max-width: 1280px) {
+  .hidden-laptop-small { display: none !important; }
+  .visible-laptop-small { display: block !important; }
+}
+
+@media (max-width: 1024px) {
+  .hidden-tablet { display: none !important; }
+  .visible-tablet { display: block !important; }
+}
+
+@media (max-width: 768px) {
+  .hidden-mobile { display: none !important; }
+  .visible-mobile { display: block !important; }
+}
+
+/* Responsive spacing utilities for 13-inch laptops */
+@media (max-width: 1366px) {
+  .p-responsive-13 { padding: var(--space-md) !important; }
+  .px-responsive-13 { padding-left: var(--space-md) !important; padding-right: var(--space-md) !important; }
+  .py-responsive-13 { padding-top: var(--space-md) !important; padding-bottom: var(--space-md) !important; }
+  .m-responsive-13 { margin: var(--space-md) !important; }
+  .mx-responsive-13 { margin-left: var(--space-md) !important; margin-right: var(--space-md) !important; }
+  .my-responsive-13 { margin-top: var(--space-md) !important; margin-bottom: var(--space-md) !important; }
+} 

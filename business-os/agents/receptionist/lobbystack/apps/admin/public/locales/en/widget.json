@@ -1,0 +1,79 @@
+{
+  "chat": {
+    "titlePlaceholder": "Chat with us",
+    "subtitlePlaceholder": "Ask about hours, prices or booking",
+    "welcome": "Hi, what can we help you with today?",
+    "composerPlaceholder": "Write a message…",
+    "send": "Send",
+    "close": "Close chat",
+    "sendingFailed": "We couldn't send that. Please try again.",
+    "loadingTranscript": "Loading your conversation…",
+    "chatUnavailable": "Chat is unavailable right now.",
+    "emptyBody": "Please enter a message.",
+    "limitReached": "We can't reply here right now. Please call us or try again later.",
+    "aiAgentLabel": "Assistant",
+    "youLabel": "You",
+    "pendingLabel": "Typing…",
+    "handoffBanner": "Someone from our team will reply here soon.",
+    "waitingForTeam": "We've asked someone from our team to join. You can keep writing in the meantime.",
+    "teamMemberInChat": "You're now chatting with {{name}}.",
+    "teamJoined": "{{name}} joined the chat",
+    "teamJoinedNoName": "Someone from our team joined the chat",
+    "teamLabel": "Team",
+    "handoffActive": "Chat paused",
+    "voiceButton": "Talk to us live",
+    "voiceStart": "Call us",
+    "voiceConnected": "You're on a call with our receptionist.",
+    "voiceEnded": "Call ended. You can keep chatting here.",
+    "voiceUnavailable": "Calling isn't available right now. You can keep chatting here.",
+    "voiceConnecting": "Connecting…",
+    "voiceRequestingMic": "Allow your microphone to start the call.",
+    "voiceEnd": "End call",
+    "voiceTranscript": "Voice call",
+    "voiceLive": "Live",
+    "leaveDetails": "Leave your contact details",
+    "leadFormSubmitted": "Thanks. We'll be in touch soon."
+  },
+  "lead": {
+    "heading": "How can we reach you?",
+    "description": "We'll use these details to follow up on your question.",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone",
+    "submit": "Continue",
+    "invalidEmail": "Check the email address.",
+    "invalidPhone": "Check the phone number.",
+    "required": "Fill in this field.",
+    "beforeChatHeading": "Before we start",
+    "skip": "Skip"
+  },
+  "errors": {
+    "configLoad": "The chat couldn't load. Refresh the page to try again.",
+    "invalidKey": "This chat isn't available.",
+    "originDenied": "This chat isn't set up for this website."
+  },
+  "manage": {
+    "newKey": "Add a widget",
+    "editTitle": "Edit {{name}}",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "moreActions": "More actions for {{name}}",
+    "neverUsed": "Not on a website yet",
+    "emptyDescription": "Add a widget to get a short piece of code. Paste it into your website, and visitors can chat with your agent.",
+    "originsHint": "List every address where the chat should appear, starting with https://. Separate them with commas.",
+    "pickColor": "Pick a color",
+    "copySnippet": "Copy code",
+    "createdDescription": "Paste this code before the closing </body> tag on your website. You can copy it again from the widget's card.",
+    "revokeTitle": "Remove {{name}}?",
+    "revokeDescription": "The chat disappears from every website that uses this widget. You can't undo this.",
+    "sections": {
+      "website": "Where it appears",
+      "appearance": "Appearance",
+      "conversation": "Conversation"
+    }
+  },
+  "preview": {
+    "label": "Preview",
+    "visitorMessage": "Are you open on Saturday?"
+  }
+}

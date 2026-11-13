@@ -1,0 +1,60 @@
+"use client";
+
+import { useLingui } from "@lingui/react/macro";
+import { useAction } from "next-safe-action/hooks";
+import { toastError, toastSuccess } from "@/components/Toast";
+import { DeliveryChannelsSetting as SharedDeliveryChannelsSetting } from "@/components/messaging/DeliveryChannelsSetting";
+import { useMeetingBriefSettings } from "@/hooks/useMeetingBriefs";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { MessagingRoutePurpose } from "@/generated/prisma/enums";
+import { updateMeetingBriefsEmailDeliveryAction } from "@/utils/actions/messaging-channels";
+import { getActionErrorMessage } from "@/utils/error";
+import { useProductAnalytics } from "@/hooks/useProductAnalytics";
+
+export function DeliveryChannelsSetting() {
+  const { t } = useLingui();
+  const { emailAccountId } = useAccount();
+  const analytics = useProductAnalytics("meeting_briefs");
+  const {
+    data: briefSettings,
+    isLoading: isLoadingBriefSettings,
+    mutate: mutateBriefSettings,
+  } = useMeetingBriefSettings();
+
+  const { execute: executeEmailDelivery } = useAction(
+    updateMeetingBriefsEmailDeliveryAction.bind(null, emailAccountId),
+    {
+      onSuccess: () => {
+        analytics.captureAction("meeting_briefs_email_delivery_saved");
+        toastSuccess({ description: t`Settings saved` });
+        mutateBriefSettings();
+      },
+      onError: (error) => {
+        toastError({
+          description: getActionErrorMessage(error.error, t`Failed to update`),
+        });
+      },
+    },
+  );
+
+  return (
+    <SharedDeliveryChannelsSetting
+      title={t`Delivery Channels`}
+      description={t`Choose where to receive meeting briefings`}
+      purpose={MessagingRoutePurpose.MEETING_BRIEFS}
+      slackDestinationHint={t`Pick where meeting briefs should be delivered for this Slack workspace.`}
+      directMessageHint={t`Meeting briefs will be sent to this connected app's direct message destination.`}
+      email={{
+        enabled: briefSettings?.meetingBriefsSendEmail ?? true,
+        isLoading: isLoadingBriefSettings,
+        onChange: (sendEmail) => {
+          analytics.captureAction("meeting_briefs_email_delivery_toggled", {
+            enabled: sendEmail,
+          });
+          executeEmailDelivery({ sendEmail });
+        },
+      }}
+      connectSlackCta={t`Want to receive briefs in Slack?`}
+    />
+  );
+}

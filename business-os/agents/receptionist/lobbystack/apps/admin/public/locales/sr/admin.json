@@ -1,0 +1,16 @@
+{
+  "utilities": {
+    "testCall": "Probni poziv",
+    "endTestCall": "Završi probni poziv",
+    "connecting": "Povezivanje...",
+    "affiliate": "Program preporuka",
+    "appointments": "Termini",
+    "demos": "Demoi",
+    "billingAttention": "Proverite naplatu",
+    "feedback": "Povratne informacije",
+    "feedbackPlaceholder": "Podelite utiske",
+    "feedbackSending": "Slanje...",
+    "feedbackSent": "Povratne informacije su poslate",
+    "feedbackFailed": "Slanje povratnih informacija nije uspelo"
+  }
+}

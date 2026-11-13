@@ -1,0 +1,158 @@
+---
+title: "OpenRouter"
+description: "Create OpenRouter keys, add credits and provider keys, connect them in AgentSDR and choose the models, with provider pinning and transcription."
+icon: "sparkles"
+---
+
+OpenRouter is the gateway every AI feature in AgentSDR runs through, using your own provider keys. You need it for reply classification and drafts, AI columns and call transcription. Without it those features cannot run.
+
+<Info>
+**What you need**
+
+- An [OpenRouter](https://openrouter.ai) account.
+- An account with at least one model provider (OpenAI, Anthropic, Google and so on) and an API key from it. AgentSDR works only in "bring your own key" (BYOK) mode.
+- The **owner** or **admin** role in AgentSDR.
+- About 15 minutes.
+</Info>
+
+## Overview
+
+**What uses AI:**
+
+- **Reply classification and drafts** in the CRM, using the default model.
+- **AI columns** in Tables, each on one of your allowed models. See [AI columns](/tables/ai-columns).
+- **Call transcription** of WhatsApp recordings, using the transcription model.
+- Other internal tasks, such as the formula generator, which use the default model.
+
+**Costs.** AgentSDR adds no markup and shows no prices. Model usage on a BYOK key is billed by the model provider to your own account with them. Anything OpenRouter itself charges is billed by OpenRouter: see its [FAQ](https://openrouter.ai/docs/faq) and [BYOK guide](https://openrouter.ai/docs/guides/overview/auth/byok) for current terms.
+
+<Note>
+This page covers the OpenRouter side and the connection. For what each control in the app does, see [AI provider](/workspace/ai-provider).
+</Note>
+
+## Set it up
+
+<Steps>
+  <Step title="Create an OpenRouter account and add credits">
+    Sign up at [openrouter.ai](https://openrouter.ai). OpenRouter's FAQ says you add credits before you create keys and start using the API: open [Settings → Credits](https://openrouter.ai/settings/credits) and make a deposit. Your model calls run on your own provider keys (next steps), but the credits page is where your OpenRouter balance lives.
+  </Step>
+  <Step title="Add your provider keys to OpenRouter">
+    In OpenRouter's [BYOK settings](https://openrouter.ai/integrations), add the API key of each provider you want AgentSDR to use (see [OpenRouter's BYOK guide](https://openrouter.ai/docs/guides/overview/auth/byok)). Keep them in the prioritized section. A key in the fallback section is shown in AgentSDR but cannot be selected.
+    {/* SCREENSHOT: OpenRouter BYOK provider page with a key added | openrouter.ai/integrations | the provider key and the shared capacity option */}
+  </Step>
+  <Step title="Set shared capacity to never">
+    On each provider's page in OpenRouter, set the shared capacity option to never use shared capacity. The wording on OpenRouter's current page offers "Never use shared capacity for models this key applies to" and "Never use shared capacity for any model on this provider". AgentSDR's own checkbox quotes the older phrase **Never use shared capacity on this provider**. Choose the option that stops shared capacity for every model on the provider, so no request ever spends OpenRouter's capacity or credits on that provider. OpenRouter does not expose this setting through its API, so you confirm it in AgentSDR later.
+  </Step>
+  <Step title="Create an inference key">
+    Open [Settings → Keys](https://openrouter.ai/settings/keys), create a key, give it a name and, if you like, a credit limit, and copy it. It starts with `sk-or-v1-`.
+    {/* SCREENSHOT: OpenRouter keys page, new key dialog | openrouter.ai/settings/keys | the name field and the key shown after creation */}
+  </Step>
+  <Step title="Create a management key">
+    Open [Settings → Management keys](https://openrouter.ai/settings/management-keys), click **Create New Key**, give it a name and an expiration date, and copy it. It starts with `sk-or-mgmt-`. A management key cannot run models. AgentSDR uses it only to read which provider keys you added in BYOK, so it can list them.
+    {/* SCREENSHOT: Management keys page | openrouter.ai/settings/management-keys | Create New Key */}
+  </Step>
+  <Step title="Connect OpenRouter in AgentSDR">
+    Go to **Settings → AI provider**. In the **OpenRouter account** section click **Connect OpenRouter** and fill in:
+
+    - **Account name** (optional). Defaults to "OpenRouter account".
+    - **Inference API key**.
+    - **Management API key**.
+
+    Click **Verify & connect**. AgentSDR checks the inference key, reads your BYOK keys with the management key, and requires at least one active prioritized BYOK key. The keys are stored encrypted. The card then reads **Verified and ready to use**. You can add a second account with **Connect another account** and pick the active one.
+
+    <Frame caption="Three fields, then Verify and connect.">
+      <img src="/assets/screenshots/app/openrouter-connect.png" alt="The Connect OpenRouter form on the AI provider page with account name, inference API key and management API key fields and a Verify and connect button" />
+    </Frame>
+  </Step>
+  <Step title="Choose providers and models">
+    Under **Providers and models**, click **Refresh providers** if you added a key a moment ago. Switch on the providers AgentSDR may use, open each list, and tick the models you allow. Only ticked models appear in AI columns.
+  </Step>
+  <Step title="Set the default model">
+    Under **Default model**, pick a **Provider and model**. Only ticked text models that support structured output are listed. Every internal AI task uses it, and new compatible AI columns select it automatically.
+  </Step>
+  <Step title="Choose the transcription model (optional)">
+    Under **Call transcription model**, pick a model that accepts audio input, for example a Gemini model. Leave it on **Off** and recordings are not transcribed. See [Transcription](#transcription-model).
+  </Step>
+  <Step title="Confirm shared capacity and save">
+    Tick **Never use shared capacity** (under **Shared capacity**) to confirm step 3, then click **Save AI settings**. Saving needs a connected account, at least one provider and one model, a default model and the confirmation. Until you confirm it, AgentSDR blocks every model call.
+  </Step>
+</Steps>
+
+<Warning>
+Switching to a different OpenRouter account clears your providers, models, default model, transcription model and the shared capacity confirmation. Set them up again.
+</Warning>
+
+## Provider pinning
+
+For every text request AgentSDR sends OpenRouter `provider.only` and `provider.order` set to the one provider of the model you chose, `allow_fallbacks: false` and `require_parameters: true`. Image requests use the same single-provider pin with fallbacks off, through OpenRouter's image endpoint (which does not support `require_parameters`).
+
+Why: with fallbacks on, a failed request could silently move to another provider, or to OpenRouter's shared capacity, spending OpenRouter's credits and sending your data to a provider you never approved. With fallbacks off, a failure is a failure. It costs you some resilience and keeps your data and spend on the providers and keys you chose. See OpenRouter's [provider routing](https://openrouter.ai/docs/guides/routing/provider-selection) reference.
+
+`OPENROUTER_SITE_URL` sets the attribution URL sent to OpenRouter.
+
+## Transcription model
+
+The transcription model is **off by default**. While it is off, recordings are not transcribed, and an attempt fails with "Transcription is off: choose a transcription model in Settings → AI provider". If you later remove the chosen model or provider from the allowed list, it resets to **Off**. Gemini models merge the audio channels, so who spoke is inferred rather than labelled.
+
+## Check that it works
+
+<Check>
+**Settings → AI provider** shows the account as **Verified and ready to use**, and the footer shows all four steps complete.
+</Check>
+
+Add an AI column to a table and run it on one row ([AI columns](/tables/ai-columns)). In OpenRouter's [Activity](https://openrouter.ai/activity) page you should see the request on the provider you chose.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Enter both the inference API key and management API key.">
+    Both fields are required. The management key is a separate key.
+  </Accordion>
+  <Accordion title="Use an OpenRouter inference key here; management keys cannot run models">
+    You pasted a `sk-or-mgmt-` key into **Inference API key**. Use a key from Settings → Keys.
+  </Accordion>
+  <Accordion title="No active prioritized BYOK credentials were found in this OpenRouter workspace">
+    You have not added a provider key in OpenRouter BYOK, or it is disabled or in the fallback section. Add one, then connect again.
+  </Accordion>
+  <Accordion title="OpenRouter request failed (401)">
+    OpenRouter rejected the key: it is wrong, deleted, expired or past its credit limit. Create a new one. Management keys can expire, so set the expiry you want.
+  </Accordion>
+  <Accordion title="Connect OpenRouter in AI Settings">
+    No account is connected. Do step 6.
+  </Accordion>
+  <Accordion title="Choose a default OpenRouter model in AI Settings">
+    No default model is saved. Do steps 7 and 8, then **Save AI settings**.
+  </Accordion>
+  <Accordion title="OpenRouter BYOK-only routing is not confirmed in AI Settings">
+    Tick **Never use shared capacity** and save.
+  </Accordion>
+  <Accordion title="Model ... is not enabled for ... in AI Settings">
+    The model or its provider is not ticked. Tick it under **Providers and models**.
+  </Accordion>
+  <Accordion title="Reconnect OpenRouter in AI Settings">
+    The saved connection is unavailable or no longer verified. Connect again.
+  </Accordion>
+  <Accordion title="Transcription is off: choose a transcription model in Settings → AI provider">
+    Pick a transcription model and save.
+  </Accordion>
+  <Accordion title="No BYOK providers found">
+    Add a key in OpenRouter's BYOK settings, then click **Refresh providers**. A provider is greyed out when it has no prioritized key or OpenRouter returned no models for it.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="AI provider" icon="sparkles" href="/workspace/ai-provider">
+    Every control on the AI provider page.
+  </Card>
+  <Card title="AI columns" icon="table" href="/tables/ai-columns">
+    Use your models per row.
+  </Card>
+  <Card title="Cloudflare R2" icon="cloud" href="/integrations/cloudflare-r2">
+    Where call recordings live before transcription.
+  </Card>
+  <Card title="Integrations overview" icon="plug" href="/integrations">
+    All integrations and who can connect them.
+  </Card>
+</CardGroup>

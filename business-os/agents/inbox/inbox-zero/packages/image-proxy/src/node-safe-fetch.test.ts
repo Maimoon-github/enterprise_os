@@ -1,0 +1,201 @@
+import { lookup } from "node:dns/promises";
+import { EventEmitter } from "node:events";
+import { request as httpsRequest } from "node:https";
+import { Readable } from "node:stream";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  isSafeExternalHttpUrl,
+  resolveSafeExternalHttpUrl,
+} from "@inboxzero/network/safe-url";
+import { createSafeImageProxyFetch } from "./node-safe-fetch";
+
+vi.mock("node:dns/promises", () => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("node:https", () => ({
+  request: vi.fn(),
+}));
+
+describe("isSafeExternalHttpUrl", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("allows public HTTPS hostnames", () => {
+    expect(isSafeExternalHttpUrl("https://example.com/photo.png")).toBe(true);
+  });
+
+  it("rejects localhost variants with trailing dots", () => {
+    expect(isSafeExternalHttpUrl("https://localhost/photo.png")).toBe(false);
+    expect(isSafeExternalHttpUrl("https://localhost./photo.png")).toBe(false);
+    expect(isSafeExternalHttpUrl("https://cdn.localhost./photo.png")).toBe(
+      false,
+    );
+  });
+
+  it("rejects hostnames without a public suffix", () => {
+    expect(isSafeExternalHttpUrl("https://printer/photo.png")).toBe(false);
+  });
+
+  it("rejects private IPv4-mapped IPv6 addresses", () => {
+    expect(isSafeExternalHttpUrl("http://[::ffff:127.0.0.1]/photo.png")).toBe(
+      false,
+    );
+  });
+
+  it("rejects 6to4 IPv6 addresses that tunnel private IPv4 space", () => {
+    expect(isSafeExternalHttpUrl("http://[2002:0a00:0001::1]/photo.png")).toBe(
+      false,
+    );
+  });
+
+  it("rejects hostnames that resolve to private IP addresses", async () => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: "10.0.0.8", family: 4 },
+    ] as Awaited<ReturnType<typeof lookup>>);
+
+    await expect(
+      resolveSafeExternalHttpUrl("https://news.example.com/photo.png"),
+    ).resolves.toBeNull();
+  });
+
+  it("returns a pinned DNS lookup for public hostnames", async () => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+    ] as Awaited<ReturnType<typeof lookup>>);
+
+    const resolved = await resolveSafeExternalHttpUrl(
+      "https://news.example.com/photo.png",
+    );
+
+    expect(resolved).not.toBeNull();
+    expect(lookup).toHaveBeenCalledWith("news.example.com", {
+      all: true,
+      verbatim: true,
+    });
+
+    const lookupResult = await new Promise<{ address: string; family: number }>(
+      (resolve, reject) => {
+        resolved?.lookup(
+          "news.example.com",
+          { all: false, family: 0, hints: 0 },
+          (error, address, family) => {
+            if (error) return reject(error);
+            if (!address || !family) {
+              return reject(new Error("Expected a resolved address"));
+            }
+            resolve({ address, family });
+          },
+        );
+      },
+    );
+
+    expect(lookupResult).toEqual({
+      address: "93.184.216.34",
+      family: 4,
+    });
+  });
+
+  it("returns 502 when DNS resolution fails during fetch setup", async () => {
+    vi.mocked(lookup).mockRejectedValue(
+      Object.assign(new Error("temporary failure"), {
+        code: "EAI_AGAIN",
+      }),
+    );
+
+    const response = await createSafeImageProxyFetch(
+      "https://news.example.com/photo.png",
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.text()).resolves.toBe("Upstream host lookup failed");
+  });
+
+  it("returns upstream responses that must not have a body", async () => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+    ] as never);
+    vi.mocked(httpsRequest).mockImplementation(((
+      _url: URL,
+      _options: unknown,
+      onResponse: (response: Readable) => void,
+    ) => {
+      const upstreamResponse = Object.assign(Readable.from([]), {
+        statusCode: 204,
+        statusMessage: "No Content",
+        headers: {},
+      });
+      setImmediate(() => onResponse(upstreamResponse));
+      return { on: vi.fn(), end: vi.fn() };
+    }) as never);
+
+    const response = await createSafeImageProxyFetch(
+      "https://news.example.com/photo.png",
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.body).toBeNull();
+  });
+  it.each([
+    ["read ETIMEDOUT", "ETIMEDOUT", 504],
+    ["socket hang up", "ECONNRESET", 502],
+    [
+      "Hostname/IP does not match certificate's altnames",
+      "ERR_TLS_CERT_ALTNAME_INVALID",
+      502,
+    ],
+  ])("returns a gateway status when the upstream request fails with %s", async (message, code, expectedStatus) => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+    ] as never);
+    vi.mocked(httpsRequest).mockImplementation((() => {
+      const request = createFakeRequest();
+      setImmediate(() =>
+        request.emit("error", Object.assign(new Error(message), { code })),
+      );
+      return request;
+    }) as never);
+
+    const response = await createSafeImageProxyFetch(
+      "https://news.example.com/photo.png",
+    );
+
+    expect(response.status).toBe(expectedStatus);
+    expect(response.statusText).toContain(code);
+  });
+
+  it("returns 504 and aborts the request when the upstream stalls", async () => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: "93.184.216.34", family: 4 },
+    ] as never);
+    const request = createFakeRequest();
+    vi.mocked(httpsRequest).mockImplementation(((
+      _url: URL,
+      options: { timeout?: number },
+    ) => {
+      expect(options.timeout).toBeGreaterThan(0);
+      setImmediate(() => request.emit("timeout"));
+      return request;
+    }) as never);
+
+    const response = await createSafeImageProxyFetch(
+      "https://news.example.com/photo.png",
+    );
+
+    expect(response.status).toBe(504);
+    expect(request.destroy).toHaveBeenCalled();
+  });
+});
+
+function createFakeRequest() {
+  const request = Object.assign(new EventEmitter(), {
+    end: vi.fn(),
+    destroy: vi.fn(),
+  });
+  request.destroy.mockImplementation((error?: Error) => {
+    if (error) setImmediate(() => request.emit("error", error));
+    return request;
+  });
+  return request;
+}

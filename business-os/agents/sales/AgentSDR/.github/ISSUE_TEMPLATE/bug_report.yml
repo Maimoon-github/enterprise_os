@@ -1,0 +1,92 @@
+name: Bug report
+description: Something doesn't work the way it should.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security problems go to [SECURITY.md](https://github.com/Kandid-ai/AgentSDR/blob/main/SECURITY.md), not here.**
+        Please remove personal data (real names, emails, phone numbers, API keys) from logs and screenshots.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched existing issues and this hasn't been reported.
+          required: true
+        - label: I removed secrets and personal data from what I'm sharing.
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or a commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running AgentSDR?
+      options:
+        - Docker Compose
+        - From source (bun run build / start)
+        - Local development (bun run dev)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Sign-in, organizations, members
+        - Leads and custom fields
+        - Email outreach
+        - LinkedIn
+        - WhatsApp messaging or calls
+        - CRM inbox, drafts, sequences
+        - Tables and enrichment
+        - Integrations / settings
+        - Self-hosting, Docker, database setup
+        - Other
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: PostgreSQL version, Node/Bun version, browser and OS if relevant.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server log lines around the failure. Will be formatted as code.
+      render: shell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag images here if they help.

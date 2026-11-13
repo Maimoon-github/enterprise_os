@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>
+      Chopify — Free Local AI Video Clipper, Captions & Podcast Shorts
+    </title>
+    <meta
+      name="description"
+      content="Turn recordings, YouTube videos, podcasts, streams and gameplay VODs of any length into styled, captioned Shorts, Reels and TikTok clips locally. Free open-source dashboard with audio/visual clip discovery, Caption Studio, SRT editing and podcast framing."
+    />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <link rel="canonical" href="https://mehbul.github.io/chopify/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Chopify" />
+    <meta property="og:title" content="Chopify — your footage, your machine" />
+    <meta
+      property="og:description"
+      content="Free local video clipping for any-length recordings, podcasts, streams and gameplay VODs. Audio/visual clip discovery, review dashboard, editable and styled captions, SRT exports, branding, semantic search and podcast split-screen."
+    />
+    <meta property="og:url" content="https://mehbul.github.io/chopify/" />
+    <meta
+      property="og:image"
+      content="https://mehbul.github.io/chopify/social-preview.png"
+    />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta
+      property="og:image:alt"
+      content="Chopify Studio and a dark social card: turn long videos into scored, captioned shorts"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Chopify — Free Local AI Video Clipper"
+    />
+    <meta
+      name="twitter:description"
+      content="Turn long videos into reviewed, captioned short clips on your own computer. Open source, no subscription or watermark."
+    />
+    <meta
+      name="twitter:image"
+      content="https://mehbul.github.io/chopify/social-preview.png"
+    />
+    <link rel="stylesheet" href="site.css" />
+    <link rel="icon" href="data:," />
+    <link
+      rel="alternate"
+      type="text/plain"
+      title="Agent documentation index"
+      href="llms.txt"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": ["SoftwareApplication", "SoftwareSourceCode"],
+            "@id": "https://mehbul.github.io/chopify/#software",
+            "name": "Chopify",
+            "url": "https://mehbul.github.io/chopify/",
+            "description": "Free local video clipper for any-length recordings, podcasts, streams and gameplay VODs, with audio/visual clip discovery, a browser dashboard, resumable batch projects, editable and styled captions, SRT exports, branding, semantic search, and podcast split-screen.",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Windows",
+            "programmingLanguage": "Python",
+            "runtimePlatform": "Python 3.11 or later",
+            "softwareRequirements": "ffmpeg, ffprobe, yt-dlp, faster-whisper, OpenCV; optional local Ollama",
+            "license": "https://github.com/mehbul/chopify/blob/main/LICENSE",
+            "codeRepository": "https://github.com/mehbul/chopify",
+            "isAccessibleForFree": true,
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "author": {
+              "@type": "Person",
+              "name": "mehbul",
+              "url": "https://github.com/mehbul"
+            },
+            "featureList": [
+              "Local browser dashboard",
+              "Local video input",
+              "Any-length local and URL sources",
+              "Automatic long-source ingest and section rendering",
+              "Audio and visual clip evidence",
+              "Speech-sparse and no-commentary gameplay support",
+              "8.0+ adaptive clip selection",
+              "Long-source 480p section previews",
+              "Resumable batch projects",
+              "Caption editing and SRT export",
+              "13-preset Caption Studio",
+              "Source-synced caption preview",
+              "Automatic emphasis and emoji",
+              "Brand presets",
+              "Optional local semantic search",
+              "Podcast split-screen"
+            ]
+          },
+          {
+            "@type": "WebPage",
+            "@id": "https://mehbul.github.io/chopify/#page",
+            "url": "https://mehbul.github.io/chopify/",
+            "name": "Chopify — Free Local AI Video Clipper",
+            "dateModified": "2026-11-05",
+            "inLanguage": "en",
+            "mainEntity": {
+              "@id": "https://mehbul.github.io/chopify/#software"
+            }
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header>
+      <a class="logo" href="./"><span>c/</span> chopify</a>
+      <nav aria-label="Main navigation">
+        <a href="#features">Features</a><a href="#install">Install</a
+        ><a href="#questions">FAQ</a
+        ><a href="https://github.com/mehbul/chopify">Source ↗</a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero">
+        <p class="eyebrow">
+          OPEN-SOURCE VIDEO CLIPPING · RUNS ON YOUR COMPUTER
+        </p>
+        <h1>The good parts.<br /><em>Ready to share.</em></h1>
+        <p class="lead">
+          Chopify turns podcasts, movies, streams, and gameplay VODs—local files
+          or YouTube links—into captioned clips for Shorts, Reels, and TikTok. It
+          reads the speech, listens for reactions, and watches for action, then
+          you review and export—all locally.
+        </p>
+        <div class="actions">
+          <a class="button" href="#install">Open your cutting room ↗</a
+          ><a
+            href="https://github.com/mehbul/chopify/blob/main/docs/WORKFLOWS.md"
+            >Read the workflow guide</a
+          >
+        </div>
+        <p class="fine">
+          Free · MIT license · No subscription, API key, cloud upload, or
+          watermark
+        </p>
+        <figure>
+          <img
+            src="demo.gif"
+            alt="Chopify video clip with burnt-in word-by-word captions"
+            width="640"
+            height="360"
+          />
+          <figcaption>
+            A captioned clip, rendered with your local ffmpeg installation.
+          </figcaption>
+        </figure>
+      </section>
+      <section id="features">
+        <div class="section-heading">
+          <p class="eyebrow">A WORKFLOW YOU CONTROL</p>
+          <h2>Find. Refine. Export.</h2>
+        </div>
+        <div class="features">
+          <article>
+            <span class="tag">INPUT</span>
+            <h3>Recordings or links</h3>
+            <p>
+              Read local MP4, MOV, MKV, WebM, M4V, and AVI files, or download
+              supported video URLs. Batch several sources into separate
+              projects.
+            </p>
+          </article>
+          <article>
+            <span class="tag">REVIEW</span>
+            <h3>A local browser workspace</h3>
+            <p>
+              See progress, watch candidate moments, adjust clip boundaries, and
+              select your exports. Fast drafts help you review before the final
+              render. For long URLs, Watch renders a 480p draft from just that
+              downloaded section.
+            </p>
+          </article>
+          <article>
+            <span class="tag">SELECTION</span>
+            <h3>Every clip that passes</h3>
+            <p>
+              Absolute 0-10 scoring returns every clip at 8.0 or higher by
+              default, with no fixed ten-clip cap. Length is chosen per moment
+              from a 15-300 second range; a preferred length is a soft hint, not
+              a hard cut.
+            </p>
+          </article>
+          <article>
+            <span class="tag">CONTINUITY</span>
+            <h3>Pick up where you left off</h3>
+            <p>
+              Matching downloads, transcripts and successful clips stay cached.
+              Failed jobs can be retried without throwing away completed work.
+            </p>
+          </article>
+          <article>
+            <span class="tag">CAPTIONS</span>
+            <h3>Correct the words</h3>
+            <p>
+              Edit transcription text and timestamps. Export burnt-in
+              word-by-word captions and a separate clip-relative SRT file,
+              including retimed tightened cuts.
+            </p>
+          </article>
+          <article>
+            <span class="tag">STYLE</span>
+            <h3>Caption Studio</h3>
+            <p>
+              Start from 13 distinct looks, then tune font, size, colors,
+              outline, shadow, cue length, position, box background, and word
+              motion. A live overlay follows the source, with optional automatic
+              emphasis and emoji.
+            </p>
+          </article>
+          <article>
+            <span class="tag">IDENTITY</span>
+            <h3>Make the style yours</h3>
+            <p>
+              Reuse JSON presets for fonts, colors, size, position, caption
+              motion, and an optional logo. Save a project look as a named preset
+              for future videos. Export in 16:9, 9:16, or 1:1.
+            </p>
+          </article>
+          <article>
+            <span class="tag">DISCOVERY</span>
+            <h3>Find more than words</h3>
+            <p>
+              Local audio energy and visual action evidence surface reactions,
+              impacts, scene changes, and gameplay moments. Speech-sparse and
+              no-commentary VODs can score from media evidence, with text as the
+              fallback when media evidence is unavailable.
+            </p>
+          </article>
+          <article>
+            <span class="tag">SEARCH</span>
+            <h3>Find a topic by meaning</h3>
+            <p>
+              Use keywords, automatic scoring, or optional local Ollama
+              embeddings to find related ideas. The transcript does not need to
+              contain the exact query words.
+            </p>
+          </article>
+          <article>
+            <span class="tag">PODCASTS</span>
+            <h3>Keep both people in frame</h3>
+            <p>
+              Stack two adjustable crops in a vertical video for fixed-camera
+              interviews. Set each speaker's horizontal position and check a
+              draft.
+            </p>
+          </article>
+          <article>
+            <span class="tag">FINISH</span>
+            <h3>Clips and useful sidecars</h3>
+            <p>
+              Save H.264 MP4, SRT subtitles, a PNG poster, and
+              title/description/hashtag JSON. Optionally remove fillers and
+              pauses or normalize loudness.
+            </p>
+          </article>
+        </div>
+        <p class="note">
+          Scores guide editing decisions; they do not predict virality. Review
+          captions and clip boundaries. Speech-sparse and silent sources still
+          need usable audio variation or visible action. Hooks for wordless
+          footage describe timestamps, never guessed events. Caption Studio's
+          overlay approximates the exported libass render. Split-screen uses
+          fixed centers, not speaker recognition.
+        </p>
+      </section>
+      <section id="install" class="install">
+        <div>
+          <p class="eyebrow">GET STARTED ON WINDOWS</p>
+          <h2>Your machine.<br />Your cutting room.</h2>
+          <p>
+            Install Python 3.11+ and a full ffmpeg build, then open Studio. The
+            dashboard needs no separate web framework or JavaScript build.
+          </p>
+          <p>
+            First use downloads the speech model. URL inputs need internet.
+            Local-file processing can run offline once the required dependencies
+            and models are available.
+          </p>
+        </div>
+        <div class="code">
+          <span>POWERSHELL</span>
+          <pre><code>git clone https://github.com/mehbul/chopify.git
+cd chopify
+winget install Gyan.FFmpeg
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python dashboard.py</code></pre>
+          <p>Open <code>http://127.0.0.1:8765</code> on this computer.</p>
+        </div>
+      </section>
+      <section>
+        <p class="eyebrow">PREFER THE TERMINAL?</p>
+        <h2>One pipeline. Two ways to work.</h2>
+        <pre
+          class="command"
+        ><code>python chopify.py "C:\Videos\podcast.mp4" --aspect 9:16 --layout split</code></pre>
+        <p>
+          The CLI shares Studio's project runner. Prepare candidates, inspect
+          the saved JSON, render a subset, resume a job, or process a batch.
+          Caption presets and controls have matching flags such as
+          <code>--style</code>, <code>--words-per-cue</code>, and
+          <code>--caption-json</code>.
+          <a
+            href="https://github.com/mehbul/chopify/blob/main/docs/AGENT-API.md"
+            >Read the CLI and API reference ↗</a
+          >
+        </p>
+      </section>
+      <section id="questions">
+        <p class="eyebrow">BEFORE YOUR FIRST CUT</p>
+        <h2>Questions, answered.</h2>
+        <details>
+          <summary>What is Chopify?</summary>
+          <p>
+            Chopify is a free, MIT-licensed local video clipper for turning long
+            videos into short captioned clips. It includes a browser dashboard,
+            Python CLI, transcription, selection, reframing, editing, and
+            export.
+          </p>
+        </details>
+        <details>
+          <summary>Does it work with gameplay VODs and videos without commentary?</summary>
+          <p>
+            Yes, when there is usable evidence. Chopify builds a local audio
+            timeline and samples the picture for motion, scene and UI changes,
+            faces, action arcs, and quiet boundaries. Speech-sparse clips use a
+            text floor and stronger evidence weighting. Silent no-commentary
+            gameplay can score from visual action alone; flat footage with no
+            speech and no media variation is reported instead of inventing a
+            clip.
+          </p>
+        </details>
+        <details>
+          <summary>Is there a duration limit?</summary>
+          <p>
+            No fixed ceiling. Sources of 2 hours or more, an 8 GB estimated
+            download, or unknown duration use the automatic long path:
+            audio-first ingest, 30-minute resumable transcription chunks,
+            30-minute discovery blocks, and section-only rendering. Local long
+            files are read in place. Long URL projects preview a candidate by
+            rendering a 480p draft from its downloaded section.
+          </p>
+        </details>
+        <details>
+          <summary>Is Chopify an alternative to Opus Clip?</summary>
+          <p>
+            It is an option for creators who want clipping, captions and review
+            on their own computer. It requires local installation and your
+            hardware. It does not include hosted processing, cloud
+            collaboration, or automatic social publishing.
+          </p>
+        </details>
+        <details>
+          <summary>Can I use it with no API key or subscription?</summary>
+          <p>
+            Yes. Default selection is a deterministic heuristic. Optional AI
+            selection and semantic search use local Ollama models. Setup/model
+            downloads, storage, and compute are supplied by you.
+          </p>
+        </details>
+        <details>
+          <summary>Can I edit, style, and export captions?</summary>
+          <p>
+            Yes. Edit words and their times in Studio's Transcript tab. In the
+            Captions tab, choose one of 13 presets and tune font, size, colors,
+            outline, shadow, cue length, position, background, and word motion.
+            The overlay follows the source; 5-second previews show the look in
+            motion. Save a project style or a reusable named preset, then export.
+            Each draft and finished clip includes a separate SRT file aligned to
+            its own timeline.
+          </p>
+        </details>
+        <details>
+          <summary>Does it upload my footage?</summary>
+          <p>
+            Chopify does not send footage or transcripts to hosted processing.
+            Online sources and first-run model setup require downloads. Studio
+            serves only your loopback address and is intended for one trusted
+            local user.
+          </p>
+        </details>
+        <details>
+          <summary>What are the limitations?</summary>
+          <p>
+            Speech recognition and caption timing need review. Speech-sparse and
+            silent sources need usable audio or visual evidence; scores do not
+            predict virality. Caption Studio's overlay approximates the exported
+            libass render, and emoji glyphs need a system emoji font. Heuristic
+            cue lists are English-oriented. GPU speech acceleration uses
+            NVIDIA/CUDA; CPU works without it. Split-screen uses fixed crop
+            centers. Translation, dubbing, scheduling, and social uploads are
+            not included.
+          </p>
+        </details>
+      </section>
+      <section class="resources">
+        <h2>Read it. Run it. Build on it.</h2>
+        <a href="https://github.com/mehbul/chopify/blob/main/docs/WORKFLOWS.md"
+          >Workflow guide ↗</a
+        ><a
+          href="https://github.com/mehbul/chopify/blob/main/docs/CLI.md"
+          >CLI flag reference ↗</a
+        ><a
+          href="https://github.com/mehbul/chopify/blob/main/docs/TROUBLESHOOTING.md"
+          >Troubleshooting ↗</a
+        ><a href="https://github.com/mehbul/chopify/blob/main/docs/AGENT-API.md"
+          >Agent/API reference ↗</a
+        ><a href="llms.txt">llms.txt</a
+        ><a href="llms-full.txt">Full documentation text</a
+        ><a href="product.json">Product facts JSON</a>
+      </section>
+    </main>
+    <footer>
+      <span
+        >CHOPIFY · MIT · By <a href="https://github.com/mehbul">mehbul</a></span
+      ><span
+        >Documentation updated
+        <time datetime="2026-10-31">October 31, 2026</time> ·
+        <a href="https://github.com/mehbul/chopify/blob/main/CHANGELOG.md"
+          >Changelog</a
+        ></span
+      >
+    </footer>
+  </body>
+</html>

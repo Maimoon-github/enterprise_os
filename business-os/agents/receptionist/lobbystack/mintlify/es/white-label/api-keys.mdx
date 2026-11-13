@@ -1,0 +1,127 @@
+---
+title: "Automatice la configuración con claves de plataforma y la línea de comandos"
+description: "Cree una clave de plataforma en la consola de socios, cree y configure sus negocios a través de la API, e incorpore un negocio desde un archivo con lobbystack onboard."
+sidebarTitle: "Claves de API y CLI"
+contentType: "How-to"
+---
+
+import SaasPrompt from "/snippets/es/setup-prompts/saas.mdx";
+
+Una clave de plataforma permite que su propio código cree negocios y los configure a través de la [API](/es/api/overview) de LobbyStack. También permite que el comando `lobbystack onboard` cree un negocio a partir de un archivo. Los propietarios y administradores crean las claves en la página **Claves de API** de la consola. Una clave actúa en nombre de su cuenta de socio y solo llega a sus negocios.
+
+## Cree una clave de plataforma
+
+Dé a cada herramienta su propia clave, para poder revocar una sin afectar a las demás:
+
+<Steps>
+  <Step title="Abra el formulario">
+    En **Claves de API**, haga clic en **Crear clave de API**.
+  </Step>
+  <Step title="Ponga nombre a la clave y elija su acceso">
+    Escriba un **Nombre** que pueda reconocer, como `Alta de clientes`. En **Acceso**, seleccione solo lo que necesita la herramienta. Para crear negocios, seleccione **Crear negocios e invitar a sus propietarios**. Para gestionar su socio desde código, seleccione los accesos de socio que necesita la herramienta. Solo los propietarios ven los accesos a la facturación.
+  </Step>
+  <Step title="Copie la clave">
+    Haga clic en **Crear clave**, y luego copie la clave y guárdela en un gestor de contraseñas o en la configuración de su herramienta. La consola la muestra una sola vez.
+  </Step>
+</Steps>
+
+La página muestra cada clave por su nombre, con quién la creó, cuándo y cuándo se usó por última vez. Los miembros ven la página, pero no pueden crear, actualizar ni revocar claves.
+
+## Lo que puede hacer la clave de un socio
+
+La clave de un socio actúa en nombre de su cuenta de socio y no de una persona, así que sigue funcionando cuando el compañero que la creó se va. Llega a sus negocios activos, incluidos los que creó la consola, y a ningún otro:
+
+- `POST /businesses` crea un negocio todavía sin propietario. Indique el propietario en `owner_email`, y LobbyStack le envía por correo su invitación. Omítalo para [gestionar el negocio desde su propio producto](#gestione-negocios-desde-su-propio-producto). `access_level` acepta `full`, el valor predeterminado, o `activity`.
+- Todas las demás solicitudes indican su negocio en el encabezado `LobbyStack-Business`.
+- Los enlaces que devuelve la API, como la etiqueta de script de un widget o un enlace para conectar un calendario, apuntan a su dirección.
+
+Entre todas, sus claves pueden crear 30 negocios por hora. `POST /businesses` acepta `template_id` para partir de una de sus plantillas, con el alcance `partner:read`, y `package_id` para vender uno de sus paquetes, con el alcance `partner.businesses:write`. Una clave no puede cambiar las preferencias de alertas, así que haga esa tarea en la consola.
+
+[Claves de plataforma](/es/api/authentication#claves-de-plataforma) enumera los permisos, los encabezados y las respuestas.
+
+## Gestione negocios desde su propio producto
+
+Si sus clientes usan su producto y nunca ven LobbyStack, omita `owner_email` en `POST /businesses`. Nadie recibe una invitación, y su clave configura y gestiona el negocio. Una clave no puede invitar a un propietario, así que el negocio sigue sin propietario.
+
+<SaasPrompt />
+
+En un nivel de pago, una clave con `phone_numbers:manage` y `phone_numbers:purchase` compra el número del negocio. Una clave no tiene `phone_numbers:purchase` de forma predeterminada, así que active primero **Buscar, comprar y reemplazar números de teléfono** en la clave. Indique el negocio en el encabezado `LobbyStack-Business`:
+
+<Steps>
+  <Step title="Busque">
+    `POST /phone-numbers/search` devuelve ofertas. Cada oferta dura 5 minutos, y solo la clave que buscó puede reservarla.
+  </Step>
+  <Step title="Reserve">
+    `POST /phone-numbers/claims` compra el número. Consulte `GET /phone-numbers/claims/{claim_id}` hasta que su estado sea `claimed` o `failed`.
+  </Step>
+  <Step title="Reemplace, si hace falta">
+    Busque de nuevo con `replaces` y llame a `POST /phone-numbers/{phone_number_id}/replace`. Un negocio puede reemplazar su número una vez.
+  </Step>
+</Steps>
+
+En el nivel Free, estas solicitudes devuelven `409`. Una clave nunca recibe su número de prueba de 14 días, porque esa prueba necesita el móvil verificado de una persona. Sus claves comparten 20 búsquedas cada 10 minutos, y se aplican [los límites de su nivel sobre números nuevos](/es/white-label/tiers#números-de-teléfono-en-cada-nivel).
+
+Un negocio sin propietario no tiene a nadie en su equipo, lo que cambia cuatro cosas:
+
+- **Alertas:** los [webhooks](/es/api/webhooks) cubren llamadas, mensajes, citas y contactos. LobbyStack envía un correo a sus propietarios y administradores cuando un visitante del sitio pide hablar con una persona, falla una transferencia o un mensaje de texto, un mensaje de texto de un cliente necesita respuesta, un calendario deja de sincronizarse, falla una respuesta de la IA o se desactiva un endpoint de webhook. Tiene 3 minutos para responder a un visitante desde la **Bandeja de entrada** del negocio. Nadie recibe una alerta por chats nuevos del sitio o de Instagram.
+- **Llamadas que la recepcionista no puede atender:** LobbyStack las reenvía al número de transferencia del negocio, y las rechaza si no tiene uno. Defina `transfer_number` con `PATCH /receptionist`.
+- **Incorporación:** su clave la termina con `POST /onboarding/complete`. Envíe `skip_number: true` si el negocio no tiene número.
+- **Venta y entrega:** un paquete necesita un propietario, porque el pago se abre desde su invitación. `package_id` devuelve `400` sin `owner_email`, y asignar un paquete más tarde devuelve `409`. Puede eliminar el negocio, pero no entregarlo a nadie.
+
+## Gestione su socio desde código
+
+Con los accesos de socio, una clave hace lo que hace la consola. Crea y publica demos, gestiona paquetes, cambia su marca y su dominio, guarda plantillas, invita a su equipo, cede o elimina negocios, y muestra su nivel y su cuenta de Stripe. Un asistente de programación o sus propios scripts pueden hacer entonces su trabajo de marca blanca con la API o el comando `lobbystack`:
+
+```bash
+lobbystack demos create "Harbor Dental" https://harbordental.example
+lobbystack packages list
+lobbystack partner-team invite sam@youragency.example member
+```
+
+La clave actúa como un administrador, así que no puede invitar a un propietario ni cambiar el rol de un propietario. Solo los propietarios pueden dar a una clave acceso a la facturación, y un pago de nivel que inicie la clave se emite a nombre del propietario que le dio ese acceso, al crear la clave o al actualizarla por última vez. El acceso a la facturación dura mientras esa persona siga siendo propietaria. Si pasa a administrador o deja su equipo, la clave pierde el acceso a la facturación y conserva lo demás. La escritura de la facturación incluye su lectura. [Endpoints de socio](/es/api/authentication#endpoints-de-socio) enumera lo que permite cada acceso.
+
+## Incorpore un negocio desde un archivo
+
+`lobbystack onboard` lee un archivo YAML o JSON que describe un negocio, crea el negocio y lo configura. Primero inicie sesión con la clave de su cuenta de socio. En la nube de LobbyStack, use `https://app.lobbystack.com`:
+
+```bash
+lobbystack login --url https://app.lobbystack.com --key-stdin < key.txt
+```
+
+La clave necesita `businesses:create`, `business:read`, `business:write`, `knowledge:read`, `knowledge:write` y `team:manage`, además de `phone_numbers:manage` y `phone_numbers:purchase` para un número. Un manifiesto para la clave de un socio puede indicar el propietario, que recibe su invitación cuando el comando crea el negocio:
+
+```yaml harbor-dental.yaml
+business:
+  name: Harbor Dental
+  timezone: America/Toronto
+  access_level: activity
+knowledge:
+  websites: [https://harbordental.example]
+receptionist:
+  greeting: Gracias por llamar a Harbor Dental, ¿en qué puedo ayudarle?
+owner:
+  email: owner@harbordental.example
+```
+
+Deje `plan` fuera: sus negocios no compran los planes de LobbyStack. En un nivel de pago, agregue `phone_number` y el comando reserva el primer número que ofrece la búsqueda. Omita `owner` para un negocio sin propietario, y el comando termina su incorporación. Revise la ejecución con `--plan` y luego ejecútela:
+
+```bash
+lobbystack onboard harbor-dental.yaml --plan
+lobbystack onboard harbor-dental.yaml
+```
+
+Ejecute el comando de nuevo cada vez que cambie el archivo, y solo cambia lo que difiere. Su clave sigue llegando al negocio después de que su propietario se une. [Incorpore un negocio desde la línea de comandos](/es/api/cli) cubre cada sección del archivo.
+
+## Actualice una clave
+
+Haga clic en **Actualizar** junto a la clave para cambiar su nombre o su acceso, y luego en **Guardar**. La clave sigue siendo la misma: sus herramientas siguen usándola y reciben el nuevo acceso en su próxima solicitud. No puede actualizar una clave revocada.
+
+Solo los propietarios pueden actualizar una clave con acceso a la facturación, así que los administradores ven **Actualizar** desactivado en esas claves. El propietario que guarda una clave con acceso a la facturación pasa a ser el propietario del que depende ese acceso.
+
+## Revoque una clave
+
+Haga clic en **Revocar** junto a la clave, y luego en **Revocar clave**. Todo lo que la usa deja de funcionar de inmediato, y no puede deshacerlo:
+
+- los endpoints de webhook que creó la clave se desactivan, en todos los negocios
+- nadie puede aceptar las invitaciones que envió, al equipo de un negocio o al suyo
+- los propietarios a los que invitó al crear su negocio aún pueden unirse

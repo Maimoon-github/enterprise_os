@@ -1,0 +1,1 @@
+ALTER TABLE "LinkedInAccount" ADD COLUMN "isPremium" BOOLEAN NOT NULL DEFAULT false;

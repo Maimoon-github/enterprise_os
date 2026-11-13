@@ -1,0 +1,208 @@
+import { normalizeRuntimeLocale, type RuntimeLocale } from "@lobbystack/shared";
+
+export type ConversationSessionSummary =
+  | { kind: "message_taking"; summary?: string }
+  | { kind: "disposition"; disposition: string }
+  | { kind: "summary"; summary: string };
+
+export type ConversationTranscriptTurn = {
+  speaker: string;
+  text: string;
+};
+
+export type CallerContext = {
+  callerName?: string;
+  callReason?: string;
+};
+
+function normalizedSummary(value: string | null | undefined): string | undefined {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized || undefined;
+}
+
+const callerNamePattern = /^(?:(?:hello|hi|hey)[\s,!.-]*)?(?:my name is|this is|i am|i'm|je m'appelle|je suis)\s+([\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2})(?=$|[.!?,;])/iu;
+const nonReasonPattern = /^(?:hello|hi|hey|yes|yeah|yep|no|nope|okay|ok|sure|uh|um|hmm|bye|goodbye|thanks|thank you|bonjour|allô|allo|salut|oui|non|merci|d'accord)[\s.!?,;-]*$/iu;
+
+function bounded(value: string, maximum = 220): string {
+  return value.length > maximum ? `${value.slice(0, maximum - 3).trimEnd()}...` : value;
+}
+
+export function extractCallerContext(transcript: ConversationTranscriptTurn[]): CallerContext {
+  let callerName: string | undefined;
+  let callReason: string | undefined;
+
+  for (const turn of transcript) {
+    if (turn.speaker !== "caller" && turn.speaker !== "user") continue;
+    const text = normalizedSummary(turn.text);
+    if (!text) continue;
+
+    const nameMatch = text.match(callerNamePattern);
+    if (!callerName && nameMatch?.[1]) callerName = nameMatch[1].trim();
+
+    const withoutIntroduction = nameMatch
+      ? text.slice(nameMatch[0].length).replace(/^[\s.!?,;:-]+/, "").trim()
+      : text;
+    if (!callReason && withoutIntroduction && !nonReasonPattern.test(withoutIntroduction)) {
+      callReason = bounded(withoutIntroduction);
+    }
+  }
+
+  return {
+    ...(callerName ? { callerName } : {}),
+    ...(callReason ? { callReason } : {}),
+  };
+}
+
+export type CallSummaryLocale = RuntimeLocale;
+
+export function normalizeCallSummaryLocale(locale: string | null | undefined): CallSummaryLocale {
+  return normalizeRuntimeLocale(locale);
+}
+
+const FALLBACK_SUMMARY: Record<CallSummaryLocale, { excerpt: string; empty: string }> = {
+  en: { excerpt: "Call summary: ", empty: "Voice interaction completed." },
+  fr: { excerpt: "Résumé de l'appel : ", empty: "Interaction vocale terminée." },
+  es: { excerpt: "Resumen de la llamada: ", empty: "Interacción de voz completada." },
+  sr: { excerpt: "Rezime poziva: ", empty: "Glasovna interakcija je završena." },
+  de: { excerpt: "Anrufzusammenfassung: ", empty: "Sprachinteraktion abgeschlossen." },
+  pt: { excerpt: "Resumo da chamada: ", empty: "Interação por voz concluída." },
+  it: { excerpt: "Riepilogo della chiamata: ", empty: "Interazione vocale completata." },
+  nl: { excerpt: "Samenvatting van het gesprek: ", empty: "Spraakinteractie voltooid." },
+  pl: { excerpt: "Podsumowanie rozmowy: ", empty: "Rozmowa głosowa zakończona." },
+  tr: { excerpt: "Arama özeti: ", empty: "Sesli görüşme tamamlandı." },
+  vi: { excerpt: "Tóm tắt cuộc gọi: ", empty: "Cuộc gọi thoại đã kết thúc." },
+  tl: { excerpt: "Buod ng tawag: ", empty: "Natapos ang tawag." },
+  sv: { excerpt: "Samtalssammanfattning: ", empty: "Röstsamtalet är avslutat." },
+  ru: { excerpt: "Краткое содержание звонка: ", empty: "Голосовой разговор завершён." },
+  uk: { excerpt: "Підсумок дзвінка: ", empty: "Голосову розмову завершено." },
+};
+
+/** A model-written summary and caller name, before the domain validates them. */
+export type GeneratedCallSummary = {
+  summary?: string | null;
+  callerName?: string | null;
+};
+
+const MAX_GENERATED_SUMMARY_LENGTH = 200;
+const callerNameShape = /^[\p{L}][\p{L}'’.-]*(?:\s+[\p{L}][\p{L}'’.-]*){0,3}$/u;
+const placeholderNames = new Set(["unknown", "caller", "customer", "client", "inconnu", "anonyme", "anonymous", "none", "null"]);
+
+function foldForComparison(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+function words(text: string): string[] {
+  return foldForComparison(text).replace(/’/gu, "'").split(/[^\p{L}'-]+/u).filter(Boolean);
+}
+
+// Word sequences a caller says right before their own name.
+const selfIdentificationCues = [
+  ["my", "name", "is"], ["name", "is"], ["name's"], ["this", "is"], ["it", "is"], ["it's"], ["i", "am"], ["i'm"], ["im"], ["call", "me"],
+  ["je", "m'appelle"], ["je", "suis"], ["c'est"], ["ici"], ["mon", "nom", "est"], ["mon", "nom", "c'est"],
+];
+
+function endsWith(tokens: string[], end: number, cue: string[]): boolean {
+  if (end < cue.length) return false;
+  return cue.every((word, index) => tokens[end - cue.length + index] === word);
+}
+
+function indexOfSequence(tokens: string[], sequence: string[]): number {
+  for (let start = 0; start + sequence.length <= tokens.length; start += 1) {
+    if (sequence.every((word, index) => tokens[start + index] === word)) return start;
+  }
+  return -1;
+}
+
+const isCaller = (turn: ConversationTranscriptTurn) => turn.speaker === "caller" || turn.speaker === "user";
+
+/**
+ * True when the caller gave this name as their own: right after a cue such as
+ * "my name is" or "c'est", or as a short reply to the agent asking for
+ * their name. A name the caller only mentions ("I'd like to speak with Marie
+ * Tremblay") doesn't count.
+ */
+function callerIntroducedThemselvesAs(transcript: ConversationTranscriptTurn[], nameWords: string[]): boolean {
+  let askedForName = false;
+  for (const turn of transcript) {
+    const tokens = words(turn.text);
+    if (!isCaller(turn)) {
+      askedForName = tokens.includes("name") || tokens.includes("nom");
+      continue;
+    }
+    const start = indexOfSequence(tokens, nameWords);
+    if (start >= 0) {
+      if (selfIdentificationCues.some((cue) => endsWith(tokens, start, cue))) return true;
+      if (askedForName && start <= 2 && tokens.length <= nameWords.length + 4) return true;
+    }
+    askedForName = false;
+  }
+  return false;
+}
+
+const wrappingCharacters = new Set(["\"", "'", "“", "”", "«", "»"]);
+
+// Strip quotes and spaces from both ends with index scans, not a regex: an
+// anchored regex on model output backtracks badly on long whitespace runs.
+function trimWrapping(value: string): string {
+  let start = 0;
+  let end = value.length;
+  const wraps = (character: string | undefined) => character !== undefined && (wrappingCharacters.has(character) || /\s/u.test(character));
+  while (start < end && wraps(value[start])) start += 1;
+  while (end > start && wraps(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+}
+
+/** Accept a model-written summary only as one bounded line. */
+export function sanitizeGeneratedSummary(value: string | null | undefined): string | undefined {
+  const text = normalizedSummary(value);
+  const normalized = text === undefined ? undefined : trimWrapping(text);
+  if (!normalized) return undefined;
+  return bounded(normalized, MAX_GENERATED_SUMMARY_LENGTH);
+}
+
+/**
+ * Accept a model-extracted caller name only when it looks like a name and the
+ * caller spoke every word of it, so a model cannot invent or embellish one.
+ */
+export function sanitizeGeneratedCallerName(value: string | null | undefined, transcript: ConversationTranscriptTurn[]): string | undefined {
+  const name = normalizedSummary(value);
+  if (!name || name.length > 60 || !callerNameShape.test(name) || placeholderNames.has(foldForComparison(name))) return undefined;
+  const nameWords = words(name);
+  return nameWords.length > 0 && callerIntroducedThemselvesAs(transcript, nameWords) ? name : undefined;
+}
+
+export function buildConversationSessionSummary(input: {
+  locale?: string | null;
+  /** A model-written summary of this call; it replaces the transcript heuristic. */
+  generatedSummary?: string | null | undefined;
+  currentIntent?: string | null;
+  conversationSummary?: string | null;
+  disposition?: string | null;
+  transcript?: Array<string | ConversationTranscriptTurn>;
+}): ConversationSessionSummary {
+  const existingSummary = normalizedSummary(input.conversationSummary);
+  if (input.currentIntent === "message_taking") {
+    return { kind: "message_taking", ...(existingSummary ? { summary: existingSummary } : {}) };
+  }
+  const generatedSummary = sanitizeGeneratedSummary(input.generatedSummary);
+  if (generatedSummary) {
+    return { kind: "summary", summary: generatedSummary };
+  }
+  if (existingSummary) {
+    return { kind: "summary", summary: existingSummary };
+  }
+  const transcriptTurns = input.transcript?.filter((turn): turn is ConversationTranscriptTurn => typeof turn !== "string") ?? [];
+  const callerContext = extractCallerContext(transcriptTurns);
+  if (callerContext.callReason) {
+    return { kind: "summary", summary: callerContext.callReason };
+  }
+  if (input.disposition) {
+    return { kind: "disposition", disposition: input.disposition };
+  }
+  const transcript = normalizedSummary(input.transcript?.map((turn) => typeof turn === "string" ? turn : turn.text).join(" "));
+  if (transcript) {
+    const excerpt = bounded(transcript);
+    return { kind: "summary", summary: `${FALLBACK_SUMMARY[normalizeCallSummaryLocale(input.locale)].excerpt}${excerpt}` };
+  }
+  return { kind: "summary", summary: FALLBACK_SUMMARY[normalizeCallSummaryLocale(input.locale)].empty };
+}

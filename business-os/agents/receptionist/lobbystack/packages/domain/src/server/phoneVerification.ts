@@ -1,0 +1,363 @@
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+
+import { and, eq, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm";
+
+import { canTextNumber, type InterfaceLocale } from "@lobbystack/shared";
+import { enqueueOutbox, onboardingPhoneVerifications, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+
+import { AuthorizationError, requireBusinessMembership, requireTeamMembership } from "../authz";
+import type { DomainContext } from "./context";
+import { enableOperatorSmsAlertsWithConsent } from "./notifications";
+import { enqueueRefusedCallForwardRefresh, isNumberCountry, trialCountries } from "./numberTrials";
+import { partnerNumberAvailabilityInTransaction } from "./partnerNumbers";
+import { resolveSmsSender } from "./smsSender";
+import { VERIFICATION_CODE_TTL_MS, newVerificationCode, verificationCodeSecret } from "./verificationCode";
+
+// Operators verify the phone that receives SMS alerts from notification
+// settings. Attempts reuse onboarding_phone_verifications and its database
+// rate limits (app.reserve_phone_verification_attempt: 5 per user and 3 per
+// phone each hour, 30 seconds between codes to one phone). The worker
+// generates each code and texts it from the alert SMS sender; only a keyed
+// hash is stored. app.finish_phone_verification then sets users.phone and
+// users.phone_verified_at. Only the business's own team verifies a phone for
+// alerts, since alerts go to the team. A partner member who opened a business
+// verifies their own mobile only at the phone step, and only while the
+// business is offered its partner's trial number, whose calls transfer to the
+// mobile of whoever claims it. Their verification never finishes the owner's
+// onboarding (migration 0159).
+
+export const PHONE_VERIFICATION_CODE_TTL_MS = VERIFICATION_CODE_TTL_MS;
+export const PHONE_VERIFICATION_MAX_CHECKS = 5;
+const PHONE_VERIFICATION_SEND_LEASE_MS = 5 * 60_000;
+const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
+const CODE_PATTERN = /^\d{6}$/;
+
+type PhoneVerificationError = Error & { status: number; code: string };
+
+function phoneVerificationError(status: number, code: string, message: string): PhoneVerificationError {
+  return Object.assign(new Error(message), { status, code });
+}
+
+/** Binds the code to its attempt, so a hash copied to another attempt never matches. */
+export function hashPhoneVerificationCode(attemptId: string, code: string, secret = verificationCodeSecret()): string {
+  return createHmac("sha256", secret).update(`${attemptId}:${code}`).digest("hex");
+}
+
+export function phoneVerificationCodeMatches(expectedHash: string, attemptId: string, code: string, secret = verificationCodeSecret()): boolean {
+  const actual = Buffer.from(hashPhoneVerificationCode(attemptId, code, secret), "hex");
+  const expected = Buffer.from(expectedHash, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+export type PhoneVerificationAttemptState = { id: string; status: string; expiresAt: Date; attemptCount: number; codeHash: string | null };
+export type PhoneVerificationCheckOutcome =
+  | { status: "approved" }
+  | { status: "invalid"; remainingAttempts: number }
+  | { status: "locked"; usedCheck?: true }
+  | { status: "expired" }
+  | { status: "unavailable" };
+
+/** Decides a code check without touching storage. A wrong code that uses the last allowed check locks the attempt and reports `usedCheck`. */
+export function evaluatePhoneVerificationCode(attempt: PhoneVerificationAttemptState, code: string, now: Date, secret = verificationCodeSecret()): PhoneVerificationCheckOutcome {
+  if (attempt.status === "failed" && attempt.attemptCount >= PHONE_VERIFICATION_MAX_CHECKS) return { status: "locked" };
+  if (attempt.status === "expired") return { status: "expired" };
+  if (attempt.status !== "pending" || !attempt.codeHash) return { status: "unavailable" };
+  if (attempt.expiresAt.getTime() <= now.getTime()) return { status: "expired" };
+  if (attempt.attemptCount >= PHONE_VERIFICATION_MAX_CHECKS) return { status: "locked" };
+  if (phoneVerificationCodeMatches(attempt.codeHash, attempt.id, code, secret)) return { status: "approved" };
+  const remainingAttempts = PHONE_VERIFICATION_MAX_CHECKS - (attempt.attemptCount + 1);
+  return remainingAttempts <= 0 ? { status: "locked", usedCheck: true } : { status: "invalid", remainingAttempts };
+}
+
+const reservationErrors: Record<string, () => PhoneVerificationError> = {
+  verification_cooldown: () => phoneVerificationError(429, "verification_cooldown", "Wait 30 seconds before you request another code."),
+  verification_user_rate_limited: () => phoneVerificationError(429, "verification_rate_limited", "Too many codes requested. Try again later."),
+  verification_phone_rate_limited: () => phoneVerificationError(429, "verification_rate_limited", "Too many codes requested. Try again later."),
+};
+
+// Drizzle wraps the PostgreSQL error, and its message lists the query
+// parameters, phone number included. Return only the raised reason.
+function reservationError(error: unknown): PhoneVerificationError | undefined {
+  for (let current: unknown = error, depth = 0; current && typeof current === "object" && depth < 4; current = (current as { cause?: unknown }).cause, depth += 1) {
+    const message = (current as { message?: unknown }).message;
+    if (typeof message === "string" && message in reservationErrors) return reservationErrors[message]!();
+  }
+  return undefined;
+}
+
+/**
+ * Starts verifying the signed-in operator's phone for SMS alerts and queues the
+ * code. Starting again, to resend or change the number, cancels the previous
+ * open attempt.
+ */
+export async function startOperatorPhoneVerification(
+  context: DomainContext,
+  input: { userId: string; businessId: string; phoneE164: string; countryCode: string; locale?: InterfaceLocale },
+): Promise<{ attemptId: string }> {
+  const countryCode = input.countryCode.trim().toUpperCase();
+  if (!E164_PATTERN.test(input.phoneE164) || !/^[A-Z]{2}$/.test(countryCode)) throw phoneVerificationError(422, "phone_number_invalid", "Enter a valid mobile number.");
+  const fingerprint = createHash("sha256").update(`${input.userId}:${input.phoneE164}`).digest("hex");
+  try {
+    return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+      await requireTeamMembership(tx, input);
+      const sender = await resolveSmsSender(tx, input.businessId);
+      if (!sender) throw phoneVerificationError(409, "sms_sender_missing", "An alert SMS sender is required for SMS notifications.");
+      if (!canTextNumber(sender, input.phoneE164)) throw phoneVerificationError(422, "phone_unreachable", "The alert SMS sender can't text this number.");
+      await tx.update(onboardingPhoneVerifications)
+        .set({ status: "canceled", codeHash: null, lastError: "Replaced by a newer verification.", updatedAt: new Date() })
+        .where(and(
+          eq(onboardingPhoneVerifications.businessId, input.businessId),
+          eq(onboardingPhoneVerifications.userId, input.userId),
+          inArray(onboardingPhoneVerifications.status, ["queued", "processing", "pending"]),
+        ));
+      const result = await tx.execute(sql`SELECT app.reserve_phone_verification_attempt(${input.businessId}::uuid, ${input.userId}::uuid, ${input.phoneE164}, ${countryCode}, ${null}, ${fingerprint}) AS id`);
+      const attemptId = String((result.rows[0] as { id?: unknown } | undefined)?.id ?? "");
+      if (!attemptId) throw new Error("Phone verification could not be reserved.");
+      await enqueueOutbox(tx, { topic: "phoneVerification.sendCode", businessId: input.businessId, aggregateType: "phone_verification", aggregateId: attemptId, dedupeKey: `phone-verification:${attemptId}:send-code`, payload: { attemptId, locale: input.locale ?? "en" } });
+      return { attemptId };
+    });
+  } catch (error) {
+    throw reservationError(error) ?? error;
+  }
+}
+
+export type OperatorPhoneVerificationStatus = "sending" | "sent" | "approved" | "expired" | "failed" | "canceled";
+
+/** The state of one of the operator's own attempts, for the code screen. Never includes the code or its hash. */
+export async function getOperatorPhoneVerification(
+  context: DomainContext,
+  input: { userId: string; businessId: string; attemptId: string; now?: Date },
+): Promise<{ id: string; status: OperatorPhoneVerificationStatus; expiresAt: Date } | null> {
+  const now = input.now ?? new Date();
+  return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await requireTeamMembership(tx, input);
+    const row = (await tx.select({ id: onboardingPhoneVerifications.id, status: onboardingPhoneVerifications.status, expiresAt: onboardingPhoneVerifications.expiresAt })
+      .from(onboardingPhoneVerifications)
+      .where(and(eq(onboardingPhoneVerifications.id, input.attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.userId, input.userId)))
+      .limit(1))[0];
+    if (!row) return null;
+    return { id: row.id, status: operatorVerificationStatus(row.status, row.expiresAt, now), expiresAt: row.expiresAt };
+  });
+}
+
+function operatorVerificationStatus(status: string, expiresAt: Date, now: Date): OperatorPhoneVerificationStatus {
+  if (status === "queued" || status === "processing") return "sending";
+  if (status === "pending") return expiresAt.getTime() <= now.getTime() ? "expired" : "sent";
+  if (status === "approved" || status === "expired" || status === "canceled") return status;
+  return "failed";
+}
+
+/** Checks a code for the signed-in operator. A correct code verifies the phone on their account and turns SMS alerts on with the consent given at the phone step. */
+export async function checkOperatorPhoneVerificationCode(
+  context: DomainContext,
+  input: { userId: string; businessId: string; attemptId: string; code: string; now?: Date },
+): Promise<{ approved: boolean } & PhoneVerificationCheckOutcome> {
+  const code = input.code.trim();
+  if (!CODE_PATTERN.test(code)) throw phoneVerificationError(400, "verification_code_invalid", "Enter the 6-digit code.");
+  const now = input.now ?? new Date();
+  return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await requireTeamMembership(tx, input);
+    const scope = and(eq(onboardingPhoneVerifications.id, input.attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.userId, input.userId));
+    const attempt = (await tx.select({ id: onboardingPhoneVerifications.id, phoneE164: onboardingPhoneVerifications.phoneE164, status: onboardingPhoneVerifications.status, expiresAt: onboardingPhoneVerifications.expiresAt, attemptCount: onboardingPhoneVerifications.attemptCount, codeHash: onboardingPhoneVerifications.codeHash })
+      .from(onboardingPhoneVerifications).where(scope).limit(1).for("update"))[0];
+    if (!attempt) return { approved: false, status: "unavailable" };
+    const outcome = evaluatePhoneVerificationCode(attempt, code, now);
+    if (outcome.status === "approved") {
+      await tx.update(onboardingPhoneVerifications).set({ attemptCount: attempt.attemptCount + 1, codeHash: null, updatedAt: now }).where(scope);
+      const completed = await tx.execute(sql`SELECT app.finish_phone_verification(${input.businessId}::uuid, ${input.userId}::uuid, ${input.attemptId}::uuid, ${"approved"}) AS approved`);
+      const approved = (completed.rows[0] as { approved?: unknown } | undefined)?.approved === true;
+      if (!approved) return { approved: false, status: "unavailable" };
+      // An owner's verified phone is where refused calls forward without a transfer number, so carriers that store the forward learn it.
+      await enqueueRefusedCallForwardRefresh(tx, input.businessId);
+      await enableOperatorSmsAlertsWithConsent(tx, { businessId: input.businessId, userId: input.userId, phone: attempt.phoneE164, now });
+      return { approved: true, status: "approved" };
+    }
+    if (outcome.status === "invalid") {
+      await tx.update(onboardingPhoneVerifications).set({ attemptCount: attempt.attemptCount + 1, lastError: "Verification code was not approved.", updatedAt: now }).where(scope);
+    } else if (outcome.status === "locked" && attempt.status === "pending") {
+      await tx.update(onboardingPhoneVerifications).set({ attemptCount: outcome.usedCheck ? attempt.attemptCount + 1 : attempt.attemptCount, status: "failed", codeHash: null, lastError: "Too many incorrect codes.", updatedAt: now }).where(scope);
+    } else if (outcome.status === "expired" && attempt.status === "pending") {
+      await tx.update(onboardingPhoneVerifications).set({ status: "expired", codeHash: null, updatedAt: now }).where(scope);
+    }
+    return outcome.status === "locked" ? { approved: false, status: "locked" } : { approved: false, ...outcome };
+  });
+}
+
+/**
+ * Worker: claims a queued attempt, generates its code, and stores only the
+ * hash. Returns the code to text, or null when the attempt is gone, was
+ * replaced, or no alert sender can reach the number (the attempt then fails).
+ */
+export async function issueOperatorPhoneVerificationCode(
+  context: DomainContext,
+  input: { businessId: string; attemptId: string; now?: Date },
+): Promise<{ to: string; from: string; code: string } | null> {
+  const now = input.now ?? new Date();
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const scope = and(eq(onboardingPhoneVerifications.id, input.attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId));
+    const claimed = (await tx.update(onboardingPhoneVerifications)
+      .set({ status: "processing", updatedAt: now })
+      .where(and(scope, or(eq(onboardingPhoneVerifications.status, "queued"), and(eq(onboardingPhoneVerifications.status, "processing"), lt(onboardingPhoneVerifications.updatedAt, new Date(now.getTime() - PHONE_VERIFICATION_SEND_LEASE_MS))))))
+      .returning({ phoneE164: onboardingPhoneVerifications.phoneE164 }))[0];
+    if (!claimed) return null;
+    const sender = await resolveSmsSender(tx, input.businessId);
+    if (!sender || !canTextNumber(sender, claimed.phoneE164)) {
+      await tx.update(onboardingPhoneVerifications).set({ status: "failed", codeHash: null, lastError: "No alert SMS sender can reach this number.", updatedAt: now }).where(scope);
+      return null;
+    }
+    const code = newVerificationCode();
+    await tx.update(onboardingPhoneVerifications).set({ codeHash: hashPhoneVerificationCode(input.attemptId, code), attemptCount: 0, expiresAt: new Date(now.getTime() + PHONE_VERIFICATION_CODE_TTL_MS), updatedAt: now }).where(scope);
+    return { to: claimed.phoneE164, from: sender, code };
+  });
+}
+
+/** Worker: the code was handed to the SMS provider, so the operator can enter it. Only an attempt holding a code can be marked. */
+export async function markOperatorPhoneVerificationCodeSent(context: DomainContext, input: { businessId: string; attemptId: string }): Promise<boolean> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => (await tx.update(onboardingPhoneVerifications)
+    .set({ status: "pending", lastError: null, updatedAt: new Date() })
+    .where(and(eq(onboardingPhoneVerifications.id, input.attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.status, "processing"), isNotNull(onboardingPhoneVerifications.codeHash)))
+    .returning({ id: onboardingPhoneVerifications.id })).length > 0);
+}
+
+/**
+ * Worker: the send failed. A retry generates a new code, so the hash is
+ * cleared either way. `retry` puts the attempt back in the queue; otherwise it
+ * fails and the code screen offers a resend.
+ */
+export async function releaseOperatorPhoneVerificationCodeSend(context: DomainContext, input: { businessId: string; attemptId: string; retry: boolean; error: string }): Promise<void> {
+  await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    await tx.update(onboardingPhoneVerifications)
+      .set({ status: input.retry ? "queued" : "failed", codeHash: null, lastError: input.error, updatedAt: new Date() })
+      .where(and(eq(onboardingPhoneVerifications.id, input.attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.status, "processing")));
+  });
+}
+
+/**
+ * Who may verify their mobile at the phone step: someone on the business's
+ * own team, or a partner member who opened it while the business is offered
+ * its partner's trial number, which needs the claimer's verified mobile.
+ * Throws an AuthorizationError for anyone else. Returns how they reach it.
+ */
+async function requirePhoneStepAccess(tx: DatabaseTransaction, input: { userId: string; businessId: string }): Promise<"membership" | "partner"> {
+  const { via } = await requireBusinessMembership(tx, input);
+  if (via === "partner" && !(await partnerNumberAvailabilityInTransaction(tx, input.businessId))?.trial) throw new AuthorizationError();
+  return via;
+}
+
+/** Twilio Verify and Lookup, as the onboarding phone step uses them. */
+export type OnboardingPhoneVerifyProvider = {
+  lookupLineType(phoneE164: string): Promise<string | null>;
+  sendCode(input: { to: string; locale?: InterfaceLocale }): Promise<{ sid: string }>;
+  checkCode(input: { to: string; code: string }): Promise<string>;
+};
+
+/**
+ * Starts the onboarding phone step. Twilio Verify texts the code, so phones
+ * outside the US and Canada get one too. The trial number needs a real
+ * person's mobile, so internet (VoIP) numbers, which come cheap in bulk, are
+ * refused, and so are lines that can't receive a text.
+ */
+export async function startOnboardingPhoneVerification(
+  context: DomainContext,
+  input: { userId: string; businessId: string; phoneE164: string; countryCode: string; locale?: InterfaceLocale },
+  provider: OnboardingPhoneVerifyProvider,
+): Promise<{ attemptId: string }> {
+  const countryCode = input.countryCode.trim().toUpperCase();
+  if (!E164_PATTERN.test(input.phoneE164) || !/^[A-Z]{2}$/.test(countryCode)) throw phoneVerificationError(422, "phone_number_invalid", "Enter a valid mobile number.");
+  // The step guards a number from the phone's country, so a country without numbers gets no text.
+  if (!isNumberCountry(countryCode)) throw phoneVerificationError(422, "phone_country_unsupported", "Phone numbers aren't available in this country yet.");
+  const fingerprint = createHash("sha256").update(`${input.userId}:${input.phoneE164}`).digest("hex");
+  let attemptId: string;
+  try {
+    attemptId = await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+      // A partner member verifies only for the trial, so only from a trial country.
+      if (await requirePhoneStepAccess(tx, input) === "partner" && !(trialCountries() as string[]).includes(countryCode)) throw phoneVerificationError(422, "phone_country_unsupported", "Trial numbers aren't available in this country.");
+      const result = await tx.execute(sql`SELECT app.reserve_phone_verification_attempt(${input.businessId}::uuid, ${input.userId}::uuid, ${input.phoneE164}, ${countryCode}, ${null}, ${fingerprint}) AS id`);
+      const id = String((result.rows[0] as { id?: unknown } | undefined)?.id ?? "");
+      if (!id) throw new Error("Phone verification could not be reserved.");
+      return id;
+    });
+  } catch (error) {
+    throw reservationError(error) ?? error;
+  }
+  const scope = and(eq(onboardingPhoneVerifications.id, attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.userId, input.userId));
+  // Each lookup is a paid Twilio request, so it runs only once the attempt counts against the
+  // rate limits; a refused number uses up an attempt too.
+  const closeAttempt = async (lastError: string, lineType: string | null = null) => await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await tx.update(onboardingPhoneVerifications).set({ status: "failed", lineType, lastError, updatedAt: new Date() }).where(scope);
+  });
+  // A lookup that errors isn't billed, so the attempt is dropped and the user can retry once Twilio recovers.
+  const lineType = await provider.lookupLineType(input.phoneE164).catch(async (error: unknown) => {
+    await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => { await tx.delete(onboardingPhoneVerifications).where(scope); })
+      .catch((cleanupError: unknown) => console.error("[phone-verification] attempt not dropped", cleanupError instanceof Error ? cleanupError.message : cleanupError));
+    throw error;
+  });
+  const refusal = lineType === "fixedVoip" || lineType === "nonFixedVoip"
+    ? phoneVerificationError(422, "phone_voip_refused", "Use your mobile number. Internet phone numbers can't be verified.")
+    : lineType && !["mobile", "personal", "unknown"].includes(lineType) ? phoneVerificationError(422, "phone_not_mobile", "Use a mobile number that can receive texts.") : undefined;
+  if (refusal) {
+    await closeAttempt(refusal.message, lineType);
+    throw refusal;
+  }
+  try {
+    const { sid } = await provider.sendCode({ to: input.phoneE164, ...(input.locale ? { locale: input.locale } : {}) });
+    await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+      // An earlier code stays valid until this one is on its way, so a refused number doesn't cost it.
+      await tx.update(onboardingPhoneVerifications)
+        .set({ status: "canceled", codeHash: null, lastError: "Replaced by a newer verification.", updatedAt: new Date() })
+        .where(and(eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.userId, input.userId), inArray(onboardingPhoneVerifications.status, ["queued", "processing", "pending"]), ne(onboardingPhoneVerifications.id, attemptId)));
+      await tx.update(onboardingPhoneVerifications).set({ status: "pending", lineType, providerVerificationId: sid, expiresAt: new Date(Date.now() + PHONE_VERIFICATION_CODE_TTL_MS), updatedAt: new Date() }).where(scope);
+    });
+  } catch (error) {
+    await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+      await tx.update(onboardingPhoneVerifications).set({ status: "failed", lastError: "The code couldn't be sent.", updatedAt: new Date() }).where(scope);
+    });
+    console.error("[phone-verification] code not sent", error instanceof Error ? error.message : error);
+    throw phoneVerificationError(502, "verification_send_failed", "We couldn't text this number. Check it and try again.");
+  }
+  return { attemptId };
+}
+
+/** Checks the onboarding code with Twilio Verify. A correct code verifies the phone on the user's account and, for the business's own team, moves onboarding on from the phone step. */
+export async function checkOnboardingPhoneVerificationCode(
+  context: DomainContext,
+  input: { userId: string; businessId: string; attemptId: string; code: string; now?: Date },
+  provider: OnboardingPhoneVerifyProvider,
+): Promise<{ approved: boolean } & PhoneVerificationCheckOutcome> {
+  const code = input.code.trim();
+  if (!CODE_PATTERN.test(code)) throw phoneVerificationError(400, "verification_code_invalid", "Enter the 6-digit code.");
+  const now = input.now ?? new Date();
+  const scope = and(eq(onboardingPhoneVerifications.id, input.attemptId), eq(onboardingPhoneVerifications.businessId, input.businessId), eq(onboardingPhoneVerifications.userId, input.userId));
+  // Count the check before calling Twilio, so parallel guesses can't get past the limit.
+  const attempt = await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await requirePhoneStepAccess(tx, input);
+    const row = (await tx.select({ phoneE164: onboardingPhoneVerifications.phoneE164, status: onboardingPhoneVerifications.status, expiresAt: onboardingPhoneVerifications.expiresAt, attemptCount: onboardingPhoneVerifications.attemptCount, providerVerificationId: onboardingPhoneVerifications.providerVerificationId })
+      .from(onboardingPhoneVerifications).where(scope).limit(1).for("update"))[0];
+    if (!row || row.status !== "pending" || !row.providerVerificationId) return { outcome: { status: "unavailable" } as const };
+    if (row.expiresAt.getTime() <= now.getTime()) {
+      await tx.update(onboardingPhoneVerifications).set({ status: "expired", updatedAt: now }).where(scope);
+      return { outcome: { status: "expired" } as const };
+    }
+    if (row.attemptCount >= PHONE_VERIFICATION_MAX_CHECKS) return { outcome: { status: "locked" } as const };
+    await tx.update(onboardingPhoneVerifications).set({ attemptCount: row.attemptCount + 1, updatedAt: now }).where(scope);
+    return { phoneE164: row.phoneE164, used: row.attemptCount + 1 };
+  });
+  if ("outcome" in attempt) return { approved: false, ...attempt.outcome };
+  const status = await provider.checkCode({ to: attempt.phoneE164, code }).catch(() => "failed");
+  return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    if (status === "approved") {
+      const completed = await tx.execute(sql`SELECT app.finish_phone_verification(${input.businessId}::uuid, ${input.userId}::uuid, ${input.attemptId}::uuid, ${"approved"}) AS approved`);
+      const approved = (completed.rows[0] as { approved?: unknown } | undefined)?.approved === true;
+      if (!approved) return { approved: false, status: "unavailable" };
+      await enqueueRefusedCallForwardRefresh(tx, input.businessId);
+      return { approved: true, status: "approved" };
+    }
+    const remainingAttempts = PHONE_VERIFICATION_MAX_CHECKS - attempt.used;
+    if (remainingAttempts <= 0) {
+      await tx.update(onboardingPhoneVerifications).set({ status: "failed", lastError: "Too many incorrect codes.", updatedAt: now }).where(scope);
+      return { approved: false, status: "locked" };
+    }
+    await tx.update(onboardingPhoneVerifications).set({ lastError: "Verification code was not approved.", updatedAt: now }).where(scope);
+    return { approved: false, status: "invalid", remainingAttempts };
+  });
+}

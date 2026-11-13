@@ -1,0 +1,152 @@
+---
+title: "LinkedIn campaigns"
+description: "Find leads with LinkedIn search, send connection requests, follow up after acceptance, and understand the limits that pace sending."
+icon: "linkedin"
+---
+
+A LinkedIn campaign sends a connection request to each lead, then a short sequence of messages once they accept. Sending is paced in small runs, within daily limits and each account's working hours. You find campaigns under **LinkedIn → Campaigns**, and lead searches under **LinkedIn → Search**.
+
+<Info>
+Before you start, [connect Unipile and at least one LinkedIn account](/linkedin/accounts). Read [Responsible use](/responsible-use) too: LinkedIn's terms do not allow automation.
+</Info>
+
+## Find leads with Search
+
+**LinkedIn → Search** runs LinkedIn search URLs in batches and collects the people they return.
+
+<Steps>
+  <Step title="Click New search">
+    Pick **Single search** (one LinkedIn search URL, run with one account) or **CSV search** (a sheet of **Company Name** and **Search URL**, run with several accounts).
+  </Step>
+  <Step title="Fill in the details">
+    Give it a **Name**, paste the **Search URL** (a LinkedIn people search results address) or choose the sheet, and pick the **Account** or **Accounts** to run it with.
+  </Step>
+  <Step title="Run it">
+    The search opens with its URLs queued. Click **Run**, or select some URLs and click **Run selected**. If another search is already running, wait for it to finish and press **Run** again.
+  </Step>
+  <Step title="Export the leads">
+    The **Leads** tab lists the people found. Click **Export leads** (or select rows first) to download a spreadsheet, then import it into a campaign.
+  </Step>
+</Steps>
+
+Each account can pull a limited number of leads from searches per day, 400 by default (see [Sending rules](/workspace/sending-rules)). **Search capacity today** shows what is left. A URL that runs out of quota shows **Paused — quota** and can be run again after the daily reset. Heavy searching is one of the faster ways to have an account limited, so keep the number modest.
+
+## Create a campaign
+
+Click **Start new campaign** on the **LinkedIn campaigns** page. A wizard has four steps: **Campaign details**, **Add leads**, **Build sequence** and **Review & launch**. The campaign stays paused until you launch it.
+
+<Steps>
+  <Step title="Campaign details">
+    Enter a **Campaign name**, an optional **Description**, and choose the **Campaign type**:
+
+    - **Regular**: visible in [Messages](/linkedin/messages) and shared with the AI CRM.
+    - **Personal**: kept out of the shared Messages workspace, and its replies are never sent to the CRM.
+
+    Then tick the **LinkedIn senders** that may send for this campaign. A campaign with no senders chosen is open to any connected account, but you need at least one sender selected to launch from the wizard.
+  </Step>
+  <Step title="Add leads">
+    Choose **Import CSV or Excel** (you map every important column before anything is imported) or **Add from People** (people already in your database who have a LinkedIn profile). You can continue with no leads and add them later.
+  </Step>
+  <Step title="Build the sequence">
+    Write the messages. Details below.
+  </Step>
+  <Step title="Review and launch">
+    Check the lead and sender counts and which sequence steps are ready or skipped. Click **Launch campaign**, or **Save paused**. Launch is disabled until there is at least one lead and one sender.
+  </Step>
+</Steps>
+
+From the campaign list, the **...** menu has **Edit campaign**, **Pause campaign** or **Resume campaign**, and **Delete campaign**. Inside a campaign, **Pause** and **Resume** are at the top, and the tabs are **Overview**, **Leads** and **Sequence**. On the **Leads** tab, **Import**, **Add from People** and **Template** (a downloadable import file) let you add more leads at any time.
+
+## The sequence
+
+A sequence has up to five messages. All are optional.
+
+| Step | When it sends | Notes |
+| --- | --- | --- |
+| **Connection request** | As soon as the lead is picked | Leave it blank to send the request without a note. Up to 300 characters. |
+| **Acceptance message** | When the lead accepts | Sent as soon as the acceptance is detected. |
+| **Follow-up 1** | 1 day after the acceptance message | |
+| **Follow-up 2** | 2 days after follow-up 1 | |
+| **Follow-up 3** | 3 days after follow-up 2 | The sequence then completes. |
+
+These delays are fixed. A follow-up with no message ends the sequence for that lead and marks it **Completed**.
+
+<Warning>
+The connection request note is limited to 300 characters. A lead whose request, after merge fields are filled in, is longer than 300 is marked **Failed** and is not sent. The preview warns when a rendered invitation is too long, so preview a lead with a long name or company.
+</Warning>
+
+### Merge fields and preview
+
+Click a field in the editor to insert it. Fields look like `{{firstName}}` and come from your People data and imported columns, for example `{{firstName}}`, `{{lastName}}` and `{{company}}`. A field with no value is replaced with an empty string. Click **Preview** on a step to render it for a real lead using the same path as the live sender.
+
+## How sending works
+
+A scheduled job (every 30 minutes) runs the engine for every connected account. Each pass, for an account that is allowed to run, does this in order:
+
+1. **Looks up profiles.** Leads imported from a search or sheet are matched to their LinkedIn profile first, a few at a time.
+2. **Sends connection requests.** A small batch, within the account's daily limit.
+3. **Sends messages.** Acceptance messages and due follow-ups, a few at a time.
+4. **Rests.** The account waits a random time before its next pass.
+
+The defaults, all editable in [Sending rules](/workspace/sending-rules):
+
+| What | Default |
+| --- | --- |
+| Invitations per day, Premium or Sales Navigator | 30 |
+| Invitations per day, free account | 5 |
+| Invitations per run | 3 to 4 |
+| Delay between invitations | 30 to 60 seconds |
+| Rest between runs | 30 to 60 minutes |
+| Follow-up messages per run | 3 to 6 |
+| Profile lookups per run | 4 to 8 |
+
+An individual account can override its daily limit and its working hours in [LinkedIn accounts](/linkedin/accounts). The engine does nothing for an account outside its working hours. Within a pass, older campaigns go first, and within a campaign older leads go first. A person already contacted by an account is not invited again by it.
+
+A request or message is claimed in the database before it is sent, so a lead is never invited or messaged twice by the same step. Leads marked Do Not Contact anywhere in your workspace are skipped, and this is checked again right before sending.
+
+<Note>
+Paused campaigns send nothing. Resuming picks up where they left off.
+</Note>
+
+### When LinkedIn pushes back
+
+If LinkedIn or Unipile refuses an invitation with an error about a limit, quota or the weekly allowance, AgentSDR stops that account for the day. The account's status becomes **Limit reached**, the lead goes back to **Pending** so another account or the next day can send it, and the daily reset clears the flag so the account resumes on its own. You do not need to do anything, though if it happens often, lower the daily limit.
+
+## Lead statuses and retries
+
+The **Leads** tab filters by status:
+
+| Status | Meaning |
+| --- | --- |
+| **Pending** | Waiting for a profile lookup or a connection request. |
+| **Request Sent** | The connection request went out. |
+| **Accepted** | The lead accepted and the acceptance message was handled. |
+| **Follow-up 1**, **2**, **3** | That follow-up has been sent. |
+| **Completed** | The sequence ended with no reply. |
+| **Replied** | The lead wrote back. All automated messages stop. |
+| **Failed** | Could not be processed. |
+
+Retries are limited so a bad lead cannot stall a campaign.
+
+- **Profile lookups** are retried up to 3 times, with waits that grow between attempts (an hour, then two). After that the lead is **Failed**, which usually means a deleted, renamed or locked profile.
+- **Follow-up messages** that fail to send are retried up to 3 times, then the lead is **Failed**. The lead details panel shows **Retries** as, for example, 1 of 3.
+- **Connection requests** are different. If the send fails for a reason other than a limit, the lead stays marked as sent and is not retried automatically, because LinkedIn may already have accepted the request and a retry could send a duplicate. Open the lead to check what happened.
+
+Select a lead to see and edit its messages. Messages that have not been sent yet can still be changed for that one lead.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="LinkedIn accounts" icon="linkedin" href="/linkedin/accounts">
+    Connect accounts, set limits and hours.
+  </Card>
+  <Card title="LinkedIn messages" icon="message-circle" href="/linkedin/messages">
+    Read and answer replies.
+  </Card>
+  <Card title="Sending rules" icon="settings" href="/workspace/sending-rules">
+    Change the defaults.
+  </Card>
+  <Card title="Import leads" icon="users" href="/leads/import">
+    File formats and column mapping.
+  </Card>
+</CardGroup>

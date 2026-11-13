@@ -1,0 +1,402 @@
+"""
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import json
+import os
+import time
+import asyncio
+import traceback
+import re
+from urllib.parse import urlparse
+from typing import Iterable, List, Optional, Set
+from functools import lru_cache
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.types import Message, Send
+
+from app.core.config import settings
+from app.core.logger import get_logger
+from app.utils.domain_check import site_host
+
+logger = get_logger(__name__)
+
+# Base CORS origins that are always allowed
+BASE_CORS_ORIGINS: list = settings.CORS_ORIGINS
+
+_CREDENTIALS_HEADER = "access-control-allow-credentials"
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def origin_of(url: Optional[str]) -> Optional[str]:
+    """The origin of a URL the way a browser sends it: lowercase, no path and
+    no default port, so https://App.example.com:443/ is https://app.example.com."""
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in _DEFAULT_PORTS or not parsed.hostname:
+        return None
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    netloc = parsed.hostname if port in (None, _DEFAULT_PORTS[parsed.scheme]) else f"{parsed.hostname}:{port}"
+    return f"{parsed.scheme}://{netloc}".lower()
+
+
+@lru_cache(maxsize=1)
+def first_party_origins() -> Set[str]:
+    """Origins that may use the dashboard's sign-in cookies: the dashboard
+    (FRONTEND_URL) and what the operator listed in CORS_ORIGINS.
+
+    Never an org's domain or a help centre. An org domain is whatever someone
+    typed at signup, unverified, so trusting it with credentials would let a
+    page on any signed-up domain read a signed-in user's account. Nor the
+    widget frame's host (WIDGET_FRAME_URL), even if listed: it is kept
+    cookieless so the widget can never act as a signed-in user. Read from
+    settings once: every /agent socket connect asks.
+    """
+    dashboard = origin_of(settings.FRONTEND_URL)
+    if not dashboard:
+        logger.error(f"FRONTEND_URL {settings.FRONTEND_URL!r} is not an http(s) URL; the dashboard can't sign in cross-origin")
+    origins = {dashboard, *(origin_of(url) for url in BASE_CORS_ORIGINS)}
+    return {o for o in origins if o} - {origin_of(settings.WIDGET_FRAME_URL)}
+
+
+def is_first_party_origin(origin: Optional[str]) -> bool:
+    return origin_of(origin) in first_party_origins()
+
+
+def with_configured_origins(origins: Iterable[str]) -> List[str]:
+    """The given origins plus the operator's own and the API's, sorted. A
+    cached list from Redis was built from an earlier config, and must never drop
+    the dashboard. The API's own origin is where the widget's iframe snippet and
+    path-mode help centres run, and their sockets send it as Origin."""
+    own = {origin_of(settings.BACKEND_URL)} - {None}
+    return sorted(set(origins) | set(BASE_CORS_ORIGINS) | first_party_origins() | own)
+
+
+class FirstPartyCredentialsCORSMiddleware(CORSMiddleware):
+    """CORS for every allowed origin, credentials only for first-party ones.
+
+    Org domains and help centres still call the API cross-origin (older
+    widget loaders fetch /data from customers' sites), but without cookies:
+    Access-Control-Allow-Credentials is only sent to `credentialed_origins`,
+    so a browser never lets another site read a cookie-authenticated response.
+    """
+
+    def __init__(self, app, credentialed_origins: Iterable[str] = (), **kwargs) -> None:
+        kwargs["allow_credentials"] = True
+        super().__init__(app, **kwargs)
+        self.credentialed_origins = frozenset(filter(None, map(origin_of, credentialed_origins)))
+
+    def _credentialed(self, origin: str) -> bool:
+        return origin_of(origin) in self.credentialed_origins
+
+    def preflight_response(self, request_headers: Headers):
+        response = super().preflight_response(request_headers)
+        if not self._credentialed(request_headers["origin"]) and _CREDENTIALS_HEADER in response.headers:
+            del response.headers[_CREDENTIALS_HEADER]
+        return response
+
+    async def send(self, message: Message, send: Send, request_headers: Headers) -> None:
+        if self._credentialed(request_headers["Origin"]):
+            await super().send(message, send, request_headers)
+            return
+
+        async def without_credentials(outgoing: Message) -> None:
+            if outgoing["type"] == "http.response.start":
+                headers = MutableHeaders(scope=outgoing)
+                if _CREDENTIALS_HEADER in headers:
+                    del headers[_CREDENTIALS_HEADER]
+            await send(outgoing)
+
+        await super().send(message, without_credentials, request_headers)
+
+
+@lru_cache(maxsize=1)
+def get_cors_origins() -> Set[str]:
+    """
+    Get all allowed CORS origins including organization domains.
+    This function is cached to improve performance.
+    """
+    from app.repositories.organization import OrganizationRepository
+    from app.database import SessionLocal
+
+    # Start with base origins
+    all_origins = set(BASE_CORS_ORIGINS)
+
+    # Add organization domains
+    try:
+        db = SessionLocal()
+        org_repo = OrganizationRepository(db)
+        orgs = org_repo.get_active_organizations()
+        
+        for org in orgs:
+            # The site with and without www., over http and https. Normalised:
+            # a domain typed as "www.Acme.com" must admit https://acme.com
+            # (browsers send Origin lowercase), not www.www.Acme.com.
+            try:
+                host = site_host(org.domain or "")
+            except ValueError:
+                # One unparsable website (stored before it was validated) must
+                # not cost every other org, help center and store its origins
+                logger.warning(f"Skipping organization {org.id}: its website {org.domain!r} can't be parsed")
+                continue
+            if not host:
+                continue
+            for scheme in ("https", "http"):
+                all_origins.add(f"{scheme}://{host}")
+                all_origins.add(f"{scheme}://www.{host}")
+
+        # Help-center hosts embed the org's chat widget, which fetches
+        # /widgets/{id}/data and opens a socket from the public help-center
+        # origin — so those origins must be allowed too. The base-domain
+        # wildcard is also covered by get_cors_origin_regex() for FastAPI, but
+        # python-socketio can't match a regex, so enumerate the live slugs here.
+        from app.repositories.help_center import HelpCenterRepository
+        hc_repo = HelpCenterRepository(db)
+        base = settings.HELP_CENTER_BASE_DOMAIN
+        # In local dev the help center is reached on a non-standard port (e.g.
+        # :8000), which the browser puts in the Origin header. socket.io matches
+        # origins exactly (no regex), so add that port variant when configured.
+        dev_port = urlparse(settings.BACKEND_URL).port
+        for slug in hc_repo.list_enabled_slugs():
+            for scheme in ("https", "http"):
+                all_origins.add(f"{scheme}://{slug}.{base}")
+                if dev_port:
+                    all_origins.add(f"{scheme}://{slug}.{base}:{dev_port}")
+        for domain in hc_repo.list_verified_domains():
+            all_origins.add(f"https://{domain}")
+            all_origins.add(f"http://{domain}")
+
+        # A linked store's myshopify storefront runs its organization's widget,
+        # whatever that organization's own website is
+        from app.repositories.shopify_shop_repository import ShopifyShopRepository
+        for domain in ShopifyShopRepository(db).list_linked_domains():
+            all_origins.add(f"https://{domain}")
+    except Exception as e:
+        logger.error(f"Error fetching organization domains: {e}")
+    finally:
+        if 'db' in locals():
+            db.close()
+
+    return all_origins
+
+
+@lru_cache(maxsize=1)
+def get_cors_origin_regex() -> str:
+    """Regex allowing every help-center subdomain (`*.{base_domain}`) for the
+    FastAPI CORS middleware, so a new slug works without a cache refresh.
+    Socket.IO can't use this (no regex support) — it relies on the enumerated
+    origins in get_cors_origins()."""
+    base = re.escape(settings.HELP_CENTER_BASE_DOMAIN)
+    return rf"^https?://([a-z0-9-]+\.)?{base}(:\d+)?$"
+
+def refresh_cors_origins() -> None:
+    """
+    Clear the CORS origins cache to force a refresh
+    """
+    get_cors_origins.cache_clear()
+
+def update_local_cors(app: FastAPI, new_origins: List[str]) -> bool:
+    """
+    Update local CORS middleware with new origins
+    
+    Args:
+        app: FastAPI application instance
+        new_origins: List of CORS origins to set
+        
+    Returns:
+        bool: True if CORS middleware was found and updated, False otherwise
+    """
+    middleware_found = False
+    new_origins = with_configured_origins(new_origins)
+
+    # Update the registered CORS middleware in place. `user_middleware` holds
+    # the class plus its kwargs, so match on the class itself; adding another
+    # layer instead would leave the old ones answering for removed origins.
+    for middleware in getattr(app, 'user_middleware', []):
+        if isinstance(middleware.cls, type) and issubclass(middleware.cls, CORSMiddleware):
+            # The publishing worker also hears its own Redis broadcast, and
+            # startup re-applies the cached list; skip the rebuild when nothing changed
+            if set(middleware.kwargs.get('allow_origins') or ()) != set(new_origins):
+                middleware.kwargs['allow_origins'] = new_origins
+                # Starlette rebuilds the stack from user_middleware on the next request
+                app.middleware_stack = None
+                logger.info(f"Updated FastAPI CORS origins: {new_origins}")
+            middleware_found = True
+            break
+
+    # No CORS middleware registered yet: add one
+    if not middleware_found:
+        logger.warning("Could not find CORS middleware in app.user_middleware, applying global update")
+        try:
+            # Force FastAPI to rebuild the middleware stack
+            app.middleware_stack = None
+            # Re-add the middleware with updated origins. Keep the help-center
+            # subdomain regex here too, or a rebuild would silently drop the
+            # *.{base_domain} wildcard that the embedded widget relies on.
+            app.add_middleware(
+                FirstPartyCredentialsCORSMiddleware,
+                credentialed_origins=first_party_origins(),
+                allow_origins=new_origins,
+                allow_origin_regex=get_cors_origin_regex(),
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+            logger.info(f"Added new CORS middleware with origins: {new_origins}")
+            middleware_found = True
+        except Exception as e:
+            logger.error(f"Failed to rebuild middleware stack: {str(e)}")
+    
+    # Update Socket.IO CORS settings
+    try:
+        from app.core.socketio import sio, socket_origins
+        socket_origins.update(new_origins)
+        sio.eio.cors_allowed_origins = socket_origins
+        logger.info(f"Updated Socket.IO CORS origins: {new_origins}")
+    except Exception as e:
+        logger.error(f"Failed to update Socket.IO CORS origins: {str(e)}")
+    
+    return middleware_found
+
+def update_cors_middleware(app: FastAPI) -> None:
+    """
+    Update the CORS middleware with new origins and notify all workers
+    """
+    logger.info("Refreshing CORS origins")
+    
+    # Get fresh CORS origins
+    refresh_cors_origins()
+    new_origins = list(get_cors_origins())
+    
+    # Update local instance
+    update_local_cors(app, new_origins)
+    
+    # Store updated origins in Redis with timestamp for other workers
+    try:
+        from app.core.redis import get_redis
+        redis_client = get_redis()
+        
+        if redis_client:
+            # Store CORS origins with timestamp in Redis
+            redis_client.set(
+                "cors:origins", 
+                json.dumps({"origins": new_origins, "updated_at": time.time()})
+            )
+            
+            # Publish event to notify other workers
+            redis_client.publish("cors:update", "refresh")
+            logger.info("Published CORS update to other workers via Redis")
+        else:
+            logger.warning("Redis not available, CORS update will only apply to this worker")
+    except Exception as e:
+        logger.error(f"Failed to publish CORS update to Redis: {str(e)}")
+
+async def listen_for_cors_updates(app: FastAPI):
+    """
+    Listen for CORS update notifications from Redis using an efficient pattern
+    """
+    from app.core.redis import get_redis
+    redis_client = get_redis()
+
+    if not redis_client:
+        logger.warning("Redis not available, skipping CORS update listener")
+        return
+
+    pubsub = None
+    try:
+        # Use ignore_subscribe_messages to reduce noise
+        pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+        pubsub.subscribe("cors:update")
+        logger.info("Started CORS update listener")
+
+        # Apply any existing CORS config on startup
+        try:
+            cached = redis_client.get("cors:origins")
+            if cached:
+                cached_data = json.loads(cached)
+                if isinstance(cached_data, dict) and "origins" in cached_data:
+                    update_local_cors(app, cached_data["origins"])
+        except Exception:
+            # Best-effort; continue
+            pass
+
+        # Non-blocking loop using get_message without blocking the event loop
+        while True:
+            try:
+                # timeout=0.0 ensures this call is non-blocking in redis-py
+                message = pubsub.get_message(timeout=0.0)
+                if message:
+                    try:
+                        origins_data = redis_client.get("cors:origins")
+                        if origins_data:
+                            origins_data = json.loads(origins_data)
+                            if origins_data and "origins" in origins_data:
+                                logger.info("Received CORS update notification")
+                                update_local_cors(app, origins_data["origins"])
+                    except Exception as inner_e:
+                        logger.error(f"Error processing CORS update: {str(inner_e)}")
+                # Yield control to the event loop and poll at a light cadence
+                await asyncio.sleep(0.5)
+            except Exception as loop_e:
+                # TimeoutError or transient connection issues: log at warning and continue
+                logger.warning(f"CORS listener transient error: {str(loop_e)}")
+                await asyncio.sleep(1.0)
+
+    except Exception as e:
+        traceback.print_exc()
+        logger.error(f"Error in CORS update listener: {str(e)}")
+    finally:
+        # Try to clean up subscription
+        try:
+            if pubsub is not None:
+                pubsub.unsubscribe("cors:update")
+                pubsub.close()
+        except Exception:
+            pass
+
+def start_cors_listener(app: FastAPI):
+    """
+    Start background task to listen for CORS updates
+    """
+    try:
+        # Check if Redis is available before starting listener
+        from app.core.redis import get_redis
+        redis_client = get_redis()
+        
+        if redis_client:
+            # Create background task with proper error handling
+            background_task = asyncio.create_task(listen_for_cors_updates(app))
+            
+            # Add exception handler to restart if it fails
+            def handle_exception(task):
+                if not task.cancelled() and task.exception():
+                    logger.error(f"CORS listener crashed: {task.exception()}")
+                    # Wait a moment before restarting
+                    asyncio.create_task(restart_listener(app))
+                    
+            async def restart_listener(app):
+                await asyncio.sleep(5)  # Wait before restarting
+                logger.info("Restarting CORS listener")
+                new_task = asyncio.create_task(listen_for_cors_updates(app))
+                new_task.add_done_callback(handle_exception)
+                
+            background_task.add_done_callback(handle_exception)
+            logger.info("Started CORS update listener task")
+        else:
+            logger.warning("Redis not available, CORS synchronization between workers disabled")
+    except Exception as e:
+        logger.error(f"Failed to start CORS listener: {str(e)}") 

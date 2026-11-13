@@ -1,0 +1,121 @@
+{
+  "loading": {
+    "label": "Cargando…"
+  },
+  "active": {
+    "title": "Demo para {{businessName}}",
+    "startHint": "Toque el botón para iniciar una llamada de voz en vivo.",
+    "promptsTitle": "Pruebe a preguntar:",
+    "intakeNotice": "Esta es una demo. Las llamadas funcionan, pero las reservas y otras funciones están desactivadas.",
+    "claimCta": "Quedarme con este agente"
+  },
+  "states": {
+    "invalid": {
+      "title": "Este enlace de demo no es válido",
+      "description": "Revise el enlace o pida uno nuevo."
+    },
+    "preparing": {
+      "title": "Estamos preparando su demo",
+      "titleWithBusiness": "Estamos preparando la demo para {{businessName}}",
+      "description": "Todavía estamos leyendo el sitio web. Vuelva en unos minutos."
+    },
+    "expired": {
+      "title": "Esta demo ha caducado",
+      "titleWithBusiness": "La demo para {{businessName}} ha caducado",
+      "description": "Los enlaces de demo caducan. Pida uno nuevo."
+    },
+    "revoked": {
+      "title": "Esta demo ya no está disponible",
+      "titleWithBusiness": "La demo para {{businessName}} ya no está disponible",
+      "description": "Este enlace de demo se desactivó."
+    },
+    "claimed": {
+      "title": "Esta demo ya se ha reclamado",
+      "titleWithBusiness": "La demo para {{businessName}} ya se ha reclamado",
+      "description": "Alguien ya reclamó este agente."
+    }
+  },
+  "claim": {
+    "loadingTitle": "Preparando su espacio de trabajo",
+    "loadingDescription": "Reclamando su agente…",
+    "errorTitle": "No pudimos reclamar esta demo",
+    "errorDescription": "Algo salió mal. Inténtelo de nuevo.",
+    "unavailableTitle": "Este enlace de demo no está disponible",
+    "unavailableDescription": "Falta el enlace o ya no funciona.",
+    "retry": "Reintentar"
+  },
+  "operator": {
+    "title": "Demos para clientes potenciales",
+    "description": "Prepare espacios de trabajo de recepcionista aislados y temporales antes de compartirlos con un cliente potencial.",
+    "count_one": "{{count}} demo",
+    "count_many": "{{count}} demos",
+    "count_other": "{{count}} demos",
+    "refresh": "Actualizar",
+    "loading": "Cargando demos…",
+    "empty": "Aún no hay demos para clientes potenciales.",
+    "rotate": "Renovar enlace",
+    "publish": "Publicar",
+    "revoke": "Revocar",
+    "openLink": "Abrir enlace seguro",
+    "tokenHint": "Renueve el enlace para verlo y luego compártalo. No guardamos los enlaces.",
+    "prepare": "Preparar una demo",
+    "prepareDescription": "El espacio de trabajo es privado mientras se indexa su sitio web público.",
+    "businessName": "Nombre del negocio",
+    "websiteUrl": "URL del sitio web",
+    "greeting": "Saludo",
+    "suggestedPrompts": "Preguntas sugeridas",
+    "create": "Crear demo",
+    "ingestion": "Importación:",
+    "snapshot": "Instantánea:",
+    "prompts": "Preguntas:",
+    "promptsPlaceholder": "¿Qué servicios ofrecen?\n¿Puedo pedir un presupuesto?",
+    "statuses": {
+      "pending": "pendiente",
+      "ready": "lista",
+      "missing": "falta",
+      "queued": "en cola",
+      "crawling": "rastreando",
+      "indexing": "indexando",
+      "completed": "completada",
+      "failed": "fallida",
+      "cancelled": "cancelada",
+      "preparing": "en preparación",
+      "active": "activa",
+      "claimed": "reclamada",
+      "revoked": "revocada",
+      "expired": "caducada",
+      "unavailable": "no configurada"
+    },
+    "errors": {
+      "load": "No pudimos cargar sus demos. Actualice para intentarlo de nuevo.",
+      "create": "No pudimos crear la demo. Sus datos siguen aquí, así que inténtelo de nuevo.",
+      "rotate": "No pudimos renovar el enlace. Inténtelo de nuevo.",
+      "publish": "No pudimos publicar la demo. Inténtelo de nuevo.",
+      "revoke": "No pudimos revocar la demo. Inténtelo de nuevo.",
+      "promptsRequired": "Añada al menos dos preguntas, una por línea.",
+      "notReady": "La demo aún no está lista. Espere a que leamos el sitio web y vuelva a intentarlo."
+    },
+    "partner": {
+      "prepareDescription": "Leemos el sitio web del prospecto para crear la demo. Publíquela cuando esté lista.",
+      "empty": "Introduzca el sitio web de un prospecto para crear una.",
+      "accessLabel": "Acceso cuando el cliente potencial la reclame",
+      "usage": "Minutos este mes: {{minutes}} · Chats este mes: {{chats}}",
+      "open": "Abrir",
+      "delete": "Eliminar",
+      "deleteTitle": "¿Eliminar la demo de {{name}}?",
+      "deleteDescription": "Esto borra la demo con sus llamadas y chats. No podrá deshacerlo.",
+      "deleteConfirm": "Eliminar demo",
+      "cancel": "Cancelar",
+      "errors": {
+        "domainRequired": "Sus demos necesitan una dirección de panel. Conecte un dominio en Marca y dominio.",
+        "rateLimited": "Demasiadas demos nuevas en la última hora. Inténtelo de nuevo más tarde.",
+        "open": "No pudimos abrir la demo. Inténtelo de nuevo.",
+        "delete": "No pudimos eliminar la demo. Inténtelo de nuevo."
+      },
+      "emptyTitle": "Aún no hay demos"
+    },
+    "promptsHint": "Añada al menos dos, una por línea.",
+    "ingestionUnavailable": "Este panel no puede leer sitios web, así que la demo responde con su saludo y las preguntas sugeridas.",
+    "ingestionFailed": "No pudimos leer el sitio web. Cree una nueva demo para volver a intentarlo."
+  }
+}

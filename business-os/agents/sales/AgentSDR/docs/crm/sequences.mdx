@@ -1,0 +1,95 @@
+---
+title: "CRM sequences"
+description: "Build reusable reply and follow-up flows that start when a lead answers, wait between steps and stop when the lead replies again."
+icon: "list-checks"
+---
+
+A CRM sequence is a flow that runs after a lead has replied: a first reply, then timed follow-ups if the conversation goes quiet. You write a goal for each step, the AI drafts the message from the conversation, and you approve every message. Nothing sends on its own. Find them under **CRM → Sequences** in the sidebar.
+
+## How they differ from campaigns
+
+| | Outreach campaigns | CRM sequences |
+| --- | --- | --- |
+| Starts when | You launch a campaign for a list | A lead replies and is classified |
+| Written by | You, as a template with merge fields | The AI, from your goal for the step and the conversation |
+| Sent | Automatically, on schedule | Only after you approve each draft |
+| Stops when | The lead replies, or the steps end | The lead replies again, you act by hand, or the steps end |
+
+See [Email campaigns](/email/campaigns), [LinkedIn campaigns](/linkedin/campaigns) and [Message campaigns](/whatsapp/campaigns) for the cold outreach side.
+
+## Build a sequence
+
+<Steps>
+  <Step title="Create it">
+    On **CRM → Sequences**, click **Create sequence**. Enter a **Sequence name**, for example "Demo requested", and optionally a description of when it should be used. You land on the editor.
+
+    <Frame caption="The New sequence dialog. Add the basics here and the steps on the next screen.">
+      <img src="/assets/screenshots/app/crm-sequence-editor.png" alt="The New sequence dialog over the Sequences page, asking for a sequence name and an optional description" />
+    </Frame>
+  </Step>
+  <Step title="Set the first step">
+    The first step is always the **Immediate reply**. It is drafted as soon as the lead's reply is classified, and its delay cannot be changed.
+  </Step>
+  <Step title="Add follow-ups">
+    Add follow-ups. For each one, set **Wait after previous message** in **Minutes**, **Hours** or **Days**. The wait must be a whole number of at least 1. A sequence can have up to 30 steps in total.
+  </Step>
+  <Step title="Write a message goal for each step">
+    A **Message goal** tells the AI what the message should do. For example: "Answer their question clearly and suggest a suitable next step." Every step needs one. The AI writes the wording from the conversation, your [instructions and knowledge](/crm/knowledge) and this goal.
+  </Step>
+  <Step title="Save and publish">
+    **Save draft** keeps your edits. **Publish** makes them live. Only a published version runs. Editing a sequence changes its draft until you publish again, and a published version is not altered while it runs.
+  </Step>
+</Steps>
+
+The editor shows a timeline on the side with the total span of the sequence. **Duplicate**, in the actions menu, copies a sequence. An archived sequence cannot be published or assigned: duplicate it, or delete it from the library.
+
+The library lists each sequence with its **Steps**, what it is **Used for** and its status: **Draft**, **Published** or **Archived**. Three numbers sit above it: **Published**, **In use** and **Not assigned**.
+
+## Attach it to a category
+
+A sequence does nothing until a subcategory points at it. Go to **Settings → CRM & leads → Lead categories** and pick the sequence in the **Sequence** column of a subcategory. Each subcategory has at most one. When a reply is classified into that subcategory and the sequence is active and published, the run starts.
+
+Subcategories with **No sequence** still get a draft. The AI writes one from the conversation alone, so no reply is left without something to review. See [Instructions and knowledge](/crm/knowledge).
+
+A sequence is not tied to one channel. The channel the lead's conversation is on decides where the message goes.
+
+## How a run behaves
+
+1. The lead replies and is classified.
+2. The **Immediate reply** draft appears in [Action required](/crm/action-required). The record is waiting for you.
+3. You send it. The record moves to **Waiting**, and the next step is scheduled after its wait.
+4. When that time arrives, the AI drafts the follow-up. It appears in Action required as **Follow-up due**.
+5. You send it, and the next one is scheduled, until the last step. Then the run is complete and the record is **Idle**.
+
+Because every message is a draft, a follow-up that is not wanted is one click to discard.
+
+### What stops it
+
+- **The lead replies again.** A new reply cancels the pending follow-ups and any unsent drafts, because the conversation has changed. The reply is classified and a new run can start.
+- **You answer by hand.** A reply you write yourself takes over the current step, so the run continues. If the record has no pending step, sending by hand ends the run.
+- **Do Not Contact.** Marking a person Do Not Contact interrupts their runs.
+
+### Control a single lead
+
+On a record, **Manage record** has **Pause sequence** and **Resume sequence**, **Snooze a day** and **Close record**. **Skip step** marks the current step done without sending it, and the next step then waits its usual delay.
+
+<Tip>
+Start with two or three steps. Follow-ups a week apart usually read better than daily ones, and you can always add a step later and publish again.
+</Tip>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Action required" icon="inbox" href="/crm/action-required">
+    Where each draft waits for you.
+  </Card>
+  <Card title="Instructions and knowledge" icon="book-open" href="/crm/knowledge">
+    Shape the wording and attach subcategories.
+  </Card>
+  <Card title="Pipeline" icon="kanban" href="/crm/pipeline">
+    See leads waiting on a follow-up.
+  </Card>
+  <Card title="Email campaigns" icon="mail" href="/email/campaigns">
+    Cold outreach, sent on a schedule.
+  </Card>
+</CardGroup>

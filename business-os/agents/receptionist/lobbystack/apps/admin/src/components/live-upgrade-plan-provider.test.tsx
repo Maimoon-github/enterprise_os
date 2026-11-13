@@ -1,0 +1,250 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { LiveUpgradePlanProvider } from "./live-upgrade-plan-provider";
+import { useOpenUpgradePlanDialog } from "./upgrade-plan-dialog-context";
+import { isUpgradeInProgress } from "@/lib/upgrade-in-progress";
+
+const alerts = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: alerts }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en" } }) }));
+const clients: QueryClient[] = [];
+afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+function OpenButton() { const open = useOpenUpgradePlanDialog(); return <button onClick={open}>Open plans</button>; }
+
+describe("restarting a plan that lapsed", () => {
+  async function openPlansFor(subscriptionState: string | null) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    client.setQueryData(["billing", "business"], { account: { plan: "starter", subscriptionState }, availableCheckoutPlans: ["starter", "pro"], availableCheckoutIntervals: { starter: ["annual", "monthly"], pro: ["annual", "monthly"] } });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "Checkout unavailable" }, { status: 503 })));
+    render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+  }
+
+  it("lets a cancelled Starter buy Starter again, which is the tier that carries their number", async () => {
+    await openPlansFor("canceled");
+    const starter = screen.getByRole("button", { name: "Get Starter" });
+    expect(starter.hasAttribute("disabled")).toBe(false);
+    // Free carries the current-plan marker instead, which is where a cancelled
+    // account actually sits.
+    expect(screen.getAllByRole("button", { name: "billing.upgradeDialog.actions.currentPlan" })).toHaveLength(1);
+  });
+
+  it("still marks a live Starter as the plan they are on", async () => {
+    await openPlansFor("active");
+    expect(screen.getByRole("button", { name: "billing.upgradeDialog.actions.currentPlan" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Get Starter" })).toBeNull();
+  });
+
+  it("treats a past_due Starter as still on the plan, matching the number gate", async () => {
+    await openPlansFor("past_due");
+    expect(screen.getByRole("button", { name: "billing.upgradeDialog.actions.currentPlan" })).toBeTruthy();
+  });
+});
+
+describe("the plan the picker opens on", () => {
+  async function openPicker(fetchMock: () => Promise<Response> = async () => Response.json({ error: "Checkout unavailable" }, { status: 503 })) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    client.setQueryData(["billing", "business"], { account: { plan: "free_cloud" }, availableCheckoutPlans: ["starter", "pro"], availableCheckoutIntervals: { starter: ["annual"], pro: ["annual"] } });
+    vi.stubGlobal("fetch", vi.fn(fetchMock));
+    render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+  }
+  const selectedPlans = () => screen.getAllByRole("heading", { level: 3 }).filter(heading => heading.closest("section")?.hasAttribute("data-selected")).map(heading => heading.textContent);
+  afterEach(() => { localStorage.clear(); });
+
+  it("opens on Starter when the pricing page sent no plan", async () => {
+    await openPicker();
+    expect(selectedPlans()).toEqual(["Starter"]);
+  });
+
+  it("opens on the plan picked on the pricing page", async () => {
+    localStorage.setItem("lobbystack.pricing.plan", "pro");
+    await openPicker();
+    expect(selectedPlans()).toEqual(["Pro"]);
+  });
+
+  it.each([
+    ["checkout_in_progress", "billing.checkoutErrors.inProgress"],
+    ["subscription_active", "billing.checkoutErrors.subscriptionActive"],
+  ])("explains a checkout refused with %s", async (code, message) => {
+    await openPicker(async () => Response.json({ error: "Refused", code }, { status: 409 }));
+    await userEvent.click(screen.getByRole("button", { name: "Get Starter" }));
+    await waitFor(() => expect(alerts.error).toHaveBeenCalledWith(message));
+  });
+});
+
+describe("checkout workspace isolation", () => {
+  it.each(["starter", "pro"])("switches displayed prices and submits %s with the selected monthly interval", async target => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    client.setQueryData(["billing", "business"], { account: { plan: "free_cloud" }, availableCheckoutPlans: ["starter", "pro"], availableCheckoutIntervals: { starter: ["annual", "monthly"], pro: ["annual", "monthly"] } });
+    const fetchMock = vi.fn(async () => Response.json({ error: "Checkout unavailable" }, { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    expect(screen.getByText("$24")).toBeTruthy();
+    expect(screen.getByText("$80")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "billing.upgradeDialog.billingIntervals.monthly" }));
+    expect(screen.getByText("$30")).toBeTruthy();
+    expect(screen.getByText("$100")).toBeTruthy();
+    expect(screen.queryByText("$24")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: target === "starter" ? "Get Starter" : "Get Pro" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/billing/checkout", expect.objectContaining({ body: JSON.stringify({ businessId: "business", target, billingInterval: "monthly" }) })));
+    await waitFor(() => expect(alerts.error).toHaveBeenCalledWith("billing.toast.checkoutFailed"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+  it.each(["success", "failure"])("ignores late checkout %s after changing workspaces", async outcome => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    const workspaces = (active: string) => ({ businesses: ["a", "b"].map(businessId => ({ businessId, active: businessId === active, role: "business_owner" })) });
+    client.setQueryData(["businesses"], workspaces("a"));
+    for (const businessId of ["a", "b"]) client.setQueryData(["billing", businessId], { account: { plan: "free_cloud" }, availableCheckoutPlans: ["starter", "pro"], availableCheckoutIntervals: { starter: ["annual"], pro: ["annual"] } });
+    let resolve!: (response: Response) => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<Response>((accept, fail) => { resolve = accept; reject = fail; });
+    const fetchMock = vi.fn(() => pending);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    await userEvent.click(screen.getByRole("button", { name: "Get Pro" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request[1].body))).toMatchObject({ businessId: "a", target: "pro", billingInterval: "annual" });
+    await act(async () => client.setQueryData(["businesses"], workspaces("b")));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    await act(async () => { if (outcome === "success") resolve(Response.json({ requestId: "old-request" })); else reject(new Error("Old workspace checkout failed")); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Get Pro" }).hasAttribute("disabled")).toBe(false));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(alerts.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("telling the dashboard an upgrade is under way", () => {
+  async function renderPlans(fetchMock: (url: string, init?: RequestInit) => Promise<Response>) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    client.setQueryData(["billing", "business"], { account: { plan: "free_cloud" }, availableCheckoutPlans: ["starter", "pro"], availableCheckoutIntervals: { starter: ["annual"], pro: ["annual"] } });
+    vi.stubGlobal("fetch", vi.fn(fetchMock));
+    const view = render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    expect(isUpgradeInProgress()).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    return view;
+  }
+
+  it("holds from opening the picker until the redirect, even if the picker closes mid-checkout", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    let status = "pending";
+    await renderPlans(async (_url, init) => init?.method === "POST"
+      ? Response.json({ requestId: "request" })
+      : Response.json({ status, checkoutUrl: status === "ready" ? "https://checkout.example/session" : null, error: null }));
+    expect(isUpgradeInProgress()).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Get Pro" }));
+    await userEvent.click(screen.getByRole("button", { name: "accessibility.close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(isUpgradeInProgress()).toBe(true);
+    status = "ready";
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.example/session"), { timeout: 3_000 });
+    expect(isUpgradeInProgress()).toBe(true);
+  });
+
+  it("lets them pick again when the back button restores the page from cache", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    await renderPlans(async (_url, init) => init?.method === "POST"
+      ? Response.json({ requestId: "request" })
+      : Response.json({ status: "ready", checkoutUrl: "https://checkout.example/session", error: null }));
+    await userEvent.click(screen.getByRole("button", { name: "Get Pro" }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.example/session"), { timeout: 3_000 });
+    // The Pro button shows its loading state while the redirect is under way.
+    expect(screen.queryByRole("button", { name: "Get Pro" })).toBeNull();
+    const restored = new Event("pageshow");
+    Object.defineProperty(restored, "persisted", { value: true });
+    act(() => { window.dispatchEvent(restored); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Get Pro" })).toHaveProperty("disabled", false));
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(isUpgradeInProgress()).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "accessibility.close" }));
+    await waitFor(() => expect(isUpgradeInProgress()).toBe(false));
+  });
+
+  it("doesn't hold the survey off when billing fails and the picker never shows", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "Billing unavailable" }, { status: 503 })));
+    render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    await waitFor(() => expect(client.getQueryState(["billing", "business"])?.status).toBe("error"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(isUpgradeInProgress()).toBe(false);
+  });
+
+  it("says payments are unavailable when the checkout waited out a provider outage", async () => {
+    await renderPlans(async (_url, init) => init?.method === "POST"
+      ? Response.json({ requestId: "request" })
+      : Response.json({ status: "error", checkoutUrl: null, error: "provider_unavailable:503" }));
+    await userEvent.click(screen.getByRole("button", { name: "Get Pro" }));
+    await waitFor(() => expect(alerts.error).toHaveBeenCalledWith("billing.toast.paymentsUnavailable"));
+  });
+
+  it("stops polling after a minute, says payments are unavailable, and leaves the checkout running when closed", async () => {
+    vi.useFakeTimers();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true, role: "business_owner" }] });
+    client.setQueryData(["billing", "business"], { account: { plan: "free_cloud" }, availableCheckoutPlans: ["starter", "pro"], availableCheckoutIntervals: { starter: ["annual"], pro: ["annual"] } });
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? Response.json({ requestId: "request" })
+      : Response.json({ status: "pending", checkoutUrl: null, error: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<QueryClientProvider client={client}><LiveUpgradePlanProvider><OpenButton /></LiveUpgradePlanProvider></QueryClientProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get Pro" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.getByRole("status").textContent).toBe("billing.upgradeDialog.providerSlow");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(50_000); });
+    expect(screen.getByRole("alert").textContent).toContain("billing.toast.paymentsUnavailable");
+    expect(screen.queryByRole("status")).toBeNull();
+    const polled = fetchMock.mock.calls.length;
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock.mock.calls.length).toBe(polled);
+
+    fireEvent.click(screen.getByRole("button", { name: "billing.upgradeDialog.close" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock.mock.calls.length).toBe(polled);
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
+    expect((post[1] as RequestInit).signal).toBeUndefined();
+  });
+
+  it("lets go once a failed checkout's picker is closed, and on unmount", async () => {
+    const view = await renderPlans(async () => Response.json({ error: "Checkout unavailable" }, { status: 503 }));
+    await userEvent.click(screen.getByRole("button", { name: "Get Pro" }));
+    await waitFor(() => expect(alerts.error).toHaveBeenCalledWith("billing.toast.checkoutFailed"));
+    expect(isUpgradeInProgress()).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "accessibility.close" }));
+    await waitFor(() => expect(isUpgradeInProgress()).toBe(false));
+    await userEvent.click(screen.getByRole("button", { name: "Open plans" }));
+    expect(isUpgradeInProgress()).toBe(true);
+    view.unmount();
+    expect(isUpgradeInProgress()).toBe(false);
+  });
+});

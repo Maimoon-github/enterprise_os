@@ -1,0 +1,96 @@
+---
+title: "Pipeline"
+description: "See every open lead by where it stands, move leads between funnel stages, and learn when the AI moves a lead and when it waits for you."
+icon: "route"
+---
+
+The Pipeline shows every open lead, not just the ones due now. Action required drops a record as soon as you act on it. The Pipeline keeps it, so a lead you answered yesterday, or one whose follow-ups have all gone out, is still easy to find. Open it from **CRM → Pipeline** in the sidebar.
+
+## Two ideas: where a lead stands, and which stage it is in
+
+The page and the AI use "stage" for two different things.
+
+- **Where a lead stands** is the board's three columns. It tells you who has to act next.
+- **Funnel stage** is the lead's subcategory, such as Meeting Requested or Trial User. It tells you how far the deal has got. The AI and you set it. See below.
+
+## The board and the list
+
+The page opens as a **Board** with three columns. Switch to **List** for the same leads as a table, with the inline draft editor.
+
+<Frame caption="The Board view. Leads that need you sit in the first column.">
+  <img src="/assets/screenshots/app/crm-pipeline.png" alt="The Pipeline page in Board view with columns Needs action, Waiting on them and Follow-ups exhausted, and lead cards with classification and latest reply" />
+</Frame>
+
+| Column | Meaning |
+| --- | --- |
+| **Needs action** | A reply, draft or follow-up is due. These are the same records as [Action required](/crm/action-required). |
+| **Waiting on them** | You replied, or a follow-up is scheduled. |
+| **Follow-ups exhausted** | Every follow-up went out and the lead has not answered. Move their stage or close them. |
+
+Four numbers sit above: **Open leads** and the count in each column. In the list, switch between **All** and the three columns.
+
+By default the page hides leads in the Not interested category. The **Category** filter starts on **Potential (not "Not interested")**, which keeps unclassified and Other leads in, because nobody has ruled them out. Choose **All categories** or a single category to change it. **Channel** filters by email, LinkedIn or WhatsApp. **Reset** puts the filters back. Each column loads more cards as you scroll.
+
+Click a card to open the record page. Records live at `/crm/records/` followed by the record id, and you can also reach one from **Leads**.
+
+## The default pipeline
+
+Each organization has one **Default** pipeline. AgentSDR creates it the first time something needs it, together with its settings and a starter set of subcategories. You do not set it up. Changes you make later stay: a subcategory you delete is not recreated.
+
+The four categories are fixed: **Interested**, **Customer**, **Not interested** and **Other**. Subcategories live under them. The starter set is:
+
+| Category | Subcategories (funnel stage number in brackets) |
+| --- | --- |
+| **Interested** | Information Requested (1), Case Study (1), Demo Request (1), Meeting Requested (2), Meeting No Show (2), Meeting Done (3), Trial Requested (4), Trial User (5) |
+| **Customer** | Customer (6) |
+| **Not interested** | Do Not Contact, Not Required Right Now, Already Using a Tool — Not Required |
+| **Other** | Did Not Connect to Different POC, Connected to Different POC, Left Company, Out of Office, Other |
+
+Subcategories without a number are outcomes, not funnel stages. The starter set has no sequences attached. Add your own under [Sequences](/crm/sequences) and attach them in **Settings → CRM & leads → Lead categories**. You can add, rename and re-describe subcategories there. See [Instructions and knowledge](/crm/knowledge).
+
+## When the AI moves a lead, and when it holds
+
+The AI only moves a lead forward.
+
+- **It moves a lead on its own** when its confidence is at least the threshold (85% by default) and the new subcategory has the same or a higher funnel stage number. A lead with no stage, or sitting on a subcategory with no number, can move anywhere.
+- **It holds the change** when the lead is already on a numbered funnel stage and the proposal is a lower number or has no number, for example from Meeting Done to Out of Office. Going back a step is a judgement about the deal, not about one message. A proposal with the same number, such as Meeting Requested to Meeting No Show, is sideways and is applied.
+- **Do Not Contact is the exception.** An explicit request to stop is applied at once, the person is marked Do Not Contact and no draft is written.
+- **Customer is protected.** The AI can propose Customer, but the proposal needs your review, and a lead already a Customer is not moved out by the AI.
+- **Other is reviewed** by default, as are classifications below the confidence threshold.
+
+A held change appears as **AI suggests: ...**, with **Accept** or keep what the record already has. It shows in Action required as **Confirm classification**.
+
+## Move a lead yourself
+
+Use **Move stage** in the record header when something happened outside the conversation, for example a call or a meeting.
+
+<Steps>
+  <Step title="Pick the new stage">
+    Choose from **New stage**. You can pick a category without a subcategory too.
+  </Step>
+  <Step title="Say when and what">
+    Set **When did it happen?** and optionally **What happened?** The note is passed to the AI when it drafts.
+  </Step>
+  <Step title="Choose what comes next">
+    **Add to follow-ups** treats the new stage's first reply as already handled and schedules its follow-ups. **Draft a reply now** has the AI write the first message for that stage for you to review.
+  </Step>
+</Steps>
+
+The AI's reading of the last reply stays as it was. To correct a misread reply instead, use the classification picker on the record.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Action required" icon="inbox" href="/crm/action-required">
+    Work what needs a person now.
+  </Card>
+  <Card title="Sequences" icon="list-checks" href="/crm/sequences">
+    Follow-ups that run after a stage.
+  </Card>
+  <Card title="Instructions and knowledge" icon="book-open" href="/crm/knowledge">
+    Edit subcategories and steer the AI.
+  </Card>
+  <Card title="CRM overview" icon="sparkles" href="/crm/overview">
+    The whole flow.
+  </Card>
+</CardGroup>

@@ -1,0 +1,69 @@
+---
+title: "Quickstart"
+description: "Go from a running AgentSDR instance to your first campaign and your first reply in the queue."
+icon: "rocket"
+---
+
+This page assumes AgentSDR is already running and you can open it in a browser. If not, start with [Self-hosting](/self-hosting). You will create your organization, connect a channel and the AI provider, import leads and launch a first email campaign.
+
+<Steps>
+  <Step title="Create your account and organization">
+    On a fresh instance, the first visit opens the **Set up AgentSDR** page. Enter **Your name**, **Organization name**, **Email** and **Password**, then choose **Create admin account**. You become the organization's owner, are signed in and land on Analytics. No confirmation email is needed for this first account.
+
+    <Info>
+    By default an instance is invite-only: everyone after the first account needs an invitation from an existing organization. Invited people confirm their email address, so set up [Resend](/integrations/resend) before inviting anyone. See [Organizations and members](/workspace/organizations).
+    </Info>
+  </Step>
+  <Step title="Connect your AI provider">
+    Go to **Settings**, then **AI provider**. Connect OpenRouter with an inference key and a management key, pick the providers and models you want, choose a default model and confirm that shared capacity is never used. Until you save this, AI features such as reply classification and drafts cannot run. The full walkthrough is in [AI provider](/workspace/ai-provider).
+
+    <Frame caption="Settings, AI provider is where you connect OpenRouter.">
+      <img src="/assets/screenshots/app/ai-provider.png" alt="Settings, AI provider page with numbered sections for the OpenRouter account, providers and models, and the default model, and a Connect OpenRouter button" />
+    </Frame>
+
+  </Step>
+  <Step title="Connect a channel">
+    Each channel has its own set of tabs under **Settings**, and its service is connected on the tab for it. A feature switches on only once its service is connected.
+
+    - **Email.** On **Email**, open the **Connection** tab and connect your Google Workspace service account. Then open **Mailboxes** and choose **Add mailbox**. See [Connect email](/email/connect).
+    - **LinkedIn.** On **LinkedIn**, open **Connection** and connect Unipile, then link an account on the **Accounts** tab. See [LinkedIn accounts](/linkedin/accounts).
+    - **WhatsApp.** On **WhatsApp**, open **Integrations** and connect Unipile (and Cloudflare R2 if you will record calls), then choose **Sync from Unipile** on the **Numbers** tab. See [WhatsApp accounts](/whatsapp/accounts).
+
+    Credentials for each service are in [Integrations](/integrations).
+  </Step>
+  <Step title="Import your leads">
+    Open **Leads** and choose **Import people**. Pick an `.xlsx`, `.xls` or `.csv` file; you can start from **Download Excel template**. Columns beyond the basics become merge fields you can use in messages. See [Import leads](/leads/import).
+  </Step>
+  <Step title="Launch a first campaign">
+    Under **Outreach**, open **Email**, then **Campaigns**, and choose **Create campaign**. The wizard has four steps: **Campaign details**, **Add leads**, **Build sequence** and **Review & launch**.
+
+    <Frame caption="The four-step campaign wizard.">
+      <img src="/assets/screenshots/app/email-campaign-new.png" alt="The Create a send campaign wizard on step 1 of 4, Campaign details, asking for a campaign name" />
+    </Frame>
+
+    **Launch campaign** stays disabled until the campaign has a connected mailbox, a complete sequence and at least one lead. You can also choose **Save as draft** and come back. See [Email campaigns](/email/campaigns).
+
+    <Tip>
+    Start with a small list. New mailboxes send 30 emails a day by default, spaced by a random gap, inside weekday sending hours. See [Sending rules](/workspace/sending-rules).
+    </Tip>
+  </Step>
+  <Step title="Work the replies">
+    When someone replies, the message lands in **Action required** in the sidebar, together with the AI's classification and a draft answer. Review the draft, edit it if you want, and send it. Replies are also visible in the channel's own inbox: **Email**, **Inbox**; **LinkedIn**, **Messages**; **WhatsApp**, **Messages**.
+
+    **Analytics** then shows replies, positive replies, meetings and customers for the period. See [Action required](/crm/action-required) and [Analytics](/analytics).
+  </Step>
+</Steps>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Concepts" icon="lightbulb" href="/concepts">
+    The mental model behind organizations, leads and channels.
+  </Card>
+  <Card title="Self-hosting" icon="server" href="/self-hosting">
+    Install, configure and upgrade your instance.
+  </Card>
+  <Card title="Responsible use" icon="shield-check" href="/responsible-use">
+    Keep your accounts healthy and your outreach lawful.
+  </Card>
+</CardGroup>

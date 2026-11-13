@@ -1,0 +1,65 @@
+---
+title: "Répondre aux messages privés Instagram"
+description: "Connectez le compte Instagram de votre entreprise pour que votre agent IA réponde à ses messages privés avec les connaissances qu'il utilise au téléphone."
+sidebarTitle: "Instagram"
+contentType: "How-to"
+---
+
+Connectez Instagram, et votre agent IA répond aux messages privés que les gens envoient au compte Instagram de votre entreprise. Il utilise les connaissances, les règles, les services et les employés qu'il utilise au téléphone et dans le chat du site, et il peut réserver des rendez-vous.
+
+<Note>
+  Il vous faut un compte Instagram professionnel : un compte entreprise ou créateur. Un compte personnel ne peut pas se connecter.
+</Note>
+
+## Connecter Instagram
+
+<Steps>
+  <Step title="Ouvrir les canaux de l'agent">
+    Cliquez sur **Agents** dans la barre latérale, ouvrez l'agent qui doit répondre sur Instagram et cliquez sur **Canaux** dans son menu.
+  </Step>
+  <Step title="Lancer la connexion">
+    Sous **Instagram**, cliquez sur **Connecter Instagram**. Seuls les propriétaires et les administrateurs peuvent le connecter.
+  </Step>
+  <Step title="Autoriser Instagram">
+    Connectez-vous au compte Instagram et autorisez l'accès à son profil et à ses messages.
+  </Step>
+  <Step title="Vérifier le canal">
+    De retour dans LobbyStack, les **Canaux** de l'agent affichent le compte sous **Instagram**.
+  </Step>
+</Steps>
+
+Une entreprise LobbyStack répond pour un seul compte Instagram, et un compte Instagram appartient à une seule entreprise. Si une autre entreprise a déjà connecté le compte, LobbyStack vous indique qu'il est déjà utilisé. Un seul agent répond au compte à la fois. Pour qu'un autre agent y réponde, [transférez-le](/fr/agent/channels#transférer-un-canal-à-un-autre-agent).
+
+## Ce à quoi votre agent répond
+
+- Il répond dans la langue du dernier message de la personne.
+- Il ne répond pas à un message qui ne fait que clore la conversation, comme « ok », « merci » ou un emoji.
+- Il répond dans les 24 heures qui suivent le dernier message de la personne. Instagram ne permet pas à une entreprise de répondre après ce délai.
+- Après 15 réponses en 5 minutes, il met la conversation en pause et alerte votre équipe. Ce rythme signifie le plus souvent que l'assistant d'une autre entreprise lui répond.
+
+## Répondre vous-même
+
+Les conversations Instagram apparaissent dans la [Boîte de réception](/fr/dashboard/inbox) avec une icône Instagram, et le filtre **Instagram** n'affiche qu'elles. Quand vous répondez dans une conversation, vous la prenez en charge, et l'agent cesse d'y répondre. Cliquez sur **Réactiver l'IA** pour la lui rendre.
+
+Chaque personne qui écrit à votre compte apparaît dans **Contacts** comme utilisateur Instagram. Instagram ne communique ni son nom ni son numéro de téléphone.
+
+## Reconnecter ou déconnecter
+
+L'accès à Instagram dure 60 jours, et LobbyStack le renouvelle avant qu'il expire. Si Instagram cesse de l'accepter, les **Canaux** de l'agent indiquent qu'une reconnexion est nécessaire, et votre équipe reçoit une alerte. Cliquez sur **Reconnecter** et autorisez Instagram à nouveau.
+
+Pour ne plus répondre aux messages Instagram, cliquez sur **Déconnecter** à côté du compte dans les **Canaux** de l'agent, puis confirmez. Les conversations déjà reçues restent dans la Boîte de réception, mais vous ne pouvez plus y répondre. Il en va de même pour les conversations de l'ancien compte quand vous connectez un autre compte. Quand quelqu'un écrit de nouveau à votre compte connecté, son message ouvre une nouvelle conversation.
+
+## Auto-hébergement
+
+Le canal **Instagram** n'apparaît que si votre serveur a une application Meta. Créez-en une avec le produit Instagram et Instagram Business Login, puis définissez ces variables sur l'admin et le worker :
+
+| Variable | Valeur |
+| --- | --- |
+| `INSTAGRAM_APP_ID` | L'ID d'application Instagram de l'application Meta |
+| `INSTAGRAM_APP_SECRET` | La clé secrète d'application Instagram de l'application Meta |
+| `INSTAGRAM_REDIRECT_URI` | `APP_BASE_URL` suivi de `/api/integrations/instagram/callback`, ajouté aussi aux URI de redirection OAuth de l'application. L'admin seulement. |
+| `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` | Une chaîne aléatoire que vous saisissez aussi dans les réglages de webhook de l'application. L'admin seulement. |
+
+Dans l'application Meta, définissez l'URL de rappel du webhook sur `APP_BASE_URL` suivi de `/api/webhooks/instagram`, et abonnez-vous au champ `messages`. Avant que d'autres entreprises que la vôtre puissent se connecter, Meta doit approuver l'autorisation `instagram_business_manage_messages` de l'application par l'App Review.
+
+Les entreprises de vos partenaires connectent Instagram sur le domaine du partenaire avec la même `INSTAGRAM_REDIRECT_URI`. Instagram renvoie la personne vers `APP_BASE_URL`, qui la redirige vers le domaine du partenaire pour terminer.

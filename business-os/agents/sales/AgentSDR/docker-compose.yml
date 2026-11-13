@@ -1,0 +1,92 @@
+# AgentSDR — self-hosted with Docker Compose.
+#
+#   1. Save this file as docker-compose.yml in an empty folder.
+#   2. Replace every value marked # CHANGEME — right here in this file, or in a
+#      .env file next to it (one NAME=value per line; .env wins over the default
+#      written after ":-"). Make each secret with:  openssl rand -hex 32
+#   3. docker compose up -d
+#      (the app creates the database schema on its first start, and runs the
+#      scheduled jobs itself: two containers, `db` and `app`).
+#   4. Open APP_URL and create your admin account on the setup page.
+#
+# Guide: https://docs.agentsdr.ai/self-hosting/docker-compose
+#
+# Trying it on your own machine, it starts as-is with the placeholder secrets.
+# On any other APP_URL the app refuses to start until they are replaced.
+#
+# Back up the `db-data` volume AND keep INTEGRATION_CREDENTIALS_KEY somewhere
+# safe: it decrypts every saved integration credential, and a database restored
+# without it cannot read them.
+#
+# Third-party services (Unipile, Google Workspace, Cloudflare R2, OpenRouter, …)
+# are not configured here: you connect them inside the app, per organization.
+
+name: agentsdr
+
+x-agentsdr: &agentsdr
+  # The release this file was written for. Not `latest`: a server that pulled
+  # `latest` before would keep running that older image with this newer file.
+  # To upgrade, download the new docker-compose.yml (it names the new release).
+  image: ghcr.io/kandid-ai/agentsdr:${AGENTSDR_VERSION:-0.3.1}
+  environment:
+    # ── Where people reach AgentSDR ──────────────────────────────────────────
+    # Your public address, no trailing slash, e.g. https://sdr.example.com
+    # (put your own HTTPS reverse proxy in front of port 3000).
+    APP_URL: ${APP_URL:-http://localhost:${PORT:-3000}} # CHANGEME
+
+    # ── Secrets ──────────────────────────────────────────────────────────────
+    # Signs sessions. Changing it later signs everyone out.
+    BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-changeme-better-auth-secret-0000000000000000000000} # CHANGEME
+    # Encrypts every saved integration credential. Never change it afterwards.
+    INTEGRATION_CREDENTIALS_KEY: ${INTEGRATION_CREDENTIALS_KEY:-changeme-integration-credentials-key-000000000000} # CHANGEME
+    # Signs one-click unsubscribe links in outreach email.
+    UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:-changeme-unsubscribe-secret-00000000000000000000000} # CHANGEME
+    # The bundled database's password (the `db` service reads it from here).
+    # Letters and digits only: it becomes part of the database URL.
+    POSTGRES_PASSWORD: &postgres-password ${POSTGRES_PASSWORD:-changeme-postgres-password} # CHANGEME
+
+    # ── Sign-in and auth email (optional) ────────────────────────────────────
+    # Who may create accounts after the first: invite-only, or open (anyone).
+    AUTH_SIGNUP: ${AUTH_SIGNUP:-invite-only}
+    # Resend (https://resend.com) for invitation and password-reset email.
+    # Unset, those emails are written to the app log instead of sent.
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
+    # "Continue with Google". Redirect URI: <APP_URL>/api/auth/callback/google
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+
+    # ── Other (optional) ─────────────────────────────────────────────────────
+    # Connections this app opens to PostgreSQL.
+    DB_POOL_MAX: ${DB_POOL_MAX:-8}
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentsdr
+      POSTGRES_USER: agentsdr
+      POSTGRES_PASSWORD: *postgres-password
+    volumes:
+      - db-data:/var/lib/postgresql
+    # No published port: only the app reaches the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentsdr -d agentsdr"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Creates the schema in an empty database before it starts (a no-op
+  # afterwards) and runs the scheduled jobs in-process.
+  app:
+    <<: *agentsdr
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:

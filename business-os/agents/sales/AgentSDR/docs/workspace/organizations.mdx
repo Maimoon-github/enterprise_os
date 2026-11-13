@@ -1,0 +1,104 @@
+---
+title: "Organizations and members"
+description: "Create organizations, invite people, assign roles, group members into teams and control who can sign up."
+icon: "users"
+---
+
+An organization is the workspace that owns all your data. This page covers who can do what inside one, how to invite people, how teams work and how an instance decides who may sign up.
+
+## Roles
+
+Every member has one of three roles. Roles control what a person can change; they never change what data a person can see, because everyone in an organization sees the same leads, campaigns and conversations.
+
+| Ability | Owner | Admin | Member |
+|---|---|---|---|
+| Use leads, campaigns, the CRM and Analytics | Yes | Yes | Yes |
+| Connect, edit and disconnect integrations (Unipile, Google Workspace, R2, enrichment keys) | Yes | Yes | No |
+| Change the OpenRouter connection and model choices | Yes | Yes | No |
+| Change sending rules | Yes | Yes | No |
+| Edit the organization's name, URL name and logo | Yes | Yes | No |
+| Invite people and cancel invitations | Yes | Yes | No |
+| Change roles and remove members | Yes | Yes | No |
+| Create, rename and delete teams, and manage team membership | Yes | Yes | No |
+| Promote someone to owner, or change or remove an owner | Yes | No | No |
+
+The last organization owner cannot be demoted or removed, and you cannot change your own role or remove yourself from the Members list. A member who is not an owner can leave an organization from **Settings**, **General**. Owners cannot leave.
+
+## Edit your organization
+
+Open **Settings**, then **General** under **Organization**. The **Organization** panel shows your role and has three fields:
+
+- **Name**
+- **URL name** — lowercase letters, numbers and dashes. It must be unique on the instance.
+- **Logo URL** — optional.
+
+Choose **Save changes**. Members see the fields but cannot edit them.
+
+<Frame caption="Name, URL name and logo, with your role shown under the title.">
+  <img src="/assets/screenshots/app/organization.png" alt="Settings, General page with the Organization panel showing Name, URL name and Logo URL fields and a Default phone country setting" />
+</Frame>
+
+## Invite people
+
+<Steps>
+  <Step title="Open Members">
+    Go to **Settings**, then **Members**.
+  </Step>
+  <Step title="Send the invitation">
+    Under **Invite someone**, enter the person's **Email**, pick a **Role** and choose **Send invite**. Admins can invite members and admins; only owners can invite another owner.
+  </Step>
+  <Step title="Share the link if needed">
+    The invitation is emailed and expires after 7 days. It also appears under **Pending invitations**. If your instance has no email service, choose **Copy invite link** and send the link yourself. Choose **Cancel** to withdraw an invitation.
+  </Step>
+</Steps>
+
+Inviting the same address again replaces the earlier pending invitation.
+
+<Frame caption="Invite by email and pick a role. Members are listed below.">
+  <img src="/assets/screenshots/app/members.png" alt="Settings, Members page with an Invite someone form for email and role, and a list of current members with their roles" />
+</Frame>
+
+### Accepting an invitation
+
+The link opens a page titled **You're invited**. If the person has no account yet, they sign in or create one first, then choose **Accept** or **Decline**. The invitation works only for the email address it was sent to; a different account sees **Wrong account**. An old link shows **Invitation expired**, and an unknown or used link shows **Invitation not found**.
+
+## Teams
+
+Teams group people inside an organization, for example "Outbound" or "Account executives". They do not limit what anyone can see: everyone in the organization sees the same data.
+
+Open **Settings**, then **Teams**. Enter a **Team name** and choose **Create team**. On each team you can rename it, delete it, add members from the organization with **Add a member…**, and remove them. Only owners and admins can change teams.
+
+<Frame caption="Teams group people. A note on the page reminds you that everyone sees the same data.">
+  <img src="/assets/screenshots/app/teams.png" alt="Settings, Teams page with a Create a team form and an existing team showing its members with Rename, Delete and Remove actions" />
+</Frame>
+
+## Switch or create organizations
+
+You can belong to more than one organization. Open the account menu at the bottom of the sidebar, under **Organizations**, and pick one. The page reloads so nothing from the previous organization stays on screen. **Create organization** in the same menu opens the organization screen, where you enter an **Organization name** and **URL name**.
+
+Whether you can create an additional organization depends on `AUTH_SIGNUP`, below.
+
+## Who can sign up
+
+The `AUTH_SIGNUP` setting, set by whoever runs the instance, decides who may create an account. It is not a setting in the app.
+
+| Value | What happens |
+|---|---|
+| `invite-only` (default) | The instance's first account can always sign up. After that, an account is created only for an email address with a pending, unexpired invitation. Only owners and admins of the first organization can create new organizations. The sign-in page stops offering to create an account. This covers Google sign-in too. |
+| `open` | Anyone who can reach the instance can sign up and create their own organization. Suited to a public deployment with several customers. |
+
+Invitations work in both modes. See [Configuration](/configuration) for the variable and [Self-hosting](/self-hosting) for the first-run flow.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Concepts" icon="lightbulb" href="/concepts">
+    How organizations fit into the rest of AgentSDR.
+  </Card>
+  <Card title="AI provider" icon="sparkles" href="/workspace/ai-provider">
+    The OpenRouter connection each organization sets up.
+  </Card>
+  <Card title="Configuration" icon="settings" href="/configuration">
+    Environment variables, including AUTH_SIGNUP.
+  </Card>
+</CardGroup>

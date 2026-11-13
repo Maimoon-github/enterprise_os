@@ -1,0 +1,254 @@
+"""
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import copy
+import re
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from openai import AsyncOpenAI, OpenAI
+from app.core.logger import get_logger
+from app.core.config import settings
+from app.core.model_catalog import MODEL_REQUEST_OVERRIDES, OVERRIDE_PROVIDER_ALIASES
+from app.utils.model_context import longest_prefix_match
+from app.core.outbound_http import guarded_async_http_client, guarded_http_client
+from app.core.outbound_policy import check_outbound_target, public_only
+from app.utils.agno_patches import apply_agno_patches
+from typing import Dict, Any, Optional, List
+from fastapi import HTTPException
+
+logger = get_logger(__name__)
+
+# Every code path that builds an agno model goes through this module, so this
+# is the single choke point where the 1.7.6 runtime patches get applied.
+apply_agno_patches()
+
+
+class PinnedOpenAIChat(OpenAIChat):
+    """OpenAIChat for a user-supplied base URL under OUTBOUND_URL_POLICY=
+    public_only: every connection, redirect included, goes to a vetted public
+    address. agno 1.7.6 takes a single http_client for both its sync and
+    async OpenAI clients, so each getter supplies its own guarded one, fresh
+    per call like agno's default."""
+
+    def get_client(self):
+        # follow_redirects matches the OpenAI SDK's own default client.
+        return OpenAI(**{**self._get_client_params(),
+                         "http_client": guarded_http_client(follow_redirects=True)})
+
+    def get_async_client(self):
+        return AsyncOpenAI(**{**self._get_client_params(),
+                              "http_client": guarded_async_http_client(follow_redirects=True)})
+
+
+# Dated snapshot suffix: OpenAI's "-2026-08-01", Anthropic's "-20260801".
+_SNAPSHOT_SUFFIX = re.compile(r'-\d{4}-?\d{2}-?\d{2}$')
+
+
+def _lookup_override(model_name: str, table: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The table entry for this exact model or a dated snapshot of it, else the
+    longest matching "*" wildcard (see MODEL_REQUEST_OVERRIDES)."""
+    name = (model_name or '').casefold()
+    exact = table.get(_SNAPSHOT_SUFFIX.sub('', name))
+    if exact is not None:
+        return exact
+    wildcards = {key[:-1]: value for key, value in table.items() if key.endswith('*')}
+    return longest_prefix_match(name, wildcards)
+
+
+def model_request_overrides(model_type: str, model_name: str) -> Dict[str, Any]:
+    """Extra agno model kwargs the catalog sets for this model, if any."""
+    model_type = model_type.upper()
+    provider = OVERRIDE_PROVIDER_ALIASES.get(model_type, model_type)
+    if model_type == 'OPENAI_COMPATIBLE':
+        # Gateways prefix the vendor: OpenRouter's "openai/gpt-6-luna".
+        model_name = (model_name or '').rsplit('/', 1)[-1]
+    overrides = _lookup_override(model_name, MODEL_REQUEST_OVERRIDES.get(provider, {}))
+    return copy.deepcopy(overrides) if overrides else {}
+
+
+def openai_request_kwargs(model_type: str, model_name: str, max_tokens: int, response_format: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """OpenAIChat kwargs for an OpenAI-protocol model.
+
+    max_completion_tokens, not max_tokens: OpenAI's reasoning models reject
+    max_tokens on Chat Completions, and every other OpenAI chat model accepts
+    max_completion_tokens. An OPENAI_COMPATIBLE endpoint keeps max_tokens — not
+    every OpenAI-shaped server knows the newer name — unless it serves one of
+    those OpenAI reasoning models, which a gateway passes straight through.
+    """
+    overrides = model_request_overrides(model_type, model_name)
+    use_max_tokens = model_type.upper() == 'OPENAI_COMPATIBLE' and not overrides
+    kwargs: Dict[str, Any] = {"max_tokens" if use_max_tokens else "max_completion_tokens": max_tokens,
+                              **overrides}
+    if response_format:
+        kwargs["response_format"] = response_format
+    return kwargs
+
+
+def create_model(model_type: str, api_key: str, model_name: str, max_tokens: int = 1000, response_format: Optional[Dict[str, Any]] = None, base_url: Optional[str] = None) -> Any:
+    """
+    Create and return the specified model based on model_type.
+
+    Args:
+        model_type: The type of model (OPENAI, GROQ, etc.)
+        api_key: The API key
+        model_name: The name/ID of the model
+        max_tokens: Maximum tokens for model output
+        response_format: Optional response format specification
+        base_url: Custom API endpoint, used by OPENAI_COMPATIBLE
+
+    Returns:
+        The initialized model object
+
+    Raises:
+        HTTPException: If the model type is not supported
+    """
+    model_type = model_type.upper()
+
+    try:
+        if model_type == 'OPENAI' or model_type == 'CHATTERMATE': # own model for enterprise customers
+            return OpenAIChat(api_key=api_key, id=model_name,
+                              **openai_request_kwargs(model_type, model_name, max_tokens, response_format))
+        elif model_type == 'OPENAI_COMPATIBLE':
+            if not base_url:
+                raise ValueError("base_url is required for OPENAI_COMPATIBLE")
+            # Re-checked on every build, not only on save: DNS can change.
+            check_outbound_target(base_url, "Base URL")
+            base_url = re.sub(r'/chat/completions/?$', '', base_url.strip(), flags=re.IGNORECASE).rstrip('/')
+            model_cls = PinnedOpenAIChat if public_only() else OpenAIChat
+            return model_cls(api_key=api_key, id=model_name, base_url=base_url,
+                             **openai_request_kwargs(model_type, model_name, max_tokens, response_format))
+        elif model_type == 'ANTHROPIC':
+            from agno.models.anthropic import Claude
+            return Claude(api_key=api_key, id=model_name, max_tokens=max_tokens,
+                          **model_request_overrides(model_type, model_name))
+        elif model_type == 'DEEPSEEK':
+            from agno.models.deepseek import DeepSeek
+            return DeepSeek(api_key=api_key, id=model_name, max_tokens=max_tokens,
+                            **model_request_overrides(model_type, model_name))
+        elif model_type == 'GOOGLE':
+            from agno.models.google import Gemini
+            # Gemini's agno model exposes max_output_tokens, not max_tokens.
+            return Gemini(api_key=api_key, id=model_name, max_output_tokens=max_tokens,
+                          **model_request_overrides(model_type, model_name))
+        elif model_type == 'GOOGLEVERTEX':
+            from agno.models.vertexai import Gemini
+            return Gemini(api_key=api_key, id=model_name, max_tokens=max_tokens)
+        elif model_type == 'GROQ':
+            from agno.models.groq import Groq
+            
+            # Create a patched Groq model that handles the response_format + tools conflict
+            class PatchedGroq(Groq):
+                def __post_init__(self):
+                    """Set supports_native_structured_outputs after initialization"""
+                    super().__post_init__() if hasattr(super(), '__post_init__') else None
+                    # Override to indicate Groq supports structured outputs via response_format
+                    object.__setattr__(self, 'supports_native_structured_outputs', True)
+                
+                def get_request_params(self, response_format=None, tools=None, tool_choice=None):
+                    """
+                    Override get_request_params to handle the conflict between response_format and tools.
+                    Groq API doesn't allow JSON response_format when tools are present.
+                    """
+                    # Get the base parameters from parent class
+                    base_params = {
+                        "frequency_penalty": self.frequency_penalty,
+                        "logit_bias": self.logit_bias,
+                        "logprobs": self.logprobs,
+                        "max_tokens": self.max_tokens,
+                        "presence_penalty": self.presence_penalty,
+                        "seed": self.seed,
+                        "stop": self.stop,
+                        "temperature": self.temperature,
+                        "top_logprobs": self.top_logprobs,
+                        "top_p": self.top_p,
+                        "user": self.user,
+                        "extra_headers": self.extra_headers,
+                        "extra_query": self.extra_query,
+                    }
+                    
+                    # Filter out None values
+                    request_params = {k: v for k, v in base_params.items() if v is not None}
+                    
+                    # Add tools first
+                    if tools is not None:
+                        request_params["tools"] = tools
+                        if tool_choice is not None:
+                            request_params["tool_choice"] = tool_choice
+                        # Don't add response_format when tools are present to avoid conflict
+                        logger.debug("Groq: Skipping response_format due to tools being present")
+                    else:
+                        # Only add response_format if no tools are present
+                        if response_format is not None:
+                            request_params["response_format"] = response_format
+                    
+                    # Add additional request params if provided
+                    if self.request_params:
+                        request_params.update(self.request_params)
+                    
+                    return request_params
+            
+            # Groq model doesn't support response_format parameter in constructor
+            return PatchedGroq(api_key=api_key, id=model_name, max_tokens=max_tokens)
+        elif model_type == 'MISTRAL':
+            from agno.models.mistral import MistralChat
+            return MistralChat(api_key=api_key, id=model_name, max_tokens=max_tokens)
+        elif model_type == 'HUGGINGFACE':
+            from agno.models.huggingface import HuggingFace
+            return HuggingFace(api_key=api_key, id=model_name, max_tokens=max_tokens)
+        elif model_type == 'OLLAMA':
+            from agno.models.ollama import Ollama
+            return Ollama(id=model_name)
+        elif model_type == 'XAI':
+            from agno.models.xai import xAI
+            return xAI(api_key=api_key, id=model_name, max_tokens=max_tokens)
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}")
+    except ImportError as e:
+        logger.error(f"Import error when creating model type {model_type}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Model type {model_type} is not available in this installation")
+    except Exception as e:
+        logger.error(f"Error creating model type {model_type}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to initialize model: {str(e)}")
+
+async def test_model_api_key(api_key: str, model_type: str, model_name: str, base_url: Optional[str] = None) -> bool:
+    """
+    Test if the API key is valid for the given model type.
+
+    Args:
+        api_key: The API key to test
+        model_type: The type of model
+        model_name: The name of the model
+        base_url: Custom API endpoint, used by OPENAI_COMPATIBLE
+
+    Returns:
+        bool: True if the API key is valid, False otherwise
+    """
+    try:
+        # Create a simple model and agent for testing
+        model = create_model(model_type, api_key, model_name, base_url=base_url)
+        test_agent = Agent(
+            name="Test Agent",
+            model=model,
+            instructions="You are a test agent. Just respond with 'Test successful.'",
+            debug_mode=False
+        )
+        
+        # Run a simple test query
+        await test_agent.arun(message="This is a test message.")
+        return True
+    except Exception as e:
+        logger.error(f"API key test failed: {str(e)}")
+        return False 

@@ -1,0 +1,9 @@
+# Terraform working state. The root .gitignore covers these too; repeating them
+# here keeps `infra/` self-describing for anyone working only in this directory.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# Provider lockfiles ARE committed — pinning provider checksums is their purpose.
+!**/.terraform.lock.hcl

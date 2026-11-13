@@ -1,0 +1,791 @@
+import { and, asc, eq, gt, inArray, isNull, lt, ne, notExists, or, sql } from "drizzle-orm";
+
+import { appointments, auditLogs, businesses, businessHours, calendarBusyBlocks, calendarConnections, closures, contacts, enqueueOutbox, inboxItems, notifications, services, staff, staffServiceAssignments, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import type { AvailabilitySlot, ClosureWindow, HoursWindow } from "@lobbystack/shared";
+import { getPostHogDistinctIdForBusinessSystem } from "@lobbystack/telemetry";
+import { DateTime } from "luxon";
+
+import { BookingUnavailableError, candidateStartTimes, freeStaffSlots, scheduleUnavailableReason, type NoOpeningsReason, type UnavailableReason } from "../availability";
+import { requireBusinessMembership } from "../authz";
+import { isBookingCalendarProvider } from "../calendarWriter";
+import type { DomainContext } from "./context";
+import { recordCallOutcomeInTransaction } from "./callOutcome";
+import { consumeAppointmentChangeVerificationInTransaction } from "./appointmentChanges";
+import { findOrCreateContactByPhone } from "./contacts";
+import { recordSmsConsentAnswerInTransaction, smsConsentOnFile, type SmsConsentAnswer, type SmsConsentOnFile } from "./contactSmsConsent";
+import { recordProductEventBestEffort } from "./productEvents";
+import { CANCELLATION_CONFIRMATION, heldForCall, queueOperatorAlertInTransaction, RESCHEDULE_CONFIRMATION, rescheduleAppointmentReminderInTransaction, saveAppointmentVideoUrlInTransaction } from "./notifications";
+import { emitWebhookEventInTransaction } from "./publicApi/webhooks";
+import { APPOINTMENT_REQUESTS } from "./voice";
+import { bookingActor } from "./bookingActor";
+
+type BookingInput = {
+  callId?: string;
+  businessId: string;
+  serviceId: string;
+  startsAt: string;
+  timezone: string;
+  contactPhone: string;
+  contactName?: string;
+  sourceChannel: string;
+  preferredStaffId?: string;
+  /** The caller's answer to a confirmation and reminder text. Omitted means not asked. */
+  smsConsent?: SmsConsentAnswer;
+  /** Set when the public API or the MCP server made the booking; recorded in the audit log. */
+  apiAudit?: ApiAudit;
+  /** Set when an operator booked from the dashboard; recorded in the audit log. */
+  operatorUserId?: string;
+  /** Overrides the service's length, for an operator booking a longer or shorter visit. */
+  durationMinutes?: number;
+  /** The agent can read these once the caller is verified; internal notes stay in the dashboard. */
+  notes?: string;
+  internalNotes?: string;
+};
+
+/** The shortest and longest visit an operator can book by hand, in minutes. */
+export const MIN_BOOKING_MINUTES = 5;
+export const MAX_BOOKING_MINUTES = 12 * 60;
+export const MAX_APPOINTMENT_NOTES_LENGTH = 2000;
+
+function bookingDuration(minutes: number | undefined): number | undefined {
+  if (minutes === undefined) return undefined;
+  if (!Number.isSafeInteger(minutes) || minutes < MIN_BOOKING_MINUTES || minutes > MAX_BOOKING_MINUTES) throw Object.assign(new Error(`An appointment lasts ${MIN_BOOKING_MINUTES} to ${MAX_BOOKING_MINUTES} minutes.`), { status: 400, code: "invalid_request" });
+  return minutes;
+}
+
+/** Who made an API change: the audit row's actor user (OAuth grants act for a user) and payload (actor and credential id). */
+export type ApiAudit = { actorUserId: string | null; payload: Record<string, unknown> };
+async function lockStaff(tx: DatabaseTransaction, staffId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${staffId}, 0))`);
+}
+
+export const MAX_CALENDAR_SYNC_AGE_MS = 20 * 60_000;
+export const CALENDAR_SYNC_HORIZON_MS = 90 * 24 * 60 * 60_000;
+
+type Schedule = {
+  businessId: string;
+  serviceId: string;
+  serviceName: string;
+  serviceDurationMinutes: number;
+  timezone: string;
+  activeStaffIds: string[];
+  /** The active employees' names by staff id. The other active staff stand for the business. */
+  employees: Map<string, string>;
+  assignedStaffIds: Set<string>;
+  connections: Array<typeof calendarConnections.$inferSelect>;
+  /** The business's hours and closures. They bind everyone. */
+  hours: HoursWindow[];
+  closures: ClosureWindow[];
+  /** Staff members' own working hours, for those who have them, and their time off. */
+  staffHours: Map<string, HoursWindow[]>;
+  staffClosures: Map<string, ClosureWindow[]>;
+};
+
+/**
+ * Reads the rules for booking a service: the service, the business's
+ * timezone, staff, assignments, calendars, the business's and staff members'
+ * hours, and the closures and time off that end after `from`. Booking reloads
+ * it after each staff lock so it never validates against stale rules.
+ */
+async function loadSchedule(tx: DatabaseTransaction, input: { businessId: string; serviceId: string; from: Date }): Promise<Schedule> {
+  const [service] = await tx.select({ id: services.id, name: services.name, durationMinutes: services.durationMinutes }).from(services).where(and(eq(services.id, input.serviceId), eq(services.businessId, input.businessId), eq(services.active, true))).limit(1);
+  const [business] = await tx.select({ timezone: businesses.timezone }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1);
+  // 409: the API and MCP answer a turned-off service as a client error, not a 500.
+  if (!service || !business) throw Object.assign(new Error("Service is not available."), { status: 409 });
+  if (!Number.isFinite(input.from.getTime()) || !Number.isSafeInteger(service.durationMinutes) || service.durationMinutes <= 0) throw new Error("A valid appointment time and duration are required.");
+  const activeStaff = await tx.select({ id: staff.id, name: staff.name, isEmployee: staff.isEmployee }).from(staff).where(and(eq(staff.businessId, input.businessId), eq(staff.active, true))).orderBy(asc(staff.id));
+  const activeStaffIds = activeStaff.map((row) => row.id);
+  const assignments = await tx.select({ staffId: staffServiceAssignments.staffId }).from(staffServiceAssignments).where(and(eq(staffServiceAssignments.businessId, input.businessId), eq(staffServiceAssignments.serviceId, input.serviceId)));
+  const connections = activeStaffIds.length
+    ? await tx.select().from(calendarConnections).where(and(eq(calendarConnections.businessId, input.businessId), ne(calendarConnections.status, "disconnected"), or(isNull(calendarConnections.staffId), inArray(calendarConnections.staffId, activeStaffIds))))
+    : [];
+  const hourRows = await tx.select().from(businessHours).where(eq(businessHours.businessId, input.businessId));
+  const closureRows = await tx.select().from(closures).where(and(eq(closures.businessId, input.businessId), gt(closures.endsAt, input.from)));
+  const staffHours = new Map<string, HoursWindow[]>();
+  const staffClosures = new Map<string, ClosureWindow[]>();
+  for (const row of hourRows) if (row.staffId) staffHours.set(row.staffId, [...staffHours.get(row.staffId) ?? [], row]);
+  for (const row of closureRows) if (row.staffId) staffClosures.set(row.staffId, [...staffClosures.get(row.staffId) ?? [], closureWindow(row)]);
+  return {
+    businessId: input.businessId,
+    serviceId: input.serviceId,
+    serviceName: service.name,
+    serviceDurationMinutes: service.durationMinutes,
+    timezone: business.timezone,
+    activeStaffIds,
+    employees: new Map(activeStaff.flatMap((row) => row.isEmployee ? [[row.id, row.name] as const] : [])),
+    assignedStaffIds: new Set(assignments.map((row) => row.staffId)),
+    connections,
+    hours: hourRows.filter((row) => !row.staffId),
+    closures: closureRows.filter((row) => !row.staffId).map(closureWindow),
+    staffHours,
+    staffClosures,
+  };
+}
+
+function closureWindow(row: { startsAt: Date; endsAt: Date; reason: string }): ClosureWindow {
+  return { startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString(), reason: row.reason };
+}
+
+type AvailabilityReference = Schedule & { startsAt: Date; endsAt: Date };
+
+/** The schedule for one start time. */
+async function loadAvailabilityReference(tx: DatabaseTransaction, input: { businessId: string; serviceId: string; startsAt: string; durationMinutes?: number | undefined }): Promise<AvailabilityReference> {
+  const startsAt = new Date(input.startsAt);
+  const loaded = await loadSchedule(tx, { businessId: input.businessId, serviceId: input.serviceId, from: startsAt });
+  const schedule = input.durationMinutes ? { ...loaded, serviceDurationMinutes: input.durationMinutes } : loaded;
+  return { ...schedule, startsAt, endsAt: new Date(startsAt.getTime() + schedule.serviceDurationMinutes * 60_000) };
+}
+
+// A service with assigned staff is booked against them. One with no one
+// assigned falls back to the staff that stand for the business, never to an
+// employee. `keepStaffId` stays eligible while active: an appointment's staff
+// member when its service's assignments changed since it was booked.
+function doesService(schedule: Schedule, staffId: string): boolean {
+  return schedule.assignedStaffIds.size ? schedule.assignedStaffIds.has(staffId) : !schedule.employees.has(staffId);
+}
+
+function eligibleStaffIds(schedule: Schedule, requestedStaffIds?: string[], keepStaffId?: string): string[] {
+  return schedule.activeStaffIds.filter((id) => (!requestedStaffIds || requestedStaffIds.includes(id)) && (id === keepStaffId || doesService(schedule, id)));
+}
+
+/** Whether a staff member works the whole appointment: inside their own hours, when they have them, and not on time off. */
+function isWorking(schedule: Schedule, staffId: string, startsAt: Date): boolean {
+  const hours = schedule.staffHours.get(staffId);
+  const timeOff = schedule.staffClosures.get(staffId);
+  return (!hours && !timeOff) || !scheduleUnavailableReason({ startsAt: startsAt.toISOString(), timezone: schedule.timezone, serviceDurationMinutes: schedule.serviceDurationMinutes, hours: hours ?? schedule.hours, closures: timeOff ?? [] });
+}
+
+// A staff member's own calendar blocks only them. The business's calendar, one with no staff owner, blocks the staff
+// that stand for the business and not its employees.
+function calendarCovers(schedule: Schedule, connection: { staffId: string | null }, staffId: string): boolean {
+  return connection.staffId ? connection.staffId === staffId : !schedule.employees.has(staffId);
+}
+
+function isCalendarFresh(schedule: Schedule, staffId: string, startsAt: Date, now: number): boolean {
+  const endsAt = startsAt.getTime() + schedule.serviceDurationMinutes * 60_000;
+  return !schedule.connections.some((connection) => connection.selectedCalendarId && calendarCovers(schedule, connection, staffId) && (
+    connection.status !== "connected" || !connection.lastSyncedAt || now - connection.lastSyncedAt.getTime() > MAX_CALENDAR_SYNC_AGE_MS
+    || startsAt.getTime() < connection.lastSyncedAt.getTime() || endsAt > connection.lastSyncedAt.getTime() + CALENDAR_SYNC_HORIZON_MS
+  ));
+}
+
+/**
+ * The staff who could take the service at a time, judged from the schedule
+ * alone, or why no one can: the opening hours and closures first, then who
+ * does the service, who works then, and calendar freshness. Their bookings
+ * decide the rest.
+ */
+function staffForTime(schedule: Schedule, startsAt: Date, requestedStaffIds: string[] | undefined, now: number, keepStaffId?: string): string[] | UnavailableReason {
+  const closed = scheduleUnavailableReason({ startsAt: startsAt.toISOString(), timezone: schedule.timezone, serviceDurationMinutes: schedule.serviceDurationMinutes, hours: schedule.hours, closures: schedule.closures });
+  if (closed) return closed;
+  const eligible = eligibleStaffIds(schedule, requestedStaffIds, keepStaffId);
+  if (!eligible.length) return "no_staff";
+  const working = eligible.filter((id) => isWorking(schedule, id, startsAt));
+  // Off then, through their own hours or time off: the time isn't free, and the agent offers another.
+  if (!working.length) return "taken";
+  const fresh = working.filter((id) => isCalendarFresh(schedule, id, startsAt, now));
+  return fresh.length ? fresh : "calendar_not_synced";
+}
+
+type BusyTime = { staffId: string; startsAt: string; endsAt: string };
+
+/**
+ * The booked and calendar-busy times of these staff between two instants.
+ * Booking reads them after taking the staff lock, so they include the lock
+ * holder's booking.
+ */
+async function loadBusyTimes(tx: DatabaseTransaction, schedule: Schedule, input: { staffIds: string[]; from: Date; to: Date; ignoreAppointmentId?: string | undefined }): Promise<BusyTime[]> {
+  if (!input.staffIds.length) return [];
+  const existing = await tx.select({ staffId: appointments.staffId, startsAt: appointments.startsAt, endsAt: appointments.endsAt }).from(appointments).where(and(eq(appointments.businessId, schedule.businessId), ne(appointments.status, "canceled"), input.ignoreAppointmentId ? ne(appointments.id, input.ignoreAppointmentId) : undefined, inArray(appointments.staffId, input.staffIds), lt(appointments.startsAt, input.to), gt(appointments.endsAt, input.from)));
+  const configured = schedule.connections.filter((connection) => connection.selectedCalendarId && input.staffIds.some((id) => calendarCovers(schedule, connection, id)));
+  const connectionIds = configured.filter((connection) => connection.status === "connected").map((connection) => connection.id);
+  // Events LobbyStack wrote for its own appointments come back as busy blocks. Skip them:
+  // the appointment rows above already hold that time for the right staff member. An event
+  // someone moved or stretched in the calendar no longer matches its row, so it still blocks.
+  const uidOnly = new Set(configured.filter((connection) => isBookingCalendarProvider(connection.provider)).map((connection) => connection.id));
+  const timeMatched = connectionIds.filter((id) => !uidOnly.has(id));
+  const window = (ids: string[]) => and(eq(calendarBusyBlocks.businessId, schedule.businessId), inArray(calendarBusyBlocks.connectionId, ids), lt(calendarBusyBlocks.startsAt, input.to), gt(calendarBusyBlocks.endsAt, input.from));
+  // Only an appointment that still holds its time, as the rows above count it, accounts for its event: a canceled
+  // one whose calendar delete hasn't gone through yet leaves the event busy until the next sync drops it.
+  const holdsTime = ne(appointments.status, "canceled");
+  const matched = timeMatched.length ? await tx.select().from(calendarBusyBlocks).where(and(window(timeMatched),
+    notExists(tx.select({ id: appointments.id }).from(appointments).where(and(eq(appointments.businessId, calendarBusyBlocks.businessId), holdsTime, eq(appointments.calendarExternalId, calendarBusyBlocks.externalEventId), eq(appointments.startsAt, calendarBusyBlocks.startsAt), eq(appointments.endsAt, calendarBusyBlocks.endsAt)))))) : [];
+  // An event type can fix a booking's length, so its bookings match their appointment on the uid
+  // alone, and only the appointment's own span leaves the block: time the provider holds past it stays busy.
+  const calcomIds = connectionIds.filter((id) => uidOnly.has(id));
+  const calcom = calcomIds.length ? await tx.select({ block: calendarBusyBlocks, appointmentId: appointments.id, ownStartsAt: appointments.startsAt, ownEndsAt: appointments.endsAt }).from(calendarBusyBlocks)
+    .leftJoin(appointments, and(eq(appointments.businessId, calendarBusyBlocks.businessId), holdsTime, eq(appointments.calendarExternalId, calendarBusyBlocks.externalEventId)))
+    .where(window(calcomIds)) : [];
+  // Cal.com copies its bookings into the calendars it checks, so an appointment being moved can come back as a
+  // block on another connection that carries no id of ours. One with exactly the appointment's span, or its
+  // Cal.com booking's, on a calendar of the staff member's own or the business's, is that copy, and moving the
+  // appointment frees it. The same span on another staff member's calendar is theirs, and stays busy.
+  const [moving] = input.ignoreAppointmentId ? await tx.select({ staffId: appointments.staffId, startsAt: appointments.startsAt, endsAt: appointments.endsAt }).from(appointments).where(and(eq(appointments.businessId, schedule.businessId), eq(appointments.id, input.ignoreAppointmentId))).limit(1) : [];
+  const movingSpans = moving ? [moving, ...calcom.filter(({ appointmentId }) => appointmentId === input.ignoreAppointmentId).map(({ block }) => block)] : [];
+  const movingCalendars = new Set(moving ? schedule.connections.filter((connection) => connection.staffId === null || connection.staffId === moving.staffId).map((connection) => connection.id) : []);
+  const isMovingCopy = (block: { connectionId: string; staffId: string | null; startsAt: Date; endsAt: Date }) => movingCalendars.has(block.connectionId) && (block.staffId === null || block.staffId === moving?.staffId)
+    && movingSpans.some((span) => span.startsAt.getTime() === block.startsAt.getTime() && span.endsAt.getTime() === block.endsAt.getTime());
+  const busy = [
+    ...matched.filter((block) => !isMovingCopy(block)),
+    ...calcom.flatMap(({ block, appointmentId, ownStartsAt, ownEndsAt }) => {
+      // The appointment being moved gives up its whole booking, which moves with it.
+      if (appointmentId && appointmentId === input.ignoreAppointmentId) return [];
+      return withoutOwnAppointment(block, ownStartsAt && ownEndsAt ? { startsAt: ownStartsAt, endsAt: ownEndsAt } : null);
+    }),
+  ];
+  const staffByConnection = new Map(schedule.connections.map((connection) => [connection.id, connection.staffId]));
+  return [
+    ...existing.map((row) => ({ staffId: row.staffId, startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString() })),
+    ...busy.flatMap((row) => { const owner = row.staffId ?? staffByConnection.get(row.connectionId); return (owner ? [owner] : input.staffIds.filter((id) => !schedule.employees.has(id))).map((staffId) => ({ staffId, startsAt: row.startsAt.toISOString(), endsAt: row.endsAt.toISOString() })); }),
+  ];
+}
+
+/** What's left of a calendar busy block once the span of the appointment it books is taken out. */
+export function withoutOwnAppointment<T extends { startsAt: Date; endsAt: Date }>(block: T, own: { startsAt: Date; endsAt: Date } | null): T[] {
+  if (!own || own.endsAt <= block.startsAt || own.startsAt >= block.endsAt) return [block];
+  const pieces: T[] = [];
+  if (own.startsAt > block.startsAt) pieces.push({ ...block, endsAt: own.startsAt });
+  if (own.endsAt < block.endsAt) pieces.push({ ...block, startsAt: own.endsAt });
+  return pieces;
+}
+
+/** The slots at a time: the staff who could take it and aren't busy then. staffForTime has checked the schedule. */
+function openSlots(schedule: Schedule, startsAt: Date, staffIds: string[], busy: BusyTime[]): AvailabilitySlot[] {
+  return freeStaffSlots({
+    request: { serviceId: schedule.serviceId, startsAt: startsAt.toISOString(), timezone: schedule.timezone },
+    serviceDurationMinutes: schedule.serviceDurationMinutes,
+    staffIds,
+    existingAppointments: busy,
+  });
+}
+
+type AvailabilityCheck = { slots: AvailabilitySlot[]; reason?: UnavailableReason };
+
+async function availabilityInTransaction(tx: DatabaseTransaction, input: { businessId: string; serviceId: string; startsAt: string; staffIds?: string[]; ignoreAppointmentId?: string }): Promise<AvailabilityCheck> {
+  const reference = await loadAvailabilityReference(tx, input);
+  // The schedule alone can rule the time out; then no bookings are read.
+  const staffIds = staffForTime(reference, reference.startsAt, input.staffIds, Date.now());
+  if (typeof staffIds === "string") return { slots: [], reason: staffIds };
+  const slots = openSlots(reference, reference.startsAt, staffIds, await loadBusyTimes(tx, reference, { staffIds, from: reference.startsAt, to: reference.endsAt, ignoreAppointmentId: input.ignoreAppointmentId }));
+  return slots.length ? { slots } : { slots, reason: "taken" };
+}
+
+/** The open slots for a time, and when there are none, why. */
+export async function checkAvailability(
+  context: DomainContext,
+  input: { businessId: string; serviceId: string; startsAt: string; staffIds?: string[] },
+): Promise<AvailabilityCheck> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => await availabilityInTransaction(tx, input));
+}
+
+export async function findAvailability(
+  context: DomainContext,
+  input: { businessId: string; serviceId: string; startsAt: string; staffIds?: string[] },
+) {
+  return (await checkAvailability(context, input)).slots;
+}
+
+/**
+ * Open start times for a service on whole local days, from one read of the
+ * schedule and of the staff's bookings. It tries every half hour inside the
+ * opening hours, nearest the preferred time first, and returns up to `limit`
+ * of them in time order. With `spread`, those are spaced across everything
+ * open, so a caller with no preference doesn't only hear the first times of
+ * the day. `moreOpenings` counts the open times left out. With none, the
+ * reason is why the nearest time can't be booked: later times can fail for
+ * another reason, such as a closure.
+ */
+export async function findOpeningsInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; serviceId: string; dates: string[]; staffId?: string; preferredMinutes?: number; limit?: number; spread?: boolean; ignoreAppointmentId?: string; durationMinutes?: number },
+): Promise<{ timezone: string; durationMinutes: number; openings: string[]; moreOpenings: number; reason?: NoOpeningsReason }> {
+  const now = new Date();
+  const loaded = await loadSchedule(tx, { businessId: input.businessId, serviceId: input.serviceId, from: now });
+  const durationMinutes = bookingDuration(input.durationMinutes);
+  const schedule = durationMinutes ? { ...loaded, serviceDurationMinutes: durationMinutes } : loaded;
+  const found = { timezone: schedule.timezone, durationMinutes: schedule.serviceDurationMinutes };
+  const candidates = input.dates.flatMap((date) => candidateStartTimes({ date, timezone: schedule.timezone, hours: schedule.hours, durationMinutes: schedule.serviceDurationMinutes, now, ...(input.preferredMinutes !== undefined ? { preferredMinutes: input.preferredMinutes } : {}) }));
+  if (!candidates.length) {
+    const closedDays = input.dates.every((date) => {
+      const day = DateTime.fromISO(`${date}T00:00:00`, { zone: schedule.timezone });
+      return day.isValid && !schedule.hours.some((window) => window.dayOfWeek === day.weekday % 7);
+    });
+    return { ...found, openings: [], moreOpenings: 0, reason: !schedule.hours.length ? "no_hours" : closedDays ? "closed_day" : "no_times_left" };
+  }
+  const starts = candidates.map((value) => new Date(value));
+  const requested = input.staffId ? [input.staffId] : undefined;
+  const busy = await loadBusyTimes(tx, schedule, {
+    staffIds: eligibleStaffIds(schedule, requested),
+    from: new Date(Math.min(...starts.map(Number))),
+    to: new Date(Math.max(...starts.map(Number)) + schedule.serviceDurationMinutes * 60_000),
+    ignoreAppointmentId: input.ignoreAppointmentId,
+  });
+  const limit = input.limit ?? Infinity;
+  const openings: string[] = [];
+  let reason: UnavailableReason | undefined;
+  for (const [index, startsAt] of starts.entries()) {
+    const staffIds = staffForTime(schedule, startsAt, requested, now.getTime());
+    if (typeof staffIds !== "string" && openSlots(schedule, startsAt, staffIds, busy).length) openings.push(candidates[index]!);
+    else reason ??= typeof staffIds === "string" ? staffIds : "taken";
+  }
+  if (!openings.length) return { ...found, openings, moreOpenings: 0, reason: reason ?? "taken" };
+  const chosen = input.spread ? spreadAcross(openings.sort(), limit) : openings.slice(0, limit);
+  return { ...found, openings: chosen.sort(), moreOpenings: openings.length - chosen.length };
+}
+
+/** Up to `limit` items, evenly spaced from the first to the last. */
+function spreadAcross(items: string[], limit: number): string[] {
+  if (items.length <= limit) return items;
+  if (limit <= 1) return items.slice(0, limit);
+  return Array.from({ length: limit }, (_, index) => items[Math.round((index * (items.length - 1)) / (limit - 1))]!);
+}
+
+/** Trimmed notes, or null when empty. */
+export function appointmentNotes(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (trimmed.length > MAX_APPOINTMENT_NOTES_LENGTH) throw Object.assign(new Error(`Notes can be up to ${MAX_APPOINTMENT_NOTES_LENGTH} characters.`), { status: 400, code: "invalid_request" });
+  return trimmed || null;
+}
+
+export async function bookAppointment(
+  context: DomainContext,
+  input: BookingInput,
+): Promise<{ appointmentId: string; contactId: string; staffId: string; employeeName?: string }> {
+  return await withBusinessTransaction(context.db, bookingActor(input), async (tx) => {
+    // The first read refuses a time the schedule rules out without taking any
+    // lock, and otherwise gives a stable, sorted lock set: the staff who could
+    // take the time. Reference data is reloaded after each candidate lock
+    // because it may change while we wait.
+    const durationMinutes = bookingDuration(input.durationMinutes);
+    const notes = appointmentNotes(input.notes);
+    const internalNotes = appointmentNotes(input.internalNotes);
+    const initialReference = await loadAvailabilityReference(tx, { businessId: input.businessId, serviceId: input.serviceId, startsAt: input.startsAt, durationMinutes });
+    const candidates = staffForTime(initialReference, initialReference.startsAt, input.preferredStaffId ? [input.preferredStaffId] : undefined, Date.now());
+    if (typeof candidates === "string") throw new BookingUnavailableError(candidates, "No staff member is available for this service.");
+    let selectedStaff: { id: string } | undefined;
+    let selectedReference: AvailabilityReference | undefined;
+    for (const candidateId of candidates) {
+      await lockStaff(tx, candidateId);
+      const reference = await loadAvailabilityReference(tx, { businessId: input.businessId, serviceId: input.serviceId, startsAt: input.startsAt, durationMinutes });
+      const staffIds = staffForTime(reference, reference.startsAt, [candidateId], Date.now());
+      if (typeof staffIds === "string") continue;
+      if (openSlots(reference, reference.startsAt, staffIds, await loadBusyTimes(tx, reference, { staffIds, from: reference.startsAt, to: reference.endsAt })).length) {
+        selectedStaff = { id: candidateId };
+        selectedReference = reference;
+        break;
+      }
+    }
+    if (!selectedStaff || !selectedReference) throw new BookingUnavailableError("taken", "No staff member is available for this service.");
+    const reference = selectedReference;
+    const startsAt = reference.startsAt;
+    const endsAt = reference.endsAt;
+    const { contact, created: contactCreated } = await findOrCreateContactByPhone(tx, { businessId: input.businessId, phone: input.contactPhone, name: input.contactName });
+    const contactId = contact.id;
+    // A caller's contact is made when the call starts, before anyone knows their name.
+    if (input.contactName && !contactCreated) await tx.update(contacts).set({ name: input.contactName, updatedAt: new Date() }).where(and(eq(contacts.id, contactId), eq(contacts.businessId, input.businessId), isNull(contacts.name)));
+    await recordSmsConsentAnswerInTransaction(tx, { businessId: input.businessId, contactId, phone: input.contactPhone, contact, answer: input.smsConsent, source: "appointment_booking" });
+    const [appointment] = await tx.insert(appointments).values({
+      businessId: input.businessId,
+      contactId,
+      staffId: selectedStaff.id,
+      serviceId: input.serviceId,
+      startsAt,
+      endsAt,
+      timezone: input.timezone,
+      status: "confirmed",
+      sourceChannel: input.sourceChannel,
+      calendarSyncState: "pending",
+      notes,
+      internalNotes,
+    }).returning({ id: appointments.id, revision: appointments.revision });
+    if (!appointment) {
+      throw new Error("Appointment could not be created.");
+    }
+    const [confirmation] = await tx.insert(notifications).values({
+      businessId: input.businessId,
+      channel: "sms",
+      kind: "booking_confirmation",
+      relatedId: appointment.id,
+      scheduledFor: new Date(),
+      status: "pending",
+    }).onConflictDoNothing().returning({ id: notifications.id });
+    if (!confirmation) {
+      throw new Error("Booking confirmation notification could not be created.");
+    }
+    await enqueueOutbox(tx, {
+      topic: "calendar.syncAppointment",
+      businessId: input.businessId,
+      aggregateType: "appointment",
+      aggregateId: appointment.id,
+      dedupeKey: `appointment:${appointment.id}:calendar:create`,
+      payload: { appointmentId: appointment.id },
+    });
+    await enqueueOutbox(tx, {
+      topic: "realtime.publish",
+      businessId: input.businessId,
+      aggregateType: "appointment",
+      aggregateId: appointment.id,
+      dedupeKey: `appointment:${appointment.id}:updated:${appointment.revision}`,
+      payload: { type: "appointment.updated", entityId: appointment.id, revision: appointment.revision },
+    });
+    await enqueueOutbox(tx, {
+      topic: "notification.dispatch",
+      businessId: input.businessId,
+      aggregateType: "appointment",
+      aggregateId: appointment.id,
+      dedupeKey: `notification:${confirmation.id}:dispatch`,
+      ...heldForCall(input.callId, { notificationId: confirmation.id }),
+    });
+    const reminderAt = new Date(startsAt.getTime() - 24 * 60 * 60 * 1000);
+    if (reminderAt > new Date()) {
+      const [reminder] = await tx.insert(notifications).values({
+        businessId: input.businessId,
+        channel: "sms",
+        kind: "appointment_reminder",
+        relatedId: appointment.id,
+        scheduledFor: reminderAt,
+        status: "pending",
+      }).onConflictDoNothing().returning({ id: notifications.id });
+      if (reminder) {
+        await enqueueOutbox(tx, {
+          topic: "notification.dispatch",
+          businessId: input.businessId,
+          aggregateType: "appointment",
+          aggregateId: appointment.id,
+          dedupeKey: `notification:${reminder.id}:dispatch`,
+          availableAt: reminderAt,
+          payload: { notificationId: reminder.id, appointmentRevision: appointment.revision },
+        });
+      }
+    }
+    if (input.callId) await recordCallOutcomeInTransaction(tx, { businessId: input.businessId, callId: input.callId, contactId, outcome: { kind: "booked", serviceName: reference.serviceName, startsAt: startsAt.toISOString() } });
+    if (input.apiAudit) await tx.insert(auditLogs).values({ businessId: input.businessId, actorUserId: input.apiAudit.actorUserId, eventType: "api.appointment.booked", entityType: "appointment", entityId: appointment.id, payload: input.apiAudit.payload });
+    if (input.operatorUserId) await tx.insert(auditLogs).values({ businessId: input.businessId, actorUserId: input.operatorUserId, eventType: "appointment_change.booked", entityType: "appointment", entityId: appointment.id, payload: changeAudit({ source: "operator", userId: input.operatorUserId }).payload });
+    if (contactCreated) await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "contact.created", resourceId: contactId });
+    await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "appointment.booked", resourceId: appointment.id });
+    const employeeName = reference.employees.get(selectedStaff.id);
+    return { appointmentId: appointment.id, contactId, staffId: selectedStaff.id, ...(employeeName ? { employeeName } : {}) };
+  });
+}
+
+async function recordAppointmentChange(
+  context: DomainContext,
+  input: { name: "appointment.rescheduled" | "appointment.cancelled"; businessId: string; appointmentId: string; source: string },
+): Promise<void> {
+  await recordProductEventBestEffort(context, {
+    name: input.name,
+    businessId: input.businessId,
+    distinctId: getPostHogDistinctIdForBusinessSystem(input.businessId),
+    properties: { appointmentId: input.appointmentId, source: input.source },
+  });
+}
+
+const EXCLUSION_VIOLATION = "23P01";
+
+type AppointmentChangeSource = { source: "operator"; userId: string } | { source: "caller"; callId?: string } | { source: "api"; audit: ApiAudit } | { source: "calendar"; provider: string };
+
+function changeAudit(change: AppointmentChangeSource): { actorUserId: string | null; payload: Record<string, unknown> } {
+  if (change.source === "operator") return { actorUserId: change.userId, payload: { source: "operator" } };
+  if (change.source === "api") return { actorUserId: change.audit.actorUserId, payload: { source: "api", ...change.audit.payload } };
+  if (change.source === "calendar") return { actorUserId: null, payload: { source: "calendar", provider: change.provider } };
+  return { actorUserId: null, payload: { source: "caller" } };
+}
+
+/**
+ * Cancels inside the caller's transaction: skips pending reminders, queues the
+ * calendar removal and the customer's cancellation text, and emits
+ * appointment.cancelled. Returns "already" when the appointment was cancelled
+ * before and "missing" when it does not exist. Either way, callers' requests
+ * to cancel it are done.
+ */
+export async function cancelAppointmentInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; appointmentId: string; change: AppointmentChangeSource },
+): Promise<"cancelled" | "already" | "missing"> {
+  // Whatever cancels it: an operator, the caller, the public API or MCP, or
+  // approving one of several requests for it.
+  await tx.update(inboxItems).set({ status: "done", updatedAt: new Date() }).where(and(
+    eq(inboxItems.businessId, input.businessId),
+    eq(inboxItems.kind, "voice_message"),
+    eq(inboxItems.status, "open"),
+    inArray(sql`${inboxItems.metadata}->>'request'`, [...APPOINTMENT_REQUESTS]),
+    sql`${inboxItems.metadata}->>'appointmentId' = ${input.appointmentId}`,
+  ));
+  const [appointment] = await tx.update(appointments).set({ status: "canceled", calendarSyncState: "pending", revision: sql`${appointments.revision} + 1`, updatedAt: new Date() }).where(and(eq(appointments.id, input.appointmentId), eq(appointments.businessId, input.businessId), ne(appointments.status, "canceled"))).returning({ id: appointments.id, revision: appointments.revision, startsAt: appointments.startsAt });
+  if (!appointment) {
+    const [existing] = await tx.select({ id: appointments.id }).from(appointments).where(and(eq(appointments.id, input.appointmentId), eq(appointments.businessId, input.businessId))).limit(1);
+    return existing ? "already" : "missing";
+  }
+  const audit = changeAudit(input.change);
+  await tx.insert(auditLogs).values({ businessId: input.businessId, actorUserId: audit.actorUserId, eventType: "appointment_change.canceled", entityType: "appointment", entityId: appointment.id, payload: audit.payload });
+  await tx.update(notifications)
+    .set({ status: "skipped", updatedAt: new Date() })
+    .where(and(
+      eq(notifications.businessId, input.businessId),
+      eq(notifications.relatedId, appointment.id),
+      eq(notifications.kind, "appointment_reminder"),
+      inArray(notifications.status, ["pending", "processing"]),
+    ));
+  // The customer's cancellation text. Delivery sends it only to a contact who
+  // agreed to texts. An appointment that already started gets none: clearing
+  // up a past one shouldn't text the customer.
+  if (appointment.startsAt > new Date()) {
+    const [cancellation] = await tx.insert(notifications).values({ businessId: input.businessId, channel: "sms", kind: CANCELLATION_CONFIRMATION, relatedId: appointment.id, scheduledFor: new Date(), status: "pending" }).onConflictDoNothing().returning({ id: notifications.id });
+    if (cancellation) await enqueueOutbox(tx, { topic: "notification.dispatch", businessId: input.businessId, aggregateType: "appointment", aggregateId: appointment.id, dedupeKey: `notification:${cancellation.id}:dispatch`, ...heldForCall(input.change.source === "caller" ? input.change.callId : undefined, { notificationId: cancellation.id }) });
+  }
+  await enqueueOutbox(tx, {
+    topic: "calendar.syncAppointment",
+    businessId: input.businessId,
+    aggregateType: "appointment",
+    aggregateId: appointment.id,
+    dedupeKey: `appointment:${appointment.id}:calendar:cancel:${appointment.revision}`,
+    payload: { appointmentId: appointment.id, action: "cancel" },
+  });
+  await enqueueOutbox(tx, {
+    topic: "realtime.publish",
+    businessId: input.businessId,
+    aggregateType: "appointment",
+    aggregateId: appointment.id,
+    dedupeKey: `appointment:${appointment.id}:updated:${appointment.revision}`,
+    payload: { type: "appointment.updated", entityId: appointment.id, revision: appointment.revision },
+  });
+  await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "appointment.cancelled", resourceId: appointment.id });
+  return "cancelled";
+}
+
+/**
+ * Follows bookings someone changed in the calendar itself, where the time has
+ * already changed. A cancelled booking cancels its upcoming appointment and a
+ * moved one moves it, and the operator hears about either. An appointment with
+ * a calendar write still pending stays out of this, since that write may be
+ * the change that retired its event id.
+ */
+export async function followCalendarBookingChanges(
+  context: DomainContext,
+  input: { businessId: string; provider: string; changes: { cancelled: string[]; moved: Array<{ eventId: string; toEventId: string; startsAt: string; endsAt: string }> } },
+): Promise<{ cancelled: string[]; moved: string[] }> {
+  const moves = new Map(input.changes.moved.map((move) => [move.eventId, move]));
+  const eventIds = [...input.changes.cancelled, ...moves.keys()];
+  if (!eventIds.length) return { cancelled: [], moved: [] };
+  const followed = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const rows = await tx.select({ id: appointments.id, startsAt: appointments.startsAt, endsAt: appointments.endsAt, timezone: appointments.timezone, eventId: appointments.calendarExternalId, contactName: contacts.name }).from(appointments)
+      .leftJoin(contacts, and(eq(contacts.id, appointments.contactId), eq(contacts.businessId, input.businessId)))
+      .where(and(eq(appointments.businessId, input.businessId), eq(appointments.status, "confirmed"), eq(appointments.calendarSyncState, "synced"), gt(appointments.startsAt, new Date()), inArray(appointments.calendarExternalId, eventIds)))
+      .for("update", { of: appointments });
+    const cancelled: string[] = [];
+    const moved: string[] = [];
+    for (const row of rows) {
+      const alert = async (key: string, subject: string, body: string) => await queueOperatorAlertInTransaction(tx, { businessId: input.businessId, eventKind: "calendarSync", eventKey: `calendarSync:appointment:${row.id}:${key}`, subject, body });
+      const when = (value: Date) => new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: row.timezone }).format(value);
+      const customer = row.contactName ?? "a customer";
+      const move = moves.get(row.eventId!);
+      if (!move) {
+        if (await cancelAppointmentInTransaction(tx, { businessId: input.businessId, appointmentId: row.id, change: { source: "calendar", provider: input.provider } }) !== "cancelled") continue;
+        cancelled.push(row.id);
+        await alert("cancelled-in-calendar", `Appointment cancelled in ${input.provider}`, `Someone cancelled ${customer}'s ${when(row.startsAt)} booking in ${input.provider}, so LobbyStack cancelled the appointment. Customers who agreed to texts get a cancellation text.`);
+        continue;
+      }
+      const startsAt = new Date(move.startsAt);
+      const endsAt = new Date(move.endsAt);
+      // Same time under a new uid: nobody needs to hear about it.
+      if (startsAt.getTime() === row.startsAt.getTime() && endsAt.getTime() === row.endsAt.getTime()) {
+        await tx.update(appointments).set({ calendarExternalId: move.toEventId, updatedAt: new Date() }).where(and(eq(appointments.id, row.id), eq(appointments.businessId, input.businessId)));
+        continue;
+      }
+      try {
+        // A savepoint, so a time the staff member can't take leaves the rest of the changes standing.
+        await tx.transaction(async (savepoint) => {
+          const [updated] = await savepoint.update(appointments).set({ startsAt, endsAt, calendarExternalId: move.toEventId, revision: sql`${appointments.revision} + 1`, updatedAt: new Date() }).where(and(eq(appointments.id, row.id), eq(appointments.businessId, input.businessId))).returning();
+          if (!updated) return;
+          await rescheduleAppointmentReminderInTransaction(savepoint, { businessId: input.businessId, appointmentId: row.id, startsAt, revision: updated.revision });
+          const audit = changeAudit({ source: "calendar", provider: input.provider });
+          await savepoint.insert(auditLogs).values({ businessId: input.businessId, actorUserId: audit.actorUserId, eventType: "appointment_change.rescheduled", entityType: "appointment", entityId: row.id, payload: { ...audit.payload, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() } });
+          await enqueueOutbox(savepoint, { topic: "realtime.publish", businessId: input.businessId, aggregateType: "appointment", aggregateId: row.id, dedupeKey: `appointment:${row.id}:updated:${updated.revision}`, payload: { type: "appointment.updated", entityId: row.id, revision: updated.revision } });
+          await emitWebhookEventInTransaction(savepoint, { businessId: input.businessId, type: "appointment.rescheduled", resourceId: row.id });
+        });
+      } catch (error) {
+        const failure = error as { code?: unknown; cause?: { code?: unknown } };
+        if (failure.code !== EXCLUSION_VIOLATION && failure.cause?.code !== EXCLUSION_VIOLATION) throw error;
+        await alert(`move-conflict:${move.toEventId}`, `Booking moved in ${input.provider} clashes with an appointment`, `Someone moved ${customer}'s ${when(row.startsAt)} booking to ${when(startsAt)} in ${input.provider}, but the same staff member already has an appointment then. LobbyStack kept the appointment at ${when(row.startsAt)}. Move one of them, then let ${customer} know.`);
+        continue;
+      }
+      moved.push(row.id);
+      await alert(`moved-in-calendar:${move.toEventId}`, `Appointment moved in ${input.provider}`, `Someone moved ${customer}'s ${when(row.startsAt)} booking to ${when(startsAt)} in ${input.provider}, so LobbyStack moved the appointment and its reminder. Let ${customer} know about the new time.`);
+    }
+    return { cancelled, moved };
+  });
+  for (const appointmentId of followed.cancelled) await recordAppointmentChange(context, { name: "appointment.cancelled", businessId: input.businessId, appointmentId, source: "calendar" });
+  for (const appointmentId of followed.moved) await recordAppointmentChange(context, { name: "appointment.rescheduled", businessId: input.businessId, appointmentId, source: "calendar" });
+  return followed;
+}
+
+/**
+ * Saves the video links a calendar sync read for upcoming appointments. A move
+ * can change one, and a conferencing app can add one after the booking.
+ */
+export async function followCalendarVideoLinks(context: DomainContext, input: { businessId: string; links: Array<{ eventId: string; videoUrl: string }> }): Promise<void> {
+  const links = new Map(input.links.map((link) => [link.eventId, link.videoUrl]));
+  if (!links.size) return;
+  await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const rows = await tx.select({ id: appointments.id, eventId: appointments.calendarExternalId, videoUrl: appointments.videoUrl }).from(appointments)
+      .where(and(eq(appointments.businessId, input.businessId), eq(appointments.status, "confirmed"), eq(appointments.calendarSyncState, "synced"), gt(appointments.startsAt, new Date()), inArray(appointments.calendarExternalId, [...links.keys()])));
+    for (const row of rows) {
+      const videoUrl = links.get(row.eventId!);
+      if (videoUrl && videoUrl !== row.videoUrl) await saveAppointmentVideoUrlInTransaction(tx, { businessId: input.businessId, appointmentId: row.id, videoUrl });
+    }
+  });
+}
+
+/**
+ * An operator cancels an appointment, which also closes callers' requests to
+ * cancel it. Returns "already" for an appointment cancelled before.
+ */
+export async function cancelAppointment(
+  context: DomainContext,
+  input: { userId: string; businessId: string; appointmentId: string },
+): Promise<"cancelled" | "already"> {
+  const result = await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, { userId: input.userId, businessId: input.businessId, minimumRole: "scheduler" });
+    const result = await cancelAppointmentInTransaction(tx, { businessId: input.businessId, appointmentId: input.appointmentId, change: { source: "operator", userId: input.userId } });
+    if (result === "missing") throw Object.assign(new Error("Appointment not found."), { status: 404, code: "not_found" });
+    return result;
+  });
+  if (result === "cancelled") await recordAppointmentChange(context, { name: "appointment.cancelled", businessId: input.businessId, appointmentId: input.appointmentId, source: "operator" });
+  return result;
+}
+
+/**
+ * An operator moves an appointment to a new time, which closes callers' requests to move it.
+ * The domain requires the scheduler role or above. Returns null when the appointment
+ * doesn't exist or is cancelled; an unavailable time throws BookingUnavailableError.
+ */
+export async function rescheduleAppointment(
+  context: DomainContext,
+  input: { userId: string; businessId: string; appointmentId: string; startsAt: string },
+): Promise<{ startsAt: Date } | null> {
+  const moved = await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, { userId: input.userId, businessId: input.businessId, minimumRole: "scheduler" });
+    return await rescheduleAppointmentInTransaction(tx, { businessId: input.businessId, appointmentId: input.appointmentId, startsAt: input.startsAt, change: { source: "operator", userId: input.userId } });
+  });
+  if (!moved) return null;
+  await recordAppointmentChange(context, { name: "appointment.rescheduled", businessId: input.businessId, appointmentId: input.appointmentId, source: "operator" });
+  return { startsAt: moved.startsAt };
+}
+
+/**
+ * The times an appointment can move to on one local day (YYYY-MM-DD in the
+ * business's timezone), for an operator. Its own time doesn't count as taken.
+ */
+export async function findRescheduleOpenings(
+  context: DomainContext,
+  input: { userId: string; businessId: string; appointmentId: string; date: string },
+): Promise<{ timezone: string; openings: string[]; reason?: NoOpeningsReason }> {
+  return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, { userId: input.userId, businessId: input.businessId, minimumRole: "scheduler" });
+    const [existing] = await tx.select({ serviceId: appointments.serviceId }).from(appointments).where(and(eq(appointments.businessId, input.businessId), eq(appointments.id, input.appointmentId), ne(appointments.status, "canceled"))).limit(1);
+    if (!existing) throw Object.assign(new Error("Appointment not found."), { status: 404, code: "not_found" });
+    const found = await findOpeningsInTransaction(tx, { businessId: input.businessId, serviceId: existing.serviceId, dates: [input.date], ignoreAppointmentId: input.appointmentId });
+    return { timezone: found.timezone, openings: found.openings, ...(found.reason ? { reason: found.reason } : {}) };
+  });
+}
+
+/**
+ * Moves an appointment to a new time, inside the caller's transaction. It
+ * keeps its staff member while they're active and free then, even when its
+ * service is now assigned to others; otherwise it goes to a free staff member
+ * who does the service. `staffId` asks for one staff member instead. Checks
+ * availability (hours, closures, time off, calendar busy time and freshness)
+ * under the staff locks, reschedules the reminder, queues the calendar update
+ * and emits appointment.rescheduled. `beforeUpdate` runs after the checks and
+ * can veto the change, for example to consume a caller's verification.
+ */
+export async function rescheduleAppointmentInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; appointmentId: string; startsAt: string; change: AppointmentChangeSource; callerPhone?: string; staffId?: string; beforeUpdate?: () => Promise<boolean> },
+): Promise<{ appointmentId: string; serviceId: string; startsAt: Date; endsAt: Date } | null> {
+  const row = (await tx.select({ id: appointments.id, serviceId: appointments.serviceId, staffId: appointments.staffId, durationMinutes: services.durationMinutes }).from(appointments).innerJoin(contacts, and(eq(appointments.contactId, contacts.id), eq(contacts.businessId, input.businessId))).innerJoin(services, and(eq(appointments.serviceId, services.id), eq(services.businessId, input.businessId))).where(and(eq(appointments.id, input.appointmentId), eq(appointments.businessId, input.businessId), input.callerPhone !== undefined ? eq(contacts.phone, input.callerPhone) : undefined)).limit(1))[0];
+  if (!row) return null;
+  const startsAt = new Date(input.startsAt);
+  if (!Number.isFinite(startsAt.getTime())) throw new Error("A valid appointment start time is required.");
+  const endsAt = new Date(startsAt.getTime() + row.durationMinutes * 60_000);
+  const lookup = { businessId: input.businessId, serviceId: row.serviceId, startsAt: startsAt.toISOString() };
+  const candidates = input.staffId ? [input.staffId] : [row.staffId, ...eligibleStaffIds(await loadAvailabilityReference(tx, lookup)).filter((id) => id !== row.staffId)];
+  // Every candidate locked up front, in id order like booking, so two changes can't deadlock; then the rules read again under the locks.
+  for (const id of [...candidates].sort()) await lockStaff(tx, id);
+  const reference = await loadAvailabilityReference(tx, lookup);
+  let staffId: string | undefined;
+  let reason: UnavailableReason | undefined;
+  for (const candidate of candidates) {
+    const free = staffForTime(reference, startsAt, [candidate], Date.now(), row.staffId);
+    if (typeof free !== "string" && openSlots(reference, startsAt, free, await loadBusyTimes(tx, reference, { staffIds: free, from: startsAt, to: endsAt, ignoreAppointmentId: row.id })).length) {
+      staffId = candidate;
+      break;
+    }
+    // The appointment's own staff member's reason, unless they can no longer take the service at all.
+    if (!reason || reason === "no_staff") reason = typeof free === "string" ? free : "taken";
+  }
+  if (!staffId) throw new BookingUnavailableError(reason ?? "taken", "That appointment time is no longer available.");
+  if (input.beforeUpdate && !(await input.beforeUpdate())) return null;
+  const [updated] = await tx.update(appointments).set({ startsAt, endsAt, staffId, status: "confirmed", calendarSyncState: "pending", revision: sql`${appointments.revision} + 1`, updatedAt: new Date() }).where(and(eq(appointments.id, row.id), eq(appointments.businessId, input.businessId), ne(appointments.status, "canceled"))).returning({ revision: appointments.revision });
+  if (!updated) return null;
+  await rescheduleAppointmentReminderInTransaction(tx, { businessId: input.businessId, appointmentId: row.id, startsAt, revision: updated.revision });
+  // Callers' requests to move or cancel it are done, whoever moved it: the new time settles either question.
+  await tx.update(inboxItems).set({ status: "done", updatedAt: new Date() }).where(and(
+    eq(inboxItems.businessId, input.businessId),
+    eq(inboxItems.kind, "voice_message"),
+    eq(inboxItems.status, "open"),
+    inArray(sql`${inboxItems.metadata}->>'request'`, [...APPOINTMENT_REQUESTS]),
+    sql`${inboxItems.metadata}->>'appointmentId' = ${row.id}`,
+  ));
+  // The customer's text with the new time. Each move gets its own kind, since an appointment can move more than once.
+  if (startsAt > new Date()) {
+    const [confirmation] = await tx.insert(notifications).values({ businessId: input.businessId, channel: "sms", kind: `${RESCHEDULE_CONFIRMATION}:${updated.revision}`, relatedId: row.id, scheduledFor: new Date(), status: "pending" }).onConflictDoNothing().returning({ id: notifications.id });
+    if (confirmation) await enqueueOutbox(tx, { topic: "notification.dispatch", businessId: input.businessId, aggregateType: "appointment", aggregateId: row.id, dedupeKey: `notification:${confirmation.id}:dispatch`, ...heldForCall(input.change.source === "caller" ? input.change.callId : undefined, { notificationId: confirmation.id }) });
+  }
+  const audit = changeAudit(input.change);
+  await tx.insert(auditLogs).values({ businessId: input.businessId, actorUserId: audit.actorUserId, eventType: "appointment_change.rescheduled", entityType: "appointment", entityId: row.id, payload: { ...audit.payload, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(), ...(staffId !== row.staffId ? { staffId } : {}) } });
+  await enqueueOutbox(tx, { topic: "calendar.syncAppointment", businessId: input.businessId, aggregateType: "appointment", aggregateId: row.id, dedupeKey: `appointment:${row.id}:calendar:reschedule:${updated.revision}`, payload: { appointmentId: row.id, action: "reschedule" } });
+  await enqueueOutbox(tx, { topic: "realtime.publish", businessId: input.businessId, aggregateType: "appointment", aggregateId: row.id, dedupeKey: `appointment:${row.id}:updated:${updated.revision}`, payload: { type: "appointment.updated", entityId: row.id, revision: updated.revision } });
+  await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "appointment.rescheduled", resourceId: row.id });
+  return { appointmentId: row.id, serviceId: row.serviceId, startsAt, endsAt };
+}
+
+export async function rescheduleAppointmentForCaller(
+  context: DomainContext,
+  input: { businessId: string; agentId?: string; appointmentId: string; callerPhone: string; startsAt: string; verificationId: string },
+): Promise<{ appointmentId: string; serviceId: string; startsAt: Date; endsAt: Date } | null> {
+  const result = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => await rescheduleAppointmentInTransaction(tx, {
+    businessId: input.businessId,
+    appointmentId: input.appointmentId,
+    startsAt: input.startsAt,
+    callerPhone: input.callerPhone,
+    change: { source: "caller" },
+    beforeUpdate: async () => await consumeAppointmentChangeVerificationInTransaction(tx, { businessId: input.businessId, agentId: input.agentId, verificationId: input.verificationId, appointmentId: input.appointmentId, callerPhone: input.callerPhone, action: "reschedule" }),
+  }));
+  if (result) {
+    await recordAppointmentChange(context, { name: "appointment.rescheduled", businessId: input.businessId, appointmentId: result.appointmentId, source: "caller" });
+  }
+  return result;
+}
+
+/**
+ * The verified caller cancels. Returns the cancelled appointment with the
+ * caller's answer on file about texts, which the cancellation text follows.
+ */
+export async function cancelAppointmentForCaller(
+  context: DomainContext,
+  input: { businessId: string; agentId?: string; appointmentId: string; callerPhone: string; verificationId: string; callId?: string },
+): Promise<{ appointmentId: string; serviceId: string; startsAt: Date; endsAt: Date; smsConsentOnFile: SmsConsentOnFile } | null> {
+  const result = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const row = (await tx.select({ id: appointments.id, serviceId: appointments.serviceId, startsAt: appointments.startsAt, endsAt: appointments.endsAt, contactId: contacts.id, smsConsentStatus: contacts.smsConsentStatus, operatorBlockedAt: contacts.operatorBlockedAt }).from(appointments).innerJoin(contacts, and(eq(appointments.contactId, contacts.id), eq(contacts.businessId, input.businessId))).where(and(eq(appointments.id, input.appointmentId), eq(appointments.businessId, input.businessId), eq(contacts.phone, input.callerPhone), ne(appointments.status, "canceled"))).limit(1))[0];
+    if (!row) return null;
+    const consumed = await consumeAppointmentChangeVerificationInTransaction(tx, { businessId: input.businessId, agentId: input.agentId, verificationId: input.verificationId, appointmentId: input.appointmentId, callerPhone: input.callerPhone, action: "cancel" });
+    if (!consumed) return null;
+    if (await cancelAppointmentInTransaction(tx, { businessId: input.businessId, appointmentId: row.id, change: { source: "caller", ...(input.callId ? { callId: input.callId } : {}) } }) !== "cancelled") return null;
+    return { appointmentId: row.id, serviceId: row.serviceId, startsAt: row.startsAt, endsAt: row.endsAt, smsConsentOnFile: smsConsentOnFile(row) };
+  });
+  if (result) {
+    await recordAppointmentChange(context, { name: "appointment.cancelled", businessId: input.businessId, appointmentId: result.appointmentId, source: "caller" });
+  }
+  return result;
+}

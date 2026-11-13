@@ -1,0 +1,97 @@
+---
+title: "Configurer LobbyStack"
+description: "Créez un compte LobbyStack, ajoutez votre site Web, choisissez votre numéro de téléphone et rencontrez votre agent."
+sidebarTitle: "Guide de configuration"
+contentType: "Tutorial"
+---
+
+import NoCodePrompt from "/snippets/fr/setup-prompts/no-code.mdx";
+
+Ce tutoriel suit le parcours de configuration du tableau de bord LobbyStack, de la création du compte jusqu'au premier test de votre agent.
+
+<Note>
+  Aucune carte bancaire n'est requise. Sans forfait payant, votre numéro de téléphone est gratuit pendant 14 jours. Les forfaits Starter et Pro incluent un numéro. Les limites d'utilisation de la version hébergée s'affichent dans **Réglages** > **Utilisation** une fois connecté. [Vérifiez où les numéros sont disponibles](/fr/getting-started/number-countries).
+</Note>
+
+<NoCodePrompt />
+
+## Avant de commencer
+
+Il vous faut :
+
+- Une adresse courriel et un mot de passe.
+- L'URL d'un site Web public, si vous voulez que LobbyStack importe les connaissances de votre site pendant la configuration.
+
+## Étapes de configuration
+
+<Steps>
+  <Step title="Créez votre compte">
+    Ouvrez la page d'inscription de LobbyStack, entrez votre adresse courriel et votre mot de passe, puis envoyez le formulaire.
+
+    LobbyStack ouvre la configuration après l'inscription.
+  </Step>
+
+  <Step title="Nommez votre entreprise">
+    Entrez le nom d'entreprise que LobbyStack doit afficher dans le tableau de bord et dans les informations visibles par vos clients.
+  </Step>
+
+  <Step title="Importez votre site Web">
+    Entrez l'URL d'un site Web public pour lancer une importation en arrière-plan, ou choisissez **Je n'ai pas de site web**.
+
+    L'importation du site Web parcourt les pages publiques comme les services, la page À propos, la FAQ, les heures d'ouverture et la page de contact. Les pages privées, les URL de réseau local et les pages qui exigent une connexion ne sont pas importées.
+
+    LobbyStack affiche la progression de l'importation et vous amène à l'étape suivante quand elle se termine. Si l'importation échoue, vous passez tout de suite à la suite. Si elle dure plus de 90 secondes, vous continuez et elle se poursuit en arrière-plan. L'importation règle aussi la langue des appelants de votre agent d'après votre site. Sans site Web, vous choisissez la langue vous-même.
+  </Step>
+
+  <Step title="Choisissez le numéro de votre agent">
+    Choisissez le pays de votre numéro, puis un numéro dans la liste. Sans forfait payant, le numéro commence un essai gratuit de 14 jours. Consultez [le fonctionnement de l'essai gratuit](/fr/getting-started/claim-your-number#essai-gratuit-du-numéro).
+
+    Si LobbyStack ne vend pas de numéros dans votre pays, choisissez **Autre pays** dans la liste **Pays**, puis votre pays dans la liste qui s'ouvre. Cliquez sur **M'écrire quand ils seront disponibles** pour recevoir un courriel, puis sur **Continuer sans numéro**. Vous pouvez tester votre agent dans votre navigateur en attendant.
+
+    Si LobbyStack ne peut pas vous offrir d'essai gratuit, par exemple parce que vous en avez déjà utilisé un, l'étape affiche Starter, Pro et Enterprise. Abonnez-vous, et LobbyStack vous ramène au choix du numéro. Si votre pays n'a pas de numéros, choisissez-le dans la liste **Pays** à côté des forfaits pour continuer sans numéro.
+  </Step>
+
+  <Step title="Dites comment vous avez connu LobbyStack">
+    Choisissez une réponse, puis cliquez sur **Continuer**.
+  </Step>
+
+  <Step title="Rencontrez votre agent">
+    Appelez votre numéro, ou testez votre agent dans votre navigateur par un appel ou un clavardage. Autorisez l'accès au micro quand votre navigateur le demande.
+
+    Sur le même écran, changez le nom, la voix, le message d'accueil et la langue des appelants de votre agent.
+
+    Cliquez sur **Aller au tableau de bord** quand vous êtes prêt.
+  </Step>
+
+  <Step title="Choisissez un forfait">
+    Si votre numéro a commencé un essai gratuit, LobbyStack affiche les forfaits avant l'**Accueil**. Cliquez sur **Commencer l'essai gratuit de 14 jours** pour garder l'essai et ouvrir l'**Accueil**, sans carte bancaire. Vos 14 jours ont commencé quand vous avez obtenu le numéro. Pour payer dès maintenant, cliquez sur **S'abonner** sous Starter ou Pro.
+  </Step>
+
+  <Step title="Renvoyez votre ligne d'entreprise">
+    Pour garder le numéro que vos clients composent déjà, [renvoyez-le vers votre numéro LobbyStack](/fr/getting-started/forward-calls). Sur l'**Accueil**, **Gardez votre numéro existant**, dans **Premiers pas**, affiche les étapes pour votre opérateur.
+  </Step>
+
+  <Step title="Ouvrez le tableau de bord">
+    Avant que de vrais appelants joignent votre agent, ouvrez-le depuis **Agents** et vérifiez sa page **Général** et ses règles. Vérifiez ensuite **Détails**, **Connaissances**, **Services** et **Employés** dans **Entreprise**. Pour ajouter des documents, ouvrez **Ajoutez d'autres sources** dans **Premiers pas**, sur l'**Accueil**.
+  </Step>
+</Steps>
+
+## À configurer avant de recevoir de vrais appelants
+
+<CardGroup cols={2}>
+  <Card title="Votre agent" icon="comment-dots" href="/fr/agent/overview">
+    Définissez la phrase d'ouverture, la voix, les règles et le numéro de transfert.
+  </Card>
+  <Card title="Détails de l'entreprise" icon="building" href="/fr/settings/business-details">
+    Définissez vos heures d'ouverture et la langue dans laquelle les appels commencent.
+  </Card>
+  <Card title="Connaissances" icon="book-open" href="/fr/settings/knowledge">
+    Ajoutez des réponses exactes sur votre entreprise à partir de texte, de documents ou de l'importation du site Web.
+  </Card>
+  <Card title="Services" icon="calendar-check" href="/fr/settings/services">
+    Ajoutez vos services et connectez Google Calendar pour réserver des rendez-vous en direct.
+  </Card>
+  <Card title="Boîte de réception" icon="inbox" href="/fr/dashboard/inbox">
+    Lisez vos appels et vos clavardages test, et répondez aux clients.
+  </Card>
+</CardGroup>

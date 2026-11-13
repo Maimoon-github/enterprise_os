@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "./*.ts",
+    "./performance/**/*.ts",
+    "./operations/**/*.ts",
+    "./lib/**/*.ts",
+    "./voice/**/*.ts"
+  ]
+}

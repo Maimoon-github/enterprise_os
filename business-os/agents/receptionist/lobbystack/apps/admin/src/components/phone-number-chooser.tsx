@@ -1,0 +1,505 @@
+"use client";
+
+import { useEffect, useState, type ReactNode } from "react";
+
+import { LoaderCircle } from "lucide-react";
+
+import { Flag } from "@/components/flag";
+import { PhoneNumberChooserSkeleton } from "@/components/loading-skeletons";
+import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Surface } from "@/components/ui/surface";
+import {
+  formatPhoneNumberDisplay,
+  normalizeOnboardingPhoneCountry,
+  supportsOnboardingAreaCodeSearch,
+  type SupportedOnboardingPhoneCountry,
+} from "@/lib/phone";
+import { requestJson } from "@/lib/request-json";
+
+export type NumberSelectionContext = {
+  mode: "suggested" | "city" | "area_code" | "toll_free";
+  countryCode: string;
+  regionCode?: string;
+  city?: string;
+  areaCode?: string;
+  metroKey?: string;
+};
+
+export type AvailableNumberSummary = {
+  e164: string;
+  display: string;
+  locality?: string;
+  region?: string;
+  countryCode: string;
+  kind: "local" | "toll_free";
+  capabilities: { sms: boolean; voice: boolean };
+  selectionContext: NumberSelectionContext;
+  claimToken?: string;
+};
+
+export type VerifiedPhoneMarket = {
+  countryCode: string;
+  regionCode?: string;
+  city?: string;
+  areaCode?: string;
+};
+
+export type InitialSuggestionResult = {
+  market: VerifiedPhoneMarket;
+  suggestion: AvailableNumberSummary | null;
+  alternatives: Array<AvailableNumberSummary>;
+  /** The owner's verified phone decides the country, so there's no other to pick. */
+  countryFixed?: boolean;
+};
+
+export type SearchResult = {
+  market: VerifiedPhoneMarket;
+  selectionContext: NumberSelectionContext;
+  numbers: Array<AvailableNumberSummary>;
+};
+
+export type ClaimResult =
+  | { status: "claimed"; phoneNumberId: string; e164: string }
+  | { status: "unavailable"; alternatives: Array<AvailableNumberSummary> }
+  | { status: "failed" };
+
+type PhoneNumberChooserLabels = {
+  countryLabel: string;
+  areaCodeLabel: string;
+  areaCodePlaceholder: string;
+  search: string;
+  searching: string;
+  phoneNumberHeader: string;
+  select: string;
+  loadMore: string;
+  empty: string;
+  loadFailed: string;
+  searchFailed: string;
+  claimFailed: string;
+  unavailable: string;
+};
+
+type PhoneNumberChooserProps = {
+  businessId: string;
+  getInitialNumberSuggestion: (args: {
+    businessId: string;
+  }) => Promise<InitialSuggestionResult>;
+  searchAvailableNumbers: (args: {
+    businessId: string;
+    mode: "suggested" | "area_code";
+    countryCode: SupportedOnboardingPhoneCountry;
+    areaCode?: string;
+    limit: number;
+  }) => Promise<SearchResult>;
+  claimNumber: (args: {
+    businessId: string;
+    e164: string;
+    selectionContext: NumberSelectionContext;
+    claimToken: string;
+  }) => Promise<ClaimResult>;
+  labels: PhoneNumberChooserLabels;
+  getErrorMessage: (error: unknown, fallback: string) => string;
+  onClaimed: (result: Extract<ClaimResult, { status: "claimed" }>, number: AvailableNumberSummary) => void;
+  onClaimStarted?: (number: AvailableNumberSummary) => void;
+  onClaimCompleted?: (number: AvailableNumberSummary) => void;
+  /** A last country option for owners in a country we sell no numbers in. Picking it calls onSelect and keeps the country. */
+  otherCountry?: { label: string; onSelect: () => void } | undefined;
+  /** A line under the search for the picked country, such as an extra number's price. */
+  countryNote?: ((country: SupportedOnboardingPhoneCountry) => ReactNode) | undefined;
+  /** Asked before a picked number is claimed, such as to confirm what it costs. Resolving false keeps the list. */
+  confirmClaim?: ((number: AvailableNumberSummary) => Promise<boolean>) | undefined;
+};
+
+const OTHER_COUNTRY = "other";
+
+type NumberOffer = { phoneE164: string; locality?: string; region?: string; countryCode: string; claimToken: string; capabilities: { sms: boolean; voice: boolean } };
+type OffersResponse = { numbers: NumberOffer[]; market?: { countryCode: string; areaCode?: string }; countryFixed?: boolean };
+
+function toSummary(offer: NumberOffer, selectionContext: NumberSelectionContext): AvailableNumberSummary {
+  return { ...offer, e164: offer.phoneE164, display: formatPhoneNumberDisplay(offer.phoneE164), kind: "local", selectionContext };
+}
+
+/**
+ * The chooser's search and claim calls. A business replacing a number uses the replacement endpoints and names the
+ * number; one buying an extra number for an agent uses the extra ones and names the agent; a first number uses the
+ * onboarding ones.
+ */
+export function phoneNumberChooserApi(replacement: boolean, target: { phoneNumberId?: string | undefined; extraForAgentId?: string | undefined } = {}): Pick<PhoneNumberChooserProps, "getInitialNumberSuggestion" | "searchAvailableNumbers" | "claimNumber"> {
+  const extra = Boolean(target.extraForAgentId);
+  const prefix = extra ? "/api/phone-numbers/extra" : replacement ? "/api/phone-numbers/replacement" : "/api/onboarding/phone-numbers";
+  const claimTarget = extra ? { agentId: target.extraForAgentId } : replacement && target.phoneNumberId ? { phoneNumberId: target.phoneNumberId } : {};
+  const searchAvailableNumbers: PhoneNumberChooserProps["searchAvailableNumbers"] = async ({ businessId, mode, countryCode, areaCode, limit }) => {
+    const selectionContext = { mode, countryCode, ...(areaCode ? { areaCode } : {}) };
+    const result = await requestJson<OffersResponse>(`${prefix}/search?businessId=${encodeURIComponent(businessId)}`, { method: "POST", body: JSON.stringify({ selection: { countryCode, kind: "local", ...(areaCode ? { areaCode } : {}) }, limit }) });
+    return { market: { countryCode }, selectionContext, numbers: result.numbers.map(offer => toSummary(offer, selectionContext)) };
+  };
+  return {
+    searchAvailableNumbers,
+    async getInitialNumberSuggestion({ businessId }) {
+      const result = replacement || extra
+        ? await requestJson<OffersResponse>(`${prefix}/search?businessId=${encodeURIComponent(businessId)}`, { method: "POST", body: JSON.stringify({ limit: 10 }) })
+        : await requestJson<OffersResponse>(`${prefix}/suggestion?businessId=${encodeURIComponent(businessId)}`);
+      const countryCode = normalizeOnboardingPhoneCountry(result.market?.countryCode ?? result.numbers[0]?.countryCode);
+      const numbers = result.numbers.map(offer => toSummary(offer, { mode: "suggested", countryCode }));
+      return { market: { ...result.market, countryCode }, suggestion: numbers[0] ?? null, alternatives: numbers.slice(1), countryFixed: Boolean(result.countryFixed) };
+    },
+    async claimNumber({ businessId, claimToken, selectionContext }) {
+      const { claimId } = await requestJson<{ claimId: string }>(`${prefix}/claim?businessId=${encodeURIComponent(businessId)}`, { method: "POST", body: JSON.stringify({ claimToken, idempotencyKey: crypto.randomUUID(), ...claimTarget }) });
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        const { claim } = await requestJson<{ claim: { status: string; requestedE164: string; phoneNumberId: string | null } | null }>(`${prefix}/claim/${encodeURIComponent(claimId)}?businessId=${encodeURIComponent(businessId)}`);
+        if (claim?.status === "claimed" && claim.phoneNumberId) return { status: "claimed", phoneNumberId: claim.phoneNumberId, e164: claim.requestedE164 };
+        if (claim?.status === "unavailable") {
+          const refreshed = await searchAvailableNumbers({ businessId, mode: selectionContext.mode === "area_code" ? "area_code" : "suggested", countryCode: normalizeOnboardingPhoneCountry(selectionContext.countryCode), ...(selectionContext.areaCode ? { areaCode: selectionContext.areaCode } : {}), limit: 10 });
+          return { status: "unavailable", alternatives: refreshed.numbers };
+        }
+        if (!claim || claim.status === "failed") return { status: "failed" };
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      return { status: "failed" };
+    },
+  };
+}
+
+const COUNTRY_OPTIONS: Array<{
+  code: SupportedOnboardingPhoneCountry;
+  label: string;
+}> = [
+  { code: "US", label: "US" },
+  { code: "CA", label: "CA" },
+  { code: "PR", label: "PR" },
+  { code: "GB", label: "UK" },
+  { code: "AU", label: "AU" },
+  { code: "NZ", label: "NZ" },
+];
+
+function getNumberLocationLabel(number: AvailableNumberSummary): string | null {
+  const parts = [number.locality, number.region].filter(
+    (part): part is string => Boolean(part && part.trim().length > 0),
+  );
+
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+function dedupeNumbers(numbers: Array<AvailableNumberSummary>): Array<AvailableNumberSummary> {
+  const seen = new Set<string>();
+  const unique: Array<AvailableNumberSummary> = [];
+
+  for (const number of numbers) {
+    if (seen.has(number.e164)) {
+      continue;
+    }
+    seen.add(number.e164);
+    unique.push(number);
+  }
+
+  return unique;
+}
+
+export function PhoneNumberChooser({
+  businessId,
+  getInitialNumberSuggestion,
+  searchAvailableNumbers,
+  claimNumber,
+  labels,
+  getErrorMessage,
+  onClaimed,
+  onClaimStarted,
+  onClaimCompleted,
+  otherCountry,
+  countryNote,
+  confirmClaim,
+}: PhoneNumberChooserProps) {
+  const [country, setCountry] = useState<SupportedOnboardingPhoneCountry>("US");
+  const [countryFixed, setCountryFixed] = useState(false);
+  const [areaCode, setAreaCode] = useState<string>("");
+  const [numbers, setNumbers] = useState<Array<AvailableNumberSummary>>([]);
+  const [selectedE164, setSelectedE164] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchSource, setSearchSource] = useState<"search" | "loadMore" | null>(null);
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const isSearching = searchSource !== null;
+  const supportsAreaCodeSearch = supportsOnboardingAreaCodeSearch(country);
+
+  function handleCountryChange(value: string | null): void {
+    if (value === OTHER_COUNTRY) {
+      otherCountry?.onSelect();
+      return;
+    }
+    const nextCountry = normalizeOnboardingPhoneCountry(value);
+    setCountry(nextCountry);
+    if (!supportsOnboardingAreaCodeSearch(nextCountry)) {
+      setAreaCode("");
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load(): Promise<void> {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await getInitialNumberSuggestion({ businessId });
+        if (cancelled) return;
+
+        const initialCountry = normalizeOnboardingPhoneCountry(result.market.countryCode);
+        setCountry(initialCountry);
+        setCountryFixed(Boolean(result.countryFixed));
+        setAreaCode(
+          supportsOnboardingAreaCodeSearch(initialCountry)
+            ? (result.market.areaCode ?? "")
+            : "",
+        );
+        const initialList = [
+          ...(result.suggestion ? [result.suggestion] : []),
+          ...result.alternatives,
+        ];
+        setNumbers(initialList);
+        setHasMore(initialList.length >= 10);
+      } catch (loadError) {
+        if (cancelled) return;
+        setError(getErrorMessage(loadError, labels.loadFailed));
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId, getErrorMessage, getInitialNumberSuggestion, labels.loadFailed]);
+
+  async function handleSearch(source: "search" | "loadMore" = "search"): Promise<void> {
+    setSearchSource(source);
+    setError(null);
+    try {
+      const trimmedAreaCode = supportsAreaCodeSearch ? areaCode.trim() : "";
+      const limit = source === "loadMore" ? Math.min(numbers.length + 10, 20) : 10;
+      const result = await searchAvailableNumbers({
+        businessId,
+        mode: trimmedAreaCode ? "area_code" : "suggested",
+        countryCode: country,
+        ...(trimmedAreaCode ? { areaCode: trimmedAreaCode } : {}),
+        limit,
+      });
+      const nextNumbers =
+        source === "loadMore" ? dedupeNumbers([...numbers, ...result.numbers]) : result.numbers;
+      setNumbers(nextNumbers);
+      setHasMore(
+        source === "loadMore"
+          ? nextNumbers.length > numbers.length && nextNumbers.length < 20
+          : nextNumbers.length >= 10,
+      );
+    } catch (searchError) {
+      setError(getErrorMessage(searchError, labels.searchFailed));
+    } finally {
+      setSearchSource(null);
+    }
+  }
+
+  async function handleSelect(number: AvailableNumberSummary): Promise<void> {
+    if (isClaiming) return;
+    if (!number.claimToken) {
+      setError(labels.claimFailed);
+      return;
+    }
+    setSelectedE164(number.e164);
+    setIsClaiming(true);
+    setError(null);
+    try {
+      if (confirmClaim && !await confirmClaim(number)) {
+        setSelectedE164(null);
+        return;
+      }
+      onClaimStarted?.(number);
+      const result = await claimNumber({
+        businessId,
+        e164: number.e164,
+        selectionContext: number.selectionContext,
+        claimToken: number.claimToken,
+      });
+
+      if (result.status === "claimed") {
+        onClaimCompleted?.(number);
+        onClaimed(result, number);
+        return;
+      }
+
+      if (result.status === "unavailable") {
+        setError(labels.unavailable);
+        setNumbers(result.alternatives);
+        setHasMore(result.alternatives.length >= 5);
+        setSelectedE164(null);
+        return;
+      }
+
+      setError(getErrorMessage(null, labels.claimFailed));
+      setSelectedE164(null);
+    } catch (claimError) {
+      setError(getErrorMessage(claimError, labels.claimFailed));
+      setSelectedE164(null);
+    } finally {
+      setIsClaiming(false);
+    }
+  }
+
+  if (isLoading) return <PhoneNumberChooserSkeleton labels={{ country: labels.countryLabel, areaCode: labels.areaCodeLabel, search: labels.search, phoneNumber: labels.phoneNumberHeader }} />;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div
+        className={
+          supportsAreaCodeSearch
+            ? "grid grid-cols-1 gap-3 sm:grid-cols-[140px_1fr_160px_auto] sm:items-end"
+            : "grid grid-cols-1 gap-3 sm:grid-cols-[140px_auto] sm:items-end"
+        }
+      >
+        <div className="flex flex-col gap-2">
+          <label className="type-title" htmlFor="number-country">
+            {labels.countryLabel}
+          </label>
+          {countryFixed ? (
+            <p className="flex h-9 items-center gap-2 type-body" id="number-country">
+              <Flag region={country} />
+              {COUNTRY_OPTIONS.find((option) => option.code === country)?.label ?? country}
+            </p>
+          ) : <Select onValueChange={handleCountryChange} value={country}>
+            <SelectTrigger className="*:data-[slot=select-value]:gap-2" id="number-country">
+              <SelectValue>{(value: SupportedOnboardingPhoneCountry | null) => value ? <><Flag region={value} /><span className="truncate">{COUNTRY_OPTIONS.find((option) => option.code === value)?.label ?? value}</span></> : null}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {COUNTRY_OPTIONS.map((option) => (
+                <SelectItem key={option.code} value={option.code}>
+                  <Flag region={option.code} />
+                  {option.label}
+                </SelectItem>
+              ))}
+              {otherCountry ? <SelectItem value={OTHER_COUNTRY}>{otherCountry.label}</SelectItem> : null}
+            </SelectContent>
+          </Select>}
+        </div>
+        {supportsAreaCodeSearch ? (
+          <>
+            <div aria-hidden="true" className="hidden sm:block" />
+            <div className="flex flex-col gap-2">
+              <label className="type-title" htmlFor="number-area-code">
+                {labels.areaCodeLabel}
+              </label>
+              <Input
+                id="number-area-code"
+                inputMode="numeric"
+                maxLength={3}
+                onChange={(event) => setAreaCode(event.target.value.replace(/[^\d]/g, ""))}
+                placeholder={labels.areaCodePlaceholder}
+                value={areaCode}
+              />
+            </div>
+          </>
+        ) : null}
+        <Button
+          className="w-full sm:w-auto"
+          disabled={isSearching}
+          onClick={() => void handleSearch()}
+          type="button"
+        >
+          {searchSource === "search" ? (
+            <>
+              <LoaderCircle className="size-4 animate-spin" />
+              {labels.searching}
+            </>
+          ) : (
+            labels.search
+          )}
+        </Button>
+      </div>
+
+      {countryNote ? <p className="type-body-muted" data-testid="number-country-note">{countryNote(country)}</p> : null}
+
+      <Surface className="flex h-96 flex-col">
+        <div className="flex h-14 shrink-0 items-center border-b border-border px-4 type-title text-muted-foreground">
+          <span>{labels.phoneNumberHeader}</span>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {numbers.length === 0 ? (
+            <div className="px-4 py-8 text-center type-body-muted">
+              {labels.empty}
+            </div>
+          ) : (
+            <ul className="flex flex-col">
+              {numbers.map((number) => {
+                const isThisLoading = isClaiming && selectedE164 === number.e164;
+                const locationLabel = getNumberLocationLabel(number);
+                return (
+                  <li
+                    className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                    key={number.e164}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <span className="type-title text-foreground">
+                        {number.display}
+                      </span>
+                      {locationLabel ? (
+                        <span className="type-caption text-muted-foreground">
+                          {locationLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <Button
+                      className="rounded-full"
+                      disabled={isThisLoading}
+                      onClick={() => void handleSelect(number)}
+                      size="sm"
+                      type="button"
+                    >
+                      {isThisLoading ? (
+                        <LoaderCircle className="size-4 animate-spin" />
+                      ) : (
+                        labels.select
+                      )}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        {hasMore ? (
+          <div className="shrink-0 border-t border-border px-4 py-3">
+            <button
+              aria-label={labels.loadMore}
+              className="inline-flex h-5 min-w-16 items-center justify-start type-title text-muted-foreground hover:text-foreground disabled:opacity-60"
+              disabled={isSearching}
+              onClick={() => void handleSearch("loadMore")}
+              type="button"
+            >
+              {searchSource === "loadMore" ? (
+                <LoaderCircle className="size-4 translate-y-0.5 animate-spin" />
+              ) : (
+                labels.loadMore
+              )}
+            </button>
+          </div>
+        ) : null}
+      </Surface>
+
+      {error ? <FieldError>{error}</FieldError> : null}
+    </div>
+  );
+}

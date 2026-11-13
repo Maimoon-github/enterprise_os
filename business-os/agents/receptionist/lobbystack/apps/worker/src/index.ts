@@ -1,0 +1,345 @@
+import { assertDatabaseRole, businesses, createDatabaseClient, databaseHealthCheck, enqueueOutbox, listReembedBusinesses, listSchedulerBusinesses, listSummaryBackfillBusinesses, withBusinessTransaction, withDispatcherTransaction } from "@lobbystack/db";
+import { createBusinessHoursExtractor, createBusinessSummarizer, createCallSummarizer } from "@lobbystack/agent-core";
+import { DEFAULT_EMAIL_FROM, assertProductionSecrets, isMaintenanceMode, partnerFeatureWarnings, partnerFeatures } from "@lobbystack/shared";
+import { brandChangesChannel, encodeBrandChange, listenForBrandChanges, recordPartnerTierBilling, type BrandChangePublisher } from "@lobbystack/domain";
+import { createQueue, createRedisConnection, createWorkerOptions, enqueueJob, isKnownJobType, jobQueues, type JobEnvelope, type JobQueue } from "@lobbystack/jobs";
+import { createEmbeddingProvider } from "@lobbystack/providers/ai/embeddingProvider";
+import { FirecrawlProvider } from "@lobbystack/providers/crawling/firecrawl";
+import { createCustomHostnameProvider, systemTxtLookup } from "@lobbystack/providers/customHostnames/customHostnames";
+import { SmtpEmailProvider } from "@lobbystack/providers/email/smtp";
+import { CalcomCalendarProvider, calcomCalendarConfigFromEnv, calcomCalendarConfigProblem } from "@lobbystack/providers/calcom/calendar";
+import { CalendlyCalendarProvider, calendlyCalendarConfigFromEnv, calendlyCalendarConfigProblem } from "@lobbystack/providers/calendly/calendar";
+import { GoogleCalendarProvider } from "@lobbystack/providers/google/calendar";
+import { InstagramProvider } from "@lobbystack/providers/instagram/instagram";
+import { SecretBox } from "@lobbystack/providers/crypto/secretBox";
+import { PolarBillingProvider } from "@lobbystack/providers/polar/polarBilling";
+import { createStorageProvider } from "@lobbystack/providers/storage/provider";
+import { createTelephony } from "@lobbystack/providers/telephony/registry";
+import { getMeter, initializeTelemetry, redactOtelExceptionText, shutdownTelemetry, withExtractedTraceContext, withSpan } from "@lobbystack/telemetry/node";
+import { redactJobError } from "./redactJobError";
+import type { CalendarProviders } from "./calendarJobs";
+import { DelayedError, Worker } from "bullmq";
+import { and, eq, isNull } from "drizzle-orm";
+import OpenAI from "openai";
+
+import { createWorkerDomainContext } from "./domainContext";
+import { createFailureReporter } from "./failureReporting";
+import { handleJob, type WorkerDependencies } from "./handlers";
+import { startHealthServer } from "./health";
+import { createLiveCallHandler, liveDrainTimeoutMs } from "./liveCalls";
+import { OutboxDispatcher } from "./outboxDispatcher";
+import { configureSchedulers, type Schedule } from "./scheduler";
+import { getWorkerSnapshotCache } from "./snapshot-cache";
+import { logUnhandledRejections } from "./processGuards";
+
+function createEmailProvider(): SmtpEmailProvider | undefined {
+  const host = process.env.SMTP_HOST;
+  if (!host) {
+    console.warn("SMTP_HOST is missing. Authentication email jobs will fail until email delivery is configured.");
+    return undefined;
+  }
+  return new SmtpEmailProvider({
+    host,
+    // A deploy template can leave optional inputs blank, so "" counts as unset.
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    username: process.env.SMTP_USERNAME ?? "",
+    password: process.env.SMTP_PASSWORD ?? "",
+    from: process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM,
+    // EMAIL_REPLY_TO is the host brand's Reply-To, which the handlers pass per email.
+  });
+}
+
+function createPolarProvider(): PolarBillingProvider | undefined {
+  const accessToken = process.env.POLAR_ACCESS_TOKEN;
+  const organizationId = process.env.POLAR_ORGANIZATION_ID;
+  return accessToken && organizationId ? new PolarBillingProvider({ accessToken, organizationId, ...(process.env.POLAR_API_BASE_URL ? { baseUrl: process.env.POLAR_API_BASE_URL } : {}) }) : undefined;
+}
+
+function createCrawlerProvider(): FirecrawlProvider | undefined {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  return apiKey ? new FirecrawlProvider({ apiKey, ...(process.env.FIRECRAWL_BASE_URL ? { baseUrl: process.env.FIRECRAWL_BASE_URL } : {}) }) : undefined;
+}
+
+function createCalendarProviders(): CalendarProviders | undefined {
+  const providers: CalendarProviders = {};
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (clientId && clientSecret && redirectUri) providers.google = new GoogleCalendarProvider({ clientId, clientSecret, redirectUri });
+  const calcom = calcomCalendarConfigFromEnv();
+  if (calcom) providers.calcom = new CalcomCalendarProvider(calcom);
+  const calendly = calendlyCalendarConfigFromEnv();
+  if (calendly) providers.calendly = new CalendlyCalendarProvider(calendly);
+  return Object.keys(providers).length ? providers : undefined;
+}
+
+// Sending needs the app's ID and secret and the key the tokens are encrypted with.
+function createInstagramOperations(): WorkerDependencies["instagram"] {
+  const appId = process.env.INSTAGRAM_APP_ID;
+  const appSecret = process.env.INSTAGRAM_APP_SECRET;
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!appId || !appSecret || !encryptionKey) return undefined;
+  const box = new SecretBox(encryptionKey);
+  return {
+    provider: new InstagramProvider({ appId, appSecret, redirectUri: process.env.INSTAGRAM_REDIRECT_URI ?? "" }),
+    decryptToken: (value) => box.decrypt(value),
+    encryptToken: (value) => box.encrypt(value),
+  };
+}
+
+function createProductAnalytics(): WorkerDependencies["productAnalytics"] {
+  const apiKey = process.env.POSTHOG_API_KEY;
+  if (!apiKey) return undefined;
+  const host = process.env.POSTHOG_HOST ?? "https://us.i.posthog.com";
+  return {
+    capture: async (events) => {
+      const response = await fetch(`${host.replace(/\/$/, "")}/batch/`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ api_key: apiKey, batch: events.map((event) => ({ event: event.event, distinct_id: event.distinctId, properties: event.properties, timestamp: event.timestamp })) }),
+      });
+      if (!response.ok) throw new Error(`PostHog product event delivery failed with status ${response.status}.`);
+    },
+  };
+}
+
+// Containers set PORT; local `pnpm dev` only has WORKER_PORT, which the admin's WORKER_INTERNAL_URL targets.
+const workerPort = Number(process.env.PORT || process.env.WORKER_PORT || 3002);
+
+async function main(): Promise<void> {
+  logUnhandledRejections();
+  // Sampled once at boot; it does not pause work already claimed by another process.
+  if (isMaintenanceMode(process.env)) {
+    // Keep liveness available, but report unready and avoid all queue, scheduler, and provider startup.
+    startHealthServer(workerPort, { ready: false, redis: false, database: false, storage: false, activeJobs: 0, draining: false });
+    console.warn("Worker consumer startup is isolated by maintenance mode.");
+    return;
+  }
+  assertProductionSecrets(process.env, [
+    "ENCRYPTION_KEY",
+    "OTP_HASH_SECRET",
+    ...(process.env.STORAGE_PROVIDER === "s3" ? [] : ["LOCAL_STORAGE_SIGNING_SECRET"]),
+  ]);
+  for (const warning of partnerFeatureWarnings(process.env)) console.warn(`[partners] ${warning}`);
+  const calcomProblem = calcomCalendarConfigProblem(process.env);
+  if (calcomProblem) console.warn(`[calendar] ${calcomProblem}`);
+  const calendlyProblem = calendlyCalendarConfigProblem(process.env);
+  if (calendlyProblem) console.warn(`[calendar] ${calendlyProblem}`);
+  await initializeTelemetry({ serviceName: "lobbystack-worker" });
+  const database = createDatabaseClient("lobbystack_worker");
+  const dispatcherDatabase = createDatabaseClient("lobbystack_dispatcher");
+  await Promise.all([assertDatabaseRole(database), assertDatabaseRole(dispatcherDatabase)]);
+  // The number claims read whether this deployment bills tiers from the database, which only the environment knows.
+  await recordPartnerTierBilling({ db: database.db }, { enabled: partnerFeatures(process.env).tierBilling });
+  const realtime = createRedisConnection({ prefix: process.env.REDIS_PREFIX ?? "lobbystack" });
+  // A partner's saved brand reaches emails at once rather than when the brand cache runs out.
+  const brandChanges = createRedisConnection({ prefix: process.env.REDIS_PREFIX ?? "lobbystack" });
+  // A subscribed connection runs nothing else, so the worker announces its own changes, such as a partner's domain going live, on the realtime one.
+  const brandChangePublisher: BrandChangePublisher = { publish: async (change) => { await realtime.publish(brandChangesChannel(), encodeBrandChange(change)); } };
+  listenForBrandChanges(brandChanges).catch((error: unknown) => console.warn(JSON.stringify({ event: "brand_changes.listen_failed", message: redactOtelExceptionText(error instanceof Error ? error.message : String(error)) })));
+  const queues = new Map<JobQueue, ReturnType<typeof createQueue>>();
+  for (const queueName of jobQueues) {
+    const queue = createQueue(queueName);
+    queue.on("error", (error) => console.error(JSON.stringify({ event: "queue.error", queue: queueName, message: redactOtelExceptionText(error.message) })));
+    queues.set(queueName, queue);
+  }
+  const appliedSchedulers = new Map<string, Schedule>();
+  const refreshSchedulers = async () => {
+    const businessRows = await listSchedulerBusinesses(dispatcherDatabase.db);
+    await configureSchedulers(queues, businessRows, appliedSchedulers);
+  };
+  const state = { ready: false, redis: false, database: false, storage: false, activeJobs: 0, draining: false };
+  const embeddings = createEmbeddingProvider();
+  const domain = createWorkerDomainContext({ db: database.db, snapshotCache: getWorkerSnapshotCache(), brandChanges: brandChangePublisher, ...(embeddings ? { embeddings } : {}) });
+  const liveCalls = createLiveCallHandler({ domain, attachLock: realtime });
+  const health = startHealthServer(workerPort, state, liveCalls.handle);
+  const email = createEmailProvider();
+  // Every carrier with credentials, routed by TELEPHONY_* (docs/voice/runtime.md). Malformed routing fails the boot.
+  const telephony = createTelephony(process.env);
+  const storage = createStorageProvider();
+  const polar = createPolarProvider();
+  const customHostnames = createCustomHostnameProvider(process.env);
+  const crawler = createCrawlerProvider();
+  const calendars = createCalendarProviders();
+  const instagram = createInstagramOperations();
+  const productAnalytics = createProductAnalytics();
+  const callSummarizer = createCallSummarizer();
+  const businessSummarizer = createBusinessSummarizer();
+  const businessHoursExtractor = createBusinessHoursExtractor();
+  await storage.ensureReady();
+  // The recording copy schedules its own retries, so the client doesn't retry a 409.
+  const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 }) : undefined;
+  const dependencies: WorkerDependencies = {
+    domain,
+    realtime,
+    ...(calendars ? { calendars } : {}),
+    ...(instagram ? { instagram } : {}),
+    ...(crawler ? { crawler } : {}),
+    ...(productAnalytics ? { productAnalytics } : {}),
+    ...(callSummarizer ? { callSummarizer } : {}),
+    ...(businessSummarizer ? { businessSummarizer } : {}),
+    ...(businessHoursExtractor ? { businessHoursExtractor } : {}),
+    ...(email ? { email } : {}),
+    ...(embeddings ? { embeddings } : {}),
+    telephony,
+    storage,
+    ...(openai ? { liveSessions: openai.live.sessions } : {}),
+    recoverLiveCall: liveCalls.recover,
+    ...(polar ? { polar } : {}),
+    ...(customHostnames ? { customDomains: { hostnames: customHostnames, lookupTxt: systemTxtLookup } } : {}),
+    enqueueProductEventRetentionContinuation: async (input) => {
+      await withBusinessTransaction(database.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+        await enqueueOutbox(tx, {
+          topic: "privacy.scrubMessage",
+          businessId: input.businessId,
+          aggregateType: "product_event_retention",
+          dedupeKey: `product-event-retention:${input.businessId}:${input.chainId}:${input.sequence}`,
+          payload: {
+            productEventRetentionContinuation: true,
+            retentionBefore: input.before.toISOString(),
+            retentionChainId: input.chainId,
+            retentionSequence: input.sequence,
+          },
+          availableAt: input.availableAt,
+        });
+      });
+    },
+  };
+  const failures = createFailureReporter();
+  const workers = jobQueues.map((queueName) => {
+    const meter = getMeter("lobbystack-worker");
+    const duration = meter.createHistogram("lobbystack.worker.job_duration_ms", { unit: "ms" });
+    const wait = meter.createHistogram("lobbystack.worker.job_wait_ms", { unit: "ms" });
+    const queue = queues.get(queueName);
+    if (!queue) {
+      throw new Error(`Queue ${queueName} is not configured.`);
+    }
+    const worker = new Worker<JobEnvelope>(queueName, async (job, token) => {
+      // The job span joins the trace of the request that queued the job.
+      const result = await withExtractedTraceContext(job.data.trace, async () => await withSpan(`job.${job.data.type}`, { attributes: { "messaging.system": "bullmq", "messaging.destination.name": queueName, "lobbystack.job_type": job.data.type } }, async () => {
+        state.activeJobs += 1;
+        const started = performance.now();
+        let outcome = "success";
+        const type = isKnownJobType(job.data.type) ? job.data.type : "unknown";
+        wait.record(Math.max(0, Date.now() - job.timestamp - (job.delay ?? 0)), { queue: queueName, type });
+        try {
+          const maxAttempts = job.opts.attempts ?? 1;
+          return await handleJob(job.data, dependencies, {
+            isFinalAttempt: job.attemptsMade + 1 >= maxAttempts,
+            ...(job.id ? { queueJobId: job.id } : {}),
+            queuedAtMs: job.timestamp,
+          });
+        } catch (error) {
+          outcome = "error";
+          throw redactJobError(error);
+        } finally {
+          duration.record(performance.now() - started, { queue: queueName, type, outcome });
+          state.activeJobs -= 1;
+        }
+      }));
+      if (result.status !== "deferred") return result;
+      // Run again once the lease ends, without spending one of the job's attempts.
+      await job.moveToDelayed(result.retryAt.getTime(), token);
+      throw new DelayedError();
+    }, createWorkerOptions(queueName));
+    // BullMQ emits connection problems as "error" events; without a listener
+    // Node treats one as fatal. The reporter sends them to PostHog error
+    // tracking and logs them, but only once per window.
+    failures.attach(worker, queueName);
+    const failedJobs = getMeter("lobbystack-worker").createCounter("lobbystack.worker.jobs.failed");
+    worker.on("failed", (job) => failedJobs.add(1, {
+      "messaging.destination.name": queueName,
+      ...(job?.data.type ? { "lobbystack.job_type": job.data.type } : {}),
+    }));
+    return worker;
+  });
+  const dispatcher = new OutboxDispatcher(dispatcherDatabase.db, new Map(queues));
+  const abort = new AbortController();
+  const dispatchLoop = dispatcher.run(abort.signal).catch((error) => failures.reportDispatcherStopped(error));
+  // Workers already take jobs here, so a long pass over every business at boot
+  // holds up neither jobs nor the health check.
+  void (async () => {
+    await refreshSchedulers();
+    // Existing businesses got summaries before AI wrote them, so write one for
+    // each business that still has the sign-up placeholder and has knowledge.
+    // Knowledge changes queue their own refresh, so other businesses need none.
+    const summaryQueue = queues.get("bulk");
+    if (businessSummarizer && summaryQueue) {
+      for (const businessId of await listSummaryBackfillBusinesses(dispatcherDatabase.db)) {
+        await enqueueJob(summaryQueue, {
+          type: "business.generateSummary",
+          businessId,
+          payload: { businessId, reason: "backfill" },
+          idempotencyKey: `business-summary-backfill:${businessId}:v1`,
+        });
+      }
+    }
+    // Nothing filled opening hours before, so most businesses have none and
+    // instant booking found every time unavailable. Read each one's knowledge
+    // for its hours once. Every run records a fingerprint, so a restart only
+    // queues businesses the job hasn't read yet.
+    if (businessHoursExtractor && summaryQueue) {
+      const hoursBusinesses = await withDispatcherTransaction(dispatcherDatabase.db, async (tx) => await tx.select({ id: businesses.id }).from(businesses).where(and(eq(businesses.hoursSource, "none"), isNull(businesses.hoursFingerprint))));
+      for (const business of hoursBusinesses) {
+        await enqueueJob(summaryQueue, {
+          type: "business.extractHours",
+          businessId: business.id,
+          payload: { businessId: business.id, reason: "backfill" },
+          idempotencyKey: `business-hours-backfill:${business.id}:v1`,
+        });
+      }
+    }
+    if (embeddings) {
+      const embeddingQueue = queues.get("bulk");
+      if (embeddingQueue) {
+        for (const businessId of await listReembedBusinesses(dispatcherDatabase.db, embeddings.fingerprint)) {
+          await enqueueJob(embeddingQueue, {
+            type: "knowledge.reembedBusiness",
+            businessId,
+            payload: { fingerprint: embeddings.fingerprint },
+            idempotencyKey: `knowledge-reembed:${businessId}:${embeddings.fingerprint}`,
+          });
+        }
+      }
+    }
+  })().catch((error) => console.error("startup scheduling failed", redactOtelExceptionText(error instanceof Error ? error.message : String(error))));
+  const schedulerRefresh = setInterval(() => void refreshSchedulers().catch((error) => console.error("scheduler refresh failed", redactOtelExceptionText(error instanceof Error ? error.message : String(error)))), 5 * 60_000);
+  schedulerRefresh.unref();
+  const checkHealth = async () => {
+    const [databaseStatus, storageStatus, ...redisStatuses] = await Promise.all([
+      databaseHealthCheck(database).then((result) => result.ok).catch(() => false),
+      storage.ensureReady().then(() => true).catch(() => false),
+      ...[...queues.values()].map(async (queue) => { try { await queue.getJobCounts(); return true; } catch { return false; } }),
+      realtime.ping().then((result) => result === "PONG").catch(() => false),
+    ]);
+    state.database = databaseStatus;
+    state.storage = storageStatus;
+    state.redis = redisStatuses.every(Boolean);
+    state.ready = state.database && state.redis && state.storage;
+  };
+  await checkHealth();
+  const healthRefresh = setInterval(() => void checkHealth(), 10_000);
+  healthRefresh.unref();
+
+  const shutdown = async () => {
+    // Readiness fails and new attaches get 503 at once, so new work goes to the next deployment.
+    state.draining = true;
+    clearInterval(schedulerRefresh);
+    clearInterval(healthRefresh);
+    abort.abort();
+    // Stop taking jobs, and let calls in progress end on their own until the
+    // drain timeout. Both still need Redis, the database pools and the HTTP
+    // server (for /internal/live/end), so those close after.
+    await Promise.allSettled([liveCalls.drain(liveDrainTimeoutMs()), dispatchLoop, ...workers.map((worker) => worker.close())]);
+    await Promise.allSettled([...[...queues.values()].map((queue) => queue.close()), realtime.quit(), brandChanges.quit(), database.pool.end(), dispatcherDatabase.pool.end(), new Promise<void>((resolve) => health.close(() => resolve())), shutdownTelemetry()]);
+  };
+  process.once("SIGINT", () => void shutdown().finally(() => process.exit(0)));
+  process.once("SIGTERM", () => void shutdown().finally(() => process.exit(0)));
+}
+
+void main().catch(async (error) => {
+  console.error(redactOtelExceptionText(error instanceof Error ? error.message : String(error)));
+  await shutdownTelemetry();
+  process.exitCode = 1;
+});

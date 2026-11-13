@@ -1,0 +1,98 @@
+"""
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Letting an installed extension answer a channel message before the AI does
+(see app.channels.app_hooks), and announcing every inbound message to it.
+"""
+
+import asyncio
+from datetime import datetime, timezone
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.channels.app_hooks import (
+    ChannelEvent, EventKind, HandledBy, InboundContext, emit_channel_event,
+    inbound_event_id, inbound_handler,
+)
+from app.channels.base import InboundMessage
+from app.core.logger import get_logger
+from app.models.channels import ChannelAccount
+from app.models.session_to_agent import SessionStatus
+
+logger = get_logger(__name__)
+
+# How long the customer's message waits on the extension before the AI (or
+# inbox) takes it. The extension answers synchronously, so this is added to
+# every reply the AI then gives — kept short.
+APP_HANDLER_TIMEOUT_SECONDS = 4.0
+
+
+async def app_claims(db: Session, account: ChannelAccount, session_record, customer_id: str,
+                     inbound: InboundMessage, received_at: datetime) -> bool:
+    """Offer the message to the extension; True when it has dealt with it.
+
+    Only a conversation nobody holds is offered — once a human has it, or a
+    transfer is pending, the human answers. A timeout or a failing extension
+    counts as "not handled", so the customer is never left waiting on it.
+    """
+    handler = inbound_handler()
+    if handler is None or not _open_and_unheld(session_record):
+        return False
+    # Nothing may sit in an open transaction while an outside service thinks
+    db.commit()
+    context = InboundContext(
+        event_id=inbound_event_id(account.id, inbound.external_message_id),
+        organization_id=account.organization_id,
+        channel_account_id=account.id,
+        channel_type=account.channel_type,
+        session_id=str(session_record.session_id),
+        customer_id=customer_id,
+        inbound=inbound,
+        received_at=received_at,
+    )
+    try:
+        # Exactly True: anything else (a stray truthy string, a forgotten
+        # await) must not silence the AI
+        return await asyncio.wait_for(handler(context), APP_HANDLER_TIMEOUT_SECONDS) is True
+    except asyncio.TimeoutError:
+        logger.warning(f"Extension did not answer {inbound.external_message_id} within "
+                       f"{APP_HANDLER_TIMEOUT_SECONDS}s; continuing without it")
+    except Exception as e:
+        logger.error(f"Extension failed on {inbound.external_message_id}; continuing without it: {e}")
+    return False
+
+
+async def announce_inbound(account: ChannelAccount, session_record, customer_id: str,
+                           inbound: InboundMessage, handled_by: HandledBy,
+                           received_at: Optional[datetime] = None) -> None:
+    """Tell listeners about an inbound message and who is answering it. Sent
+    once per message on every path, before any AI reply, under an id derived
+    from the message so a redelivered webhook can't announce it twice."""
+    await emit_channel_event(ChannelEvent(
+        kind=EventKind.INBOUND,
+        event_id=inbound_event_id(account.id, inbound.external_message_id),
+        organization_id=account.organization_id,
+        channel_account_id=account.id,
+        occurred_at=received_at or datetime.now(timezone.utc),
+        session_id=str(session_record.session_id),
+        customer_id=customer_id,
+        inbound=inbound,
+        handled_by=handled_by,
+    ))
+
+
+def _open_and_unheld(session_record) -> bool:
+    return session_record.user_id is None and session_record.status == SessionStatus.OPEN

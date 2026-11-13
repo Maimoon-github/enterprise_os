@@ -1,0 +1,12 @@
+# Published on GitHub, not on the docs site.
+
+# GitHub's index of this folder; the site has its own navigation in docs.json.
+README.md
+
+# Internal records: design history, maintainer process, migration runbooks.
+design/
+maintainers/
+prisma-history/
+multi-tenancy/plan.md
+multi-tenancy/cutover.md
+whatsapp-campaigns/

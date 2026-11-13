@@ -1,0 +1,116 @@
+---
+title: "LinkedIn accounts"
+description: "Connect LinkedIn accounts through Unipile, see their status, and set each account's daily connection request limit and working hours."
+icon: "linkedin"
+---
+
+LinkedIn campaigns send connection requests and messages from LinkedIn accounts that you connect through Unipile. You connect Unipile once for your organization, then add each LinkedIn profile from **Settings → LinkedIn**. That section has three tabs: **Accounts**, **Connection** and **Sending rules**.
+
+<Info>
+Automating LinkedIn is against LinkedIn's terms and can get an account restricted. Read [Responsible use](/responsible-use) first. The limits on this page exist to keep activity modest, but no tool can promise an account will never be limited.
+</Info>
+
+## Connect Unipile
+
+Open **Settings → LinkedIn → Connection**. The **Unipile** card shows **Connected** or **Not connected**.
+
+<Frame caption="The Connection tab before Unipile is connected.">
+  <img src="/assets/screenshots/app/linkedin-connection.png" alt="Settings, LinkedIn, Connection tab showing the Unipile card marked Not connected with a Connect button, above a note that the same connection powers WhatsApp" />
+</Frame>
+
+1. Click **Connect** (or **Edit**) and open **How to connect** for the steps.
+2. Enter the **DSN (API address)** and **Access token** from your Unipile dashboard. Save.
+
+AgentSDR checks the credentials with Unipile before saving. It then registers the webhooks it needs in your Unipile workspace itself, so accepted invitations and replies arrive here. The card's **Webhooks** line shows the result, with **Register again** if it failed and **Show URLs and secret** if you would rather register them by hand. The full credential steps are in [Unipile setup](/integrations/unipile).
+
+The same Unipile connection also powers WhatsApp. Changing it here changes it there too.
+
+Until Unipile is connected, **Accounts** shows a **Connect Unipile** prompt instead of the list.
+
+<Frame caption="Until Unipile is connected, LinkedIn pages show this prompt in place of the list.">
+  <img src="/assets/screenshots/app/linkedin-not-connected.png" alt="A LinkedIn page showing a Connect Unipile to use this prompt with a Connect Unipile button" />
+</Frame>
+
+## Add a LinkedIn account
+
+<Steps>
+  <Step title="Click Connect LinkedIn account">
+    On **Settings → LinkedIn → Accounts**, the button is at the top right. It opens Unipile's hosted sign-in in the same tab and shows **Opening LinkedIn…** while it redirects.
+  </Step>
+  <Step title="Sign in to LinkedIn on Unipile's page">
+    Complete LinkedIn's sign-in and any verification (captcha, code). Unipile hosts this step, so AgentSDR never sees your LinkedIn password.
+  </Step>
+  <Step title="Return to AgentSDR">
+    You are sent back to the Accounts page, which shows **Syncing the connected account from Unipile…** and then lists the account. If the wizard did not complete you see **LinkedIn was not connected**. Try again.
+  </Step>
+</Steps>
+
+If sync fails after a successful sign-in, you see **Connected, but the sync failed**. The account appears after the next outreach run.
+
+## Read the Accounts page
+
+The cards at the top show **Connected**, **Needs attention**, **Requests today** and **Premium**. Each account row shows:
+
+| Column | What it tells you |
+| --- | --- |
+| **Account** | Name and username, with a Premium badge for Premium or Sales Navigator accounts. |
+| **Status** | **Connected**, **Limit reached** or **Disconnected**. |
+| **Requests today** | Connection requests sent today against the account's daily limit. "Own limit" appears when you set a limit for this account. |
+| **Pending** | Leads waiting for a connection request from this account. |
+| **Schedule** | The account's working hours (or "Any time"), and when it next runs. |
+
+What the statuses mean:
+
+- **Connected**: the account can send.
+- **Limit reached**: LinkedIn refused something because of a limit. The account stops for the day and resumes by itself. See [LinkedIn campaigns](/linkedin/campaigns).
+- **Disconnected**: LinkedIn signed the session out or Unipile lost it. Campaigns skip the account until you reconnect. Click **Reconnect** under the status, or choose **Reconnect account** in the row menu. This re-authenticates the same account in place, so its campaigns and history stay.
+
+## Daily connection request limit
+
+The default depends on the account type, and both defaults are set in [Sending rules](/workspace/sending-rules):
+
+| Account | Default per day | Allowed |
+| --- | --- | --- |
+| Premium or Sales Navigator | 30 | 1 to 100 |
+| Free | 5 | 1 to 50 |
+
+To change one account, open its **...** menu and choose **Daily request limit**. Enter a number, or leave it empty to follow the organization's rule, which also means a later change to the rule reaches that account. The dialog warns before you go past the safe edge (above 30 for Premium, above 10 for free) but still lets you save.
+
+<Warning>
+LinkedIn restricts accounts that send much more than 30 invitations a day, and free accounts have a much smaller weekly allowance. Raising the limit past the warning raises the risk of restriction.
+</Warning>
+
+## Working hours
+
+By default an account works whenever its campaigns are due. To restrict it, choose **Set working hours** (or **Edit working hours**) in the row menu. The **Working hours** dialog has:
+
+- **Restrict outreach to working hours**: off means any time.
+- **Timezone**, **Start** and **End**.
+- **Working days**, where at least one day must be selected.
+
+Outside the window the account does nothing: it does not look up profiles, send invitations or send follow-ups. If you want the same hours for every account, set **Working hours for accounts without their own** in [Sending rules](/workspace/sending-rules). An account's own hours always win over that rule.
+
+<Note>
+The Schedule column shows "Any time" for an account without hours of its own, even when an organization-wide rule applies to it.
+</Note>
+
+## Pace between runs
+
+Beyond the daily limit, accounts send in short runs and then rest. Each run sends a few invitations with a gap between them, then the account waits before its next run. These numbers are organization-wide and are in [Sending rules](/workspace/sending-rules). The defaults and how the engine uses them are covered in [LinkedIn campaigns](/linkedin/campaigns).
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="LinkedIn campaigns" icon="linkedin" href="/linkedin/campaigns">
+    Search, invite and follow up.
+  </Card>
+  <Card title="LinkedIn messages" icon="message-circle" href="/linkedin/messages">
+    Conversations and connections.
+  </Card>
+  <Card title="Sending rules" icon="settings" href="/workspace/sending-rules">
+    Limits, gaps and working hours.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/integrations">
+    Unipile credentials step by step.
+  </Card>
+</CardGroup>

@@ -1,0 +1,5 @@
+<script>
+  window.chattermateId = '{widget_id}';
+  window.chattermateBaseUrl = '{api_url}';
+</script>
+<script src="{loader_origin}/webclient/chattermate.min.js"></script>

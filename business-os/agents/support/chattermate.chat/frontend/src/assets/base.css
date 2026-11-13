@@ -1,0 +1,128 @@
+/* ChatterMate base — global resets & keyframes */
+:root {
+  --vt-c-white: #ffffff;
+  --vt-c-white-soft: #f8f8f8;
+  --vt-c-white-mute: #f2f2f2;
+  --vt-c-black: #181818;
+  --vt-c-black-soft: #222222;
+  --vt-c-black-mute: #282828;
+  --vt-c-indigo: #2c3e50;
+  --background-base-rgb: 11,12,16;
+  --background-soft-rgb: 14,15,20;
+  --background-dark-rgb: 0,0,0;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  font-weight: normal;
+}
+
+html, body {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  line-height: 1.6;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Display headings */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: var(--tracking-display);
+  color: var(--text);
+  line-height: 1.2;
+}
+
+/* "ChatterMate" wordmark next to the BrandMark: Bricolage Grotesque, 800, condensed. */
+.brand-wordmark {
+  font-family: var(--font-brand);
+  font-weight: 800;
+  font-stretch: 85%;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+
+/* Inputs inherit font */
+input, textarea, select, button {
+  font-family: var(--font-sans);
+  color: var(--text);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--faint);
+}
+
+/* Text selection */
+::selection {
+  background: #C9F24E;
+  color: #0B0C10;
+}
+
+[data-theme="light"] ::selection {
+  background: #4C7A0B;
+  color: #ffffff;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--o10);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--o16);
+}
+
+/* Global focus ring */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+  border-radius: var(--radius-sm);
+}
+
+/* Keyframe animations */
+@keyframes cm-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes cm-pulse {
+  0%, 100% { opacity: .4; }
+  50% { opacity: 1; }
+}
+
+@keyframes cm-aurora {
+  0% { transform: translate3d(-4%,-2%,0) scale(1); }
+  50% { transform: translate3d(4%,3%,0) scale(1.12); }
+  100% { transform: translate3d(-4%,-2%,0) scale(1); }
+}
+
+@keyframes cm-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes button-loading-spinner {
+  from { transform: rotate(0turn); }
+  to { transform: rotate(1turn); }
+}

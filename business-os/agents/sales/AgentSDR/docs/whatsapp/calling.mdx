@@ -1,0 +1,142 @@
+---
+title: "Calling and recording"
+description: "Place WhatsApp calls from AgentSDR with the Call Recorder Chrome extension, record them from pickup to hang-up, and get a transcript."
+icon: "phone"
+---
+
+AgentSDR places WhatsApp calls through WhatsApp Web, in your own Chrome. A small extension, the Call Recorder, dials the number, records the call and uploads the recording. AgentSDR then transcribes it and keeps it on the lead. Only calls placed from AgentSDR's **Call** button are recorded. Your own calls in WhatsApp Web are never touched.
+
+## What you need
+
+- Google Chrome, version 116 or newer.
+- A WhatsApp number logged in to WhatsApp Web: your own, in your Chrome, or a calling number that AgentSDR keeps open in the cloud. Unipile is not needed to call. It is only needed to message from a number linked through Unipile (see [WhatsApp numbers](/whatsapp/accounts)); a calling number sends and receives messages on its own.
+- Cloudflare R2 connected, where recordings are stored. Connect it on **Settings → WhatsApp → Integrations**. See [Cloudflare R2 setup](/integrations/cloudflare-r2).
+- For transcripts, a transcription model chosen under **Settings → AI provider**.
+- WhatsApp Web in English. The extension finds WhatsApp's **Voice call** and **End call** controls by their English labels.
+
+## Install the extension
+
+The extension is loaded unpacked, so Chrome will not update it by itself.
+
+<Frame caption="The Integrations tab holds the Cloudflare R2 card and the Call Recorder extension card.">
+  <img src="/assets/screenshots/app/whatsapp-integrations.png" alt="Settings, WhatsApp, Integrations tab with Unipile and Cloudflare R2 cards, and a Call Recorder extension card with a Download button and first-time and update instructions" />
+</Frame>
+
+<Steps>
+  <Step title="Download it">
+    Open **Settings → WhatsApp → Integrations** and find the **Call Recorder extension** card. Click **Download**. The file is served to signed-in people from `/downloads/call-recorder`.
+  </Step>
+  <Step title="Unzip and keep it">
+    Unzip it and move the `agentsdr-call-recorder` folder somewhere it can stay, such as Documents. Chrome reads the extension from that folder every time it starts.
+  </Step>
+  <Step title="Load it unpacked">
+    Open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and choose that folder.
+  </Step>
+</Steps>
+
+The card shows whether the extension is **Not installed in this browser**, **Up to date**, or has an **Update available** with the version you have.
+
+## Update the extension
+
+From version 0.14.0 the card's **Update** button opens the extension's own Update page.
+
+<Steps>
+  <Step title="Click Update">
+    On **Settings → WhatsApp → Integrations**, click **Update**. The Update page opens and shows the version you run.
+  </Step>
+  <Step title="Choose the folder, once">
+    Click **Choose folder**. Pick the folder Chrome loaded the extension from. To find it, open `chrome://extensions`, click **Details** on AgentSDR Call Recorder and look under **Source**. Allow Chrome to edit it. After that, updates are written there.
+  </Step>
+  <Step title="Update now">
+    Click **Update now**. The extension installs the version this AgentSDR serves and reloads itself.
+  </Step>
+  <Step title="Reload WhatsApp Web">
+    Reload your WhatsApp Web tab before the next call.
+  </Step>
+</Steps>
+
+Versions before 0.14.0 have no Update button. Download the zip once, replace the folder, and click the reload arrow on the extension in `chrome://extensions`.
+
+<Note>
+AgentSDR refuses to start a call if the extension is too old for the page. It tells you to download the latest, replace the folder and reload the extension.
+</Note>
+
+## Self-hosted AgentSDR
+
+The extension only works with AgentSDR addresses it has been told about. `https://app.agentsdr.ai` and `http://localhost:3000` are built in. If you run your own AgentSDR, add its address:
+
+1. Open the extension's Options page. In `chrome://extensions`, click **Details** on the extension, then **Extension options**.
+2. Under **Your AgentSDR addresses**, enter the address, for example `https://sdr.yourcompany.com`, and click **Add**.
+3. Allow access when Chrome asks. Reload any open AgentSDR tab.
+
+Addresses must use https. Plain http is accepted only for localhost. **Remove** takes an address and its permission back. No rebuild is needed.
+
+## Place a call
+
+Click **Call** next to a lead. It appears on contacts in **WhatsApp → Call campaigns** and in the header of a CRM record.
+
+- If the lead has a phone number, **Call** dials it. The arrow beside the button opens **Change number**.
+- If not, you are asked for a WhatsApp number. It is saved to the lead and replaces a number you correct.
+
+AgentSDR then hands the call to the extension, which opens the chat in WhatsApp Web and presses **Voice call**. A live call strip in AgentSDR shows the stages: **Opening WhatsApp…**, **Calling…**, **Ringing — recording starts when they pick up**, **Recording**.
+
+You may see these notices:
+
+- The extension cannot press **Voice call**: you press it yourself. Recording still starts by itself.
+- **Chrome paused the call audio — switch to the WhatsApp tab and click anywhere.**
+- **Not answered — nothing was recorded.**
+- The chat has no call button, as with a business number run through Meta's API. The strip reports the number as not on WhatsApp.
+
+## Talk through a calling number
+
+You can also call a lead from a cloud calling number and do the talking yourself, with no extension and no WhatsApp in your own browser. Open a lead in an AI calling campaign and click **Call now**. **AI call** has the AI agent make the same call instead.
+
+AgentSDR asks for your microphone, then queues the call on the campaign's number. Your audio and the lead's travel through AgentSDR itself: your voice goes up from this tab, the number plays it into the WhatsApp call, and the lead's side comes back down to your browser. Nothing else needs connecting. A call bar at the bottom of the page shows the stages, **Waiting for the number to be free…**, **Opening the number's WhatsApp…**, **Calling…**, **Ringing…** and **On call**, with **Mute** and **Hang up**. It stays while you move around AgentSDR.
+
+- Use headphones for the best sound. Without them your browser cancels most of the echo, but not all of it.
+- Keep the tab open. Closing or reloading it ends the call a few seconds later.
+- If you block the microphone, nothing is queued. Allow it for the site and try again.
+- Your voice reaches the lead about a quarter to half a second late, a little more than on a phone. Leave a short pause before you answer.
+
+The call is recorded and transcribed like any other, with you as the rep.
+
+## What is recorded, and when
+
+The recording is stereo: your microphone on the left, the lead on the right. It starts when the call opens your microphone, so the lead's first words are not lost. The pickup is the moment the call timer appears. It stops when the timer disappears, **End call** goes away or the microphone is released. A call that nobody picks up is discarded. If no timer shows within a minute, the extension records anyway and the strip says **Call timer not detected — recording started as a fallback**.
+
+The player starts at the pickup, not at the first ring.
+
+When the call ends, the recording uploads straight to your R2 bucket. If the upload fails, the file is saved to your Downloads instead and the strip tells you. A recording can be up to 200 MB, about three hours.
+
+Recordings are never public. Every play uses a short-lived link, and the upload link is valid for 15 minutes.
+
+## Transcripts
+
+If you chose a model, AgentSDR transcribes each recording after it saves, usually in under a minute. Choose it under **Settings → AI provider** in **Call transcription model**. Pick a model that accepts audio, for example a Gemini model. With no model chosen, transcription is off. Transcription runs on your own OpenRouter key like every other AI call. See [AI provider](/workspace/ai-provider).
+
+A transcript has the language, a two or three sentence English summary and the utterances. The speaker labels "rep" and "lead" are inferred, because the model receives the channels merged. If transcription fails, the strip shows **Transcription failed — retry below**.
+
+## After the call
+
+You are taken back to AgentSDR to mark the outcome, for example **No answer**, **Busy / declined**, **Not on WhatsApp**, **Wrong number**, **Interested**, **Meeting booked**, **Call back later**, **Send details**, **Not interested** or **Do not call**. Most outcomes offer a short WhatsApp message you can edit before it opens. A lead who does not pick up comes round again after 1, 2 and then 4 days, then is done.
+
+## Consent
+
+Many places require everyone on a call to consent before it is recorded, and some require you to announce it. Tell people when you record. You are responsible for the law where you and the lead are. Read [Responsible use](/responsible-use).
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="WhatsApp numbers" icon="message-circle" href="/whatsapp/accounts">
+    Link the number you call from.
+  </Card>
+  <Card title="AI provider" icon="sparkles" href="/workspace/ai-provider">
+    Choose the transcription model.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/integrations">
+    Connect Cloudflare R2 for recordings.
+  </Card>
+  <Card title="Responsible use" icon="shield-check" href="/responsible-use">
+    Recording and consent.
+  </Card>
+</CardGroup>

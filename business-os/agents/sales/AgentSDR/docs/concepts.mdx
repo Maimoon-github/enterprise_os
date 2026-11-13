@@ -1,0 +1,77 @@
+---
+title: "Concepts"
+description: "The mental model behind AgentSDR: organizations, one lead record, channels, campaigns, the reply queue and the rules that protect your accounts."
+icon: "lightbulb"
+---
+
+A few ideas explain most of how AgentSDR behaves. Read this once and the rest of the guides will fit together.
+
+## Organizations, members and teams
+
+Everything you do in AgentSDR happens inside an **organization**. Leads, campaigns, conversations, connected accounts, AI settings and sending rules each belong to exactly one organization. A second organization on the same instance sees, changes and counts nothing of the first.
+
+People join an organization as **owner**, **admin** or **member**. **Teams** group people inside an organization, but they do not split the data: everyone in the organization sees the same leads, campaigns and conversations. You can belong to several organizations and switch between them from the account menu at the bottom of the sidebar. See [Organizations and members](/workspace/organizations).
+
+## One lead record
+
+AgentSDR keeps **people** and **companies** in a single lead database, on the **Leads** page. A person is one record no matter how many channels you reach them on, so their email, LinkedIn and WhatsApp activity all attach to the same person.
+
+Importing creates or updates people only. A CRM record begins when a lead replies. Columns in your file beyond the basics become merge fields, and you can define your own custom fields per organization. See [Leads](/leads/overview).
+
+## Channels
+
+A channel is a way of reaching people: **Email**, **LinkedIn** or **WhatsApp**.
+
+- Email sends from Google Workspace mailboxes you connect.
+- LinkedIn and WhatsApp run through Unipile accounts you link.
+- WhatsApp also supports recorded calls placed from AgentSDR.
+
+Each channel has its own page set under **Settings**: its accounts, the connection to the service behind it, and its sending rules. A channel works only while its service is connected.
+
+## Campaigns and CRM follow-up sequences
+
+These are two different things.
+
+- A **campaign** is outbound. It enrolls leads and sends them a first message and timed follow-ups from your accounts. Email, LinkedIn and WhatsApp each have their own campaigns.
+- A **CRM sequence** is a reusable reply flow. You assign it to a reply category in the CRM, and it supplies follow-up steps for conversations in that category. Every message in a CRM sequence waits for a person's approval before it goes out.
+
+When a lead replies on any channel, their campaign enrollments are marked as replied, so you stop writing to someone who has answered. See [Email campaigns](/email/campaigns) and [CRM sequences](/crm/sequences).
+
+## Action required
+
+**Action required** is the queue of everything waiting on a person: new replies, AI drafts to approve, AI changes to confirm, follow-ups that are due and processing errors. AI classifies each reply into a category you control and drafts an answer using your instructions and knowledge base. Nothing is sent until someone reviews it and sends it. See [Action required](/crm/action-required).
+
+## Do Not Contact
+
+**Do Not Contact** is a flag on a person, and it applies to every channel. When it is set, AgentSDR refuses to send to that person, whether from the CRM or from WhatsApp. It is set when a lead asks not to be contacted, when someone sets it by hand or when an integration does. For guidance on lawful outreach, see [Responsible use](/responsible-use).
+
+## Sending rules
+
+The operational numbers that keep your accounts healthy are not hardcoded. Emails a day, gaps between sends, sending hours, LinkedIn invitations per day and per run, and WhatsApp warm-up and new chats a day are **sending rules**, set per organization. Each rule has a default, hard limits that cannot be exceeded, and a safe edge past which the page warns you. Some can be overridden for a single account. See [Sending rules](/workspace/sending-rules).
+
+## Bring your own keys
+
+AgentSDR does not ship with shared API keys, and service credentials are not environment variables. Each organization connects its own services inside the app:
+
+- Unipile, Google Workspace and Cloudflare R2 on the connection page of the channel they power.
+- OpenRouter for every AI feature, with your own key. See [AI provider](/workspace/ai-provider).
+- Enrichment accounts for Tables, connected per table.
+
+A feature that needs a service you have not connected shows a **Connect** prompt, or answers that the service is not connected. Only owners and admins can connect services. Credentials are encrypted before they are stored. See [Integrations](/integrations).
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Put these ideas to work in a first campaign.
+  </Card>
+  <Card title="AI CRM" icon="inbox" href="/crm/overview">
+    How replies are classified, drafted and followed up.
+  </Card>
+  <Card title="Sending rules" icon="settings" href="/workspace/sending-rules">
+    Every limit, with its default and safe edge.
+  </Card>
+  <Card title="Organizations" icon="users" href="/workspace/organizations">
+    Roles, invitations and teams.
+  </Card>
+</CardGroup>

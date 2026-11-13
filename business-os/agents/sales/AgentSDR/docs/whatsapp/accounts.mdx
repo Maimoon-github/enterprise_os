@@ -1,0 +1,117 @@
+---
+title: "WhatsApp numbers"
+description: "Link WhatsApp numbers through Unipile, sync them into AgentSDR, and understand the guards that protect each number from bans."
+icon: "message-circle"
+---
+
+AgentSDR messages over WhatsApp from numbers you link in Unipile. Each number has a status, a warm-up period after linking and its own daily limit for starting new chats. This page covers linking, syncing and the guards that every WhatsApp send passes through.
+
+## Before you start
+
+WhatsApp messaging and calling run on your organization's Unipile connection, the same one LinkedIn uses. Connect it first on **Settings → WhatsApp → Integrations**. Until it is connected, the Numbers page shows a Connect prompt instead of your numbers. Setup details are in [Unipile setup](/integrations/unipile).
+
+## Link a number
+
+<Steps>
+  <Step title="Link it in Unipile">
+    In the Unipile dashboard choose **Accounts → Connect → WhatsApp** and scan the QR code with the phone that owns the number.
+  </Step>
+  <Step title="Open Numbers">
+    In AgentSDR go to **Settings → WhatsApp → Numbers**.
+  </Step>
+  <Step title="Sync">
+    Click **Sync from Unipile**. AgentSDR reads the WhatsApp numbers Unipile has and lists them. If Unipile has none yet, the page says so.
+  </Step>
+</Steps>
+
+Sync reads only WhatsApp accounts, never your LinkedIn ones. A number that Unipile no longer lists is marked **Disconnected** at the next sync.
+
+The first time AgentSDR sees a number connected, it records that moment. The warm-up below counts from it.
+
+## What the Numbers page shows
+
+A strip at the top counts your numbers:
+
+- **Connected**, out of all linked numbers.
+- **Needs attention**: numbers that are disconnected, need credentials or report an error. Relink these in Unipile, then sync.
+- **Warming up**: numbers still inside their warm-up.
+- **New chats a day**: the total your connected numbers may start per day, with the per-number limit and the gap between sends underneath.
+
+Each number has one of four statuses: **Connected**, **Needs credentials**, **Disconnected** or **Error**. Only a connected number can send. A number still warming up shows "Warming up until" and the date.
+
+<Warning>
+A number that WhatsApp bans also loses its calling. That is why the guards below are enforced by the server, not only by the interface.
+</Warning>
+
+## Number actions
+
+Open the three-dot menu on a row.
+
+| Action | What it does |
+| --- | --- |
+| **Make default** | Sends go from this number when nothing else picks one. The default shows a **Default** badge. |
+| **Import recent chats** | Imports up to 100 recent chats and the last 30 messages of each from Unipile. It is history only, so nothing reaches the CRM. Safe to run again. Needs a connected number. |
+| **New chats a day** | Sets a limit for this number only. See below. |
+
+By default a message goes out from the number that is already chatting with that person. If there is no such number, it uses the default one.
+
+### Set a limit for one number
+
+Choose **New chats a day** on the number. Enter a value, or leave the field empty to follow the organization's rule, then click **Save limit**. **Use organization limit** clears an override you set before. The allowed range is 1 to 200. The dialog warns you above 25.
+
+## The guards
+
+Every WhatsApp send passes through the same checks: replies from the Messages page, CRM replies, [message campaigns](/whatsapp/campaigns) and call follow-ups. They run on the server under a per-number lock, so two sends at the same moment cannot both slip through.
+
+| Guard | Default | What happens |
+| --- | --- | --- |
+| Warm-up after linking | 24 hours | A new number answers existing chats right away but starts no new chats until the warm-up ends. A number AgentSDR has never seen connected cannot start new chats at all. Sync, then try again. |
+| New chats per day | 25 per number | Once a number has started this many new chats in a rolling 24 hours, further new chats are refused. Existing chats can still be answered. |
+| Gap between sends | 10 seconds | A second message from the same number sooner than this is refused with a wait time. |
+| Do Not Contact | Always on | A message to a lead marked Do Not Contact is refused. |
+
+A "new chat" means a number this account has never messaged. Chats the lead started, or that you started from your phone, do not count against the limit. The day is a rolling 24 hours rather than a calendar day, so sending 25 at 23:59 and 25 more at 00:01 is not possible.
+
+Other refusals you may see: the number is not connected, the message is empty, or the message is longer than 4096 characters.
+
+### Change the defaults
+
+The numbers above are your organization's **Sending rules** for WhatsApp, on **Settings → WhatsApp → Sending rules**:
+
+- **Warm-up after linking a number**: 0 to 336 hours. AgentSDR warns below 24.
+- **New chats per day, per number**: 1 to 200. It warns above 25.
+- **Seconds between messages, per number**: 3 to 600. It warns below 10.
+- **Sending hours for campaigns**: any time unless you set hours. These apply to campaigns only, not to messages you send yourself.
+
+A number's own **New chats a day** overrides the organization rule. See [Sending rules](/workspace/sending-rules) for how rules and overrides combine.
+
+<Tip>
+Keep the defaults for the first weeks of a new number. WhatsApp bans numbers that start many chats with people who do not have them saved.
+</Tip>
+
+## Messages and where they come from
+
+Chats on your linked numbers appear under **WhatsApp → Messages**. Each message has an origin:
+
+- **lead**: the person wrote it.
+- **agentsdr**: AgentSDR sent it through Unipile.
+- **phone**: an echo of something you typed on your phone or in WhatsApp Web, which AgentSDR did not send.
+
+A reply from a lead you already know by phone lands in the [CRM](/crm/overview) on a WhatsApp conversation. A message you send from your phone also counts as answering the lead.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Message campaigns" icon="send" href="/whatsapp/campaigns">
+    Cold sequences sent from your numbers.
+  </Card>
+  <Card title="Calling" icon="phone" href="/whatsapp/calling">
+    Place and record WhatsApp calls.
+  </Card>
+  <Card title="Sending rules" icon="settings" href="/workspace/sending-rules">
+    Limits per channel and per account.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/integrations">
+    Connect Unipile and Cloudflare R2.
+  </Card>
+</CardGroup>

@@ -1,0 +1,98 @@
+---
+title: "Google sign-in"
+description: "Optionally show a Continue with Google button on the sign-in and sign-up pages, using a Google OAuth client."
+icon: "log-in"
+---
+
+This is optional. It adds a **Continue with Google** button next to email and password. People still need an account in an organization to use the product. It is a per-instance setting in your environment, and it is **separate from the [Google Workspace](/integrations/google-workspace) service account** that sends and reads Gmail.
+
+<Info>
+**What you need**
+
+- A Google account that can use the Google Cloud console.
+- Your public app address (`BETTER_AUTH_URL`), exactly as users open it.
+- Access to your environment variables and a way to restart AgentSDR.
+- About 10 minutes.
+</Info>
+
+## Overview
+
+When both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set, the button appears and the sign-in goes through Google. If either is empty, the button is hidden. Signing in with Google as an address that already has a password account links the two instead of creating a second user.
+
+<Steps>
+  <Step title="Configure the OAuth consent screen">
+    In the [Google Cloud console](https://console.cloud.google.com) open **Google Auth platform** (previously **APIs & Services → OAuth consent screen**). If it asks you to get started, click **Get started** and fill in the app name, a user support email, the **Audience** and a contact email.
+
+    - Choose **Internal** if everyone who signs in belongs to your Google Workspace organization.
+    - Choose **External** if anyone with a Google account should be able to sign in. External apps start in testing; until you publish and Google verifies the app, only listed test users can sign in.
+
+    The default sign-in only needs basic profile and email information. Google's guide: [Configure OAuth](https://support.google.com/cloud/answer/15544987).
+
+  </Step>
+  <Step title="Create the OAuth client">
+    Open **Google Auth platform → Clients** and click **Create client**. Set **Application type** to **Web application** and give it a name.
+
+    Under **Authorized redirect URIs** click **Add URI** and enter:
+
+    ```text
+    https://<your-domain>/api/auth/callback/google
+    ```
+
+    That is your `BETTER_AUTH_URL` plus `/api/auth/callback/google`. It must match exactly: same scheme, host and port, no trailing slash. For a local trial use `http://localhost:3000/api/auth/callback/google`. Add one URI per address you use. Click **Create**.
+
+    <Frame caption="The redirect URI must match your public URL exactly, including https.">
+      <img src="/assets/screenshots/google/oauth-client-redirect.jpg" alt="Create OAuth client ID form with an authorised redirect URI filled in" />
+    </Frame>
+  </Step>
+  <Step title="Copy the Client ID and secret">
+    The dialog shows a **Client ID** and a **Client secret**. Copy both. You can open the client again later to see the secret.
+  </Step>
+  <Step title="Set the environment variables and restart">
+    Add to your environment ([Configuration](/configuration)):
+
+    ```bash
+    GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+    GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
+    ```
+
+    Restart AgentSDR. The values are read at startup.
+  </Step>
+</Steps>
+
+## Check that it works
+
+Open `/sign-in` in a private window. A **Continue with Google** button should appear. Click it, pick an account, and you land back in AgentSDR signed in. Google always shows the account chooser.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The button does not appear">
+    One of `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is empty, or AgentSDR was not restarted.
+  </Accordion>
+  <Accordion title="Error 400: redirect_uri_mismatch">
+    The redirect URI in the OAuth client is not identical to `<BETTER_AUTH_URL>/api/auth/callback/google`. Check the scheme (`https`), host, port and that `BETTER_AUTH_URL` is the address in your browser bar.
+  </Accordion>
+  <Accordion title="Access blocked: app has not completed verification / not a test user">
+    An External app in testing only admits the test users listed on the **Audience** page. Add the person, or publish the app.
+  </Accordion>
+  <Accordion title="Access blocked for an Internal app">
+    The person's account is outside your Workspace organization. Use **External**, or sign in with email and password.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="settings" href="/configuration">
+    All environment variables.
+  </Card>
+  <Card title="Resend" icon="send" href="/integrations/resend">
+    Verification and invitation email.
+  </Card>
+  <Card title="Organizations" icon="users" href="/workspace/organizations">
+    Members and invitations.
+  </Card>
+  <Card title="Google Workspace" icon="mail" href="/integrations/google-workspace">
+    The separate Gmail service account.
+  </Card>
+</CardGroup>

@@ -1,0 +1,34 @@
+# A call worker pinned to particular numbers (STATIONS), e.g. one per server.
+# (The file keeps its old name so existing Dokploy services keep deploying;
+# the call-audio tunnel it once ran was removed — see the README.)
+#
+# Dokploy: Create Service → Compose → this repo, Compose Path
+# services/call-worker/docker-compose.tunnel.yml. Environment:
+#   AGENTSDR_URL=https://app.agentsdr.ai
+#   CALL_WORKER_SECRET=<the app's>
+#   STATIONS=<station id(s), comma-separated>
+#   WORKER_ID=<a name, e.g. mumbai-pulkit-phone>
+# Never run two workers that can serve the same number.
+services:
+  call-worker:
+    build:
+      context: ../..
+      dockerfile: services/call-worker/Dockerfile
+    restart: unless-stopped
+    shm_size: 1gb
+    # Closing an open number saves its profile (~10 s).
+    stop_grace_period: 60s
+    environment:
+      AGENTSDR_URL: ${AGENTSDR_URL:?set AGENTSDR_URL}
+      CALL_WORKER_SECRET: ${CALL_WORKER_SECRET:?set CALL_WORKER_SECRET}
+      STATIONS: ${STATIONS:?set STATIONS to the station id(s) this worker serves}
+      WORKER_ID: ${WORKER_ID:-pinned-worker}
+      LAUNCHERS: gologin_sdk
+      KEEP_OPEN: ${KEEP_OPEN:-1}
+    volumes:
+      - worker-data:/data
+      - gologin:/root/.gologin
+
+volumes:
+  worker-data:
+  gologin:

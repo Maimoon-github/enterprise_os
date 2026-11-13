@@ -1,0 +1,385 @@
+{
+  "headers": {
+    "dashboardTitle": "Kontrolna tabla",
+    "dashboardDescription": "Pratite spremnost za pozive, poruke i zakazivanje."
+  },
+  "analyticsPage": {
+    "title": "Analitika",
+    "description": "Pratite trendove angažovanja kroz pozive, poruke i zakazivanja."
+  },
+  "home": {
+    "title": "Početna",
+    "phone": {
+      "status": {
+        "ready": "Spremno za Vaš prvi poziv",
+        "live": "Vaš agent prima pozive",
+        "liveMany": "Vaši agenti primaju pozive"
+      },
+      "answersFirst": {
+        "agent": "Vaš agent se javlja prvi",
+        "team": "Vaš tim se javlja prvi",
+        "teamDuringHours": "Vaš tim se javlja prvi tokom radnog vremena"
+      }
+    },
+    "download": "Preuzmi",
+    "liveCalls": "Uživo",
+    "tabs": {
+      "overview": "Pregled",
+      "analytics": "Analitika",
+      "reports": "Izveštaji",
+      "notifications": "Obaveštenja"
+    },
+    "analytics": {
+      "chart": {
+        "title": "Pregled angažovanja",
+        "description": "Pozivi i poruke u Vašem radnom prostoru."
+      },
+      "cards": {
+        "calls": "Broj poziva",
+        "messages": "Broj poruka",
+        "appointments": "Zakazani termini",
+        "agentResponseTime": "Vreme odgovora agenta"
+      },
+      "controls": {
+        "dateRange": "Period",
+        "granularity": "Interval grupisanja",
+        "more": "Još opcija",
+        "presetRange": "Unapred zadat period",
+        "granularities": {
+          "hourly": "Po satu",
+          "daily": "Dnevno",
+          "weekly": "Nedeljno",
+          "monthly": "Mesečno",
+          "yearly": "Godišnje"
+        },
+        "presets": {
+          "today": "Danas",
+          "yesterday": "Juče",
+          "thisWeek": "Ove nedelje",
+          "thisMonth": "Ovog meseca",
+          "lastMonth": "Prošlog meseca",
+          "last30": "Poslednjih 30 dana",
+          "last3Months": "Poslednja 3 meseca",
+          "thisYear": "Ove godine",
+          "lastYear": "Prošle godine",
+          "allTime": "Sve vreme",
+          "custom": "Prilagođeni period"
+        }
+      },
+      "metrics": {
+        "flat": "Bez promene u odnosu na prethodni period",
+        "percentUp": "+{{value}}% u odnosu na prethodni period",
+        "percentDown": "-{{value}}% u odnosu na prethodni period",
+        "durationUp": "+{{value}} u odnosu na prethodni period",
+        "durationDown": "-{{value}} u odnosu na prethodni period",
+        "pointsUp": "+{{value}} p. p. u odnosu na prethodni period",
+        "pointsDown": "-{{value}} p. p. u odnosu na prethodni period",
+        "noPreviousCalls": "Nema poziva u prethodnom periodu"
+      },
+      "outcomes": {
+        "title": "Ishodi poziva",
+        "description": "Kako su se završili ovonedeljni pozivi.",
+        "labels": {
+          "completed": "Završeni",
+          "transferred": "Preusmereni",
+          "live": "Uživo",
+          "missed": "Propušteni"
+        }
+      },
+      "channels": {
+        "title": "Kanali",
+        "description": "Pozivi i poruke po kanalu za izabrane datume.",
+        "labels": {
+          "other": "Ostalo"
+        }
+      },
+      "agents": {
+        "title": "Po agentu",
+        "calls": "Pozivi",
+        "chats": "Četovi",
+        "removed": "Uklonjen"
+      },
+      "overview": {
+        "calls": {
+          "title": "Pozivi"
+        },
+        "today": {
+          "title": "Danas",
+          "next": "Sledeći u {{time}}",
+          "none": "Ništa više danas"
+        },
+        "appointments": {
+          "title": "Termini"
+        },
+        "averageDuration": {
+          "title": "Prosečno trajanje"
+        }
+      }
+    },
+    "results": {
+      "bookedValue": "Vrednost termina",
+      "timeSaved": "Ušteđeno vreme",
+      "withoutTransfer": "Pozivi bez preusmeravanja"
+    },
+    "metrics": {
+      "loading": "Učitavanje mesečnog poređenja...",
+      "calls": {
+        "title": "Pozivi"
+      },
+      "messages": {
+        "title": "Poruke"
+      },
+      "contacts": {
+        "title": "Kontakti"
+      }
+    },
+    "chart": {
+      "title": "Pozivi po mesecu"
+    },
+    "recentCalls": {
+      "title": "Nedavni pozivi",
+      "durationValue": "{{value}} s"
+    },
+    "actionRequired": {
+      "title": "Potrebna je radnja",
+      "description": "Zadaci praćenja klijenata koji i dalje zahtevaju čoveka.",
+      "titleWithContact": "{{message}} za {{name}}",
+      "urgent": "Hitno",
+      "emptyTitle": "Nema potrebnih radnji",
+      "fields": {
+        "callback": "Povratni poziv",
+        "callbackWindow": "Željeno vreme povratnog poziva"
+      },
+      "kinds": {
+        "voice_message": "Povratni poziv",
+        "human_handoff": "Predaja čoveku",
+        "other": "Otvoreno",
+        "cancellation": "Otkazivanje",
+        "reschedule": "Pomeranje"
+      },
+      "appointment": "Termin: {{appointment}}",
+      "noAppointment": "Nijedan predstojeći termin ne odgovara ovom zahtevu. Proverite stranicu Termini.",
+      "alreadyCancelled": "Ovaj termin je već otkazan.",
+      "cancellationRequest": "Zahtev za otkazivanje",
+      "requested": "Traženo: {{details}}",
+      "notes": "Napomene: {{notes}}",
+      "rescheduleRequest": "Zahtev za pomeranje",
+      "newTime": "Novo vreme: {{time}}",
+      "inboxLink": "Prikaži sve u prijemnom sandučetu"
+    },
+    "upcoming": {
+      "title": "Predstojeće",
+      "appointmentsLink": "Prikaži sve termine",
+      "description": "Sledeći termini u kalendaru.",
+      "unknownService": "Nepoznata usluga",
+      "employee": "Zaposleni: {{name}}",
+      "emptyTitle": "Nema predstojećih termina",
+      "status": {
+        "booked": "Zakazano",
+        "confirmed": "Potvrđeno"
+      },
+      "withStaff": "kod: {{staff}}"
+    }
+  },
+  "setup": {
+    "title": "Kreirajte svoj prvi radni prostor",
+    "description": "Ovim se kreiraju radni prostor, profil agenta i prvi snimak podešavanja koji koristi glasovni kanal.",
+    "businessName": "Naziv firme",
+    "slug": "Slug",
+    "timezone": "Vremenska zona",
+    "businessType": "Vrsta firme",
+    "placeholders": {
+      "businessName": "Porodična klinika Javor",
+      "slug": "porodicna-klinika-javor"
+    },
+    "businessTypes": {
+      "clinic": "Klinika",
+      "repair_shop": "Servis",
+      "salon": "Salon",
+      "service_company": "Uslužna firma",
+      "other": "Ostalo"
+    },
+    "selectBusinessType": "Izaberite vrstu firme",
+    "create": "Kreiraj radni prostor",
+    "creating": "Kreiranje...",
+    "created": "Radni prostor je kreiran. Snimak podešavanja agenta se sada osvežava.",
+    "failed": "Kreiranje radnog prostora nije uspelo."
+  },
+  "cards": {
+    "calls": {
+      "title": "Obrađeni pozivi",
+      "footer": "Najnovija dolazna aktivnost dostupna je u prijemnom sandučetu."
+    },
+    "services": {
+      "title": "Podešene usluge",
+      "footer": "Koriste ih i agent i sistem za zakazivanje."
+    },
+    "hours": {
+      "title": "Podešeni radni dani",
+      "footer": "Strukturirano radno vreme ima prednost nad dokumentima."
+    },
+    "knowledge": {
+      "title": "Stavke znanja",
+      "footer": "Znanje i dokumenti poboljšavaju odgovore u pregledu i putem SMS-a."
+    },
+    "snapshot": "Snimak {{version}}"
+  },
+  "quickActions": {
+    "title": "Brze radnje",
+    "description": "Održavajte firmu {{businessName}} spremnom za pozive, SMS i zakazivanje.",
+    "configureProfile": "Podesite profil agenta",
+    "addKnowledge": "Dodajte znanje i dokumente",
+    "reviewInbox": "Pregledajte prijemno sanduče poziva",
+    "readiness": "Spremnost podešavanja",
+    "servicesConfigured": "Podešene usluge: {{count}}",
+    "daysConfigured": "Dani sa radnim vremenom: {{count}}",
+    "knowledgeItems": "Indeksirane stavke znanja: {{count}}",
+    "phoneNumbers": "Povezani brojevi telefona: {{count}}",
+    "currentGreeting": "Trenutni pozdrav"
+  },
+  "nextSteps": {
+    "title": "Sledeći koraci",
+    "description": "Doradite ponašanje agenta pre nego što na njega usmerite prave pozive.",
+    "hours": "Podesite radno vreme i usluge kako bi zakazivanje predlagalo stvarne termine.",
+    "transfer": "Dodajte pravila preusmeravanja i rezervni broj pre nego što preusmerite hitne pozive.",
+    "snapshot": "Osvežite snimak podešavanja nakon većih promena pravila kako bi ih glasovni kanal brzo preuzeo."
+  },
+  "activation": {
+    "hearIt": {
+      "title": "Čujte kako se agent javlja",
+      "description": "Pozovite ga iz pregledača i poslušajte kako pozdravlja klijenta.",
+      "descriptionWithPages_one": "Pročitao je {{count}} stranicu sajta {{host}}. Pozovite ga i pitajte nešto što zna samo Vaša firma.",
+      "descriptionWithPages_few": "Pročitao je {{count}} stranice sajta {{host}}. Pozovite ga i pitajte nešto što zna samo Vaša firma.",
+      "descriptionWithPages_other": "Pročitao je {{count}} stranica sajta {{host}}. Pozovite ga i pitajte nešto što zna samo Vaša firma.",
+      "cta": "Započni poziv"
+    },
+    "claimNumber": {
+      "title": "Preuzmite svoj broj telefona",
+      "description": "Vaš paket uključuje namenski broj, a još ga niste izabrali. Izaberite ga i agent počinje da se javlja.",
+      "cta": "Izaberi broj"
+    },
+    "freeTrial": {
+      "title": "Odgovarajte na propuštene pozive besplatno 14 dana",
+      "description": "Izaberite lokalni broj, pa na njega preusmerite pozive na koje ne stignete da odgovorite. Kartica nije potrebna.",
+      "cta": "Izaberite broj"
+    },
+    "forwardTrial": {
+      "title": "Preusmerite propuštene pozive na {{number}}",
+      "description": "Uključite preusmeravanje poziva kod svog operatera i pozivi na koje ne stignete da odgovorite ići će Vašem agentu umesto na govornu poštu.",
+      "cta": "Podesite preusmeravanje"
+    },
+    "upgrade": {
+      "title": "Dodelite agentu broj telefona",
+      "description": "Čuli ste kako radi. Uz namenski broj može da se javlja Vašim pravim klijentima, danju i noću.",
+      "cta": "Izaberi paket"
+    }
+  },
+  "setupGuide": {
+    "title": "Prvi koraci",
+    "skip": "Preskoči podešavanje",
+    "skipStep": "Preskoči",
+    "finished": "Podešavanje je završeno.",
+    "description": "Završeno koraka podešavanja: {{completed}} od {{total}}.",
+    "lastCall": "Vaš probni poziv",
+    "lastCallDetails": "{{date}}, {{duration}}",
+    "readTranscript": "Pročitajte transkript",
+    "callAgain": "Pozovite ponovo",
+    "steps": {
+      "fullScan": "Pročitajte ostatak sajta",
+      "sources": "Dodajte još izvora",
+      "hours": "Dodajte radno vreme",
+      "testCall": "Čujte svog agenta",
+      "phoneNumber": "Povežite broj telefona",
+      "forwardCalls": "Preusmerite pozive",
+      "callNumber": "Pozovite svoj broj",
+      "forwardFromCurrent": "Zadržite svoj postojeći broj"
+    },
+    "stepDescriptions": {
+      "fullScan": "Agent je pročitao deo Vašeg sajta.",
+      "sources": "Otpremite pravila, česta pitanja ili cene.",
+      "hours": "Agent zakazuje termine samo u ovom radnom vremenu.",
+      "testCall": "Pitajte ono što Vas klijenti najčešće pitaju.",
+      "phoneNumber": "Dodelite agentu sopstveni broj da bi odgovarao pravim pozivaocima.",
+      "phoneNumberTrial": "Odgovarajte na propuštene pozive besplatno 14 dana, bez kartice.",
+      "forwardCalls": "Zadržavate broj koji Vaši klijenti već zovu? Vaš agent može da odgovara i na pozive na tom broju. Opciono.",
+      "numberLost": "Besplatna proba je istekla. Izaberite paket da biste vratili svoj broj."
+    },
+    "stepActions": {
+      "fullScan": "Pročitaj ostatak",
+      "sources": "Otpremi dokument",
+      "hours": "Dodaj radno vreme",
+      "testCall": "Započni poziv",
+      "phoneNumber": "Izaberi broj",
+      "callNumber": "Pozovi {{number}}",
+      "copyNumber": "Kopiraj broj",
+      "numberCopied": "Kopirano",
+      "forwardCalls": "Podesite preusmeravanje",
+      "choosePlan": "Izaberite paket",
+      "tryAgain": "Pokušaj ponovo"
+    },
+    "forwardingFrom": "Preusmeravanje sa broja {{number}}",
+    "forwardingWorks": "Preusmeravanje radi"
+  },
+  "forwarding": {
+    "title": "Preusmerite pozive na {{number}}",
+    "description": "Izaberite operatera.",
+    "modes": {
+      "missed": {
+        "label": "Propušteni pozivi",
+        "help": "Vaš telefon prvo zvoni. Ako se ne javite, javlja se agent."
+      },
+      "all": {
+        "label": "Svi pozivi",
+        "help": "Agent odgovara na svaki poziv, a Vaš telefon ne zvoni."
+      }
+    },
+    "carrier": {
+      "label": "Operater ili telefonski sistem",
+      "placeholder": "Pretražite operatere",
+      "empty": "Nema operatera s tim imenom."
+    },
+    "groups": {
+      "usMobile": "Mobilni (SAD)",
+      "caMobile": "Mobilni (Kanada)",
+      "landline": "Fiksne linije",
+      "voip": "Poslovni telefonski sistemi",
+      "ukMobile": "Mobilni u Velikoj Britaniji"
+    },
+    "code": {
+      "dial": "Na telefonu koji Vaši klijenti zovu, ukucajte ovaj kod:",
+      "call": "Pritisnite Pozovi.",
+      "busy": "Da biste preusmerili i pozive koji stignu dok razgovarate, ukucajte:",
+      "off": "Da biste ga kasnije isključili, ukucajte {{code}}.",
+      "unreachable": "Da biste preusmerili i pozive kada je telefon isključen ili bez signala, ukucajte:",
+      "enterNumber": "Kada Vas pita, unesite {{number}}."
+    },
+    "settings": {
+      "open": "U podešavanjima za {{name}} otvorite {{path}}.",
+      "missed": "Preusmerite neodgovorene pozive na {{number}}, pa sačuvajte.",
+      "all": "Preusmerite sve pozive na {{number}}, pa sačuvajte.",
+      "openPhone": "Na telefonu otvorite {{path}}."
+    },
+    "notes": {
+      "planFeature": "Ako se preusmeravanje ne uključi, zamolite operatera {{name}} da doda preusmeravanje poziva u Vaš paket.",
+      "iphone": "Na iPhone-u isključite Live Voicemail u podešavanjima aplikacije Telefon. U suprotnom se ona javlja pre agenta.",
+      "ringTime": "Ako možete da izaberete trajanje zvonjenja, 15 do 20 sekundi Vam daje oko četiri zvona pre nego što se agent javi.",
+      "voicemail": "Ako koristite govornu poštu operatera {{name}}, zamolite {{name}} da je ukloni. Propušteni pozivi ne mogu da se preusmere dok je uključena.",
+      "androidOnly": "Ovi koraci su za Android telefone. Na iPhone-u zamolite operatera {{name}} da ga uključi za Vas.",
+      "adminOnly": "Ovo može da promeni samo administrator Vašeg {{name}} naloga.",
+      "verifyNumber": "{{name}} šalje kod na {{number}} pre nego što uključi preusmeravanje. Izaberite da kod dobijete pozivom, pa ga pročitajte u transkriptu tog poziva u odeljku Prijemno sanduče."
+    },
+    "unsupported": {
+      "missed": "{{name}} ne nudi preusmeravanje samo propuštenih poziva. Izaberite Svi pozivi ili zamolite {{name}} da preusmeri neodgovorene pozive na {{number}}.",
+      "all": "{{name}} ne navodi kako se preusmeravaju svi pozivi. Zamolite {{name}} da preusmeri Vaše pozive na {{number}}."
+    },
+    "notListed": {
+      "missed": "Vašeg operatera nema na listi? Zamolite ga da preusmeri neodgovorene pozive na {{number}}.",
+      "all": "Vašeg operatera nema na listi? Zamolite ga da preusmeri sve Vaše pozive na {{number}}."
+    },
+    "general": {
+      "missed": "Na mobilnom otvorite podešavanja poziva i preusmerite neodgovorene pozive na {{number}}. Za fiksnu liniju ili poslovni telefonski sistem zamolite operatera da to uradi.",
+      "all": "Na mobilnom otvorite podešavanja poziva i preusmerite sve pozive na {{number}}. Za fiksnu liniju ili poslovni telefonski sistem zamolite operatera da to uradi."
+    },
+    "itWorks": "Radi"
+  }
+}

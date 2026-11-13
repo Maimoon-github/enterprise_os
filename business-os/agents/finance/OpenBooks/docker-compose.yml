@@ -1,0 +1,238 @@
+# Self-host stack. `cp .env.example .env && docker compose up` is the supported
+# way to run OpenBooks on your own hardware, and the environment M1's acceptance
+# criteria are demonstrated in.
+#
+# Every variable below falls back to the same default `.env.example` ships, so
+# the stack also starts with no `.env` at all. `.env.example` (OB-003) documents
+# what each one means; this file only wires them up. The application's own
+# variable names come from packages/server/src/config/env.ts, which is the single
+# place permitted to read the environment.
+#
+# One exception is worth knowing about: the openbooks_app and openbooks_migrator
+# passwords are literals in docker/mysql-init/01-users.sql, because MySQL's
+# entrypoint does not interpolate environment variables into *.sql. Changing
+# DATABASE_PASSWORD or DATABASE_MIGRATOR_PASSWORD in `.env` therefore also means
+# editing that file and deleting the `mysql-data` volume — the init scripts run
+# only against an empty data directory. The failure mode if you forget is a loud
+# "Access denied for user 'openbooks_app'" at startup, not silent breakage.
+
+name: openbooks
+
+# One image, three roles (spec §2.5). All three app services share this
+# definition; OPENBOOKS_ROLE is the only thing that distinguishes them.
+x-openbooks-image: &openbooks-image
+  image: ${OPENBOOKS_IMAGE:-openbooks:local}
+  build:
+    context: .
+    # Pinned so the Dockerfile's later `web` stage (nginx) cannot become the
+    # default target for the app roles. The web service selects `target: web`.
+    target: runtime
+  # Reaps zombies and forwards SIGTERM. The slim base image has no init process.
+  init: true
+
+# Shared by api, worker and migrate. Note what is absent: DATABASE_MIGRATOR_USER
+# and DATABASE_MIGRATOR_PASSWORD are set on the migrate service only, so no api
+# or worker process ever holds a credential that could alter the schema. The
+# config module enforces the same asymmetry from the other side by requiring
+# those two variables for the migrate role and rejecting the run without them.
+x-app-env: &app-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  # Persist operational logs to the DB so a self-host operator can query them in
+  # SQL without a separate log stack (OB-255). Default `stdout` here in the shared
+  # anchor so the `migrate` role — which runs before the `logs` table exists —
+  # never tries to persist; api and worker override it to `db` below. stdout stays
+  # on unconditionally underneath either way. LOG_RETENTION_DAYS bounds the daily
+  # prune (only meaningful under `db`).
+  LOG_SINK: ${LOG_SINK:-stdout}
+  LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-30}
+  DATABASE_HOST: ${DATABASE_HOST:-mysql}
+  DATABASE_PORT: ${DATABASE_PORT:-3306}
+  DATABASE_NAME: ${DATABASE_NAME:-openbooks}
+  DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-10}
+  # openbooks_app, in every role including migrate. It holds SELECT/INSERT and no
+  # UPDATE/DELETE on the journal tables, which is what makes ledger immutability
+  # a database grant rather than application discipline (spec §12).
+  DATABASE_USER: ${DATABASE_USER:-openbooks_app}
+  DATABASE_PASSWORD: ${DATABASE_PASSWORD:-change-me-app}
+  SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me-0123456789abcdef0123456789abcdef}
+  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+  # Both unset by default: the Compose stack is same-origin and needs no CORS
+  # layer. They are declared here as a pair because the config module refuses a
+  # CORS allowlist without a cookie domain covering it — see .env.example.
+  SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:-}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+  QUEUE_PROVIDER: ${QUEUE_PROVIDER:-in-process}
+  STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+  SECRETS_PROVIDER: ${SECRETS_PROVIDER:-local}
+  # The `local` secrets adapter's app key (initiative J, D-101) — see .env.example.
+  SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-dev-only-change-me-fedcba9876543210fedcba9876543210}
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-log}
+  BANK_FEED_PROVIDER: ${BANK_FEED_PROVIDER:-csv-ofx}
+  STORAGE_LOCAL_PATH: ${STORAGE_LOCAL_PATH:-/var/lib/openbooks/storage}
+  EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-openbooks@localhost}
+  # Where a link in an outbound email points. Unset here because the API's public
+  # origin is a deployment fact this file cannot know — HTTP_PORT is what the
+  # container publishes, not what a browser reaches it on through whatever proxy
+  # is in front. Unset, an invite link is emitted as a path (OB-040).
+  APP_BASE_URL: ${APP_BASE_URL:-}
+
+services:
+  mysql:
+    # 8.4 is the current LTS; 8.0 reached end-of-life in April 2026. Should track
+    # whichever engine version OB-007 picks for RDS so local and hosted are not
+    # on different majors.
+    image: mysql:${MYSQL_VERSION:-8.4}
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change-me-root}
+      MYSQL_DATABASE: ${DATABASE_NAME:-openbooks}
+    ports:
+      # Exposed so `yarn migrate` and `yarn codegen` can run from the host
+      # against the same database the stack uses.
+      #
+      # `DATABASE_HOST_PORT`, deliberately not `DATABASE_PORT`. The two are
+      # different facts and sharing one variable was a latent trap: `DATABASE_PORT`
+      # is how api/worker/migrate reach `mysql` *inside* the compose network, where
+      # it is always 3306, while this is the port on the developer's machine. Anyone
+      # who set `DATABASE_PORT` to dodge a host clash — the obvious move — would have
+      # silently repointed the application at a port MySQL does not listen on.
+      #
+      # The default is 13307 rather than 3306 because 3306 is the one port a
+      # developer machine most often already has: a Homebrew or system `mysqld`
+      # binds `127.0.0.1:3306`, Docker's publish then falls back to IPv6 only, and a
+      # host-side `yarn migrate` reaches the *wrong database* and reports it as
+      # `Access denied for user 'openbooks_migrator'@'localhost'` — which reads like
+      # a credentials problem and is not. Costing everyone a non-standard port is
+      # cheaper than costing one person that afternoon.
+      - '${DATABASE_HOST_PORT:-13307}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # Runs once, against an empty data directory, in filename order. Creates
+      # the two-user split documented at length in 01-users.sql.
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Deliberately over TCP rather than the unix socket. The entrypoint runs
+      # the init scripts against a socket-only temporary server, so a socket ping
+      # reports healthy while openbooks_app does not exist yet — and the migrate
+      # service would start and fail against it. `-h 127.0.0.1` only succeeds
+      # once the real, network-listening server is up, which is after init.
+      test:
+        [
+          'CMD',
+          'mysqladmin',
+          'ping',
+          '-h',
+          '127.0.0.1',
+          '-uroot',
+          '-p${MYSQL_ROOT_PASSWORD:-change-me-root}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  # Spec §12: migrations are a discrete pre-deploy job, never a container boot
+  # step. In Compose that is expressed as a one-shot service the api and worker
+  # both gate on with `service_completed_successfully` — a non-zero exit here
+  # stops the stack rather than starting an API against a half-migrated schema.
+  # The ECS task definitions (OB-007) express the same separation.
+  migrate:
+    <<: *openbooks-image
+    environment:
+      <<: *app-env
+      OPENBOOKS_ROLE: migrate
+      # The only service that gets DDL credentials.
+      DATABASE_MIGRATOR_USER: ${DATABASE_MIGRATOR_USER:-openbooks_migrator}
+      DATABASE_MIGRATOR_PASSWORD: ${DATABASE_MIGRATOR_PASSWORD:-change-me-migrator}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    # A job, not a service. Without this a clean exit looks like a crash loop.
+    restart: 'no'
+    # The image HEALTHCHECK probes the api role's HTTP listener; a process that
+    # exits has nothing to probe.
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *openbooks-image
+    environment:
+      <<: *app-env
+      OPENBOOKS_ROLE: api
+      HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
+      HTTP_PORT: 3000
+      # Persist logs to the `logs` table (OB-255); stdout stays on beneath it. The
+      # api is the in-process queue consumer, so it also registers the retention
+      # prune. Override to `stdout` via .env to disable persistence.
+      LOG_SINK: ${LOG_SINK:-db}
+    ports:
+      # `API_HOST_PORT` for the same reason `DATABASE_HOST_PORT` exists: `HTTP_PORT`
+      # is the port the server binds inside its container and is fixed at 3000 above.
+      # 3100 by default because 3000 is the most contended port on any machine that
+      # runs more than one Node project.
+      - '${API_HOST_PORT:-3100}:3000'
+    # The local StorageProvider persists rendered artifacts (1099 Copy B and invoice/
+    # statement PDFs, uploaded logos) under STORAGE_LOCAL_PATH. Shared with `worker` so an
+    # artifact either role writes is readable by the other, and a named volume so it survives
+    # the `build && up -d` recreate the update workflow does — the image dir is node-owned
+    # (Dockerfile) so this volume inherits a writable owner on first init.
+    volumes:
+      - storage-data:/var/lib/openbooks/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    <<: *openbooks-image
+    environment:
+      <<: *app-env
+      OPENBOOKS_ROLE: worker
+      # Persist logs to the `logs` table (OB-255), matching the api. Under `sqs`
+      # (not the in-process default) the worker is the queue consumer that runs the
+      # retention prune. Override to `stdout` via .env to disable persistence.
+      LOG_SINK: ${LOG_SINK:-db}
+    volumes:
+      - storage-data:/var/lib/openbooks/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # `unless-stopped`, because the worker now blocks on a queue (D-47/D-49). OB-078
+    # gave it its first job — the statement import — so it registers a handler and
+    # stays up waiting for work instead of returning immediately. At that point a
+    # clean exit is an outage rather than the expected behaviour, and the container
+    # should be brought back; `on-failure` (correct while the worker returned at once)
+    # would leave a worker that exited cleanly down. It was `on-failure` through M1–M3
+    # for the opposite reason: restarting a *successful* exit then looped a working
+    # stack.
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+
+  # The React SPA behind nginx, served same-origin with the API (see the config
+  # at infra/nginx/openbooks-web.conf for why same-origin is required). Its own
+  # image and build target, not the shared app image. `WEB_HOST_PORT` mirrors
+  # API_HOST_PORT/DATABASE_HOST_PORT: 8080 on the host, 80 inside the container.
+  web:
+    build:
+      context: .
+      target: web
+    image: ${OPENBOOKS_WEB_IMAGE:-openbooks-web:local}
+    init: true
+    ports:
+      - '${WEB_HOST_PORT:-8080}:80'
+    depends_on:
+      # Started, not healthy: nginx serves the SPA regardless, and the variable
+      # upstream + resolver lets /v1 recover on its own once api is up.
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  storage-data:

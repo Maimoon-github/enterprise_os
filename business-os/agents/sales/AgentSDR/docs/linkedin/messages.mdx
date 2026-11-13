@@ -1,0 +1,72 @@
+---
+title: "LinkedIn messages"
+description: "Read and answer LinkedIn conversations, see who accepted your invitations, and understand how replies reach the CRM."
+icon: "message-circle"
+---
+
+The **Messages** page is the LinkedIn inbox for your campaigns. It shows each conversation with the people you invited, puts the ones waiting on you first, and lets you reply from the same place. The **Connections** page lists everyone who accepted. Open **LinkedIn → Messages** from the sidebar. **Connections** is under **Developers** at the bottom of the sidebar.
+
+## How messages get here
+
+AgentSDR does not poll LinkedIn. Unipile sends an event to AgentSDR for each new message and each accepted invitation, and AgentSDR stores them. This is why the Unipile webhooks on [LinkedIn accounts](/linkedin/accounts) must show as registered. If they are not, nothing new arrives.
+
+- **An invitation is accepted.** The person appears under **Connections**, and the campaign's acceptance message is sent.
+- **Someone replies.** The message is saved to their conversation. If they are a campaign lead, the lead becomes **Replied** and the automated sequence stops for them, so no more follow-ups go out.
+- **Someone you did not invite writes to you.** The message appears in Messages, but nothing is created in the CRM. Only people you enrolled in outreach create CRM work.
+
+## Read conversations
+
+The page title is **Messages**: "LinkedIn conversations from your campaigns, and who is waiting on a reply." The tabs above the list choose what you see.
+
+| Tab | Shows |
+| --- | --- |
+| **Replied** | Leads who replied. This is the default. |
+| **Needs reply** | Conversations where the latest message is from the prospect. |
+| **All** | Every campaign lead. |
+| **Connections only** | Connections with no campaign lead. Under **Show**. |
+| Lead statuses | Filter by status (Pending, Invited, Accepted, Follow-up 1 to 3, Completed, Replied, Failed). |
+
+Search by name, or use filters for **Campaign**, **Sender**, **Last activity** (**All time**, **Last 7 days**, **Last 30 days**, **Last 90 days**) and **CRM category**. The category filter applies when the list shows **Replied** or **Needs reply**.
+
+Select a conversation to read it. Messages that AgentSDR sent are labelled with their step (Invitation, Acceptance, Follow-up 1 to 3). Opening a thread marks its messages as seen.
+
+<Note>
+Campaigns of the **Personal** type do not appear in the campaign filter, and their replies are kept out of the shared Messages workspace and the CRM. See [LinkedIn campaigns](/linkedin/campaigns).
+</Note>
+
+## Reply
+
+Type in the box at the bottom, which reads "Message" and the person's first name, and click **Send**. The message goes out from the LinkedIn account that holds the conversation, shown under the box as "as" followed by the sender name.
+
+Sending is refused if the person is marked Do Not Contact, or if the conversation has no LinkedIn chat yet.
+
+For leads who are in the CRM, the reply is sent through the CRM, so it is recorded in the same history as their other channels. A lead that is not in the CRM is answered directly on LinkedIn.
+
+## AI drafts
+
+When a lead replies and the CRM drafts an answer, the draft appears above the box. Review it, edit it if you like, and click **Approve & send**. Nothing is sent until you do. The list also marks conversations that have a draft. How drafts are produced and classified is covered in [Action required](/crm/action-required).
+
+## Replies in the CRM
+
+For campaign leads, the reply is also passed to the AI CRM, where it is classified and appears in [Action required](/crm/action-required) next to email replies. A reply on any channel stops the same person's email and WhatsApp sequences too, so someone who answers on LinkedIn does not keep getting email follow-ups. The Messages list shows each conversation's CRM category once it has one.
+
+## Connections
+
+**Developers → Connections** is titled "Connections". It lists people who accepted your invitations, newest first, with the columns **Connection**, **Campaign**, **Account** and **Connected**. Each connection is matched to its lead, campaign and sending account. A connection made outside a campaign shows "Not from a campaign". The page is empty until someone accepts.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="LinkedIn campaigns" icon="linkedin" href="/linkedin/campaigns">
+    The sequence that creates these conversations.
+  </Card>
+  <Card title="LinkedIn accounts" icon="users" href="/linkedin/accounts">
+    Connection status and webhooks.
+  </Card>
+  <Card title="Action required" icon="list-checks" href="/crm/action-required">
+    Where replies become work to do.
+  </Card>
+  <Card title="CRM overview" icon="kanban" href="/crm/overview">
+    Records, pipeline and sequences.
+  </Card>
+</CardGroup>

@@ -1,0 +1,15 @@
+{
+  "title": "Prijemno sanduče",
+  "filters": {
+    "label": "Kanal",
+    "all": "Sve",
+    "agent": "Agent",
+    "allAgents": "Svi agenti"
+  },
+  "empty": "Još nema poziva ni poruka.",
+  "noMatch": "Ništa ne odgovara ovim filterima.",
+  "pick": "Izaberite razgovor da biste ga pročitali.",
+  "loadMore": "Učitaj još",
+  "back": "Prijemno sanduče",
+  "handledBy": "Agent: <agent>{{name}}</agent>"
+}

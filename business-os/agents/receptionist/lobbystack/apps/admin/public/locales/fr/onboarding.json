@@ -1,0 +1,304 @@
+{
+  "shell": {
+    "signOut": "Déconnexion",
+    "terms": "Conditions",
+    "privacy": "Confidentialité",
+    "support": "Assistance",
+    "backToDashboard": "Retour au tableau de bord"
+  },
+  "errors": {
+    "tooManyBusinesses": "Vous possédez déjà 10 espaces de travail, la limite pour un compte."
+  },
+  "adminRequired": {
+    "eyebrow": "Configuration de l'espace de travail",
+    "title": "La configuration attend un administrateur",
+    "description": "Cet espace de travail est encore en configuration. Demandez à un propriétaire ou à un administrateur de terminer la configuration avant de l'utiliser.",
+    "descriptionWithBusiness": "{{businessName}} est encore en configuration. Demandez à un propriétaire ou à un administrateur de terminer la configuration avant de l'utiliser.",
+    "statusTitle": "Votre accès est actif",
+    "statusDescription": "Vous pourrez utiliser l'espace de travail dès qu'un administrateur aura terminé l'accueil. Les changements de configuration sont réservés aux propriétaires et aux administrateurs.",
+    "goToWorkspace": "Aller à l'espace de travail"
+  },
+  "brand": {
+    "title": "Personnalisez cette application",
+    "description": "Vous êtes la première personne à configurer ce déploiement : vous choisissez le nom et le logo que tout le monde voit en se connectant et dans le tableau de bord.",
+    "nameLabel": "Nom de l'application",
+    "nameHint": "40 caractères au maximum. Il remplace {{appName}} sur chaque page et dans l'onglet du navigateur.",
+    "logoLabel": "Logo",
+    "logoChoose": "Choisir un logo",
+    "logoChange": "En choisir un autre",
+    "logoRemove": "Retirer",
+    "logoHint": "Une image carrée PNG, JPEG, WebP ou SVG de 256 Ko au maximum. Elle s'affiche à côté du nom et dans l'onglet du navigateur.",
+    "preview": "Aperçu",
+    "continue": "Continuer",
+    "saving": "Enregistrement...",
+    "skip": "Passer et garder {{appName}}",
+    "errors": {
+      "appName": "Choisissez un nom de 40 caractères au maximum.",
+      "logoType": "Choisissez une image PNG, JPEG, WebP ou SVG. Un SVG ne peut pas contenir de script.",
+      "logoSize": "Choisissez un logo de 256 Ko au maximum.",
+      "closed": "Le nom et le logo de ce déploiement ne peuvent plus être choisis ici.",
+      "failed": "Impossible d'enregistrer le nom et le logo. Veuillez réessayer."
+    }
+  },
+  "businessName": {
+    "title": "D'abord, quel est le nom de votre entreprise ?",
+    "createTitle": "Créer un espace de travail",
+    "createDescription": "Ces informations constituent la base du contexte de votre agent.",
+    "existingTitle": "L'espace de travail existe déjà",
+    "existingDescription": "Continuez la configuration avec l'espace de travail actif.",
+    "configured": "Les détails de l'entreprise sont déjà configurés.",
+    "continueSetup": "Continuer la configuration",
+    "loading": "Chargement des espaces de travail...",
+    "unavailable": "La configuration de l'espace de travail est indisponible.",
+    "label": "Nom de l'entreprise",
+    "placeholder": "Bar George",
+    "slugLabel": "Slug",
+    "slugPlaceholder": "clinique-familiale-maple",
+    "timezoneLabel": "Fuseau horaire",
+    "timezonePlaceholder": "America/Toronto",
+    "typeLabel": "Type d'entreprise",
+    "types": {
+      "serviceCompany": "Entreprise de services",
+      "clinic": "Clinique",
+      "salon": "Salon ou spa",
+      "professionalServices": "Services professionnels",
+      "other": "Autre"
+    },
+    "create": "Créer et continuer",
+    "continue": "Continuer",
+    "submitting": "Enregistrement...",
+    "submitFailed": "Impossible d'enregistrer cette entreprise pour le moment. Réessayez."
+  },
+  "website": {
+    "title": "Entraînons {{appName}} avec votre site web",
+    "label": "Site web",
+    "placeholder": "votreentreprise.com",
+    "sourceName": "Nom de la source",
+    "sourceNameHint": "Libellé facultatif pour la source importée.",
+    "sourceNamePlaceholder": "Site web de l'entreprise",
+    "continue": "Continuer",
+    "submitting": "Démarrage de l'import...",
+    "skip": "Je n'ai pas de site web",
+    "skipping": "Ignorer...",
+    "skippingImport": "Ignorer l'import...",
+    "submitFailed": "Impossible de démarrer l'import maintenant. Réessayez.",
+    "invalidUrl": "Entrez l'adresse de votre site web, par exemple votreentreprise.com.",
+    "skipFailed": "Impossible d'ignorer cette étape maintenant. Réessayez."
+  },
+  "language": {
+    "title": "Dans quelle langue votre agent doit-il parler ?",
+    "label": "Langue des appelants",
+    "continue": "Continuer",
+    "saving": "Enregistrement...",
+    "submitFailed": "Impossible d'enregistrer pour le moment. Réessayez."
+  },
+  "reading": {
+    "title": "Lecture de votre site web",
+    "status_one": "Lecture de {{host}} : {{count}} page jusqu'ici",
+    "status_many": "Lecture de {{host}} : {{count}} pages jusqu'ici",
+    "status_other": "Lecture de {{host}} : {{count}} pages jusqu'ici",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "slides": {
+      "answers": "Répond à partir de vos contenus",
+      "booking": "Prend les rendez-vous",
+      "transfer": "Passe les appels à votre équipe",
+      "languages": "Change de langue pendant l'appel",
+      "summaries": "Résume chaque appel",
+      "widget": "Répond aussi sur votre site"
+    },
+    "scenes": {
+      "answers": {
+        "question": "Prenez-vous de nouveaux patients ?",
+        "answer": "Oui, et la première visite est offerte."
+      },
+      "booking": {
+        "service": "Détartrage"
+      },
+      "transfer": {
+        "agent": "Votre agent",
+        "role": "Accueil"
+      },
+      "summaries": {
+        "summary": "Nouvelle patiente. Détartrage réservé pour mardi."
+      },
+      "widget": {
+        "question": "Ouvert le samedi ?",
+        "answer": "Oui, jusqu'à 13 h."
+      }
+    },
+    "stalled": "Nous n'avons pas pu finir de lire {{host}}",
+    "tryAgain": "Réessayer"
+  },
+  "verifyPhone": {
+    "title": "Vérifiez votre numéro de mobile",
+    "fields": {
+      "mobileNumber": "Numéro de mobile",
+      "country": "Pays"
+    },
+    "hint": "Utilisez un mobile qui reçoit les SMS. Les numéros Internet ne fonctionnent pas.",
+    "sendCode": "M'envoyer un code",
+    "sending": "Envoi…",
+    "sendFailed": "Impossible d'envoyer le code. Réessayez.",
+    "errors": {
+      "voip": "Utilisez votre numéro de mobile. Les numéros Internet ne peuvent pas être vérifiés.",
+      "notMobile": "Utilisez un numéro de mobile qui reçoit les SMS.",
+      "countryMismatch": "Ce numéro ne vient pas du pays choisi.",
+      "invalidNumber": "Entrez un numéro de mobile valide.",
+      "rateLimited": "Trop de codes demandés. Patientez un moment, puis réessayez."
+    },
+    "code": {
+      "sentTo": "Entrez le code à 6 chiffres envoyé au {{phone}}.",
+      "checking": "Vérification…",
+      "invalid_one": "Ce code ne fonctionne pas. Il vous reste {{count}} essai.",
+      "invalid_many": "Ce code ne fonctionne pas. Il vous reste {{count}} essais.",
+      "invalid_other": "Ce code ne fonctionne pas. Il vous reste {{count}} essais.",
+      "expired": "Ce code a expiré. Demandez-en un nouveau.",
+      "locked": "Trop d'essais. Demandez un nouveau code.",
+      "failed": "Impossible de vérifier le code. Réessayez.",
+      "resend": "Envoyer un nouveau code",
+      "changeNumber": "Utiliser un autre numéro"
+    },
+    "unavailable": {
+      "failed": "Une erreur est survenue. Réessayez.",
+      "partnerTitle": "Nous ne pouvons pas encore vérifier les téléphones dans ce pays ({{country}}).",
+      "partnerBody": "Vous pouvez terminer la configuration sans téléphone vérifié.",
+      "partnerContinue": "Continuer"
+    },
+    "continue": "Continuer"
+  },
+  "number": {
+    "planRequired": "Pour obtenir un numéro, choisissez un forfait.",
+    "refusals": {
+      "paidPlan": "Obtenir un numéro ici exige un forfait payant.",
+      "trialUsed": "Cet espace de travail ou votre téléphone a déjà utilisé son essai gratuit.",
+      "network": "Un essai gratuit a déjà démarré depuis ce réseau au cours des 30 derniers jours.",
+      "unavailable": "Aucun numéro d'essai gratuit n'est disponible pour cet espace de travail.",
+      "verification": "Un numéro gratuit exige un téléphone vérifié.",
+      "emailVerification": "Vérifiez votre adresse courriel avant de choisir un numéro d'essai."
+    },
+    "title": "Choisissez le numéro de votre agent",
+    "countryLabel": "Pays",
+    "kindLocal": "Local",
+    "kindTollFree": "Sans frais",
+    "areaCodeLabel": "Indicatif",
+    "areaCodePlaceholder": "Indicatif",
+    "cityLabel": "Ville",
+    "cityPlaceholder": "Ville",
+    "location": "Emplacement",
+    "capabilities": "Fonctions",
+    "voiceSms": "Voix · SMS",
+    "search": "Rechercher",
+    "searching": "Recherche...",
+    "tableHeaders": {
+      "phoneNumber": "Numéro"
+    },
+    "select": "Choisir",
+    "loadMore": "Charger plus",
+    "empty": "Aucun numéro ne correspond.",
+    "skipLater": "Ajouter un numéro plus tard",
+    "skipping": "Ignorer...",
+    "loadFailed": "Impossible de charger les numéros maintenant.",
+    "searchFailed": "Impossible de rechercher maintenant.",
+    "claimFailed": "Impossible de provisionner ce numéro. Réessayez.",
+    "claimRateLimited": "Vous avez essayé plusieurs numéros. Attendez un peu avant de réessayer.",
+    "partnerTierRequired": "Le partenaire de cet espace de travail doit payer un palier pour ajouter des numéros de téléphone.",
+    "partnerNumbersUnavailable": "Les numéros de téléphone ne sont pas encore disponibles pour cet espace de travail.",
+    "offerExpired": "Cette offre a expiré. Relancez la recherche et choisissez un numéro.",
+    "trialAccountPurchaseLimit": "Ce compte Twilio ne peut pas encore acheter ce numéro. Les comptes d'essai ne peuvent acheter que des numéros admissibles; libérez un numéro existant ou mettez le compte à niveau, puis réessayez.",
+    "skipFailed": "Impossible d'ignorer cette étape maintenant. Réessayez.",
+    "tooManySearches": "Trop de recherches. Attendez un peu, puis réessayez.",
+    "unavailable": "Ce numéro vient d'être pris. Choisissez-en un autre.",
+    "selectedTitle": "Le numéro de votre agent",
+    "selectedNumberLabel": "Numéro sélectionné",
+    "numbersUnavailable": "Les numéros de téléphone ne sont pas encore configurés sur ce tableau de bord. Demandez à la personne qui le gère de connecter un fournisseur de téléphonie.",
+    "country": {
+      "title": "Nous n'offrons pas encore de numéros dans ce pays ({{country}}).",
+      "body": "Vous pouvez quand même utiliser votre agent dans le navigateur, et nous pouvons vous écrire quand les numéros y arriveront.",
+      "notify": "M'écrire quand ils seront disponibles",
+      "joined": "C'est noté. Nous vous écrirons.",
+      "continue": "Continuer sans numéro",
+      "failed": "Une erreur est survenue. Réessayez.",
+      "label": "Pays",
+      "placeholder": "Choisissez un pays",
+      "back": "Retour aux numéros",
+      "other": "Autre pays"
+    }
+  },
+  "attribution": {
+    "title": "Comment avez-vous connu {{appName}} ?",
+    "options": {
+      "ai_assistant": "ChatGPT, Claude, etc.",
+      "newsletter": "Newsletter ou blog",
+      "podcast": "Podcast",
+      "news": "Dans les médias",
+      "work": "Au travail",
+      "school": "Amis ou école",
+      "x": "X",
+      "reddit": "Reddit",
+      "facebook": "Facebook",
+      "youtube": "YouTube",
+      "instagram": "Instagram",
+      "linkedin": "LinkedIn",
+      "google": "Google",
+      "tiktok": "TikTok",
+      "other": "Autre"
+    },
+    "label": "Source",
+    "preferNot": "Je préfère ne pas répondre",
+    "search": "Moteur de recherche",
+    "referral": "Ami ou collègue",
+    "social": "Réseaux sociaux",
+    "event": "Événement ou communauté",
+    "other": "Autre",
+    "failed": "Impossible de terminer la configuration.",
+    "submitFailed": "Impossible d'enregistrer maintenant. Réessayez.",
+    "continue": "Continuer",
+    "saving": "Enregistrement..."
+  },
+  "meet": {
+    "title": "Rencontrez votre agent",
+    "name": "Nom de l'agent",
+    "greeting": "Message d'accueil",
+    "language": "Langue des appelants",
+    "finish": "Aller au tableau de bord",
+    "finishing": "Ouverture...",
+    "saveFailed": "Impossible d'enregistrer. Réessayez.",
+    "finishFailed": "Impossible de terminer la configuration. Réessayez."
+  },
+  "plan": {
+    "title": "Choisissez votre forfait",
+    "checkoutSuccess": "Paiement effectué avec succès.",
+    "popular": "Populaire",
+    "enterpriseSubject": "Forfait Entreprise",
+    "compareTitle": "Comparer les forfaits en détail",
+    "compareDescription": "Free vous donne 30 minutes vocales et un numéro américain ou canadien pendant 14 jours. Starter et Pro comprennent un numéro dédié et des volumes mensuels.",
+    "featureHeader": "Fonctionnalité",
+    "billingInterval": {
+      "label": "Intervalle de facturation",
+      "monthly": "Mensuel",
+      "annual": "Annuel",
+      "save": "Économisez 20 %"
+    },
+    "comparison": {
+      "included": "Inclus",
+      "notIncluded": "Non inclus"
+    },
+    "continue": "Continuer",
+    "continuing": "Continuer...",
+    "continueFailed": "Impossible de continuer maintenant. Réessayez.",
+    "backToPlans": "Retour aux forfaits",
+    "subscribe": "S'abonner",
+    "trial": {
+      "description": "14 jours, sans carte",
+      "start": "Commencer l'essai gratuit de 14 jours"
+    }
+  },
+  "noBusinesses": {
+    "title": "Aucun espace de travail ici pour l'instant",
+    "description": "{{appName}} n'a pas encore ajouté {{email}} à un espace de travail. Demandez-lui de vous inviter, puis ouvrez le lien de son courriel.",
+    "switchAccount": "Se connecter avec un autre compte",
+    "released": "{{email}} n'a plus d'espace de travail sur ce tableau de bord. Un espace de travail qui vous appartient est passé à votre propre compte : ouvrez votre tableau de bord pour le gérer.",
+    "openDashboard": "Ouvrir votre tableau de bord"
+  }
+}

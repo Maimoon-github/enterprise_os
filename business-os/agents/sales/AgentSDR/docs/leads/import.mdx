@@ -1,0 +1,120 @@
+---
+title: "Import leads"
+description: "Bring people into AgentSDR from a CSV or Excel file, and learn how matching, duplicates and extra columns are handled."
+icon: "upload"
+---
+
+You can import people from a spreadsheet in two places: the **Leads** page, and a campaign's own lead import. Both create or update the same People records, so someone you import once is never duplicated. They differ in what they do with extra columns and in whether they enroll people in a campaign.
+
+## Import people from the Leads page
+
+<Steps>
+  <Step title="Get the template (optional)">
+    Open the **More options** menu on the Leads page and choose **Download import template**, or use **Download Excel template** inside the import window. The template has the columns the importer recognizes.
+  </Step>
+  <Step title="Open the import window">
+    On the **People** tab, click **Import people**.
+  </Step>
+  <Step title="Choose your file">
+    Pick an `.xlsx`, `.xls` or `.csv` file. Only the first sheet is read, and the first row must be the headers.
+  </Step>
+  <Step title="Import">
+    Click **Import**. When it finishes you see a summary: how many rows were processed, created, updated and failed. Each failed row is listed with its row number and the reason.
+  </Step>
+</Steps>
+
+This import only creates or updates People and their companies. It doesn't enroll anyone in a campaign and doesn't create CRM records. CRM records begin after a reply.
+
+<Frame caption="The Import people window. Import stays disabled until you choose a file.">
+  <img src="/assets/screenshots/app/leads-import.png" alt="The Import people dialog over the Leads page, with a Download Excel template link, a file picker for .xlsx or .csv and Cancel and Import buttons" />
+</Frame>
+
+### Recognized headers
+
+Headers are matched ignoring case, spaces and punctuation, so `Job Title`, `job_title` and `JOBTITLE` are the same.
+
+| Field | Accepted headers |
+| --- | --- |
+| Email | `email`, `email address` |
+| LinkedIn URL | `linkedin`, `linkedin url`, `linkedin profile` |
+| Full name | `name`, `full name` |
+| First name | `first name` |
+| Last name | `last name` |
+| Job title | `title`, `job title`, `headline` |
+| Company name | `company`, `company name` |
+| Company domain | `domain`, `company domain`, `website`, `company website`, `company url` |
+| Phone | `phone`, `phone number`, `mobile`, `mobile phone`, `mobile number`, `whatsapp`, `whatsapp number`, `work phone` |
+| Notes | `notes` |
+
+Every row needs an **email or a LinkedIn URL**. Rows with neither are dropped before the import starts, and if no row has one the import stops with "No rows with an Email or LinkedIn URL were found".
+
+<Note>
+The Leads page import only reads the columns above. Any other column in your file is ignored. If you need extra columns kept for merge fields, import through a campaign instead (see below).
+</Note>
+
+### How matching works
+
+For each row AgentSDR looks for an existing person in your organization.
+
+1. It matches on **email** (case-insensitive).
+2. If there's no email, it matches on the **LinkedIn profile**.
+3. A match is **updated**. No match creates a new person.
+
+When you update an existing person, a blank cell doesn't erase what's already stored for email, LinkedIn, title, phone or company.
+
+A row **fails** instead of merging when its email belongs to one person and its LinkedIn profile belongs to a different person. The error asks you to merge them first. A malformed email or LinkedIn URL also fails that row. A malformed phone number does not fail the row. It is dropped and the rest of the row is imported.
+
+Phone numbers typed without a country code are read using your organization's default phone country. You set that in [Sending rules](/workspace/sending-rules).
+
+A company is created or matched by its domain. If you give a company name but no domain, the domain is taken from the email address, unless it is a public webmail address.
+
+### Limits
+
+- Up to **5,000 rows** per file on the Leads page. Larger lists are rejected with "Too many rows".
+- Rows are processed one at a time, so a bad row never blocks the good ones.
+
+## Import into a campaign
+
+Email, LinkedIn and WhatsApp campaigns each have their own lead import. You pick a file, then a mapping screen shows every column in your file next to a sample value and a **Platform field** dropdown.
+
+- Map the required identity column: **Email** for email campaigns. LinkedIn and WhatsApp campaigns have their own required field. The import button stays disabled until it is mapped.
+- A column can be mapped to only one field.
+- Headers that look like known fields are pre-selected for you.
+- Choose **Keep as variable (do not map)** for any column you want to use in your messages.
+
+### Extra columns become merge fields
+
+Columns you don't map are kept on the person, not dropped. Each header is converted to camelCase, so `Job Title` becomes `jobTitle` and `Company Size` becomes `companySize`. Use it in a message as `{{jobTitle}}`. Matching is case-insensitive. A merge field with no value resolves to an empty string, the same as a missing first name.
+
+A header that starts with a digit gets a `field` prefix. Empty cells aren't stored.
+
+### Duplicates and suppression
+
+For an email campaign:
+
+- An address already **in that campaign** is counted as a duplicate. The person's details are still refreshed, but they aren't enrolled twice.
+- An address on your [suppression list](/leads/overview) is skipped and never added as a lead.
+- Rows with no email, or an invalid one, are reported as failed with their row number.
+
+The result shows total, imported, skipped (suppressed), skipped (duplicate) and failed counts. Campaign imports allow up to 5,000 rows too.
+
+### Import runs
+
+Each campaign import writes an import run. It records the file name, the campaign it went to, whether you used explicit column mapping, and the counts above. The Leads page people import does not write one.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Leads" icon="users" href="/leads/overview">
+    Find, filter and review your people and companies.
+  </Card>
+  <Card title="Custom fields" icon="columns-3" href="/leads/custom-fields">
+    Define your own fields on people and companies.
+  </Card>
+  <Card title="Email campaigns" icon="mail" href="/email/campaigns">
+    Use merge fields in your sequence.
+  </Card>
+  <Card title="Tables" icon="table" href="/tables/overview">
+    Clean and enrich a list before you import it.
+  </Card>
+</CardGroup>

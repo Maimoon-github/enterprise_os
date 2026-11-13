@@ -1,0 +1,324 @@
+---
+title: "Docker Compose"
+description: "Install AgentSDR with one docker-compose.yml: set your secrets, run docker compose up -d, and create your admin account. Database, schema setup and scheduled jobs included."
+icon: "container"
+---
+
+This is the recommended install. You download one file, set a few secrets, and run one command. PostgreSQL and the app start together; the app creates the schema and runs the scheduled jobs itself. There is no repository to clone.
+
+<Steps>
+  <Step title="Check the requirements">
+    - A Linux, macOS or Windows machine with Docker and Docker Compose (any current version; 2.24 or newer if you [use your own PostgreSQL](#use-your-own-postgresql)).
+    - About 5 minutes. The first start downloads the image.
+    - For a public server: a domain pointing at it and an HTTPS reverse proxy (see [Going to production](/self-hosting/production)).
+  </Step>
+
+  <Step title="Create a folder and get docker-compose.yml">
+    ```sh
+    mkdir agentsdr && cd agentsdr
+    curl -O https://raw.githubusercontent.com/Kandid-ai/AgentSDR/main/docker-compose.yml
+    ```
+
+    No `curl`? Create `docker-compose.yml` in the folder with your editor and paste the [full file](#the-full-docker-compose-yml) below.
+  </Step>
+
+  <Step title="Set your secrets">
+    Every setting is listed by name in the file as `${NAME:-default}`. The ones you must replace are marked `# CHANGEME` and carry a `changeme-...` placeholder: your public `APP_URL` and four secrets. You can set them in either of two ways, and mix them freely.
+
+    **Option A: write a `.env` file.** Docker Compose reads a `.env` next to `docker-compose.yml`, and a value there wins over the default in the file. This one command writes it with fresh random secrets (replace the `APP_URL` line with your own address; leave it as is to try AgentSDR on your own machine):
+
+    ```sh
+    {
+      echo "APP_URL=http://localhost:3000"
+      for name in BETTER_AUTH_SECRET INTEGRATION_CREDENTIALS_KEY UNSUBSCRIBE_SECRET POSTGRES_PASSWORD; do
+        echo "$name=$(openssl rand -hex 32)"
+      done
+    } > .env
+    ```
+
+    **Option B: edit the file.** Open `docker-compose.yml` and replace each `changeme-...` value after the `:-` with the output of `openssl rand -hex 32`. Leave `APP_URL` pointing where people will reach AgentSDR.
+
+    <Warning>
+    Keep `INTEGRATION_CREDENTIALS_KEY` safe and never change it after you connect integrations. It encrypts every saved integration credential, and a database restored without it cannot read them.
+    </Warning>
+
+    <Info>
+    On `http://localhost` the app starts even with the placeholders, so you can try it out without setting anything. With any other `APP_URL` it refuses to start (the log says which names still have a `CHANGEME` placeholder) until each secret is replaced, because the placeholders are public knowledge.
+    </Info>
+  </Step>
+
+  <Step title="Start it">
+    ```sh
+    docker compose up -d
+    ```
+
+    This starts two containers from two images (`postgres:18-alpine` and `ghcr.io/kandid-ai/agentsdr`):
+
+    | Service | What it does |
+    |---|---|
+    | `db` | PostgreSQL 18 with a persistent `db-data` volume. It publishes no port: only `app` reaches it. |
+    | `app` | AgentSDR, listening on port 3000 (host port `PORT`). On start it creates the schema if the database is empty (it does nothing to an existing one), and it runs the [scheduled jobs](/self-hosting/production#scheduled-jobs) itself. |
+
+    Check that it is up and watch the logs:
+
+    ```sh
+    docker compose ps              # db: healthy, app: running
+    docker compose logs -f app     # "Database ready: N tables." the first time, then the server log
+    ```
+  </Step>
+
+  <Step title="Create your admin account">
+    Open your `APP_URL` (`http://localhost:3000` by default). While no account exists, every page sends you to **/setup**. Fill in:
+
+    - **Name**: your name.
+    - **Organization**: the name of your workspace. Everything in AgentSDR belongs to an organization.
+    - **Email** and **Password**: what you will sign in with.
+
+    Choose **Create admin account**. You become the owner of the new organization and are signed in. The account is verified immediately, so this step needs no email and no Resend.
+  </Step>
+
+  <Step title="Next steps">
+    - **Connect your services** in **Settings**: [Google Workspace](/integrations/google-workspace) for Gmail, [Unipile](/integrations/unipile) for LinkedIn and WhatsApp, [Cloudflare R2](/integrations/cloudflare-r2) for recordings, [OpenRouter](/integrations/openrouter) for AI, and [enrichment providers](/integrations/enrichment-providers). They are connected inside the app, per organization, never in this file. Overview: [Integrations](/integrations).
+    - **Invite teammates** from Settings, Members. Invitation email needs `RESEND_API_KEY` and `AUTH_EMAIL_FROM` ([Resend](/integrations/resend)); without them each link is written to `docker compose logs app`, where you can copy it.
+    - **Put it on a domain** with HTTPS: [Going to production](/self-hosting/production).
+  </Step>
+</Steps>
+
+## Settings
+
+Set any of these in `docker-compose.yml` or in `.env` (a `.env` value wins). Everything not marked `CHANGEME` is optional.
+
+| Name | Default | What it does |
+|---|---|---|
+| `APP_URL` | `http://localhost:3000` (follows `PORT`) | Your public address, no trailing slash, e.g. `https://sdr.example.com`. Sets `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL` and `OPENROUTER_SITE_URL` (a value you set for one of those wins). **CHANGEME** on a server. |
+| `BETTER_AUTH_SECRET` | placeholder | Signs sessions. Changing it later signs everyone out. **CHANGEME.** |
+| `INTEGRATION_CREDENTIALS_KEY` | placeholder | Encrypts every saved integration credential. Never change it afterwards. **CHANGEME.** |
+| `UNSUBSCRIBE_SECRET` | placeholder | Signs one-click unsubscribe links in outreach email. Changing it breaks links in mail already sent. **CHANGEME.** |
+| `POSTGRES_PASSWORD` | placeholder | Password of the bundled database; the app's `DATABASE_URL` is built from it. Letters and digits only, since it becomes part of the URL. It is stored by the database on its first start, so set it before then. **CHANGEME.** |
+| `AUTH_SIGNUP` | `invite-only` | Who may create accounts after the first: `invite-only` or `open` (anyone). |
+| `RESEND_API_KEY`, `AUTH_EMAIL_FROM` | empty | Send invitation and password-reset email through [Resend](/integrations/resend). Empty, those emails are written to the app log. |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | empty | Adds "Continue with Google" sign-in. See [Google sign-in](/integrations/google-sign-in). |
+| `DB_POOL_MAX` | `8` | Connections the app opens to PostgreSQL. |
+| `CRON_SECRET`, `OUTREACH_TICK_SECRET` | not in the file | Optional. Add them to the `environment` block only to call the [job endpoints](/self-hosting/production#scheduled-jobs) from outside. |
+| `PORT` | `3000` | The host port the app is published on. Read by Compose only. |
+| `AGENTSDR_VERSION` | the release the file was written for | The image tag. The file names its own release rather than `latest`, so a server that pulled an older `latest` never runs it with a newer file. Read by Compose only. |
+
+Every other variable in the [configuration reference](/configuration) can be added to the `environment` block the same way. Run `docker compose up -d` again after any change to recreate the containers.
+
+## Upgrading
+
+Back up first (see [Backups](#backups)), read the release notes for any migration, then download the new `docker-compose.yml` (it names the new release's image) and start it:
+
+```sh
+curl -O https://raw.githubusercontent.com/Kandid-ai/AgentSDR/main/docker-compose.yml
+docker compose pull
+docker compose up -d --remove-orphans
+```
+
+If you edited values into the old file, copy them across (keeping them in `.env` avoids this). The app only creates a schema in an empty database; it does not upgrade an existing one. Migration steps are in [Upgrading](/self-hosting/production#upgrading).
+
+**From 0.2.0:** the new file has two containers, not four. Replace your `docker-compose.yml` with the new one, then:
+
+```sh
+docker compose up -d --remove-orphans     # also removes the old setup and cron containers
+docker compose exec app agentsdr-entrypoint bun scripts/create-scheduled-job-runs.ts
+```
+
+The second command adds the table the scheduler records its runs in. Until it has run, the app runs no scheduled jobs. Details: [Scheduled jobs](/self-hosting/production#scheduled-jobs).
+
+## Backups
+
+Two things must be backed up together:
+
+1. **The database**, in the `db-data` volume. Dump it with `pg_dump`:
+
+   ```sh
+   docker compose exec db pg_dump -U agentsdr agentsdr > agentsdr-$(date +%F).sql
+   ```
+
+2. **Your `INTEGRATION_CREDENTIALS_KEY`** (the `.env` file, or your edited `docker-compose.yml`). A database restored without it cannot decrypt the saved integrations, and each one has to be reconnected.
+
+Call recordings live in Cloudflare R2, not in the database; back up that bucket separately. More in [Backups and restore](/self-hosting/production#backups-and-restore).
+
+## Stopping and removing
+
+```sh
+docker compose stop            # stop, keep everything
+docker compose up -d           # start again
+docker compose down            # remove the containers, keep the db-data volume
+```
+
+<Warning>
+`docker compose down -v` also deletes the `db-data` volume: **all your data**. Use it only to start over.
+</Warning>
+
+<Note>
+Do not scale `app` to more than one replica: the outreach sender loop has no distributed lock, and two instances would each send.
+</Note>
+
+## Use your own PostgreSQL
+
+To use a PostgreSQL 16+ you already run (a hosted one, for example) instead of the bundled `db`, download the override file next to `docker-compose.yml`:
+
+```sh
+curl -O https://raw.githubusercontent.com/Kandid-ai/AgentSDR/main/docker-compose.external-db.yml
+```
+
+Add to `.env`:
+
+```sh
+COMPOSE_FILE=docker-compose.yml:docker-compose.external-db.yml
+DATABASE_URL=postgres://user:password@your-host:5432/agentsdr
+DATABASE_SSL=            # empty = TLS on, which hosted Postgres expects; "disable" only if it has no TLS
+```
+
+then run `docker compose up -d` as usual. The bundled `db` is not started (`POSTGRES_PASSWORD` goes unused), and the app creates the schema in your database on first start, so it must be empty then. This needs Docker Compose 2.24 or newer.
+
+## Build from source
+
+To run your own changes instead of the published image, clone the repository and run:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+## Going to production
+
+Before real users arrive: set `APP_URL` to your public HTTPS address, replace every `CHANGEME`, put your own HTTPS reverse proxy (Caddy, nginx, a load balancer) in front of port 3000, and connect Resend so invitations are emailed. [Going to production](/self-hosting/production) covers the domain, HTTPS, email, webhooks and backups in full.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The app exits: APP_URL is ... but these still have their CHANGEME placeholder">
+    You set a public `APP_URL` but left a `changeme-...` secret. Replace each name the message lists (`openssl rand -hex 32`), then run `docker compose up -d`.
+  </Accordion>
+  <Accordion title="The app cannot reach the database after I changed POSTGRES_PASSWORD">
+    The database stores its password on its first start; a later change is ignored by it while the app uses the new one. Set the old value back, or change the password inside PostgreSQL (`ALTER USER agentsdr PASSWORD '...'`) first.
+  </Accordion>
+  <Accordion title="Sign-in links point at localhost">
+    Set `APP_URL` to your public address and run `docker compose up -d` again.
+  </Accordion>
+  <Accordion title="Port 3000 is already in use">
+    Set `PORT=3001` (any free port) in `.env` and run `docker compose up -d` again.
+  </Accordion>
+</AccordionGroup>
+
+More: [Troubleshooting](/self-hosting/troubleshooting).
+
+## The full docker-compose.yml
+
+This is the file in the repository root, for copying if you cannot download it.
+
+<Accordion title="docker-compose.yml">
+```yaml
+# AgentSDR — self-hosted with Docker Compose.
+#
+#   1. Save this file as docker-compose.yml in an empty folder.
+#   2. Replace every value marked # CHANGEME — right here in this file, or in a
+#      .env file next to it (one NAME=value per line; .env wins over the default
+#      written after ":-"). Make each secret with:  openssl rand -hex 32
+#   3. docker compose up -d
+#      (the app creates the database schema on its first start, and runs the
+#      scheduled jobs itself: two containers, `db` and `app`).
+#   4. Open APP_URL and create your admin account on the setup page.
+#
+# Guide: https://docs.agentsdr.ai/self-hosting/docker-compose
+#
+# Trying it on your own machine, it starts as-is with the placeholder secrets.
+# On any other APP_URL the app refuses to start until they are replaced.
+#
+# Back up the `db-data` volume AND keep INTEGRATION_CREDENTIALS_KEY somewhere
+# safe: it decrypts every saved integration credential, and a database restored
+# without it cannot read them.
+#
+# Third-party services (Unipile, Google Workspace, Cloudflare R2, OpenRouter, …)
+# are not configured here: you connect them inside the app, per organization.
+
+name: agentsdr
+
+x-agentsdr: &agentsdr
+  # The release this file was written for. Not `latest`: a server that pulled
+  # `latest` before would keep running that older image with this newer file.
+  # To upgrade, download the new docker-compose.yml (it names the new release).
+  image: ghcr.io/kandid-ai/agentsdr:${AGENTSDR_VERSION:-0.3.1}
+  environment:
+    # ── Where people reach AgentSDR ──────────────────────────────────────────
+    # Your public address, no trailing slash, e.g. https://sdr.example.com
+    # (put your own HTTPS reverse proxy in front of port 3000).
+    APP_URL: ${APP_URL:-http://localhost:${PORT:-3000}} # CHANGEME
+
+    # ── Secrets ──────────────────────────────────────────────────────────────
+    # Signs sessions. Changing it later signs everyone out.
+    BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-changeme-better-auth-secret-0000000000000000000000} # CHANGEME
+    # Encrypts every saved integration credential. Never change it afterwards.
+    INTEGRATION_CREDENTIALS_KEY: ${INTEGRATION_CREDENTIALS_KEY:-changeme-integration-credentials-key-000000000000} # CHANGEME
+    # Signs one-click unsubscribe links in outreach email.
+    UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:-changeme-unsubscribe-secret-00000000000000000000000} # CHANGEME
+    # The bundled database's password (the `db` service reads it from here).
+    # Letters and digits only: it becomes part of the database URL.
+    POSTGRES_PASSWORD: &postgres-password ${POSTGRES_PASSWORD:-changeme-postgres-password} # CHANGEME
+
+    # ── Sign-in and auth email (optional) ────────────────────────────────────
+    # Who may create accounts after the first: invite-only, or open (anyone).
+    AUTH_SIGNUP: ${AUTH_SIGNUP:-invite-only}
+    # Resend (https://resend.com) for invitation and password-reset email.
+    # Unset, those emails are written to the app log instead of sent.
+    RESEND_API_KEY: ${RESEND_API_KEY:-}
+    AUTH_EMAIL_FROM: ${AUTH_EMAIL_FROM:-}
+    # "Continue with Google". Redirect URI: <APP_URL>/api/auth/callback/google
+    GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+
+    # ── Other (optional) ─────────────────────────────────────────────────────
+    # Connections this app opens to PostgreSQL.
+    DB_POOL_MAX: ${DB_POOL_MAX:-8}
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentsdr
+      POSTGRES_USER: agentsdr
+      POSTGRES_PASSWORD: *postgres-password
+    volumes:
+      - db-data:/var/lib/postgresql
+    # No published port: only the app reaches the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentsdr -d agentsdr"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Creates the schema in an empty database before it starts (a no-op
+  # afterwards) and runs the scheduled jobs in-process.
+  app:
+    <<: *agentsdr
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+```
+</Accordion>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Going to production" icon="rocket" href="/self-hosting/production">
+    Domain, HTTPS, email, backups, upgrades.
+  </Card>
+  <Card title="Integrations" icon="plug" href="/integrations">
+    Connect Gmail, Unipile, R2, OpenRouter.
+  </Card>
+  <Card title="Configuration reference" icon="sliders-horizontal" href="/configuration">
+    Every environment variable.
+  </Card>
+  <Card title="Troubleshooting" icon="life-buoy" href="/self-hosting/troubleshooting">
+    Real error messages and fixes.
+  </Card>
+</CardGroup>

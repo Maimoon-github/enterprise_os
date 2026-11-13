@@ -1,0 +1,35 @@
+{
+  "name": "@lobbystack/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./product-capabilities": {
+      "types": "./dist/product-capabilities.d.ts",
+      "default": "./dist/product-capabilities.js"
+    },
+    "./plan-cards": {
+      "types": "./dist/planCards.d.ts",
+      "default": "./dist/planCards.js"
+    },
+    "./plan-comparison": {
+      "types": "./dist/planComparison.d.ts",
+      "default": "./dist/planComparison.js"
+    }
+  },
+  "dependencies": {
+    "zod": "^4.6.6"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
+}

@@ -1,0 +1,118 @@
+---
+title: "Enrichment providers"
+description: "The 15 enrichment providers you can connect from Tables, what each returns, and where to find each provider's API key."
+icon: "zap"
+---
+
+Enrichment providers are data services that find emails, phone numbers and company details for each row of a table. You connect an account with each provider you want, then add enrichment columns. See [Enrichment](/tables/enrichment) for how to use them in a table.
+
+<Info>
+**What you need**
+
+- An account with each provider you want to use, with API access on your plan with that provider.
+- The **owner** or **admin** role to add an account (the form lives inside Tables, not in Settings). Members can then use the accounts in their columns.
+- About 5 minutes per provider.
+</Info>
+
+## Overview
+
+AgentSDR supports 15 providers. Each has its own connection (an API key, or a client ID and secret for Snov.io), verified with a live call before it is saved. Connections belong to your organization, are encrypted with `INTEGRATION_CREDENTIALS_KEY`, and are never sent back to the browser. There is no environment fallback.
+
+**Credits are billed by the vendor.** Each enrichment run spends credits or units on your own account with that provider. AgentSDR adds no markup, does not convert credits to money and shows no per-run price. Watch usage in the provider's dashboard and test a column on 10 rows before running a whole table.
+
+## The providers
+
+| Provider | What it returns | AgentSDR asks for | Where to get it |
+|---|---|---|---|
+| **Apollo.io** | Find person by email, find work email, enrich person (LinkedIn URL) and company (domain), people at a company by job title, open jobs, and actions on your Apollo workspace (contacts, accounts, sequences). | API key | Settings → Integrations → API Keys → Create new key. Some endpoints need a master key. [Vendor docs](https://docs.apollo.io/docs/create-api-key) |
+| **Cleanlist** | People and company search with filters; enrich a person (email, phone, job, LinkedIn) or company (industry, size, funding, tech stack). | API key | Portal: Settings → API Keys → Generate Key. Cleanlist's docs say API access needs a Pro plan or above. Shown once. [Vendor docs](https://docs.cleanlist.ai/mcp-api/authentication) |
+| **ContactOut** | LinkedIn URL from a personal email; mobile numbers and personal emails from a LinkedIn URL. | API token | ContactOut's docs say to request an API key by booking a meeting with them. [Vendor docs](https://api.contactout.com/#authentication) |
+| **Findymail** | Validate an email; find a work email from a name and domain or a LinkedIn URL; find a mobile phone. | API key | Your Findymail account's API page (app.findymail.com/user/api-tokens). [Vendor docs](https://app.findymail.com/docs/) |
+| **FullEnrich** | Work email and mobile phone from a LinkedIn URL (waterfall on FullEnrich's side, asynchronous). | API key | The API page of the FullEnrich app (link). [Vendor docs](https://app.fullenrich.com/app/api) |
+| **Hunter** | Verify an email; find emails for a company domain; find a person's work email. | API key | Dashboard, API keys page (hunter.io/api-keys). [Vendor docs](https://hunter.io/api-documentation/v2#authentication) |
+| **Icypeas** | Verify an email; find work email, professional profile, people at a company, emails for a domain; enrich a profile or company. | API key | Sidebar API section, where you enable API access to see the key. [Vendor docs](https://api-doc.icypeas.com/api-auth/access-keys/) |
+| **LeadMagic** | Validate an email; find work email, personal email, mobile, professional profile; open jobs; enrich a company. | API key | app.leadmagic.io: Settings → API Keys. [Vendor docs](https://leadmagic.io/docs/v1/authentication) |
+| **Lusha** | Enrich a person or company; person signals (promotions, company changes); company signals (website traffic, IT spend, jobs growth, headcount, news). | API key | The API page of the Lusha dashboard. Lusha's docs say only admins or managers with API on their plan can see it. [Vendor docs](https://docs.lusha.com/guides/advanced-topics/new-getting-started) |
+| **MillionVerifier** | Verify an email: result, quality, role-based and free-provider flags. | API key | The API page of the MillionVerifier app (link). [Vendor docs](https://app.millionverifier.com/api) |
+| **RocketReach** | Professional and personal email and phone from a LinkedIn URL; enrich a person or company. | API key | Account, API section (link). Asynchronous. [Vendor docs](https://rocketreach.co/account?section=nav_gen_api) |
+| **Semrush** | Traffic analytics, paid search competitors, traffic sources, top pages, social engagement, geographic distribution for a company website. | API key | semrush.com/accounts/api-keys/active. Calls spend Semrush API units. [Vendor docs](https://developer.semrush.com/api/v3/get-started/authorization/) |
+| **Similarweb** | Monthly visits, traffic by country, pages per visit, bounce rate, visit duration, global rank, website technologies. | API key | Similarweb's API keys documentation (link). [Vendor docs](https://developers.similarweb.com/docs/api-keys) |
+| **Snov.io** | Domain search, database search, email counts, find emails from name and domain, domain from company name, LinkedIn and email profile enrichment, email verifier. | Client ID and Client secret | The API page of your Snov.io account. [Vendor docs](https://app.snov.io/account/api) |
+| **ZeroBounce** | Validate an email: status, catch-all, MX and SMTP provider, domain age and more. | API key | The API dashboard of your ZeroBounce account (see the quickstart). [Vendor docs](https://www.zerobounce.net/docs/email-validation-api-quickstart/) |
+
+The **Returns** column summarizes what each provider can look up; the setup screen shows the exact inputs and outputs of every action. Where a row says "see the provider's docs", follow the link: that vendor moves its API key page often.
+
+## Connect a provider account
+
+<Steps>
+  <Step title="Get the API key from the provider">
+    Use the table above. Copy it right away if the provider shows it only once.
+  </Step>
+  <Step title="Open the enrichment catalog in a table">
+    In a table, click **Actions**, then **Add enrichment**. Search with **Search providers and enrichments...**. Providers you have connected show a green dot and **Connected**. The rest are greyed out.
+    {/* SCREENSHOT: Enrichment catalog with providers listed | /tables (any table), Actions, Add enrichment | the green dot on connected providers and the search box */}
+  </Step>
+  <Step title="Choose the provider">
+    Click it. If you have not connected it, you see **Connect (provider) to use its actions** and the note "Your credentials will be verified before the integration is enabled."
+  </Step>
+  <Step title="Add the account">
+    Click **Add account**. Enter an **Account name** (optional: it defaults to "(provider) account") and the credential field(s) the provider asks for. A required field is marked with a red asterisk. Click the help link next to the form to open the vendor's page.
+    {/* SCREENSHOT: Add account form for a provider | the Add enrichment dialog | Account name, the API key field and the help link */}
+  </Step>
+  <Step title="Save">
+    AgentSDR makes a live call to the provider to verify the credentials. If it fails, nothing is saved and the form shows the reason. When it works the provider shows **Connected**.
+  </Step>
+</Steps>
+
+### Several accounts per provider
+
+You can add more than one account for the same provider, for example one per client or per plan. The **Account** dropdown in a column's setup lists every account for that provider (an unverified one is marked "verification required"), and each column keeps its own choice. There is no automatic rotation or fallback: a column uses the account you selected.
+
+## Check that it works
+
+<Check>
+The provider shows a green dot and **Connected** in the catalog. Add one of its actions to a table and click **Save & run 10 rows** to see real results.
+</Check>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="(Provider) rejected this API key.">
+    The provider answered that the key is wrong, revoked or without API access. Copy it again from the provider's page. Snov.io says "Snov.io rejected this client ID or client secret."
+  </Accordion>
+  <Accordion title="(Provider) rate-limited verification. Try again shortly.">
+    The vendor throttled the check. Wait a minute and try again.
+  </Accordion>
+  <Accordion title="(Provider) could not verify this account right now. Try again shortly.">
+    The vendor had an error. Try again later.
+  </Accordion>
+  <Accordion title="(Provider) could not be reached. Check your connection and try again.">
+    Your server could not reach the vendor. Check outbound internet access.
+  </Accordion>
+  <Accordion title="This Apollo key does not have permission to read the current user profile.">
+    The Apollo key is scoped too narrowly. Create a new key in Apollo with access to that endpoint, or set it as a master key (some Apollo actions, such as listing users, need one).
+  </Accordion>
+  <Accordion title="A field is required, or the account name is too long">
+    You see "(field label) is required" for an empty credential and "Account name is too long" past 120 characters.
+  </Accordion>
+  <Accordion title="Runs are refused for a column">
+    If the account is later disabled, unverified, or its credentials cannot be read, runs for that column are refused with a message to reconnect. Add the account again.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Enrichment in Tables" icon="zap" href="/tables/enrichment">
+    Add enrichment columns and run them.
+  </Card>
+  <Card title="Tables" icon="table" href="/tables/overview">
+    Statuses, retries and runs.
+  </Card>
+  <Card title="Integrations overview" icon="plug" href="/integrations">
+    All integrations and how credentials are stored.
+  </Card>
+  <Card title="OpenRouter" icon="sparkles" href="/integrations/openrouter">
+    The AI side of columns.
+  </Card>
+</CardGroup>

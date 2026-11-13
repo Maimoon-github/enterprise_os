@@ -1,0 +1,754 @@
+import { and, count, asc, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+
+import { appointments, billingUsageEvents, calls, contacts, conversations, conversationSessions, defaultAgentIdOf, enqueueOutbox, inboxItems, inOrder, phoneNumbers, services, staff, storageObjects, transcripts, withBusinessTransaction, type DatabaseTransaction, type NewOutboxMessage } from "@lobbystack/db";
+import { APPOINTMENT_REQUESTS, billableVoiceSeconds, CANCELLATION_REQUEST, isNonBillableCallDisposition, RESCHEDULE_REQUEST } from "@lobbystack/shared";
+import { getPostHogDistinctIdForBusinessSystem, type TelemetryEventName, type TelemetryProperties } from "@lobbystack/telemetry";
+
+import { requireBusinessMembership } from "../authz";
+import { findOrCreateContactByPhone } from "./contacts";
+import type { DomainContext } from "./context";
+import { contentExpiryForPlan, isContentRetentionEnabled, resolveBusinessBillingPlan } from "./contentRetentionPolicy";
+import { queueOperatorAlertInTransaction } from "./notifications";
+import { finalizeWebVoiceUsageInTransaction, normalizeWebCallMaxDurationMs, reserveWebVoiceUsageInTransaction } from "./billing";
+import { correctUsageInTransaction, enqueueUsageSyncInTransaction, reserveUsageInTransaction } from "./usage";
+import { recordUnitEconomicsEventInTransaction, type UnitEconomicsEventInput } from "./unitEconomics";
+import { visibleFollowUpBody, visibleFollowUpMetadata, visibleFollowUpTitle } from "./followUpRetention";
+import { recordCallOutcomeInTransaction, resolveCallOutcome } from "./callOutcome";
+import { buildCallEvents } from "./callEvents";
+import { recordingListState, recordingState, type RecordingState } from "./recordingState";
+import { recordFirstRealCallInTransaction } from "./firstRealConversation";
+import { recordProductEventBestEffort } from "./productEvents";
+import { emitWebhookEventInTransaction } from "./publicApi/webhooks";
+
+/** Live calls run over either the phone carrier or the browser; only the transport is durable. */
+function voiceChannelForTransport(transport: string): "voice" | "web_voice" {
+  return transport.includes("web") ? "web_voice" : "voice";
+}
+
+/**
+ * Voice lifecycle telemetry is durable audit data, not a control-flow dependency.
+ * Recording happens after the authoritative transaction commits and never fails it.
+ */
+async function recordVoiceLifecycleEvent(
+  context: DomainContext,
+  input: {
+    name: TelemetryEventName;
+    businessId: string;
+    callId?: string;
+    channel?: string;
+    provider?: string;
+    properties?: TelemetryProperties;
+  },
+): Promise<void> {
+  await recordProductEventBestEffort(context, {
+    name: input.name,
+    businessId: input.businessId,
+    distinctId: getPostHogDistinctIdForBusinessSystem(input.businessId),
+    actorType: "worker",
+    properties: {
+      ...(input.callId !== undefined ? { callId: input.callId } : {}),
+      ...(input.channel !== undefined ? { channel: input.channel } : {}),
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...input.properties,
+    },
+  });
+}
+
+/**
+ * Records that the backend served a voice business context snapshot. The live
+ * call does not exist yet, so this event is keyed on the business and the
+ * transport provider inferred by the caller.
+ */
+export async function recordVoiceSnapshotLoaded(
+  context: DomainContext,
+  input: { businessId: string; channel: "voice" | "web_voice"; provider: string },
+): Promise<void> {
+  await recordVoiceLifecycleEvent(context, {
+    name: "voice.snapshot_loaded",
+    businessId: input.businessId,
+    channel: input.channel,
+    provider: input.provider,
+  });
+}
+
+/** The contact behind a call. Callers without a number each get their own, so blocking one never blocks the rest. */
+export async function findOrCreateCallContactInTransaction(tx: DatabaseTransaction, input: { businessId: string; from?: string | undefined }): Promise<{ contactId: string; blocked: boolean }> {
+  const callerPhone = input.from && input.from !== "web" ? input.from : undefined;
+  const caller = callerPhone ? await findOrCreateContactByPhone(tx, { businessId: input.businessId, phone: callerPhone }) : undefined;
+  const contactId = caller?.contact.id ?? (await tx.insert(contacts).values({ businessId: input.businessId }).returning({ id: contacts.id }))[0]?.id;
+  if (!contactId) throw new Error("Call contact could not be created.");
+  if (caller?.created) await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "contact.created", resourceId: contactId });
+  return { contactId, blocked: Boolean(caller?.contact.operatorBlockedAt) };
+}
+
+/** The agent a new call answers as, as a subquery: the dialled number's agent on a phone call, otherwise the default agent. */
+function callAgentId(input: { businessId: string; transport: string; to: string }) {
+  if (input.transport !== "voice") return defaultAgentIdOf(input.businessId);
+  return sql<string | null>`coalesce((select agent_id from public.phone_numbers where business_id = ${input.businessId}::uuid and e164 = ${input.to} and status not in ('reclaimed', 'released') limit 1), ${defaultAgentIdOf(input.businessId)})`;
+}
+
+export async function startCall(
+  context: DomainContext,
+  input: {
+    businessId: string;
+    provider: string;
+    providerCallId: string;
+    /** The caller's number; "web" or omitted when there is none (browser calls, withheld caller IDs). */
+    from?: string | undefined;
+    to: string;
+    transport: string;
+    gatewaySessionId?: string;
+    startedAt?: string;
+    originUrl?: string;
+    userAgent?: string;
+    widgetId?: string;
+    sessionPurpose?: string;
+    prospectDemoId?: string;
+    maxDurationMs?: number;
+    billable?: boolean;
+    /** The agent a browser call answers as. A phone call's comes from the dialled number, and with neither the default agent answers. */
+    agentId?: string;
+  },
+): Promise<{ callId: string; conversationId: string; contactId: string; agentId?: string; duplicate: boolean; blocked: boolean; webCallMaxDurationMs?: number; reservedSeconds?: number }> {
+  const result = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const existing = await tx.select({ id: calls.id, conversationId: calls.conversationId, contactId: calls.contactId, agentId: calls.agentId, webCallMaxDurationMs: calls.webCallMaxDurationMs }).from(calls).where(and(eq(calls.provider, input.provider), eq(calls.providerCallId, input.providerCallId))).limit(1);
+    if (existing[0]?.conversationId && existing[0]?.contactId) {
+      const contact = (await tx.select({ operatorBlockedAt: contacts.operatorBlockedAt }).from(contacts).where(and(eq(contacts.id, existing[0].contactId), eq(contacts.businessId, input.businessId))).limit(1))[0];
+      // A retried phone call gets what it has reserved so far, top-ups included.
+      const reservation = input.transport === "web_voice" ? undefined : (await tx.select({ quantity: billingUsageEvents.quantity }).from(billingUsageEvents).where(and(eq(billingUsageEvents.businessId, input.businessId), eq(billingUsageEvents.sourceKey, `voice:${existing[0].id}`))).limit(1))[0];
+      // The agent the first delivery answered as, even if the number has moved since.
+      return { callId: existing[0].id, conversationId: existing[0].conversationId, contactId: existing[0].contactId, ...(existing[0].agentId ? { agentId: existing[0].agentId } : {}), duplicate: true, blocked: Boolean(contact?.operatorBlockedAt), ...(existing[0].webCallMaxDurationMs !== null ? { webCallMaxDurationMs: existing[0].webCallMaxDurationMs } : {}), ...(reservation ? { reservedSeconds: reservation.quantity } : {}) };
+    }
+    const caller = existing[0]?.contactId ? undefined : await findOrCreateCallContactInTransaction(tx, { businessId: input.businessId, from: input.from });
+    const contactId = existing[0]?.contactId ?? caller?.contactId;
+    if (!contactId) {
+      throw new Error("Call contact could not be created.");
+    }
+    const blocked = Boolean(caller?.blocked);
+    // Read in this insert rather than beside it, so the caller's ringing gets no extra round trip, and a moved number answers as its new agent on the next call.
+    const conversation = existing[0]?.conversationId
+      ? { id: existing[0].conversationId, agentId: existing[0].agentId }
+      : (await tx.insert(conversations).values({ businessId: input.businessId, contactId, agentId: input.agentId ?? callAgentId(input), channel: "voice", status: "open", automationState: "ai_active" }).returning({ id: conversations.id, agentId: conversations.agentId }))[0];
+    const conversationId = conversation?.id;
+    if (!conversationId) {
+      throw new Error("Call conversation could not be created.");
+    }
+    const agentId = conversation.agentId ?? undefined;
+    const callId = existing[0]?.id ?? (await tx.insert(calls).values({
+      businessId: input.businessId,
+      conversationId,
+      contactId,
+      agentId: agentId ?? defaultAgentIdOf(input.businessId),
+      provider: input.provider,
+      providerCallId: input.providerCallId,
+      transport: input.transport,
+      originUrl: input.originUrl,
+      userAgent: input.userAgent,
+      widgetId: input.widgetId,
+      sessionPurpose: input.sessionPurpose,
+      prospectDemoId: input.prospectDemoId,
+      ...(input.transport === "web_voice" ? { webCallMaxDurationMs: normalizeWebCallMaxDurationMs(input.maxDurationMs) } : {}),
+      ...(input.billable === false ? { billingExcluded: true } : {}),
+      ...(blocked ? { status: "blocked", disposition: "blocked_contact" } : {}),
+      gatewaySessionId: input.gatewaySessionId,
+      // A phone call came in on the carrier that owns the dialled number.
+      ...(input.transport === "voice" ? { carrier: sql<string>`coalesce((select carrier from public.phone_numbers where business_id = ${input.businessId}::uuid and e164 = ${input.to} and status <> 'reclaimed' limit 1), 'twilio')` } : {}),
+      startedAt: new Date(input.startedAt ?? Date.now()),
+    }).returning({ id: calls.id }))[0]?.id;
+    if (!callId) {
+      throw new Error("Call could not be persisted.");
+    }
+    let webCallMaxDurationMs = input.transport === "web_voice" ? normalizeWebCallMaxDurationMs(input.maxDurationMs) : undefined;
+    let reservedSeconds: number | undefined;
+    if (input.billable !== false) {
+      if (input.transport === "web_voice") {
+        const allowance = await reserveWebVoiceUsageInTransaction(tx, { businessId: input.businessId, callId, ...(input.maxDurationMs !== undefined ? { maxDurationMs: input.maxDurationMs } : {}) });
+        if (!allowance.allowed) {
+          const error = new Error(allowance.errorCode ?? "voice_limit_reached") as Error & { status: number; code: string };
+          error.status = 402;
+          error.code = allowance.errorCode ?? "voice_limit_reached";
+          throw error;
+        }
+        webCallMaxDurationMs = allowance.maxDurationMs;
+        await tx.update(calls).set({ webCallMaxDurationMs, updatedAt: new Date() }).where(and(eq(calls.id, callId), eq(calls.businessId, input.businessId)));
+      } else {
+        const allowance = await reserveUsageInTransaction(tx, { businessId: input.businessId, usageKind: "voice_seconds", sourceKey: `voice:${callId}` });
+        if (!allowance.allowed) {
+          const error = new Error(allowance.errorCode ?? "voice_limit_reached") as Error & { status: number; code: string };
+          error.status = 402;
+          error.code = allowance.errorCode ?? "voice_limit_reached";
+          throw error;
+        }
+        reservedSeconds = allowance.quantity;
+      }
+    }
+    await tx.insert(conversationSessions).values({
+      businessId: input.businessId,
+      conversationId,
+      callId,
+      channel: input.transport.includes("web") ? "web_voice" : "voice",
+      status: "open",
+      startedAt: new Date(input.startedAt ?? Date.now()),
+    }).onConflictDoNothing();
+    await enqueueOutbox(tx, {
+      topic: "realtime.publish",
+      businessId: input.businessId,
+      aggregateType: "call",
+      aggregateId: callId,
+      dedupeKey: `call:${callId}:started`,
+      payload: { type: "call.started", entityId: callId, revision: 0 },
+    });
+    return { callId, conversationId, contactId, ...(agentId ? { agentId } : {}), duplicate: false, blocked, ...(webCallMaxDurationMs !== undefined ? { webCallMaxDurationMs } : {}), ...(reservedSeconds !== undefined ? { reservedSeconds } : {}) };
+  });
+  if (!result.duplicate) {
+    await recordVoiceLifecycleEvent(context, {
+      name: "voice.call_started",
+      businessId: input.businessId,
+      callId: result.callId,
+      channel: voiceChannelForTransport(input.transport),
+      provider: input.provider,
+      properties: {
+        ...(result.blocked ? { blocked: true } : {}),
+        ...(input.widgetId !== undefined ? { widgetId: input.widgetId } : {}),
+      },
+    });
+  }
+  return result;
+}
+
+export async function upsertTranscript(
+  context: DomainContext,
+  input: { businessId: string; callId: string; sequence: number; speaker: string; text: string; final: boolean; confidence?: number },
+): Promise<{ transcriptId: string; revision: number }> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const retentionPlan = isContentRetentionEnabled() ? await resolveBusinessBillingPlan(tx, input.businessId) : null;
+    const [row] = await tx.insert(transcripts).values({
+      businessId: input.businessId,
+      callId: input.callId,
+      sequence: input.sequence,
+      speaker: input.speaker,
+      text: input.text,
+      expiresAt: retentionPlan ? contentExpiryForPlan(retentionPlan, "transcripts") : null,
+      final: input.final,
+      ...(input.confidence !== undefined ? { confidence: Math.round(input.confidence * 100) } : {}),
+    }).onConflictDoUpdate({
+      target: [transcripts.callId, transcripts.sequence],
+      set: {
+        // Creation-anchored expiry survives revisions, including historical nulls.
+        speaker: input.speaker,
+        text: input.text,
+        final: input.final,
+        ...(input.confidence !== undefined ? { confidence: Math.round(input.confidence * 100) } : {}),
+        revision: sql`${transcripts.revision} + 1`,
+        updatedAt: new Date(),
+      },
+    }).returning({ id: transcripts.id, revision: transcripts.revision });
+    if (!row) {
+      throw new Error("Transcript could not be persisted.");
+    }
+    await enqueueOutbox(tx, {
+      topic: "realtime.publish",
+      businessId: input.businessId,
+      aggregateType: "transcript",
+      aggregateId: row.id,
+      dedupeKey: `transcript:${input.callId}:${input.sequence}:${row.revision}`,
+      payload: { type: "transcript.upserted", entityId: row.id, callId: input.callId, revision: row.revision },
+    });
+    return { transcriptId: row.id, revision: row.revision };
+  });
+}
+
+export async function completeCall(
+  context: DomainContext,
+  input: {
+    businessId: string; callId: string; status: string; endedAt: string; disposition?: string; providerDurationSeconds?: number; mediaDurationSeconds?: number; providerCostUsd?: number; expectedProviderCallId?: string;
+    /** Follow-up jobs written with the completion, so only the write that finalizes the call queues them. */
+    outbox?: NewOutboxMessage[];
+    /** A cost row written with the completion, for the same reason. */
+    costEvent?: UnitEconomicsEventInput;
+  },
+): Promise<boolean> {
+  const completion = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const [call] = await tx.update(calls).set({
+      status: input.status,
+      endedAt: new Date(input.endedAt),
+      disposition: input.disposition,
+      providerDurationSeconds: input.providerDurationSeconds,
+      revision: sql`${calls.revision} + 1`,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(calls.id, input.callId),
+      eq(calls.businessId, input.businessId),
+      isNull(calls.endedAt),
+      // Recovery re-validates the provider binding inside the finalizing write,
+      // so a bind that lands after the read cannot have its reservation released.
+      input.expectedProviderCallId !== undefined ? eq(calls.providerCallId, input.expectedProviderCallId) : undefined,
+    )).returning({ id: calls.id, revision: calls.revision, transport: calls.transport, provider: calls.provider, startedAt: calls.startedAt, billingExcluded: calls.billingExcluded, disposition: calls.disposition, conversationId: calls.conversationId, contactId: calls.contactId, widgetId: calls.widgetId, prospectDemoId: calls.prospectDemoId, mediaStartedAt: calls.mediaStartedAt });
+    if (!call) {
+      return null;
+    }
+    // Providers round up to whole seconds, so unrounded time decides the short-call exemption. The
+    // gateway's media-session duration is the real talk time; calls.startedAt precedes the stream and
+    // includes setup, so it only serves as a fallback.
+    const measuredSeconds = input.mediaDurationSeconds ?? Math.max(0, (new Date(input.endedAt).getTime() - call.startedAt.getTime()) / 1_000);
+    let durationSeconds: number | undefined;
+    if (call.billingExcluded) {
+      // Prospect demos and other explicitly non-billable calls never create usage.
+    } else if (call.transport === "web_voice") {
+      durationSeconds = billableVoiceSeconds(input.providerDurationSeconds ?? measuredSeconds, call.disposition, measuredSeconds);
+      await finalizeWebVoiceUsageInTransaction(tx, { businessId: input.businessId, callId: call.id, durationSeconds });
+    } else {
+      durationSeconds = billableVoiceSeconds(input.providerDurationSeconds ?? measuredSeconds, call.disposition, measuredSeconds);
+      const usageEventId = await correctUsageInTransaction(tx, { businessId: input.businessId, sourceKey: `voice:${call.id}`, usageKind: "voice_seconds", quantity: durationSeconds });
+      await enqueueUsageSyncInTransaction(tx, { businessId: input.businessId, usageEventId });
+    }
+    await enqueueOutbox(tx, {
+      topic: "realtime.publish",
+      businessId: input.businessId,
+      aggregateType: "call",
+      aggregateId: call.id,
+      dedupeKey: `call:${call.id}:completed:${call.revision}`,
+      payload: { type: "call.completed", entityId: call.id, revision: call.revision },
+    });
+    await enqueueOutbox(tx, {
+      topic: "conversation.finalizeSession",
+      businessId: input.businessId,
+      aggregateType: "call",
+      aggregateId: call.id,
+      dedupeKey: `call:${call.id}:finalize`,
+      payload: { callId: call.id },
+    });
+    for (const message of input.outbox ?? []) await enqueueOutbox(tx, message);
+    if (input.costEvent) await recordUnitEconomicsEventInTransaction(tx, input.costEvent);
+    await recordFirstRealCallInTransaction(tx, { businessId: input.businessId, call: { ...call, status: input.status } });
+    // The short-call exemption, as opposed to spam or a non-billable call: the
+    // business pays nothing, but the provider may still bill us.
+    const shortCallWaived = durationSeconds === 0 && !isNonBillableCallDisposition(call.disposition) && ((input.providerDurationSeconds ?? 0) > 0 || measuredSeconds > 0);
+    return {
+      callId: call.id,
+      transport: call.transport,
+      provider: call.provider,
+      disposition: call.disposition,
+      durationSeconds,
+      providerDurationSeconds: input.providerDurationSeconds,
+      measuredSeconds,
+      shortCallWaived,
+      billingExcluded: call.billingExcluded,
+    };
+  });
+  if (!completion) return false;
+  await recordVoiceLifecycleEvent(context, {
+    name: "voice.call_completed",
+    businessId: input.businessId,
+    callId: completion.callId,
+    channel: voiceChannelForTransport(completion.transport),
+    provider: completion.provider,
+    properties: {
+      status: input.status,
+      ...(completion.disposition !== null ? { disposition: completion.disposition } : {}),
+      ...(completion.durationSeconds !== undefined ? { durationSeconds: completion.durationSeconds } : {}),
+      ...(completion.providerDurationSeconds !== undefined ? { providerDurationSeconds: completion.providerDurationSeconds } : {}),
+      ...(completion.billingExcluded ? { billingExcluded: true } : {}),
+    },
+  });
+  if (completion.shortCallWaived) {
+    await recordVoiceLifecycleEvent(context, {
+      name: "voice.short_call_waived",
+      businessId: input.businessId,
+      callId: completion.callId,
+      channel: voiceChannelForTransport(completion.transport),
+      provider: completion.provider,
+      properties: {
+        measuredSeconds: Math.round(completion.measuredSeconds * 10) / 10,
+        ...(completion.providerDurationSeconds !== undefined ? { providerDurationSeconds: completion.providerDurationSeconds } : {}),
+        ...(input.providerCostUsd !== undefined ? { estimatedCostUsd: input.providerCostUsd } : {}),
+        ...(completion.disposition !== null ? { disposition: completion.disposition } : {}),
+      },
+    });
+  }
+  return true;
+}
+
+export async function setTransferState(
+  context: DomainContext,
+  input: { businessId: string; callId: string; transferState: string },
+): Promise<void> {
+  const change = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    // Compare the durable previous state so repeated no-op writes do not emit duplicate telemetry.
+    const [existing] = await tx.select({ transferState: calls.transferState, provider: calls.provider, transport: calls.transport }).from(calls).where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId))).limit(1).for("update");
+    if (!existing) return null;
+    const [call] = await tx.update(calls).set({ transferState: input.transferState, revision: sql`${calls.revision} + 1`, updatedAt: new Date() }).where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId))).returning({ id: calls.id, revision: calls.revision });
+    if (!call) return null;
+    await enqueueOutbox(tx, {
+      topic: "realtime.publish",
+      businessId: input.businessId,
+      aggregateType: "call",
+      aggregateId: call.id,
+      dedupeKey: `call:${call.id}:transfer:${call.revision}`,
+      payload: { type: "call.updated", entityId: call.id, revision: call.revision },
+    });
+    if (input.transferState === "failed") await queueOperatorAlertInTransaction(tx, { businessId: input.businessId, eventKind: "transferFailed", eventKey: `transferFailed:${call.id}`, subject: "Live call transfer failed", body: "A live call transfer failed. Open the call details to review it." });
+    return { callId: call.id, previousTransferState: existing.transferState, provider: existing.provider, transport: existing.transport, changed: existing.transferState !== input.transferState };
+  });
+  if (!change?.changed) return;
+  await recordVoiceLifecycleEvent(context, {
+    name:
+      input.transferState === "requested"
+        ? "voice.transfer_requested"
+        : input.transferState === "completed"
+          ? "voice.transfer_completed"
+          : "voice.transfer_state_changed",
+    businessId: input.businessId,
+    callId: change.callId,
+    channel: voiceChannelForTransport(change.transport),
+    provider: change.provider,
+    properties: {
+      transferState: input.transferState,
+      ...(change.previousTransferState !== null ? { previousTransferState: change.previousTransferState } : {}),
+    },
+  });
+}
+
+/**
+ * What the worker needs to find the carrier's call behind a GPT-Live phone call.
+ * Null when the caller withheld their number: the trunk is shared by every
+ * business, so a lookup by start time alone could price another business's call.
+ * `dialled` holds the business's numbers, which find a call that reached GPT-Live
+ * from a voice webhook rather than the trunk.
+ */
+export async function loadLiveCallForPricing(
+  context: DomainContext,
+  input: { businessId: string; callId: string },
+): Promise<{ startedAt: Date; callerPhone: string; carrier: string | null; dialled: string[] } | null> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const [call] = await tx.select({ startedAt: calls.startedAt, callerPhone: contacts.phone, carrier: calls.carrier }).from(calls).leftJoin(contacts, eq(contacts.id, calls.contactId)).where(and(eq(calls.businessId, input.businessId), eq(calls.id, input.callId))).limit(1);
+    if (!call?.callerPhone?.startsWith("+")) return null;
+    const numbers = await tx.select({ e164: phoneNumbers.e164 }).from(phoneNumbers).where(and(eq(phoneNumbers.businessId, input.businessId), eq(phoneNumbers.status, "active")));
+    return { startedAt: call.startedAt, callerPhone: call.callerPhone, carrier: call.carrier, dialled: numbers.map((number) => number.e164) };
+  });
+}
+
+export async function recordCallProviderPricing(
+  context: DomainContext,
+  input: { businessId: string; providerCallId: string; callId?: string; providerUpdatedAt?: string; providerPrice?: number; providerPriceUnit?: string; providerCostUsd?: number },
+): Promise<boolean> {
+  const recorded = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const [call] = await tx.update(calls).set({
+      ...(input.providerUpdatedAt ? { providerUpdatedAt: new Date(input.providerUpdatedAt) } : {}),
+      providerPrice: input.providerPrice,
+      providerPriceUnit: input.providerPriceUnit,
+      providerCostUsd: input.providerCostUsd,
+      revision: sql`${calls.revision} + 1`,
+      updatedAt: new Date(),
+    // GPT-Live calls store the OpenAI session as providerCallId, so they're priced by our call id.
+    }).where(and(eq(calls.businessId, input.businessId), input.callId ? eq(calls.id, input.callId) : eq(calls.providerCallId, input.providerCallId))).returning({ id: calls.id, revision: calls.revision, providerDurationSeconds: calls.providerDurationSeconds, startedAt: calls.startedAt, provider: calls.provider, transport: calls.transport, carrier: calls.carrier });
+    if (!call) return null;
+    if (input.providerCostUsd !== undefined) await recordUnitEconomicsEventInTransaction(tx, { businessId: input.businessId, eventKey: `voice_provider:${call.id}`, eventKind: "voice_provider", channel: "voice", costUsd: input.providerCostUsd, occurredAt: call.startedAt, ...(call.providerDurationSeconds !== null ? { quantity: call.providerDurationSeconds } : {}), quantityUnit: "second", provider: call.carrier ?? "twilio", callId: call.id });
+    await enqueueOutbox(tx, { topic: "realtime.publish", businessId: input.businessId, aggregateType: "call", aggregateId: call.id, dedupeKey: `call:${call.id}:pricing:${call.revision}`, payload: { type: "call.updated", entityId: call.id, revision: call.revision } });
+    return { callId: call.id, provider: call.provider, transport: call.transport, providerDurationSeconds: call.providerDurationSeconds };
+  });
+  if (!recorded) return false;
+  if (input.providerCostUsd !== undefined) {
+    await recordVoiceLifecycleEvent(context, {
+      name: "voice.provider_cost_recorded",
+      businessId: input.businessId,
+      callId: recorded.callId,
+      channel: voiceChannelForTransport(recorded.transport),
+      provider: recorded.provider,
+      properties: {
+        costUsd: input.providerCostUsd,
+        ...(input.providerPrice !== undefined ? { providerPrice: input.providerPrice } : {}),
+        ...(input.providerPriceUnit !== undefined ? { providerPriceUnit: input.providerPriceUnit } : {}),
+        ...(recorded.providerDurationSeconds !== null ? { providerDurationSeconds: recorded.providerDurationSeconds } : {}),
+      },
+    });
+  }
+  return true;
+}
+
+export async function listCalls(
+  context: DomainContext,
+  input: { userId: string; businessId: string; search?: string; limit?: number; offset?: number },
+): Promise<{ calls: Array<Record<string, unknown>>; pagination: { limit: number; offset: number; total: number; hasNext: boolean } }> {
+  return await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, input);
+    const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 100);
+    const offset = Math.max(Math.trunc(input.offset ?? 0), 0);
+    const search = input.search?.trim();
+    const transcriptPreview = sql<string | null>`(select ${transcripts.text} from ${transcripts} where ${transcripts.callId} = ${calls.id} order by ${transcripts.sequence} desc limit 1)`;
+    const filter = and(eq(calls.businessId, input.businessId), ...(search ? [or(ilike(contacts.name, `%${search}%`), ilike(contacts.phone, `%${search}%`), ilike(conversations.summary, `%${search}%`), ilike(calls.disposition, `%${search}%`), ilike(calls.providerCallId, `%${search}%`), ilike(transcriptPreview, `%${search}%`))!] : []));
+    const rows = await tx.select({
+       id: calls.id,
+      providerCallId: calls.providerCallId,
+      status: calls.status,
+      transport: calls.transport,
+      disposition: calls.disposition,
+      reason: conversations.summary,
+      currentIntent: conversations.currentIntent,
+      persistedOutcome: conversationSessions.summary,
+      startedAt: calls.startedAt,
+      endedAt: calls.endedAt,
+      providerDurationSeconds: calls.providerDurationSeconds,
+      contactName: contacts.name,
+      contactPhone: contacts.phone,
+      contactEmail: contacts.email,
+      recordingObjectId: calls.recordingObjectId,
+      recordingStatus: storageObjects.status,
+       recordingRetentionUntil: storageObjects.retentionUntil,
+       transcriptPreview,
+    }).from(calls)
+      .leftJoin(contacts, eq(calls.contactId, contacts.id))
+      .leftJoin(conversations, eq(calls.conversationId, conversations.id))
+      .leftJoin(conversationSessions, and(eq(conversationSessions.callId, calls.id), eq(conversationSessions.businessId, calls.businessId)))
+      .leftJoin(storageObjects, eq(calls.recordingObjectId, storageObjects.id))
+      .where(filter)
+      .orderBy(desc(calls.startedAt))
+      .limit(limit + 1)
+      .offset(offset);
+    const [total] = await tx.select({ count: count() }).from(calls).leftJoin(contacts, eq(calls.contactId, contacts.id)).leftJoin(conversations, eq(calls.conversationId, conversations.id)).where(filter);
+    const hasNext = rows.length > limit;
+    return {
+      calls: rows.slice(0, limit).map((row) => ({
+        id: row.id,
+        providerCallId: row.providerCallId,
+        status: row.status,
+        transport: row.transport,
+        disposition: row.disposition,
+        reason: row.reason === row.disposition ? null : row.reason,
+        outcome: resolveCallOutcome({ persisted: row.persistedOutcome, currentIntent: row.currentIntent, summary: row.reason, disposition: row.disposition }),
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+        providerDurationSeconds: row.providerDurationSeconds,
+        contactName: row.contactName,
+        contactPhone: row.contactPhone,
+        contactEmail: row.contactEmail,
+         recordingState: recordingListState({ ...row, retentionUntil: row.recordingRetentionUntil }),
+         transcriptPreview: row.transcriptPreview,
+      })),
+      pagination: { limit, offset, total: Number(total?.count ?? 0), hasNext },
+    };
+  });
+}
+
+export async function getCallDetail(
+  context: DomainContext,
+  input: { userId: string; businessId: string; callId: string },
+): Promise<{
+  call: Record<string, unknown>;
+  contact: Record<string, unknown> | null;
+  outcome: string | null;
+  timeline: Array<{ type: string; at: Date | null; status: string }>;
+  transcript: Array<Record<string, unknown>>;
+  recording: { state: RecordingState; objectId?: string; contentType?: string; retentionUntil?: Date };
+  appointments: Array<Record<string, unknown>>;
+  followUpTasks: Array<Record<string, unknown>>;
+} | null> {
+  return await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, input);
+    const row = (await tx.select({
+      id: calls.id,
+      legacyConvexId: calls.legacyConvexId,
+      providerCallId: calls.providerCallId,
+      provider: calls.provider,
+      transport: calls.transport,
+      status: calls.status,
+      disposition: calls.disposition,
+      reason: conversations.summary,
+      transferState: calls.transferState,
+      startedAt: calls.startedAt,
+      endedAt: calls.endedAt,
+      providerDurationSeconds: calls.providerDurationSeconds,
+      gatewaySessionId: calls.gatewaySessionId,
+      contactId: calls.contactId,
+      recordingObjectId: calls.recordingObjectId,
+      recordingStatus: storageObjects.status,
+      recordingContentType: storageObjects.contentType,
+      recordingRetentionUntil: storageObjects.retentionUntil,
+      contactName: contacts.name,
+      contactPhone: contacts.phone,
+      contactEmail: contacts.email,
+      contactBlockedAt: contacts.operatorBlockedAt,
+    }).from(calls)
+      .leftJoin(contacts, eq(calls.contactId, contacts.id))
+      .leftJoin(conversations, eq(calls.conversationId, conversations.id))
+      .leftJoin(storageObjects, eq(calls.recordingObjectId, storageObjects.id))
+      .where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId)))
+      .limit(1))[0];
+    if (!row) return null;
+
+    const [transcript, appointmentRows, followUpTasks] = await inOrder([
+      () => tx.select({ id: transcripts.id, sequence: transcripts.sequence, speaker: transcripts.speaker, text: transcripts.text, confidence: transcripts.confidence, final: transcripts.final, createdAt: transcripts.createdAt }).from(transcripts).where(and(eq(transcripts.callId, input.callId), eq(transcripts.businessId, input.businessId))).orderBy(asc(transcripts.sequence)),
+      () => row.contactId
+        ? tx.select({ id: appointments.id, startsAt: appointments.startsAt, endsAt: appointments.endsAt, timezone: appointments.timezone, status: appointments.status, serviceName: services.name, staffName: staff.name }).from(appointments).innerJoin(services, eq(appointments.serviceId, services.id)).innerJoin(staff, eq(appointments.staffId, staff.id)).where(and(eq(appointments.businessId, input.businessId), eq(appointments.contactId, row.contactId))).orderBy(asc(appointments.startsAt))
+        : Promise.resolve([]),
+      () => tx.select({ id: inboxItems.id, title: visibleFollowUpTitle, body: visibleFollowUpBody, status: inboxItems.status, request: followUpRequest, requestedService, requestedStartsAt, requestedNewStartsAt, requestedNotes, appointmentId: sql<string | null>`${inboxItems.metadata}->>'appointmentId'`.as("appointment_id"), createdAt: inboxItems.createdAt, updatedAt: inboxItems.updatedAt })
+        .from(inboxItems)
+        .where(and(eq(inboxItems.businessId, input.businessId), eq(inboxItems.relatedCallId, input.callId), eq(inboxItems.kind, "voice_message")))
+        .orderBy(desc(inboxItems.createdAt)),
+    ]);
+    // A request links to its appointment, so the page can approve it as Home does. Compared as UUIDs: metadata is free-form JSON.
+    const linkedIds = [...new Set(followUpTasks.flatMap((task) => task.request && task.appointmentId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(task.appointmentId) ? [task.appointmentId] : []))];
+    const linked = linkedIds.length
+      ? await tx.select({ id: appointments.id, startsAt: appointments.startsAt, timezone: appointments.timezone, status: appointments.status, serviceName: services.name, contactName: contacts.name }).from(appointments).innerJoin(services, eq(services.id, appointments.serviceId)).innerJoin(contacts, eq(contacts.id, appointments.contactId)).where(and(eq(appointments.businessId, input.businessId), inArray(appointments.id, linkedIds)))
+      : [];
+    const state = recordingState({ ...row, retentionUntil: row.recordingRetentionUntil });
+    const timeline = buildCallEvents({ ...row, startedAt: row.startedAt.toISOString(), endedAt: row.endedAt?.toISOString() ?? null }).map((event) => ({ type: event.key, at: event.timestamp ? new Date(event.timestamp) : null, status: event.failed ? "failed" : event.reached ? "reached" : "pending" }));
+    return {
+      call: {
+        id: row.id,
+        legacyConvexId: row.legacyConvexId,
+        providerCallId: row.providerCallId,
+        provider: row.provider,
+        transport: row.transport,
+        status: row.status,
+        disposition: row.disposition,
+        transferState: row.transferState,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+        providerDurationSeconds: row.providerDurationSeconds,
+        gatewaySessionId: row.gatewaySessionId,
+      },
+      contact: row.contactId ? { id: row.contactId, name: row.contactName, phone: row.contactPhone, email: row.contactEmail, blockedAt: row.contactBlockedAt } : null,
+      outcome: row.reason === row.disposition ? null : row.reason,
+      timeline,
+      transcript,
+      recording: {
+        state,
+        ...(row.recordingObjectId ? { objectId: row.recordingObjectId } : {}),
+        ...(row.recordingContentType ? { contentType: row.recordingContentType } : {}),
+        ...(row.recordingRetentionUntil ? { retentionUntil: row.recordingRetentionUntil } : {}),
+      },
+      appointments: appointmentRows,
+      followUpTasks: followUpTasks.map(({ requestedService, requestedStartsAt, requestedNewStartsAt, requestedNotes, appointmentId, ...task }) => ({ ...task, requested: requestedCancellation({ requestedService, requestedStartsAt, requestedNewStartsAt, requestedNotes }), appointment: linked.find((appointment) => appointment.id === appointmentId) ?? null })),
+    };
+  });
+}
+
+export { APPOINTMENT_REQUESTS, CANCELLATION_REQUEST, RESCHEDULE_REQUEST };
+/**
+ * `requestedService`, `requestedStartsAt` (a date, or a date and time, in the business's timezone) and `notes`
+ * are what the caller said, kept apart from the English body so the dashboard can show them in its own language.
+ */
+export type FollowUpRequest = { request: (typeof APPOINTMENT_REQUESTS)[number]; appointmentId?: string; requestedService?: string; requestedStartsAt?: string; requestedNewStartsAt?: string; notes?: string };
+
+/** What a cancellation or reschedule request asked for, from its metadata. `newStartsAt` is the time a reschedule asks for. Null on other follow-ups and on older requests that predate it. */
+export type RequestedCancellation = { service?: string; startsAt?: string; newStartsAt?: string; notes?: string };
+const requestedService = visibleFollowUpMetadata("requestedService").as("requested_service");
+const requestedStartsAt = visibleFollowUpMetadata("requestedStartsAt").as("requested_starts_at");
+const requestedNewStartsAt = visibleFollowUpMetadata("requestedNewStartsAt").as("requested_new_starts_at");
+const requestedNotes = visibleFollowUpMetadata("notes").as("requested_notes");
+function requestedCancellation(row: { requestedService: string | null; requestedStartsAt: string | null; requestedNewStartsAt: string | null; requestedNotes: string | null }): RequestedCancellation | null {
+  const requested = { ...(row.requestedService ? { service: row.requestedService } : {}), ...(row.requestedStartsAt ? { startsAt: row.requestedStartsAt } : {}), ...(row.requestedNewStartsAt ? { newStartsAt: row.requestedNewStartsAt } : {}), ...(row.requestedNotes ? { notes: row.requestedNotes } : {}) };
+  return Object.keys(requested).length ? requested : null;
+}
+
+const followUpRequest = sql<string | null>`${inboxItems.metadata}->>'request'`;
+// One follow-up each: a call's messages are one, since a later message
+// replaces the open one and imported duplicates show once, and each request,
+// such as a cancellation, is its own.
+const followUpGroup = sql`case when ${followUpRequest} is null then coalesce(${inboxItems.relatedCallId}, ${inboxItems.id}) else ${inboxItems.id} end`;
+
+export async function createVoiceFollowUpTask(
+  context: DomainContext,
+  input: { businessId: string; callId?: string; callerName?: string; callbackPhone?: string; urgency?: string; callbackWindow?: string; message: string; channel?: string; request?: FollowUpRequest; agentId?: string },
+): Promise<{ inboxItemId: string }> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    if (input.callId) {
+      // Serialize retries on the call row, including the first task creation.
+      // A lookup followed by insert alone can create concurrent duplicates.
+      const [call] = await tx.select({ id: calls.id }).from(calls).where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId))).limit(1).for("update");
+      if (!call) throw new Error("Call not found in this business.");
+    }
+    const title = `Voice message from ${input.callerName?.trim() || input.callbackPhone?.trim() || "unknown caller"}`;
+    const body = [
+      input.callbackPhone?.trim() ? `Callback: ${input.callbackPhone.trim()}` : null,
+      input.urgency?.trim() ? `Urgency: ${input.urgency.trim()}` : null,
+      input.callbackWindow?.trim() ? `Preferred callback: ${input.callbackWindow.trim()}` : null,
+      "",
+      input.message.trim(),
+    ].filter((line): line is string => line !== null).join("\n");
+    const retentionPlan = isContentRetentionEnabled() ? await resolveBusinessBillingPlan(tx, input.businessId) : null;
+    // agentId names the agent for a message with no call, such as one taken in a chat.
+    const metadata = Object.fromEntries(Object.entries({ callerName: input.callerName?.trim(), callbackPhone: input.callbackPhone?.trim(), urgency: input.urgency?.trim(), callbackWindow: input.callbackWindow?.trim(), channel: input.channel, agentId: input.agentId, ...input.request }).filter(([, value]) => value));
+    const values = { businessId: input.businessId, kind: "voice_message", title, body, metadata, contentExpiresAt: retentionPlan ? contentExpiryForPlan(retentionPlan, "follow_ups") : null, ...(input.callId ? { relatedCallId: input.callId } : {}) };
+    // A retry replaces the open follow-up it repeats: the call's message, or
+    // its request of the same kind for the same appointment. An unlinked
+    // request repeats only with the same details. Anything else is a new item,
+    // so a later message can't overwrite a cancellation request.
+    const sameRequest = !input.request
+      ? sql`${followUpRequest} is null`
+      : and(
+        sql`${followUpRequest} = ${input.request.request}`,
+        input.request.appointmentId ? sql`${inboxItems.metadata}->>'appointmentId' = ${input.request.appointmentId}` : and(sql`${inboxItems.metadata}->>'appointmentId' is null`, eq(inboxItems.title, title), eq(inboxItems.body, body)),
+      );
+    const existing = input.callId ? (await tx.select({ id: inboxItems.id }).from(inboxItems).where(and(eq(inboxItems.businessId, input.businessId), eq(inboxItems.relatedCallId, input.callId), eq(inboxItems.kind, "voice_message"), eq(inboxItems.status, "open"), sameRequest)).orderBy(desc(inboxItems.createdAt)).limit(1))[0] : null;
+    const [item] = existing
+      ? await tx.update(inboxItems).set({ title, body, metadata, contentRetentionStatus: "active", contentExpiresAt: values.contentExpiresAt, updatedAt: new Date() }).where(eq(inboxItems.id, existing.id)).returning({ id: inboxItems.id })
+      : await tx.insert(inboxItems).values(values).returning({ id: inboxItems.id });
+    if (!item) throw new Error("Voice follow-up task could not be saved.");
+    if (!existing) await emitWebhookEventInTransaction(tx, { businessId: input.businessId, type: "message.taken", resourceId: item.id });
+    if (input.callId) await recordCallOutcomeInTransaction(tx, { businessId: input.businessId, callId: input.callId, outcome: { kind: "message_taking" } });
+    return { inboxItemId: item.id };
+  });
+}
+
+/**
+ * Closes a call's open follow-ups. With `inboxItemId`, only that one: a
+ * request alone, or a message with the call's other open messages, which the
+ * dashboard shows as one.
+ */
+export async function completeVoiceFollowUpTasks(
+  context: DomainContext,
+  input: { userId: string; businessId: string; callId: string; inboxItemId?: string },
+): Promise<{ completed: number }> {
+  return await withBusinessTransaction(context.db, { userId: input.userId, businessId: input.businessId, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, { ...input, minimumRole: "scheduler" });
+    const ofCall = and(eq(inboxItems.businessId, input.businessId), eq(inboxItems.relatedCallId, input.callId), eq(inboxItems.kind, "voice_message"));
+    const [item] = input.inboxItemId ? await tx.select({ request: followUpRequest }).from(inboxItems).where(and(ofCall, eq(inboxItems.id, input.inboxItemId))).limit(1) : [];
+    if (input.inboxItemId && !item) return { completed: 0 };
+    const rows = await tx.update(inboxItems).set({ status: "done", updatedAt: new Date() }).where(and(
+      ofCall,
+      eq(inboxItems.status, "open"),
+      item ? (item.request ? eq(inboxItems.id, input.inboxItemId!) : sql`${followUpRequest} is null`) : undefined,
+    )).returning({ id: inboxItems.id });
+    return { completed: rows.length };
+  });
+}
+
+/** How many follow-ups listOpenVoiceFollowUps counts as open, past the few it lists. */
+export async function countOpenVoiceFollowUps(tx: DatabaseTransaction, businessId: string): Promise<number> {
+  const [row] = await tx.select({ count: sql<number>`count(distinct ${followUpGroup})::int` }).from(inboxItems)
+    .where(and(eq(inboxItems.businessId, businessId), eq(inboxItems.kind, "voice_message"), eq(inboxItems.status, "open")));
+  return row?.count ?? 0;
+}
+
+/**
+ * Every open follow-up, newest first. Imported duplicate messages represent
+ * one action per call, so only the newest shows. A cancellation request comes
+ * with its linked appointment and that appointment's status, so the operator
+ * can approve it or see it's already cancelled.
+ */
+export async function listOpenVoiceFollowUps(tx: DatabaseTransaction, businessId: string) {
+  const latest = tx.selectDistinctOn([followUpGroup], {
+    id: inboxItems.id, title: visibleFollowUpTitle, body: visibleFollowUpBody,
+    relatedCallId: inboxItems.relatedCallId, createdAt: inboxItems.createdAt,
+    request: followUpRequest.as("request"),
+    requestedService, requestedStartsAt, requestedNewStartsAt, requestedNotes,
+    appointmentId: sql<string | null>`${inboxItems.metadata}->>'appointmentId'`.as("appointment_id"),
+  }).from(inboxItems).where(and(eq(inboxItems.businessId, businessId), eq(inboxItems.kind, "voice_message"), eq(inboxItems.status, "open")))
+    .orderBy(followUpGroup, desc(inboxItems.createdAt), desc(inboxItems.id)).as("latest_voice_follow_ups");
+  const rows = await tx.select({
+    id: latest.id, title: latest.title, body: latest.body, relatedCallId: latest.relatedCallId, createdAt: latest.createdAt, request: latest.request, requestedService: latest.requestedService, requestedStartsAt: latest.requestedStartsAt, requestedNewStartsAt: latest.requestedNewStartsAt, requestedNotes: latest.requestedNotes,
+    appointmentId: appointments.id, appointmentStartsAt: appointments.startsAt, appointmentTimezone: appointments.timezone, appointmentStatus: appointments.status, appointmentServiceName: services.name, appointmentContactName: contacts.name,
+  }).from(latest)
+    // Compared as text: metadata is free-form JSON, and a bad id must not break the dashboard.
+    .leftJoin(appointments, and(inArray(latest.request, [...APPOINTMENT_REQUESTS]), eq(sql`${appointments.id}::text`, latest.appointmentId), eq(appointments.businessId, businessId)))
+    .leftJoin(services, eq(services.id, appointments.serviceId))
+    .leftJoin(contacts, eq(contacts.id, appointments.contactId))
+    .orderBy(desc(latest.createdAt)).limit(6);
+  return rows.map(({ appointmentId, appointmentStartsAt, appointmentTimezone, appointmentStatus, appointmentServiceName, appointmentContactName, requestedService, requestedStartsAt, requestedNewStartsAt, requestedNotes, ...item }) => ({
+    ...item,
+    requested: requestedCancellation({ requestedService, requestedStartsAt, requestedNewStartsAt, requestedNotes }),
+    appointment: appointmentId && appointmentStartsAt && appointmentTimezone && appointmentStatus ? { id: appointmentId, startsAt: appointmentStartsAt, timezone: appointmentTimezone, status: appointmentStatus, serviceName: appointmentServiceName, contactName: appointmentContactName } : null,
+  }));
+}

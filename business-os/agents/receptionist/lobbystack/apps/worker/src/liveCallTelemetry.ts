@@ -1,0 +1,87 @@
+import { agentModelId, describeAgentUsage, liveDelegationEnvironment, type DelegationTiming, type LiveCallSummary } from "@lobbystack/agent-core";
+import { LIVE_CALL_PROVIDER, recordAiGenerationEvent, recordProductEvent, type DomainContext } from "@lobbystack/domain";
+import { getPostHogDistinctIdForBusinessSystem, percentileMs, type TelemetryProperties } from "@lobbystack/telemetry";
+
+export type LiveCallTelemetryContext = {
+  businessId: string;
+  callId: string;
+  channel: "voice" | "web_voice";
+  conversationId?: string;
+};
+
+function record(domain: DomainContext, call: LiveCallTelemetryContext, name: "voice.delegation_completed" | "voice.call_latency_recorded", properties: TelemetryProperties): void {
+  // Latency telemetry is best-effort: it runs off the call's hot path and a
+  // failure must never affect the call.
+  try {
+    void recordProductEvent(domain, {
+      name,
+      businessId: call.businessId,
+      distinctId: getPostHogDistinctIdForBusinessSystem(call.businessId),
+      actorType: "worker",
+      properties: {
+        callId: call.callId,
+        channel: call.channel,
+        provider: LIVE_CALL_PROVIDER,
+        ...(call.conversationId ? { conversationId: call.conversationId } : {}),
+        ...properties,
+      },
+    }).catch(() => undefined);
+  } catch {
+    // Ignore.
+  }
+}
+
+/** One delegated request the agent answered. Carries timings and tool names only. */
+export function recordLiveDelegation(domain: DomainContext, call: LiveCallTelemetryContext, timing: DelegationTiming): void {
+  record(domain, call, "voice.delegation_completed", {
+    agentMs: timing.agentMs,
+    totalMs: timing.totalMs,
+    tools: [...new Set(timing.tools)],
+    toolCount: timing.tools.length,
+    modelSteps: timing.modelSteps,
+    directAnswer: timing.directAnswer,
+    toolMs: timing.toolMs,
+    modelMs: Math.max(0, timing.agentMs - timing.toolMs),
+    failed: timing.failed,
+  });
+}
+
+/**
+ * The agent's model usage and cost for one delegation, as an AI generation.
+ * GPT-Live bills the session per second; this is the backend model on top.
+ */
+export function recordLiveDelegationGeneration(domain: DomainContext, call: LiveCallTelemetryContext, timing: DelegationTiming, environment: Record<string, string | undefined> = liveDelegationEnvironment()): void {
+  const usage = timing.usage ? describeAgentUsage(timing.usage, timing.agentMs, environment) : { ...agentModelId(environment), latencyMs: timing.agentMs };
+  void recordAiGenerationEvent(domain, {
+    ...usage,
+    businessId: call.businessId,
+    operation: "voice.delegation",
+    callId: call.callId,
+    ...(call.conversationId ? { conversationId: call.conversationId } : {}),
+    financialEventKey: `voice_delegation:${call.callId}:${timing.delegationId}`,
+    ...(timing.failed ? { isError: true, error: "generation_failed" } : {}),
+  }).catch(() => undefined);
+}
+
+/** One summary per call of what the caller heard and how long delegations took. */
+export function recordLiveCallLatency(domain: DomainContext, call: LiveCallTelemetryContext, summary: LiveCallSummary): void {
+  const latency = summary.latency;
+  const answers = latency?.answerGapsMs ?? [];
+  const delegationTotals = summary.delegations.map((item) => item.totalMs);
+  const optional = (key: string, value: number | undefined) => (value !== undefined ? { [key]: value } : {});
+  record(domain, call, "voice.call_latency_recorded", {
+    ...(latency?.greetedFirst && latency.firstSpeechMs !== undefined ? { greetingMs: latency.firstSpeechMs } : {}),
+    ...optional("firstSpeechMs", latency?.firstSpeechMs),
+    greetedFirst: latency?.greetedFirst ?? false,
+    speechTimingSource: latency?.speechSource ?? "none",
+    answerCount: answers.length,
+    ...optional("answerP50Ms", percentileMs(answers, 50)),
+    ...optional("answerP90Ms", percentileMs(answers, 90)),
+    ...optional("answerMaxMs", percentileMs(answers, 100)),
+    delegationCount: summary.delegations.length,
+    delegationFailedCount: summary.delegations.filter((item) => item.failed).length,
+    ...optional("delegationP50TotalMs", percentileMs(delegationTotals, 50)),
+    ...optional("delegationMaxTotalMs", percentileMs(delegationTotals, 100)),
+    durationMs: summary.durationMs,
+  });
+}

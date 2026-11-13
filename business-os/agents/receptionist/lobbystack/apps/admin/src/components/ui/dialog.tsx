@@ -1,0 +1,68 @@
+"use client"
+
+import * as React from "react"
+import { useTranslation } from "react-i18next"
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
+import { XIcon } from "lucide-react"
+
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+
+function Dialog({ ...props }: DialogPrimitive.Root.Props) {
+  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+}
+
+function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+}
+
+function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+}
+
+function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
+  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
+}
+
+function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
+  return <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={cn("fixed inset-0 z-50 bg-black/80 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0", className)} {...props} />
+}
+
+/**
+ * Two widths, as caps that hold at every window size: the default, 600px, is
+ * for forms; `sm`, 448px, is for a single decision such as a confirmation, a
+ * picker or one choice. Below the cap a dialog keeps a 1rem gutter on each
+ * side.
+ */
+function DialogContent({ className, children, forceOverlay = false, overlayClassName, showCloseButton = true, size = "default", ...props }: DialogPrimitive.Popup.Props & { forceOverlay?: boolean; showCloseButton?: boolean; overlayClassName?: string; size?: "default" | "sm" }) {
+  const { t } = useTranslation("common")
+  return (
+    <DialogPortal>
+      {/* Base UI skips the backdrop of a dialog opened from a drawer. Pass forceOverlay there only: inside another dialog it would stack a second dim layer. */}
+      <DialogOverlay className={overlayClassName} forceRender={forceOverlay} />
+      <DialogPrimitive.Popup data-size={size} data-slot="dialog-content" className={cn(size === "sm" ? "max-w-[min(448px,calc(100%-2rem))]" : "max-w-[min(600px,calc(100%-2rem))]", "fixed top-1/2 left-1/2 z-50 grid w-full grid-cols-[minmax(0,1fr)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-3xl bg-popover p-6 shadow-lg type-body text-popover-foreground ring-1 ring-foreground/5 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className)} {...props}>
+        {children}
+        {showCloseButton ? <DialogPrimitive.Close data-slot="dialog-close" render={<Button className="absolute top-4 right-4" size="icon-sm" variant="ghost" />}><XIcon /><span className="sr-only">{t("accessibility.close")}</span></DialogPrimitive.Close> : null}
+      </DialogPrimitive.Popup>
+    </DialogPortal>
+  )
+}
+
+function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+  return <div data-slot="dialog-header" className={cn("flex flex-col gap-2", className)} {...props} />
+}
+
+function DialogFooter({ className, showCloseButton = false, children, ...props }: React.ComponentProps<"div"> & { showCloseButton?: boolean }) {
+  const { t } = useTranslation("common")
+  return <div data-slot="dialog-footer" className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)} {...props}>{children}{showCloseButton ? <DialogPrimitive.Close render={<Button variant="outline" />}>{t("accessibility.close")}</DialogPrimitive.Close> : null}</div>
+}
+
+function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
+  return <DialogPrimitive.Title data-slot="dialog-title" className={cn("type-heading-xxs", className)} {...props} />
+}
+
+function DialogDescription({ className, ...props }: DialogPrimitive.Description.Props) {
+  return <DialogPrimitive.Description data-slot="dialog-description" className={cn("type-body-muted *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground", className)} {...props} />
+}
+
+export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger }

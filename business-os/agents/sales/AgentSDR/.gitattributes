@@ -1,0 +1,20 @@
+# Normalise line endings to LF in the repository.
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.mp3 binary
+*.wav binary
+*.mp4 binary
+
+# Generated files: collapse in diffs, excluded from language stats.
+bun.lock linguist-generated=true -diff
+db/schema.sql linguist-generated=true
+docs/prisma-history/** linguist-documentation=true

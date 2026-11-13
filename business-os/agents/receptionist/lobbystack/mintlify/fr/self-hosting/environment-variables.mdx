@@ -1,0 +1,168 @@
+---
+title: "Configurer les variables d'environnement"
+description: "Les principales variables d'environnement de l'admin, du worker, des appels vocaux, du stockage et des fournisseurs de LobbyStack."
+sidebarTitle: "Variables d'environnement"
+contentType: "Reference"
+---
+
+Utilisez `.env.example` comme source de référence. Stockez les valeurs de production dans le gestionnaire de secrets de votre déploiement ou dans un fichier `.env` aux permissions restreintes.
+
+## Application et base de données
+
+| Variable | Rôle |
+| --- | --- |
+| `APP_BASE_URL` | URL HTTPS publique du tableau de bord et de l'API. |
+| `DEPLOYMENT_MODE` | `cloud`, `self_hosted_standard` ou `development`. |
+| `DATABASE_URL` | Connexion PostgreSQL pour le rôle principal du service : `lobbystack_app` pour l'admin, `lobbystack_worker` pour le worker. |
+| `LOBBYSTACK_AUTH_PASSWORD`, `LOBBYSTACK_WORKER_PASSWORD`, `LOBBYSTACK_DISPATCHER_PASSWORD` | Mots de passe des autres rôles. Un service se connecte avec chaque rôle en combinant l'hôte et la base de données de `DATABASE_URL` avec le mot de passe de ce rôle. |
+| `LOBBYSTACK_<ROLE>_DATABASE_URL` | Facultatif. Remplace la chaîne de connexion construite pour un rôle, par exemple pour utiliser un autre hôte. |
+| `BETTER_AUTH_SECRET` | Secret de signature de Better Auth. Utilisez au moins 32 caractères aléatoires. |
+| `PASSKEY_RP_ID` | Facultatif. Le domaine auquel les clés d'accès sont liées. Par défaut, c'est le nom d'hôte de `APP_BASE_URL`. Indiquez un domaine parent comme `example.com` pour que tous les hôtes en dessous partagent les clés d'accès, ou votre hôte de tunnel pour vos tests. Le modifier rend inutilisables les clés d'accès existantes. |
+| `ENCRYPTION_KEY` | Chiffre les identifiants d'application stockés. |
+| `OTP_HASH_SECRET` | Hache les codes de vérification à usage unique et les codes PIN des appelants. Définissez la même valeur sur l'admin et le worker. La changer rend inutilisables tous les codes PIN enregistrés. |
+
+## Image de marque
+
+Définissez-les sur l'admin. Chacune l'emporte sur le nom et le logo que le premier propriétaire du déploiement choisit pendant l'intégration : laissez-les vides pour lui laisser ce choix. Passez-les aussi à la compilation de l'admin, comme arguments de compilation Docker du même nom, pour que les pages de connexion prérendues les affichent sans d'abord interroger le serveur.
+
+| Variable | Rôle |
+| --- | --- |
+| `BRAND_APP_NAME` | Le nom que le tableau de bord affiche à la place de LobbyStack, jusqu'à 40 caractères. Il apparaît dans l'onglet du navigateur, en haut des pages de connexion et d'intégration, et dans les textes du tableau de bord. |
+| `BRAND_LOGO_URL` | Le logo affiché à côté du nom et comme icône de l'onglet. Utilisez une URL `https://` ou un chemin sur le tableau de bord, comme `/brand/logo.svg`. Sans logo, un déploiement renommé affiche son nom seul. |
+
+Les liens du tableau de bord vers des pages extérieures viennent de cinq autres variables. Next.js les inscrit dans la compilation de l'admin : passez-les comme arguments de compilation Docker du même nom, et recompilez après en avoir changé une. Laissez-en une vide ou non définie pour renvoyer vers la page de LobbyStack.
+
+| Variable | Rôle |
+| --- | --- |
+| `NEXT_PUBLIC_LANDING_SITE_URL` | Votre site web, comme `https://example.com`. La page de démonstration publique y renvoie, et la réponse SMS à HELP le donne. Sans variable propre, les liens vers les conditions et la confidentialité ouvrent `/terms` et `/privacy` sur ce site. |
+| `NEXT_PUBLIC_TERMS_URL` | Vos conditions d'utilisation, liées sous le formulaire d'inscription, en bas de l'intégration et depuis le programme d'affiliation. |
+| `NEXT_PUBLIC_PRIVACY_URL` | Votre politique de confidentialité, liée sous le formulaire d'inscription et en bas de l'intégration. |
+| `NEXT_PUBLIC_DOCS_SITE_URL` | Votre documentation, liée depuis le panneau Commentaires du tableau de bord et les métadonnées du serveur MCP. |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | L'adresse unique à laquelle on vous écrit : le lien de contact du panneau Commentaires, le bouton de contact du forfait Enterprise et les réponses SMS à HELP. |
+
+La réponse SMS à HELP commence par le nom de l'application. Les e-mails, l'API et les autres SMS indiquent encore LobbyStack.
+
+## Services internes
+
+| Variable | Rôle |
+| --- | --- |
+| `INTERNAL_SERVICE_SECRET` | Signe les jetons de fin d'appel du navigateur et d'autres valeurs internes de courte durée. |
+| `INTERNAL_SERVICE_TOKEN` | Authentifie la transmission de l'appel de l'admin au worker et les routes de santé internes protégées. Définissez la même valeur sur l'admin et le worker. |
+| `WORKER_INTERNAL_URL` | URL privée du port HTTP du worker, que l'admin utilise pour transmettre chaque appel au worker. Compose la définit à `http://worker:3002`. |
+
+## Appels vocaux
+
+Le modèle GPT-Live d'OpenAI répond aux appels dans le navigateur et aux appels téléphoniques. Les appels téléphoniques l'atteignent par votre opérateur : un trunk SIP Twilio ou une connexion SIP Telnyx. L'admin démarre chaque appel et le worker l'exécute.
+
+| Variable | Rôle |
+| --- | --- |
+| `LIVE_PROTOTYPE_ENABLED` | Définissez-la à `true` sur l'admin et le worker. Compose la définit par défaut. Les appels dans le navigateur échouent sans elle. |
+| `OPENAI_WEBHOOK_SECRET` | Vérifie le webhook d'appel entrant d'OpenAI à `/api/webhooks/openai/live`. Appels téléphoniques seulement. |
+| `TWILIO_SIP_TRUNK_SID` | Le trunk Twilio Elastic SIP qui envoie les appels à votre projet OpenAI. Les nouveaux numéros s'y ajoutent, et le worker ne provisionne pas de numéro sans lui. |
+| `TELEPHONY_NUMBERS` | L'opérateur qui vend les numéros de chaque pays, par exemple `US:telnyx,*:twilio`. Laissez-la vide pour acheter tous les numéros chez Twilio. Une valeur mal formée empêche le worker de démarrer. |
+| `TELEPHONY_VERIFY`, `TELEPHONY_LOOKUP`, `TELEPHONY_ALERT_SMS` | L'opérateur du code de vérification à l'inscription, de la vérification du type de ligne et des textos de l'expéditeur partagé. Chacune vaut `twilio` par défaut. |
+| `TELEPHONY_ALERT_SMS_FROM` | Le numéro de l'expéditeur partagé. À défaut, `TWILIO_ALERT_SMS_FROM`. |
+| `OPENAI_PROJECT_ID` | L'ID de votre projet OpenAI (`proj_…`). Le worker donne à chaque numéro Telnyx sa propre connexion SIP vers ce projet, et n'achète aucun numéro Telnyx sans lui. L'application d'administration et le worker en ont tous deux besoin pour Le personnel répond d'abord sur les numéros Twilio. Sans lui dans l'application d'administration, le réglage ne peut pas être activé. |
+| `TELNYX_OUTBOUND_VOICE_PROFILE_ID` | Le profil vocal sortant de la connexion de chaque numéro, que les transferts d'appel utilisent. |
+| `TELNYX_TEXML_APPLICATION_ID`, `TELNYX_TEXML_WEBHOOK_SECRET` | L'application TeXML vers laquelle passe un numéro Telnyx quand l'agent cesse d'y répondre, par exemple un essai à court de minutes, et le secret que son URL vocale porte en `?key=`. |
+| `WEB_CALL_MAX_DURATION_MS` | Durée maximale facultative des appels dans le navigateur. |
+| `WEB_CALL_PUBLIC_BUSINESS_SLUG` | Entreprise qui répond à l'appel de démo public sur votre site marketing. |
+| `WEB_CALL_ALLOWED_ORIGINS` | Sites, séparés par des virgules, autorisés à lancer cet appel de démo public. Les appels du widget du site Web utilisent plutôt les origines autorisées de chaque clé de widget. |
+
+## Redis et stockage de fichiers
+
+| Variable | Rôle |
+| --- | --- |
+| `REDIS_URL` | URL de connexion Redis utilisée par l'admin et le worker. |
+| `STORAGE_PROVIDER` | `local` par défaut. Définissez-la à `s3` pour AWS S3, MinIO ou un autre service compatible. |
+| `LOCAL_STORAGE_PATH` | Chemin du système de fichiers partagé par l'admin et le worker. Compose monte son volume persistant dans `/var/lib/lobbystack/storage`. |
+| `LOCAL_STORAGE_SIGNING_SECRET` | Signe les URL locales de téléversement et de téléchargement de courte durée. Utilisez une longue valeur aléatoire. Hors de Compose, `INTERNAL_SERVICE_SECRET` sert de valeur de repli. |
+| `S3_ENDPOINT` | Point de terminaison compatible S3, facultatif. Laissez-le vide pour AWS S3. |
+| `S3_BUCKET` | Bucket des enregistrements et des fichiers téléversés. |
+| `S3_REGION` | Région S3. Vaut `us-east-1` par défaut. |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Identifiants du stockage d'objets. |
+| `S3_FORCE_PATH_STYLE` | Définissez-la à `true` pour MinIO. |
+
+Le stockage local convient à un déploiement sur un seul hôte. Utilisez S3 quand l'admin et le worker tournent sur des hôtes différents ou quand vous avez besoin d'un stockage géré hors de l'hôte Docker.
+
+## API publique et webhooks
+
+| Variable | Rôle |
+| --- | --- |
+| `PUBLIC_API_RATE_LIMIT_PER_MINUTE` | Requêtes par minute pour chaque clé API sur `/api/v1`. Vaut `120` par défaut. Définissez-la sur l'admin. La limite utilise `REDIS_URL`. En production, les requêtes échouent avec `503` quand Redis est injoignable. |
+| `PLATFORM_API_KEYS` | Clés de plateforme (`lsp_...`) qui inscrivent et gèrent des entreprises sur `/api/v1`, sous forme de tableau JSON. Chaque entrée indique son groupe (`group`), le compte vérifié au nom duquel elle agit (`owner_email`) et si elle atteint toutes les entreprises (`"access": "all"`) ou seulement celles que les clés de son groupe ont inscrites (`"access": "group"`). Les entrées plus anciennes indiquent le groupe dans `partner`, qui fonctionne toujours. `pnpm platform-key:create` crée une clé et affiche son entrée ; l'entrée ne garde qu'une empreinte de la clé. Une clé avec `"access": "all"` et son compte propriétaire sont des identifiants racine : ils atteignent toutes les entreprises. Définissez-la sur l'admin. Laissez-la vide s'il n'y en a pas. Les clés que les partenaires créent dans leur console sont stockées dans la base de données. |
+| `ENCRYPTION_KEY` | Chiffre aussi les secrets de signature des webhooks et sert de clé au HMAC qui stocke les hachages des clés API. Définissez la même valeur sur l'admin et le worker, sinon le worker ne peut pas signer les livraisons. La modifier invalide toutes les clés API et tous les secrets de webhook. |
+
+Les livraisons de webhooks refusent les adresses privées, de bouclage, de liaison locale et de métadonnées cloud sur tous les déploiements, y compris les déploiements auto-hébergés. Faites pointer les points de terminaison vers une URL HTTPS publique. Les URL en `http://` simple fonctionnent seulement quand `NODE_ENV=development`.
+
+## Partenaires
+
+Les partenaires revendent votre déploiement aux entreprises qu'ils servent, sous leur propre marque. Ils s'inscrivent et gèrent leur équipe depuis la console partenaire, à `/partner` sur votre tableau de bord. Définissez ces variables sur l'admin et le worker.
+
+| Variable | Rôle |
+| --- | --- |
+| `PARTNER_SIGNUP` | Qui peut s'inscrire comme partenaire à `/partner/signup` : `open` laisse s'inscrire tout le monde, et `invite` exige un lien d'inscription. `pnpm partner-invite:create --email owner@acme.example` écrit un lien qui fonctionne une fois, pour ce courriel vérifié, pendant 7 jours. Vaut `open` par défaut, sauf quand `DEPLOYMENT_MODE` est `cloud` et que la facturation des paliers partenaires est désactivée : il vaut alors `invite`, pour qu'aucun partenaire ne s'inscrive avant de pouvoir acheter un palier. La facturation des paliers s'active une fois chaque `POLAR_PARTNER_*_PRODUCT_ID` défini. |
+| `PARTNER_BASE_DOMAIN` | Le domaine dont vos partenaires reçoivent des sous-domaines, comme `receptionistportal.com`. L'inscription en réserve un pour chaque nouveau partenaire, comme `acme.receptionistportal.com`, et l'admin en réserve un au démarrage pour chaque partenaire inscrit avant que vous la définissiez. On s'inscrit et on se connecte sur ces sous-domaines sous la marque du partenaire, par courriel et mot de passe. Les courriels propres à un partenaire, comme les invitations à son équipe, partent sous son nom depuis `no-reply@` ce domaine : votre fournisseur de courriel doit donc accepter cet expéditeur. Sans cette variable, les courriels d'un partenaire partent de l'adresse de `EMAIL_FROM`. Les réponses arrivent au courriel d'assistance que le partenaire définit sur sa page **Image de marque et domaine**. |
+| `STRIPE_CONNECT_SECRET_KEY` | Une clé secrète (`sk_...`) ou une clé restreinte (`rk_...`) de votre compte plateforme Stripe, avec un accès en écriture aux comptes Connect, aux produits, aux prix, aux sessions Checkout, aux sessions du portail client, aux abonnements, aux éléments d'abonnement, aux compteurs de facturation et à leurs événements. Activez d'abord Connect dans votre compte Stripe, et définissez les deux variables Stripe Connect sur l'admin et sur le worker. Avec `STRIPE_CONNECT_WEBHOOK_SECRET`, cette clé active Stripe Connect. Le propriétaire de chaque partenaire connecte alors le compte Stripe du partenaire sur la page **Paiements** de la console. Les propriétaires et administrateurs vendent des forfaits sur la page **Forfaits** et choisissent le forfait de chaque entreprise sur la page **Entreprises**. Ils peuvent aussi y activer le dépassement d'une entreprise, avec un prix pour chaque minute et chaque conversation en plus et un plafond mensuel facultatif, dans la devise du forfait. L'entreprise continue alors de répondre au-delà des minutes et des conversations de son forfait, jusqu'à ce que son dépassement atteigne le plafond. Si le dépassement est désactivé ou atteint le plafond, ses appels sont transférés et le clavardage de son site cesse de répondre. Le worker envoie le dépassement de chaque entreprise au compte Stripe du partenaire sous forme d'événements de compteur, un par appel ou par conversation, et ajoute les prix Call overage et Chat overage à l'abonnement de l'entreprise la première fois qu'elle en a, pour que le dépassement figure sur sa prochaine facture. Les propriétaires et administrateurs de l'entreprise reçoivent un courriel au nom du partenaire à 80 % et à 100 % des minutes et des conversations de son forfait. Le propriétaire de l'entreprise paie dans un Stripe Checkout sur le compte du partenaire, que le lien d'invitation ouvre. Ensuite, il ouvre le portail client du partenaire depuis **Réglages → Facturation** : chaque partenaire enregistre donc les réglages de son portail client dans son propre tableau de bord Stripe. Quatre-vingt-dix jours après la fin du palier d'un partenaire, le worker supprime ses entreprises et annule d'abord l'abonnement au forfait de chacune, pour que son propriétaire ne paie plus rien. Sans ces deux variables, les partenaires facturent chaque entreprise en dehors de LobbyStack. |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Le secret de signature (`whsec_...`) du point de terminaison webhook à `APP_BASE_URL` + `/api/webhooks/stripe`. Dans Stripe, créez ce point de terminaison pour les événements des comptes connectés, et envoyez-lui `account.updated`, `account.application.deauthorized`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`, `invoice.paid` et `invoice.payment_failed`. La console montre alors quand le compte d'un partenaire peut accepter des paiements, et quand le partenaire le déconnecte. Une entreprise sur un forfait reçoit ses minutes et ses clavardages tant que son abonnement paie, même en retard de paiement. |
+| `POLAR_PARTNER_STARTER_MONTHLY_PRODUCT_ID`, `POLAR_PARTNER_STARTER_ANNUAL_PRODUCT_ID`, `POLAR_PARTNER_GROWTH_MONTHLY_PRODUCT_ID`, `POLAR_PARTNER_GROWTH_ANNUAL_PRODUCT_ID`, `POLAR_PARTNER_SCALE_MONTHLY_PRODUCT_ID`, `POLAR_PARTNER_SCALE_ANNUAL_PRODUCT_ID` | Les produits Polar avec lesquels vous vendez les paliers partenaires : Starter, Growth et Scale, au mois et à l'année. Quand les six sont définis, chacun avec son propre produit, les propriétaires d'un partenaire achètent un palier depuis la page **Facturation** de la console et paient par un paiement Polar. Les webhooks de Polar fixent ensuite le palier du partenaire, avec le même `POLAR_WEBHOOK_SECRET` que vos forfaits. Un partenaire qui ne paie aucun palier est sur Gratuit. Quand le palier payant d'un partenaire prend fin ou qu'un paiement échoue, ses entreprises continuent de répondre pendant 30 jours. Elles se mettent ensuite en pause et leurs appels sont transférés, puis le worker les supprime et libère leurs numéros de téléphone 90 jours après la fin du palier. Un palier fixe aussi le nombre de numéros de téléphone des entreprises du partenaire, et chaque numéro en plus coûte au partenaire ce que Twilio vous facture pour lui. Le palier fixe aussi la réserve de minutes et de clavardages que les entreprises du partenaire partagent chaque mois. Au-delà, elles continuent de répondre, et le worker envoie le dépassement à Polar en événements `billing.partner_pool_voice_overage` et `billing.partner_pool_chat_overage`, jusqu'au plafond mensuel que fixent les propriétaires du partenaire. Les propriétaires et les administrateurs du partenaire reçoivent un courriel à 80 % et à 100 % de la réserve et du plafond. Le palier Gratuit n'a pas de dépassement. Laissez-les vides et les partenaires ne vous paient aucun palier. Rien ne limite alors les numéros de téléphone de leurs entreprises, ni leurs minutes et leurs clavardages, sauf si vous fixez la réserve d'un partenaire comme le décrit la section suivante. La page **Facturation** affiche les prix du nuage : donnez les mêmes à vos produits. Il faut aussi `POLAR_ACCESS_TOKEN` et `POLAR_ORGANIZATION_ID`. |
+| `CADDY_ON_DEMAND_TLS` | Mettez `true` quand le Caddy de Compose sert le HTTPS avec `docker-compose.tls.yml`. Les partenaires peuvent alors connecter un sous-domaine de leur propre site, comme `app.acmeagency.com`, sur la page **Image de marque et domaine** de la console. Tant que vous vendez des niveaux de partenaire avec les produits `POLAR_PARTNER_*`, un partenaire a besoin d'un niveau payant pour cela ; sinon, tout partenaire le peut. Le worker vérifie toutes les quelques minutes que le DNS du domaine mène à `PARTNER_DOMAIN_CNAME_TARGET` et contient l'enregistrement TXT du partenaire, et le domaine devient actif dès que c'est le cas. Caddy émet son certificat à la première visite, après l'accord de `/api/tls/ask`. Vaut `false` par défaut. |
+| `CLOUDFLARE_SAAS_API_TOKEN` | Un jeton d'API Cloudflare autorisé à modifier les noms d'hôte personnalisés de la zone `CLOUDFLARE_SAAS_ZONE_ID`. Avec les deux variables, les partenaires connectent leurs propres domaines par Cloudflare for SaaS au lieu de Caddy : le worker inscrit chaque domaine comme nom d'hôte personnalisé, et le domaine devient actif quand Cloudflare indique que le nom d'hôte et son certificat sont actifs. |
+| `CLOUDFLARE_SAAS_ZONE_ID` | L'identifiant de la zone Cloudflare qui contient vos noms d'hôte personnalisés, en général celle de `PARTNER_BASE_DOMAIN`. Donnez à la zone une origine de repli qui mène à votre admin. |
+| `PARTNER_DOMAIN_CNAME_TARGET` | Le nom d'hôte vers lequel les partenaires font pointer l'enregistrement CNAME de leur domaine. Sans valeur, c'est l'origine de repli de la zone avec Cloudflare for SaaS, et le nom d'hôte de `APP_BASE_URL` avec Caddy. |
+
+### Fixer la réserve d'un partenaire sans paliers
+
+Sans les produits `POLAR_PARTNER_*`, vous pouvez limiter les minutes et les clavardages que les entreprises d'un partenaire partagent chaque mois. Lancez cette commande depuis une copie du dépôt, avec `DATABASE_URL` pointant vers votre base de données :
+
+```bash
+pnpm partner-pool:set --partner acme --minutes 500 --chats 2000
+```
+
+- **`--partner`** : l'identifiant du partenaire, son sous-domaine, comme `acme` ou `acme.receptionistportal.com`, ou son propre domaine vérifié
+- **`--minutes`** et **`--chats`** : ce que les entreprises partagent chaque mois. Omettez-en un pour garder sa limite actuelle.
+- **`--clear`** : retire les deux limites
+
+Sans produits de palier, rien ne facture de dépassement : la réserve est donc la limite, sans dépassement ni plafond. Une fois la réserve épuisée, les entreprises du partenaire transfèrent leurs appels au numéro de transfert de chaque entreprise ou au téléphone vérifié de son propriétaire, et le clavardage de leur site ne répond plus jusqu'au début du mois suivant. La réserve s'applique dès l'appel ou le clavardage suivant. Les propriétaires et les administrateurs du partenaire reçoivent un courriel à 80 % et à 100 % de la réserve, et les propriétaires voient l'utilisation du mois sur la page **Facturation** de la console.
+
+Tant que vous vendez des paliers, le palier de chaque partenaire fixe sa réserve : la commande refuse donc une limite. Elle vérifie les produits définis dans son propre shell et ceux avec lesquels le worker a démarré la dernière fois.
+
+## Observabilité
+
+| Variable | Rôle |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | URL de base OTLP. LobbyStack ajoute `/v1/traces`, `/v1/metrics` et `/v1/logs`. Laissez-la vide pour désactiver l'export. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | En-têtes `key=value` facultatifs, séparés par des virgules, envoyés avec chaque requête OTLP. Pour PostHog, utilisez `Authorization=Bearer your_posthog_project_token_here`. |
+
+Un point de terminaison OTLP vide ne désactive ni les journaux stdout des conteneurs, ni les points de terminaison de santé de l'application, ni l'analytique produit directe, ni le signalement direct des erreurs.
+
+## Fournisseurs
+
+| Groupe de variables | Rôle |
+| --- | --- |
+| `TWILIO_*` | Voix, vérification, provisionnement des numéros et authentification des webhooks. |
+| `TELNYX_*` | La même chose pour Telnyx : `TELNYX_API_KEY`, `TELNYX_PUBLIC_KEY` pour les signatures des webhooks, `TELNYX_MESSAGING_PROFILE_ID`, `TELNYX_VERIFY_PROFILE_ID`, et `TELNYX_GB_REQUIREMENT_GROUP_ID`, `TELNYX_AU_REQUIREMENT_GROUP_ID` ou `TELNYX_NZ_REQUIREMENT_GROUP_ID` pour ces pays. |
+| `OPENAI_API_KEY` | Appels GPT-Live et clé de repli pour `AI_CHAT_*` et `AI_EMBEDDING_*`. |
+| `AI_CHAT_API_KEY`, `AI_CHAT_BASE_URL`, `AI_CHAT_MODEL`, `AI_CHAT_PROVIDER_NAME` | L'agent pour le clavardage du site Web et les appels. Laissez `AI_CHAT_MODEL` vide sur OpenAI pour utiliser `gpt-6-luna`. Définissez-la pour tout autre point de terminaison compatible OpenAI. |
+| `AI_CHAT_REASONING_EFFORT` | OpenAI seulement : `none`, `minimal`, `low`, `medium`, `high` ou `xhigh`. Vaut `high` par défaut. |
+| `AI_SUMMARY_MODEL` | Le modèle que le worker utilise sur le point de terminaison `AI_CHAT_*` pour écrire le résumé d'une ligne de chaque appel terminé et relever le nom de l'appelant. Laissez-la vide pour utiliser `AI_CHAT_MODEL`. Avec un modèle différent, le coût IA du résumé d'appel reste inconnu, car les prix `AI_CHAT_*` décrivent le modèle de clavardage. Sans aucun modèle de texte, les appels reçoivent un résumé tiré de la transcription. |
+| `AI_SUMMARY_REASONING_EFFORT` | OpenAI seulement : effort de raisonnement pour les résumés d'appel. Vaut `low` par défaut. |
+| `AI_DELEGATION_MODEL` | Le modèle que le worker utilise sur le point de terminaison `AI_CHAT_*` pour répondre à ce que GPT-Live lui confie pendant un appel, comme une réservation ou un message. L'appelant n'entend rien tant qu'il n'a pas répondu. Laissez-la vide pour utiliser `AI_CHAT_MODEL`. Avec un modèle différent, les prix `AI_CHAT_*` ne s'appliquent pas. |
+| `AI_DELEGATION_REASONING_EFFORT` | OpenAI seulement : effort de raisonnement pour les réponses pendant les appels. Vaut `low` par défaut, qui répond en environ deux fois moins de temps que `high`. Le clavardage du site garde `AI_CHAT_REASONING_EFFORT`. |
+| `AI_DELEGATION_SERVICE_TIER` | OpenAI seulement : le niveau de traitement des réponses pendant les appels : `auto`, `default`, `flex` ou `priority`. Vaut `priority` par défaut, qui répond plus vite et coûte deux fois le prix standard par jeton. |
+| `AI_CHAT_INPUT_COST_PER_MILLION_TOKENS`, `AI_CHAT_CACHED_INPUT_COST_PER_MILLION_TOKENS`, `AI_CHAT_OUTPUT_COST_PER_MILLION_TOKENS` | Les prix du modèle `AI_CHAT_*` en dollars US par million de jetons, pour que le clavardage, les résumés d'appel et les réponses pendant les appels enregistrent leur coût. L'entrée en cache prend le prix d'entrée si vous la laissez vide. |
+| `AI_CHAT_PRICING_VERSION`, `AI_CHAT_PRICING_SOURCE`, `AI_CHAT_PRICING_EFFECTIVE_DATE` | Une étiquette, une URL source et la date de ces prix. LobbyStack n'enregistre un coût que si les trois sont définies. |
+| `AI_EMBEDDING_API_KEY`, `AI_EMBEDDING_BASE_URL`, `AI_EMBEDDING_MODEL`, `AI_EMBEDDING_PROVIDER_NAME`, `AI_EMBEDDING_REVISION` | Embeddings compatibles OpenAI de 1536 dimensions. |
+| `WIDGET_SESSION_SECRET` | Signe les sessions cross-origin du widget du site Web. |
+| `FIRECRAWL_*` | Importation des connaissances à partir du site Web. |
+| `GOOGLE_*` | OAuth de Google Calendar et connexion avec **Continuer avec Google**. |
+| `CALCOM_*` | Client OAuth Cal.com et domaine des adresses de remplacement. La carte Cal.com reste masquée tant qu'elles ne sont pas définies. Consultez [Auto-hébergement](/fr/self-hosting/overview). |
+| `CALENDLY_*` | Application OAuth Calendly, sa clé de signature de webhook et domaine des adresses de remplacement. La carte Calendly reste masquée tant qu'elles ne sont pas définies. Consultez [Auto-hébergement](/fr/self-hosting/overview). |
+| `INSTAGRAM_*` | Messages privés Instagram : `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` et `INSTAGRAM_REDIRECT_URI` d'une application Meta avec Instagram Business Login, et `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` pour l'abonnement à `/api/webhooks/instagram`. |
+| `SMTP_*`, `EMAIL_*` | Courriels transactionnels. |
+| `POLAR_*` | Facturation hébergée et compteurs d'utilisation. |
+| `POSTHOG_*` | Analytique produit directe et signalement des erreurs. |
+
+<Warning>
+  Ne placez jamais de secrets dans des variables `NEXT_PUBLIC_*`. Next.js inclut ces valeurs dans les bundles du navigateur.
+</Warning>

@@ -1,0 +1,121 @@
+{
+  "loading": {
+    "label": "Učitavanje…"
+  },
+  "active": {
+    "title": "Demo za {{businessName}}",
+    "startHint": "Dodirnite dugme da započnete glasovni poziv uživo.",
+    "promptsTitle": "Pitajte, na primer:",
+    "intakeNotice": "Ovo je demo. Pozivi rade, ali zakazivanje i ostale funkcije su isključene.",
+    "claimCta": "Preuzmite ovog agenta"
+  },
+  "states": {
+    "invalid": {
+      "title": "Ovaj demo link nije važeći",
+      "description": "Proverite link ili zatražite novi."
+    },
+    "preparing": {
+      "title": "Vaš demo se priprema",
+      "titleWithBusiness": "Demo za {{businessName}} se priprema",
+      "description": "Još čitamo sajt. Proverite ponovo za nekoliko minuta."
+    },
+    "expired": {
+      "title": "Ovaj demo je istekao",
+      "titleWithBusiness": "Demo za {{businessName}} je istekao",
+      "description": "Demo linkovi ističu. Zatražite novi."
+    },
+    "revoked": {
+      "title": "Ovaj demo više nije dostupan",
+      "titleWithBusiness": "Demo za {{businessName}} više nije dostupan",
+      "description": "Ovaj demo link je isključen."
+    },
+    "claimed": {
+      "title": "Ovaj demo je već preuzet",
+      "titleWithBusiness": "Demo za {{businessName}} je već preuzet",
+      "description": "Neko je već preuzeo ovog agenta."
+    }
+  },
+  "claim": {
+    "loadingTitle": "Podešavamo Vaš radni prostor",
+    "loadingDescription": "Preuzimamo Vašeg agenta…",
+    "errorTitle": "Nismo uspeli da preuzmemo ovaj demo",
+    "errorDescription": "Došlo je do greške. Pokušajte ponovo.",
+    "unavailableTitle": "Ovaj demo link nije dostupan",
+    "unavailableDescription": "Link nedostaje ili više ne radi.",
+    "retry": "Pokušaj ponovo"
+  },
+  "operator": {
+    "title": "Demoi za potencijalne klijente",
+    "description": "Pripremite izolovane radne prostore recepcionera sa rokom trajanja pre nego što ih podelite sa potencijalnim klijentom.",
+    "count_one": "{{count}} demo",
+    "count_few": "{{count}} demoa",
+    "count_other": "{{count}} demoa",
+    "refresh": "Osveži",
+    "loading": "Učitavanje demoa…",
+    "empty": "Još nema demoa za potencijalne klijente.",
+    "rotate": "Promeni link",
+    "publish": "Objavi",
+    "revoke": "Opozovi",
+    "openLink": "Otvori bezbedni link",
+    "tokenHint": "Promenite link da biste ga videli, pa ga podelite. Linkove ne čuvamo.",
+    "prepare": "Pripremite demo",
+    "prepareDescription": "Radni prostor je privatan dok se njegov javni sajt indeksira.",
+    "businessName": "Naziv firme",
+    "websiteUrl": "URL sajta",
+    "greeting": "Pozdrav",
+    "suggestedPrompts": "Predložena pitanja",
+    "create": "Kreiraj demo",
+    "ingestion": "Uvoz:",
+    "snapshot": "Snimak:",
+    "prompts": "Pitanja:",
+    "promptsPlaceholder": "Koje usluge nudite?\nMogu li da zatražim ponudu?",
+    "statuses": {
+      "pending": "na čekanju",
+      "ready": "spremno",
+      "missing": "nedostaje",
+      "queued": "u redu",
+      "crawling": "pretraživanje",
+      "indexing": "indeksiranje",
+      "completed": "završeno",
+      "failed": "neuspešno",
+      "cancelled": "otkazano",
+      "preparing": "priprema",
+      "active": "aktivno",
+      "claimed": "preuzeto",
+      "revoked": "opozvano",
+      "expired": "isteklo",
+      "unavailable": "nije podešeno"
+    },
+    "errors": {
+      "load": "Nismo uspeli da učitamo Vaše demoe. Osvežite stranicu i pokušajte ponovo.",
+      "create": "Nismo uspeli da kreiramo demo. Vaši unosi su i dalje tu, pa pokušajte ponovo.",
+      "rotate": "Nismo uspeli da promenimo link. Pokušajte ponovo.",
+      "publish": "Nismo uspeli da objavimo demo. Pokušajte ponovo.",
+      "revoke": "Nismo uspeli da opozovemo demo. Pokušajte ponovo.",
+      "promptsRequired": "Dodajte bar dva pitanja, jedno po redu.",
+      "notReady": "Demo još nije spreman. Sačekajte da pročitamo sajt, pa pokušajte ponovo."
+    },
+    "partner": {
+      "prepareDescription": "Čitamo veb-sajt potencijalnog klijenta da bismo napravili demo. Objavite ga kada bude spreman.",
+      "empty": "Unesite veb-sajt potencijalnog klijenta da napravite demo.",
+      "accessLabel": "Pristup kada ga potencijalni klijent preuzme",
+      "usage": "Minuti ovog meseca: {{minutes}} · Četovi ovog meseca: {{chats}}",
+      "open": "Otvori",
+      "delete": "Obriši",
+      "deleteTitle": "Obrisati demo za {{name}}?",
+      "deleteDescription": "Brišete demo sa njegovim pozivima i četovima. Ovo ne možete da poništite.",
+      "deleteConfirm": "Obriši demo",
+      "cancel": "Otkaži",
+      "errors": {
+        "domainRequired": "Vašim demo verzijama treba adresa kontrolne table. Povežite domen u odeljku Brend i domen.",
+        "rateLimited": "Napravili ste previše demoa u ovom satu. Pokušajte ponovo kasnije.",
+        "open": "Nismo uspeli da otvorimo demo. Pokušajte ponovo.",
+        "delete": "Nismo uspeli da obrišemo demo. Pokušajte ponovo."
+      },
+      "emptyTitle": "Još nema demoa"
+    },
+    "promptsHint": "Dodajte bar dva, jedno po redu.",
+    "ingestionUnavailable": "Ova kontrolna tabla ne može da čita veb-sajtove, pa demo odgovara na osnovu pozdrava i predloženih pitanja.",
+    "ingestionFailed": "Nismo uspeli da pročitamo veb-sajt. Napravite novi demo da biste pokušali ponovo."
+  }
+}

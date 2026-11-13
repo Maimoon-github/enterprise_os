@@ -1,0 +1,108 @@
+import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { mailboxes } from "./schema";
+import { testMailboxConnection } from "./gmail";
+import { channelRules } from "@/lib/channels/rules.server";
+import { mailboxHoursFromWeekly } from "./workingHours";
+import { currentOrganizationId, inOrg } from "@/lib/tenancy/scope";
+
+export async function listMailboxes() {
+  return db.select().from(mailboxes).where(inOrg(mailboxes)).orderBy(mailboxes.createdAt);
+}
+
+export async function getMailbox(id: string) {
+  const [row] = await db.select().from(mailboxes).where(and(inOrg(mailboxes), eq(mailboxes.id, id))).limit(1);
+  return row ?? null;
+}
+
+export type ConnectMailboxResult =
+  | { ok: true; mailboxId: string; status: "connected" }
+  | { ok: false; error: string };
+
+/**
+ * Adds (or re-tests) a mailbox: stores the row, calls Gmail to verify our
+ * service account can actually impersonate this address, then records the
+ * outcome. This is the entire "connect" flow — no OAuth screen, no password.
+ */
+export async function connectMailbox(input: {
+  emailAddress: string;
+  displayName?: string | null;
+  /** Undefined leaves any existing signature untouched (e.g. on a retest); pass "" to explicitly clear it. */
+  signatureHtml?: string | null;
+}): Promise<ConnectMailboxResult> {
+  const emailAddress = input.emailAddress.trim().toLowerCase();
+  if (!emailAddress || !emailAddress.includes("@")) {
+    return { ok: false, error: `invalid email: "${input.emailAddress}"` };
+  }
+
+  const [existing] = await db
+    .select()
+    .from(mailboxes)
+    .where(and(inOrg(mailboxes), eq(mailboxes.emailAddress, emailAddress)))
+    .limit(1);
+  if (!existing) {
+    // A Gmail mailbox belongs to exactly one organization (email_address is
+    // globally unique), so one already connected elsewhere cannot be added.
+    const [elsewhere] = await db
+      .select({ id: mailboxes.id })
+      .from(mailboxes)
+      .where(eq(mailboxes.emailAddress, emailAddress))
+      .limit(1);
+    if (elsewhere) return { ok: false, error: `${emailAddress} is already connected to another organization` };
+  }
+
+  // A new mailbox starts from the organization's sending rules; after that its
+  // own limit and hours are edited per mailbox.
+  const rules = existing ? null : await channelRules("email");
+  const mailboxId =
+    existing?.id ??
+    (
+      await db
+        .insert(mailboxes)
+        .values({
+          organizationId: currentOrganizationId(),
+          emailAddress,
+          displayName: input.displayName?.trim() || null,
+          signatureHtml: input.signatureHtml?.trim() || null,
+          status: "connecting",
+          dailySendLimit: rules!.dailySendLimit,
+          workingHours: mailboxHoursFromWeekly(rules!.sendingHours),
+        })
+        .returning({ id: mailboxes.id })
+    )[0].id;
+
+  const test = await testMailboxConnection(emailAddress);
+
+  if (test.ok) {
+    await db
+      .update(mailboxes)
+      .set({
+        status: "connected",
+        lastError: null,
+        lastTestedAt: new Date(),
+        lastHistoryId: test.historyId,
+        displayName: input.displayName?.trim() || existing?.displayName || null,
+        ...(input.signatureHtml !== undefined ? { signatureHtml: input.signatureHtml?.trim() || null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(inOrg(mailboxes), eq(mailboxes.id, mailboxId)));
+    return { ok: true, mailboxId, status: "connected" };
+  }
+
+  await db
+    .update(mailboxes)
+    .set({ status: "failed", lastError: test.error, lastTestedAt: new Date(), updatedAt: new Date() })
+    .where(and(inOrg(mailboxes), eq(mailboxes.id, mailboxId)));
+  return { ok: false, error: test.error };
+}
+
+/** Re-runs the connection test for an already-added mailbox. Leaves its signature untouched. */
+export async function retestMailbox(id: string): Promise<ConnectMailboxResult> {
+  const mailbox = await getMailbox(id);
+  if (!mailbox) return { ok: false, error: "mailbox not found" };
+  return connectMailbox({ emailAddress: mailbox.emailAddress, displayName: mailbox.displayName });
+}
+
+export async function deleteMailbox(id: string) {
+  await db.delete(mailboxes).where(and(inOrg(mailboxes), eq(mailboxes.id, id)));
+}

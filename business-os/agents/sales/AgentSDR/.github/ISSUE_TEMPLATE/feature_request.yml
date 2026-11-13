@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the **problem** first — the solution is easier to agree on once the problem is clear.
+        Big or open-ended ideas fit better in [Discussions](https://github.com/Kandid-ai/AgentSDR/discussions).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Who runs into it, and when?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, examples from other tools, links.
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Would you like to work on this?
+      options:
+        - "Yes"
+        - "Yes, with guidance"
+        - "No"

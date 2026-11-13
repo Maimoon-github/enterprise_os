@@ -1,0 +1,37 @@
+# Deploy LobbyStack on Railway
+
+LobbyStack's own production and staging moved to Dokploy on 2026-10-21; see [Deploy LobbyStack on Dokploy](dokploy.md). The Railway project stays frozen as a rollback until 2026-11-04: its admin runs in maintenance mode and its worker and staging services are stopped. Don't deploy to it or apply `.railway/railway.ts` in that time. This page still describes a Railway deployment for self-hosters and for that rollback.
+
+Manage the project with Railway Infrastructure as Code in `.railway/railway.ts`. The definition adopts the isolated parity staging environment: admin, worker, a separate migrator, PostgreSQL 16 with pgvector, Redis 7, two persistent volumes, and a private bucket. See `.railway/README.md` for explicit environment selection and plan/apply commands.
+
+Legacy `apps/*/railway.json` files have been removed. Do not reintroduce per-service Config as Code. Review every IaC plan before applying, and preserve existing credentials with `preserve()`; never export secrets into source.
+
+The admin reaches the worker's private hostname through `WORKER_INTERNAL_URL` to start GPT-Live calls. Only the admin needs a public domain. Phone calls reach OpenAI through the Twilio SIP trunk, so set `OPENAI_WEBHOOK_SECRET` on admin and `TWILIO_SIP_TRUNK_SID` on worker. See [the voice runtime](../voice/runtime.md).
+
+## Configure shared variables
+
+- Database: `DATABASE_URL` for the service's main role, plus a `LOBBYSTACK_<ROLE>_PASSWORD` for each other role the service uses. Services build those role URLs from `DATABASE_URL`'s host. Set `LOBBYSTACK_<ROLE>_DATABASE_URL` only to point a role at a different host. The migrator connects with `DATABASE_URL` as given.
+- Redis: `REDIS_URL` and an environment-specific `REDIS_PREFIX`.
+- Security: `BETTER_AUTH_SECRET`, `INTERNAL_SERVICE_SECRET`, `INTERNAL_SERVICE_TOKEN`, `ENCRYPTION_KEY`, and `OTP_HASH_SECRET`. Admin and worker both need `INTERNAL_SERVICE_TOKEN` for call handoff.
+- GPT-Live: `LIVE_PROTOTYPE_ENABLED=true` and `OPENAI_API_KEY` on admin and worker, `OPENAI_WEBHOOK_SECRET` and `WORKER_INTERNAL_URL` on admin, and `TWILIO_SIP_TRUNK_SID` on worker. See [the voice runtime](../voice/runtime.md).
+- Storage: set `STORAGE_PROVIDER=s3`, add Railway bucket references for `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_BUCKET`, and set `S3_FORCE_PATH_STYLE=false`. Browsers upload documents straight to the bucket, so the admin adds a CORS rule that lets `APP_BASE_URL` and `AUTH_TRUSTED_ORIGINS` send `PUT` requests and keeps any rules already there. If the bucket key can't change CORS settings, add that rule yourself.
+- Telemetry: set `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` on each application service, and set `SERVICE_VERSION` to the release SHA.
+
+Provider credentials belong only on the services that use them. Follow `.env.example` for the complete variable names without copying development placeholder values.
+
+## Deploy services in order
+
+1. Provision PostgreSQL, Redis, and the bucket.
+2. Configure Redis AOF persistence and `noeviction`.
+3. Bootstrap the least-privilege database roles with `docker/postgres/init/roles.sh` using the managed PostgreSQL administrator connection. This is a privileged, user-run operation.
+4. Run the separate migrator, applying migrations twice and checking database consistency and RLS. Deploy worker with only worker/dispatcher database credentials after migration succeeds.
+5. Deploy admin.
+6. Run the smoke, RLS, telemetry, webhook, storage, realtime, privacy, and Playwright certification checks.
+
+Telemetry exporter failure must not affect readiness. Configure retention and sampling in the OTLP backend.
+
+## Twilio callback signatures
+
+Set `TWILIO_SMS_WEBHOOK_URL` and `TWILIO_STATUS_CALLBACK_URL` on admin to their public HTTPS endpoints. Set the same status callback endpoint on worker so delivery updates are requested. These non-secret URLs are declared in `.railway/railway.ts`. Railway may present an internal request URL to Next.js, so signature validation reconstructs the public endpoint while retaining the incoming query string, including `notificationId`, `messageId`, or `operatorDeliveryId`. Query values remain covered by signature verification.
+
+Keep disposable Twilio credentials in Railway and declare them with `preserve()` for admin and worker.

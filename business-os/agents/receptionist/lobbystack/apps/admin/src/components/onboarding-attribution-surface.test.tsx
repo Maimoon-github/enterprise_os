@@ -1,0 +1,60 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OnboardingAttributionSurface } from "./onboarding-attribution-surface";
+import { createRecordedBrowserTelemetry } from "@/lib/telemetry-testing";
+
+const route = vi.hoisted(() => ({ router: { push: vi.fn(), refresh: vi.fn() } }));
+const telemetryRef = vi.hoisted(() => ({ current: null as ReturnType<typeof createRecordedBrowserTelemetry> | null }));
+vi.mock("@/components/product-analytics", () => ({ useTelemetry: () => telemetryRef.current!.telemetry }));
+vi.mock("next/navigation", () => ({ useRouter: () => route.router }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
+const clients: QueryClient[] = [];
+beforeEach(() => {
+  telemetryRef.current = createRecordedBrowserTelemetry();
+  route.router.push.mockReset();
+  route.router.refresh.mockReset();
+  vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+});
+afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.unstubAllGlobals(); vi.clearAllMocks(); });
+
+function setup() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  clients.push(client);
+  client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true }] });
+  const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<QueryClientProvider client={client}><OnboardingAttributionSurface /></QueryClientProvider>);
+  return fetchMock;
+}
+
+describe("onboarding attribution telemetry", () => {
+  it("shows the answer already saved to someone who comes back", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ source: "google" })));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true }] });
+    render(<QueryClientProvider client={client}><OnboardingAttributionSurface /></QueryClientProvider>);
+    await waitFor(() => expect(screen.getByRole("button", { name: "attribution.options.google" }).getAttribute("aria-pressed")).toBe("true"));
+  });
+
+  it("records the selected attribution source", async () => {
+    setup();
+    await userEvent.click(await screen.findByRole("button", { name: "attribution.options.google" }));
+    await userEvent.click(screen.getByRole("button", { name: "attribution.continue" }));
+    await waitFor(() => expect(route.router.push).toHaveBeenCalledWith("/onboarding/meet"));
+    telemetryRef.current!.expectEvent("web.onboarding.attribution_submitted", { businessId: "business", source: "google" });
+  });
+
+  it("has no skip, and keeps Continue off until a source is picked", async () => {
+    setup();
+    const next = await screen.findByRole("button", { name: "attribution.continue" });
+    expect(next.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByRole("button", { name: "attribution.skip" })).toBeNull();
+    await userEvent.click(await screen.findByRole("button", { name: "attribution.options.other" }));
+    expect(next.hasAttribute("disabled")).toBe(false);
+  });
+});

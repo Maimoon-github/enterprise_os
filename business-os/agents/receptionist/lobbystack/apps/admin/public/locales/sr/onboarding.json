@@ -1,0 +1,304 @@
+{
+  "shell": {
+    "signOut": "Odjavi se",
+    "terms": "Uslovi",
+    "privacy": "Privatnost",
+    "support": "Podrška",
+    "backToDashboard": "Nazad na kontrolnu tablu"
+  },
+  "errors": {
+    "tooManyBusinesses": "Već posedujete 10 radnih prostora, što je ograničenje za jedan nalog."
+  },
+  "adminRequired": {
+    "eyebrow": "Podešavanje radnog prostora",
+    "title": "Podešavanje čeka administratora",
+    "description": "Ovaj radni prostor se još podešava. Zamolite vlasnika radnog prostora ili administratora da završi podešavanje pre nego što počnete da ga koristite.",
+    "descriptionWithBusiness": "{{businessName}} se još podešava. Zamolite vlasnika radnog prostora ili administratora da završi podešavanje pre nego što počnete da ga koristite.",
+    "statusTitle": "Vaš pristup je aktivan",
+    "statusDescription": "Radni prostor ćete moći da koristite kada administrator završi početno podešavanje. Podešavanja mogu da menjaju samo vlasnici radnog prostora i administratori.",
+    "goToWorkspace": "Idi u radni prostor"
+  },
+  "brand": {
+    "title": "Prilagodite ovu aplikaciju",
+    "description": "Vi prvi podešavate ovu instalaciju, pa birate naziv i logo koje svi vide kada se prijave i koriste kontrolnu tablu.",
+    "nameLabel": "Naziv aplikacije",
+    "nameHint": "Najviše 40 znakova. Zamenjuje naziv {{appName}} na svakoj stranici i na kartici pregledača.",
+    "logoLabel": "Logo",
+    "logoChoose": "Izaberite logo",
+    "logoChange": "Izaberite drugi",
+    "logoRemove": "Ukloni",
+    "logoHint": "Kvadratna slika u formatu PNG, JPEG, WebP ili SVG, do 256 KB. Prikazuje se pored naziva i kao ikonica kartice pregledača.",
+    "preview": "Pregled",
+    "continue": "Nastavi",
+    "saving": "Čuvanje...",
+    "skip": "Preskoči i zadrži naziv {{appName}}",
+    "errors": {
+      "appName": "Izaberite naziv od najviše 40 znakova.",
+      "logoType": "Izaberite sliku u formatu PNG, JPEG, WebP ili SVG. SVG ne sme da sadrži skripte.",
+      "logoSize": "Izaberite logo od najviše 256 KB.",
+      "closed": "Naziv i logo ove instalacije više ne mogu da se biraju ovde.",
+      "failed": "Nismo mogli da sačuvamo naziv i logo. Pokušajte ponovo."
+    }
+  },
+  "businessName": {
+    "title": "Za početak, kako se zove Vaša firma?",
+    "createTitle": "Napravite radni prostor",
+    "createDescription": "Ovi podaci su osnova onoga što agent zna o Vašoj firmi.",
+    "existingTitle": "Radni prostor već postoji",
+    "existingDescription": "Nastavite podešavanje u aktivnom radnom prostoru.",
+    "configured": "Podaci o firmi su već podešeni.",
+    "continueSetup": "Nastavi podešavanje",
+    "loading": "Učitavanje radnih prostora...",
+    "unavailable": "Podešavanje radnog prostora nije dostupno.",
+    "label": "Naziv firme",
+    "placeholder": "Kafana Kod Đorđa",
+    "slugLabel": "Slug",
+    "slugPlaceholder": "ordinacija-javor",
+    "timezoneLabel": "Vremenska zona",
+    "timezonePlaceholder": "Europe/Belgrade",
+    "typeLabel": "Vrsta firme",
+    "types": {
+      "serviceCompany": "Uslužna firma",
+      "clinic": "Ordinacija ili klinika",
+      "salon": "Salon ili spa",
+      "professionalServices": "Stručne usluge",
+      "other": "Drugo"
+    },
+    "create": "Napravi i nastavi",
+    "continue": "Nastavi",
+    "submitting": "Čuvanje...",
+    "submitFailed": "Trenutno ne možemo da sačuvamo firmu. Pokušajte ponovo."
+  },
+  "website": {
+    "title": "Sada ćemo obučiti {{appName}} pomoću Vašeg sajta",
+    "label": "Sajt",
+    "placeholder": "mojafirma.rs",
+    "sourceName": "Naziv izvora",
+    "sourceNameHint": "Opcioni naziv za uvezeni izvor.",
+    "sourceNamePlaceholder": "Sajt firme",
+    "continue": "Nastavi",
+    "submitting": "Pokretanje uvoza...",
+    "skip": "Nemam sajt",
+    "skipping": "Preskakanje...",
+    "skippingImport": "Preskakanje uvoza...",
+    "submitFailed": "Trenutno ne možemo da pokrenemo uvoz sajta. Pokušajte ponovo.",
+    "invalidUrl": "Unesite adresu svog sajta, na primer mojafirma.rs.",
+    "skipFailed": "Trenutno ne možemo da preskočimo ovaj korak. Pokušajte ponovo."
+  },
+  "language": {
+    "title": "Na kom jeziku treba da govori vaš agent?",
+    "label": "Jezik pozivalaca",
+    "continue": "Nastavi",
+    "saving": "Čuvanje...",
+    "submitFailed": "Trenutno ne možemo da sačuvamo. Pokušajte ponovo."
+  },
+  "reading": {
+    "title": "Čitamo vaš sajt",
+    "status_one": "Čitanje sajta {{host}}: pročitana {{count}} stranica",
+    "status_few": "Čitanje sajta {{host}}: pročitane {{count}} stranice",
+    "status_other": "Čitanje sajta {{host}}: pročitano {{count}} stranica",
+    "previous": "Prethodno",
+    "next": "Sledeće",
+    "slides": {
+      "answers": "Odgovara na osnovu vašeg sadržaja",
+      "booking": "Zakazuje termine",
+      "transfer": "Prebacuje pozive vašem timu",
+      "languages": "Menja jezik tokom poziva",
+      "summaries": "Sažima svaki poziv",
+      "widget": "Odgovara i na vašem sajtu"
+    },
+    "scenes": {
+      "answers": {
+        "question": "Da li primate nove pacijente?",
+        "answer": "Da, i prvi pregled je besplatan."
+      },
+      "booking": {
+        "service": "Čišćenje"
+      },
+      "transfer": {
+        "agent": "Vaš agent",
+        "role": "Recepcija"
+      },
+      "summaries": {
+        "summary": "Nova pacijentkinja. Čišćenje zuba zakazano za utorak."
+      },
+      "widget": {
+        "question": "Radite li subotom?",
+        "answer": "Da, do 13 časova."
+      }
+    },
+    "stalled": "Nismo uspeli da završimo čitanje sajta {{host}}",
+    "tryAgain": "Pokušaj ponovo"
+  },
+  "verifyPhone": {
+    "title": "Potvrdite broj mobilnog telefona",
+    "fields": {
+      "mobileNumber": "Broj mobilnog telefona",
+      "country": "Zemlja"
+    },
+    "hint": "Koristite mobilni koji prima SMS poruke. Internet brojevi ne rade.",
+    "sendCode": "Pošalji mi kôd",
+    "sending": "Slanje…",
+    "sendFailed": "Nismo mogli da pošaljemo kôd. Pokušajte ponovo.",
+    "errors": {
+      "voip": "Koristite broj mobilnog telefona. Internet brojevi ne mogu da se potvrde.",
+      "notMobile": "Koristite broj mobilnog telefona koji prima SMS poruke.",
+      "countryMismatch": "Ovaj broj nije iz zemlje koju ste izabrali.",
+      "invalidNumber": "Unesite ispravan broj mobilnog telefona.",
+      "rateLimited": "Previše kodova. Sačekajte malo i pokušajte ponovo."
+    },
+    "code": {
+      "sentTo": "Unesite šestocifreni kôd koji smo poslali na {{phone}}.",
+      "checking": "Proveravamo…",
+      "invalid_one": "Taj kôd nije ispravan. Ostao Vam je {{count}} pokušaj.",
+      "invalid_few": "Taj kôd nije ispravan. Ostala su Vam {{count}} pokušaja.",
+      "invalid_other": "Taj kôd nije ispravan. Ostalo Vam je {{count}} pokušaja.",
+      "expired": "Kôd je istekao. Zatražite novi.",
+      "locked": "Previše pokušaja. Zatražite novi kôd.",
+      "failed": "Nismo mogli da proverimo kôd. Pokušajte ponovo.",
+      "resend": "Pošalji novi kôd",
+      "changeNumber": "Koristi drugi broj"
+    },
+    "unavailable": {
+      "failed": "Nešto nije u redu. Pokušajte ponovo.",
+      "partnerTitle": "Još ne možemo da potvrdimo telefone u ovoj zemlji ({{country}}).",
+      "partnerBody": "Podešavanje možete da završite bez potvrđenog telefona.",
+      "partnerContinue": "Nastavi"
+    },
+    "continue": "Nastavi"
+  },
+  "number": {
+    "planRequired": "Da biste dobili broj, izaberite paket.",
+    "refusals": {
+      "paidPlan": "Dobijanje broja ovde zahteva plaćeni paket.",
+      "trialUsed": "Ovaj radni prostor ili vaš telefon je već iskoristio besplatnu probu.",
+      "network": "Besplatna proba je već počela sa ove mreže u poslednjih 30 dana.",
+      "unavailable": "Besplatan probni broj nije dostupan za ovaj radni prostor.",
+      "verification": "Besplatan broj zahteva verifikovan telefon.",
+      "emailVerification": "Verifikujte svoju imejl adresu pre nego što izaberete probni broj."
+    },
+    "title": "Izaberite broj telefona za svog agenta",
+    "countryLabel": "Zemlja",
+    "kindLocal": "Lokalni",
+    "kindTollFree": "Besplatni",
+    "areaCodeLabel": "Pozivni broj",
+    "areaCodePlaceholder": "Pozivni broj",
+    "cityLabel": "Grad",
+    "cityPlaceholder": "Grad",
+    "location": "Lokacija",
+    "capabilities": "Mogućnosti",
+    "voiceSms": "Glas · SMS",
+    "search": "Pretraži",
+    "searching": "Pretraga...",
+    "tableHeaders": {
+      "phoneNumber": "Broj telefona"
+    },
+    "select": "Izaberi",
+    "loadMore": "Učitaj još",
+    "empty": "Nijedan broj ne odgovara pretrazi.",
+    "skipLater": "Dodaću broj kasnije",
+    "skipping": "Preskakanje...",
+    "loadFailed": "Trenutno ne možemo da učitamo brojeve.",
+    "searchFailed": "Trenutno ne možemo da pretražimo brojeve.",
+    "claimFailed": "Nismo mogli da aktiviramo taj broj. Pokušajte ponovo.",
+    "claimRateLimited": "Probali ste nekoliko brojeva. Sačekajte malo pre nego što pokušate ponovo.",
+    "partnerTierRequired": "Partner ovog radnog prostora mora da plaća nivo da bi dodao brojeve telefona.",
+    "partnerNumbersUnavailable": "Brojevi telefona još nisu dostupni za ovaj radni prostor.",
+    "offerExpired": "Ova ponuda je istekla. Ponovo pretražite i izaberite broj.",
+    "trialAccountPurchaseLimit": "Ovaj Twilio nalog još ne može da kupi taj broj. Probni nalozi mogu da kupe samo odgovarajuće probne brojeve. Oslobodite postojeći broj ili nadogradite nalog, pa pokušajte ponovo.",
+    "skipFailed": "Trenutno ne možemo da preskočimo ovaj korak. Pokušajte ponovo.",
+    "tooManySearches": "Previše pretraga. Sačekajte malo i pokušajte ponovo.",
+    "unavailable": "Neko je upravo uzeo taj broj. Izaberite drugi sa osvežene liste.",
+    "selectedTitle": "Broj telefona Vašeg agenta",
+    "selectedNumberLabel": "Izabrani broj",
+    "numbersUnavailable": "Brojevi telefona još nisu podešeni na ovoj kontrolnoj tabli. Zamolite osobu koja njome upravlja da poveže telefonskog provajdera.",
+    "country": {
+      "title": "Brojevi još nisu dostupni u ovoj zemlji ({{country}}).",
+      "body": "Agenta i dalje možete da koristite u pregledaču, a možemo i da Vam pišemo kada brojevi stignu tamo.",
+      "notify": "Javite mi kada budu dostupni",
+      "joined": "Važi. Pisaćemo Vam.",
+      "continue": "Nastavi bez broja",
+      "failed": "Nešto nije u redu. Pokušajte ponovo.",
+      "label": "Zemlja",
+      "placeholder": "Izaberite zemlju",
+      "back": "Nazad na brojeve",
+      "other": "Druga zemlja"
+    }
+  },
+  "attribution": {
+    "title": "Kako ste čuli za {{appName}}?",
+    "options": {
+      "ai_assistant": "ChatGPT, Claude i sl.",
+      "newsletter": "Bilten ili blog",
+      "podcast": "Podkast",
+      "news": "Iz medija",
+      "work": "Preko posla",
+      "school": "Prijatelji ili škola",
+      "x": "X",
+      "reddit": "Reddit",
+      "facebook": "Facebook",
+      "youtube": "YouTube",
+      "instagram": "Instagram",
+      "linkedin": "LinkedIn",
+      "google": "Google",
+      "tiktok": "TikTok",
+      "other": "Drugo"
+    },
+    "label": "Izvor",
+    "preferNot": "Ne želim da kažem",
+    "search": "Pretraživač",
+    "referral": "Prijatelj ili kolega",
+    "social": "Društvene mreže",
+    "event": "Događaj ili zajednica",
+    "other": "Drugo",
+    "failed": "Podešavanje nije moglo da se završi.",
+    "submitFailed": "Trenutno ne možemo to da sačuvamo. Pokušajte ponovo.",
+    "continue": "Nastavi",
+    "saving": "Čuvanje..."
+  },
+  "meet": {
+    "title": "Upoznajte svog agenta",
+    "name": "Ime agenta",
+    "greeting": "Pozdrav",
+    "language": "Jezik pozivalaca",
+    "finish": "Idi na kontrolnu tablu",
+    "finishing": "Otvaranje...",
+    "saveFailed": "Čuvanje nije uspelo. Pokušajte ponovo.",
+    "finishFailed": "Podešavanje nije završeno. Pokušajte ponovo."
+  },
+  "plan": {
+    "title": "Izaberite paket",
+    "checkoutSuccess": "Plaćanje je uspešno završeno.",
+    "popular": "Popularno",
+    "enterpriseSubject": "Enterprise paket",
+    "compareTitle": "Detaljno poređenje paketa",
+    "compareDescription": "Paket Free Vam daje 30 minuta razgovora i broj iz SAD ili Kanade na 14 dana. Starter i Pro uključuju namenski broj i mesečnu količinu potrošnje.",
+    "featureHeader": "Funkcija",
+    "billingInterval": {
+      "label": "Period naplate",
+      "monthly": "Mesečno",
+      "annual": "Godišnje",
+      "save": "Uštedite 20%"
+    },
+    "comparison": {
+      "included": "Uključeno",
+      "notIncluded": "Nije uključeno"
+    },
+    "continue": "Nastavi",
+    "continuing": "Nastavljanje...",
+    "continueFailed": "Trenutno ne možemo da nastavimo. Pokušajte ponovo.",
+    "backToPlans": "Nazad na pakete",
+    "subscribe": "Pretplatite se",
+    "trial": {
+      "description": "14 dana, bez kartice",
+      "start": "Započnite besplatnu probu od 14 dana"
+    }
+  },
+  "noBusinesses": {
+    "title": "Ovde još nemate radni prostor",
+    "description": "{{appName}} još nije dodao {{email}} u radni prostor. Zamolite ih da Vas pozovu, pa otvorite link iz njihovog imejla.",
+    "switchAccount": "Prijavite se drugim nalogom",
+    "released": "{{email}} više nema radni prostor na ovoj kontrolnoj tabli. Radni prostor koji posedujete prešao je na vaš nalog, pa otvorite svoju kontrolnu tablu da biste njime upravljali.",
+    "openDashboard": "Otvorite kontrolnu tablu"
+  }
+}

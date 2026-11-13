@@ -1,0 +1,264 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MessageType {
+  INVITATION
+  ACCEPTANCE
+  FOLLOW_UP_1
+  FOLLOW_UP_2
+  FOLLOW_UP_3
+  RECEIVED
+  CUSTOM_SENT
+}
+
+enum LeadStatus {
+  PENDING
+  REQUEST_SENT
+  CONNECTED
+  ACCEPT_MESSAGE_SENT
+  FOLLOW_UP_1_SENT
+  FOLLOW_UP_2_SENT
+  FOLLOW_UP_3_SENT
+  COMPLETED
+  REPLIED
+  FAILED
+}
+
+enum AccountStatus {
+  CONNECTED
+  DISCONNECTED
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum CampaignType {
+  REGULAR
+  PERSONAL
+}
+
+enum SearchQueryStatus {
+  QUEUED
+  RUNNING
+  PAUSED_LIMIT
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model LinkedInAccount {
+  id                String        @id @default(cuid())
+  linkedinId        String        @unique
+  username          String
+  name              String?
+  profilePictureUrl String?
+  headline          String?
+  profileData       Json?
+  status            AccountStatus @default(CONNECTED)
+  limitReached      Boolean       @default(false)
+  searchLeadsToday  Int           @default(0)
+  isPremium         Boolean       @default(false)
+  workTimezone      String?
+  workStartTime     String?
+  workEndTime       String?
+  workDays          String?
+  nextAllowedRun    DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  leads             Lead[]
+  connections       Connection[]
+  campaignAccounts  CampaignAccount[]
+  searchQueries     SearchQuery[]
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  status      CampaignStatus @default(ACTIVE)
+  type        CampaignType   @default(REGULAR)
+
+  accounts    CampaignAccount[]
+  leads       Lead[]
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model CampaignAccount {
+  campaignId        String
+  linkedinAccountId String
+  campaign          Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  linkedInAccount   LinkedInAccount @relation(fields: [linkedinAccountId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, linkedinAccountId])
+}
+
+model Lead {
+  id                  String          @id @default(cuid())
+  linkedinUrl         String
+  providerId          String?
+  name                String?
+  profilePictureUrl   String?
+  headline            String?
+  location            String?
+  leadData            Json?
+  status              LeadStatus      @default(PENDING)
+  inviteRetryCount    Int             @default(0)
+  requestSentAt         DateTime?
+  acceptMessageSentAt   DateTime?
+
+  campaignId          String?
+  campaign            Campaign?       @relation(fields: [campaignId], references: [id])
+
+  invitationMessage   String?
+  acceptanceMessage   String?
+  followUp1Message    String?
+  followUp1SentAt     DateTime?
+  followUp2Message    String?
+  followUp2SentAt     DateTime?
+  followUp3Message    String?
+  followUp3SentAt     DateTime?
+
+  linkedinAccountId   String?
+  linkedInAccount     LinkedInAccount? @relation(fields: [linkedinAccountId], references: [id])
+
+  connection          Connection?
+  messages            Message[]
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@unique([linkedinUrl, campaignId])
+  @@index([linkedinUrl])
+  @@index([providerId])
+}
+
+model Connection {
+  id                String           @id @default(cuid())
+  providerId        String
+  name              String?
+  headline          String?
+  profilePictureUrl String?
+  linkedinUrl       String?
+  chatId            String?
+
+  leadId            String?          @unique
+  lead              Lead?            @relation(fields: [leadId], references: [id])
+
+  linkedinAccountId String?
+  linkedInAccount   LinkedInAccount? @relation(fields: [linkedinAccountId], references: [id])
+
+  connectedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  messages          Message[]
+  webhookEvents     WebhookEvent[]
+
+  @@unique([providerId, linkedinAccountId])
+}
+
+model Message {
+  id                String      @id @default(cuid())
+  type              MessageType
+  text              String
+  linkedinMessageId String?
+  seen              Boolean     @default(false)
+
+  connectionId String?
+  connection   Connection? @relation(fields: [connectionId], references: [id])
+
+  leadId       String?
+  lead         Lead?       @relation(fields: [leadId], references: [id])
+
+  createdAt    DateTime    @default(now())
+}
+
+model JobRun {
+  id         String    @id @default(cuid())
+  job        String
+  status     String    @default("RUNNING")
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  error      String?
+  logs       JobLog[]
+}
+
+model JobLog {
+  id        String   @id @default(cuid())
+  jobRunId  String
+  jobRun    JobRun   @relation(fields: [jobRunId], references: [id], onDelete: Cascade)
+  level     String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+model WebhookEvent {
+  id          String      @id @default(cuid())
+  event       String
+  accountType String?
+  accountId   String?
+  senderId    String?
+  chatId      String?
+  messageText String?
+  rawBody     Json
+
+  connectionId     String?
+  connection       Connection? @relation(fields: [connectionId], references: [id])
+
+  processingLog    Json?
+  processingStatus String?
+
+  createdAt   DateTime @default(now())
+}
+
+model SearchQuery {
+  id               String            @id @default(cuid())
+  url              String
+  companyName      String?
+  status           SearchQueryStatus @default(QUEUED)
+  cursor           String?
+  totalCount       Int?
+  leadsFetched     Int               @default(0)
+  lastError        String?
+
+  currentAccountId String?
+  currentAccount   LinkedInAccount?  @relation(fields: [currentAccountId], references: [id])
+
+  results          SearchResult[]
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  startedAt        DateTime?
+  completedAt      DateTime?
+}
+
+model SearchResult {
+  id                     String      @id @default(cuid())
+  searchQueryId          String
+  searchQuery            SearchQuery @relation(fields: [searchQueryId], references: [id], onDelete: Cascade)
+
+  linkedinUrl            String
+  name                   String?
+  headline               String?
+  location               String?
+  profilePictureUrl      String?
+  networkDistance        String?
+  followersCount         Int?
+  sharedConnectionsCount Int?
+  raw                    Json?
+
+  createdAt              DateTime    @default(now())
+
+  @@unique([searchQueryId, linkedinUrl])
+}

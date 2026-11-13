@@ -1,0 +1,419 @@
+"use client";
+
+import { cn } from "@/lib/utils";
+
+import { isTransferCountry, type HoursWindow } from "@lobbystack/shared";
+import { requestJson } from "@/lib/request-json";
+import { useActiveBusiness } from "@/hooks/use-active-business";
+
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  flexRender,
+  useTable,
+  type ColumnDef,
+  type PaginationState,
+} from "@tanstack/react-table";
+import { CalendarDays, ChevronDown, MoreHorizontal, Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
+import type { DateRange } from "react-day-picker";
+import { enUS, es, fr, srLatn } from "react-day-picker/locale";
+import type { Country } from "react-phone-number-input/input";
+import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousForBusiness } from "@/lib/keep-previous-for-business";
+
+import { HeaderActions } from "@/components/header-actions";
+import { toDays, useBusinessHours, useDayNames, WeeklyHoursEditor, windowsForSave, type HoursWindowInput } from "@/components/business-hours-section";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
+import { DataTablePagination, paginationFeatures, useDataTablePaginationLabels } from "@/components/data-table/pagination";
+import { DataTablePaginationSkeleton, EmployeeRowsSkeleton, HeaderButtonSkeleton } from "@/components/loading-skeletons";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { SearchInput } from "@/components/ui/search-input";
+import { PhoneInput } from "@/components/ui/phone-input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
+import { Table, TableActionsColumn, TableBody, TableCard, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatDateTime, intlLocale } from "@/lib/locale";
+import { PhoneCountrySelect } from "@/components/phone-country-select";
+import { formatPhoneNumberDisplay, getDefaultTransferCountry, getPhoneCountryOptions, inferPhoneCountry } from "@/lib/phone";
+import { Status } from "@/components/ui/status";
+import { EMPLOYEE_STATUS_VARIANTS } from "@/lib/status-variants";
+
+type TimeOff = { startsOn: string; endsOn: string };
+
+type Employee = {
+  id: string;
+  name: string;
+  phone: string | null;
+  serviceIds: string[];
+  /** Their own working hours, or null when they work the business's. */
+  hours: HoursWindow[] | null;
+  timeOff: TimeOff[];
+  status: "working" | "off" | "no_services";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type ServiceOption = { id: string; name: string };
+
+const PICKER_TRIGGER_CLASS = "flex h-9 w-full items-center justify-between gap-1.5 rounded-xl border border-input bg-input/30 px-3 py-2 type-body whitespace-nowrap transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-invalid:border-destructive data-invalid:ring-[3px] data-invalid:ring-destructive/20";
+const DAY_PICKER_LOCALES = { en: enUS, fr, es, sr: srLatn } as const;
+
+// Time off days are calendar dates, YYYY-MM-DD, read and written in local time so they don't shift a day.
+function parseDay(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year!, month! - 1, date!);
+}
+
+function toDay(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatDay(day: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), { month: "short", day: "numeric" }).format(parseDay(day));
+}
+
+function formatTimeOff(timeOff: TimeOff, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), { dateStyle: "medium" }).formatRange(parseDay(timeOff.startsOn), parseDay(timeOff.endsOn));
+}
+
+function errorCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : undefined;
+}
+
+export function LiveEmployeesSurface() {
+  const { i18n, t } = useTranslation("employees");
+  const paginationLabels = useDataTablePaginationLabels("employees");
+  const locale = i18n.resolvedLanguage ?? i18n.language;
+  const queryClient = useQueryClient();
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 10 });
+  const [pendingDelete, setPendingDelete] = useState<Employee | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const { businesses, business } = useActiveBusiness();
+  const employees = useQuery({
+    queryKey: ["employees", business?.businessId, pagination.pageIndex, pagination.pageSize],
+    queryFn: () => requestJson<{ employees: Employee[]; services: ServiceOption[]; today: string; pagination: { total: number } }>(`/api/employees?businessId=${encodeURIComponent(business!.businessId)}&limit=${pagination.pageSize}&offset=${pagination.pageIndex * pagination.pageSize}`),
+    enabled: Boolean(business),
+    // Keep the current rows on screen while the next page loads.
+    placeholderData: keepPreviousForBusiness(business?.businessId),
+  });
+  const remove = useMutation({
+    onError: error => toast.error(error instanceof Error ? error.message : t("table.actions.deleteFailed")),
+    mutationFn: (employee: Employee) => requestJson(`/api/employees/${encodeURIComponent(employee.id)}?businessId=${encodeURIComponent(business!.businessId)}`, { method: "DELETE" }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["employees", business?.businessId] }),
+  });
+
+  const rows = employees.data?.employees ?? [];
+  const services = useMemo(() => employees.data?.services ?? [], [employees.data?.services]);
+  const today = employees.data?.today ?? toDay(new Date());
+  const total = employees.data?.pagination.total ?? 0;
+  const canMutate = business ? ["business_owner", "business_admin"].includes(business.role) : false;
+
+  useEffect(() => {
+    if (!employees.data) return;
+    setPagination((current) => {
+      const finalPage = Math.max(0, Math.ceil(total / current.pageSize) - 1);
+      return current.pageIndex > finalPage ? { ...current, pageIndex: finalPage } : current;
+    });
+  }, [total, employees.data]);
+
+  const openEditor = (employee: Employee | null) => { setEditingEmployee(employee); setDialogOpen(true); };
+
+  const columns = useMemo<Array<ColumnDef<typeof paginationFeatures, Employee>>>(() => [
+    {
+      id: "name",
+      accessorKey: "name",
+      header: () => t("table.name"),
+      cell: ({ row }) => <div className="flex min-w-0 items-center gap-2"><UserRound aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" /><span className="ph-mask block truncate type-item-title" title={row.original.name}>{row.original.name}</span></div>,
+    },
+    {
+      id: "phone",
+      accessorKey: "phone",
+      header: () => t("table.phone"),
+      cell: ({ row }) => <span className="ph-no-capture block truncate type-body-muted">{row.original.phone ? formatPhoneNumberDisplay(row.original.phone, locale) : "—"}</span>,
+    },
+    {
+      id: "services",
+      accessorKey: "serviceIds",
+      header: () => t("table.services"),
+      cell: ({ row }) => {
+        const label = serviceSummary(row.original.serviceIds, services, t("table.allServices"));
+        return <span className="block truncate type-body-muted" title={label}>{label || "—"}</span>;
+      },
+    },
+    {
+      id: "status",
+      accessorKey: "status",
+      header: () => t("table.status"),
+      cell: ({ row }) => {
+        const { status, timeOff } = row.original;
+        // The time off going on today, or the next one.
+        const current = timeOff.find((entry) => entry.startsOn <= today && today <= entry.endsOn);
+        const next = timeOff.find((entry) => entry.startsOn > today);
+        const detail = current
+          ? t("table.statusDetail.until", { date: formatDay(current.endsOn, locale) })
+          : status === "no_services" ? t("table.statusDetail.noServices")
+            : next ? t("table.statusDetail.offFrom", { date: formatDay(next.startsOn, locale) }) : "";
+        const tooltip = timeOff.length ? t("table.statusTooltip.timeOff", { dates: timeOff.map((entry) => formatTimeOff(entry, locale)).join("; ") }) : status === "no_services" ? t("table.statusTooltip.noServices") : "";
+        const content = <>
+          <Status variant={EMPLOYEE_STATUS_VARIANTS[status]}>{t(`table.statuses.${status}`)}</Status>
+          {detail ? <span className="truncate type-body-muted">{detail}</span> : null}
+        </>;
+        return tooltip
+          ? <Tooltip><TooltipTrigger render={<div className="flex w-fit max-w-full min-w-0 items-center gap-2" />}>{content}</TooltipTrigger><TooltipContent>{tooltip}</TooltipContent></Tooltip>
+          : <div className="flex min-w-0 items-center gap-2">{content}</div>;
+      },
+    },
+    {
+      id: "added",
+      accessorKey: "createdAt",
+      header: () => t("table.added"),
+      cell: ({ row }) => formatDateTime(row.original.createdAt, locale, { dateStyle: "medium", timeStyle: "short" }),
+    },
+    {
+      id: "actions",
+      header: () => null,
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button aria-label={t("table.actions.moreOptions")} size="icon-sm" title={t("table.actions.moreOptions")} type="button" variant="ghost" />}><MoreHorizontal /></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-0 w-fit" side="bottom" sideOffset={8}>
+            <DropdownMenuItem disabled={!canMutate} onClick={() => openEditor(row.original)}><Pencil />{t("table.actions.editEmployee")}</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={!canMutate} onClick={() => setPendingDelete(row.original)} variant="destructive"><Trash2 />{t("table.actions.deleteEmployee")}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ], [canMutate, locale, services, t, today]);
+
+  const table = useTable({ features: paginationFeatures, columns, data: rows, manualPagination: true, rowCount: total, onPaginationChange: setPagination, state: { pagination } });
+
+  const loading = businesses.isLoading || employees.isLoading;
+
+  return (
+    <div className="flex flex-1 flex-col gap-6">
+      <HeaderActions>
+        {loading && (businesses.isLoading || canMutate) ? <HeaderButtonSkeleton label={t("add.button")} /> : canMutate ? <Button onClick={() => openEditor(null)}><Plus data-icon="inline-start" />{t("add.button")}</Button> : null}
+      </HeaderActions>
+      <TableCard>
+        <Table className={cn("w-full table-fixed", (loading || table.getRowModel().rows.length > 0) && "min-w-[60rem]")}>
+          <colgroup><col className="w-[16%]" /><col className="w-[15%]" /><col className="w-[22%]" /><col className="w-[25%]" /><col className="w-[22%]" /><TableActionsColumn /></colgroup>
+          <TableHeader empty={!(loading || table.getRowModel().rows.length > 0)}>{table.getHeaderGroups().map((group) => <TableRow key={group.id}>{group.headers.map((header) => <TableHead className={header.column.id === "added" || header.column.id === "actions" ? "text-right" : undefined} key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
+          <TableBody aria-busy={loading || undefined}>
+            {loading ? <EmployeeRowsSkeleton rows={Math.min(pagination.pageSize, 10)} /> : null}
+            {loading ? null : table.getRowModel().rows.map((row) => <TableRow className={canMutate ? "cursor-pointer" : undefined} key={row.id} onClick={() => { if (canMutate) openEditor(row.original); }}>{row.getAllCells().map((cell) => <TableCell className={cell.column.id === "added" ? "text-right type-body-muted" : cell.column.id === "actions" ? undefined : "max-w-0"} key={cell.id} onClick={cell.column.id === "actions" ? (event) => event.stopPropagation() : undefined}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>)}</TableRow>)}
+            {!loading && table.getRowModel().rows.length === 0 ? <TableRow><TableCell className="h-24 text-center whitespace-normal text-muted-foreground" colSpan={6}>{t("table.emptyState")}</TableCell></TableRow> : null}
+          </TableBody>
+        </Table>
+      </TableCard>
+      {loading ? <DataTablePaginationSkeleton rowsPerPage={paginationLabels.rowsPerPage} /> : <DataTablePagination labels={paginationLabels} table={table} />}
+      {business ? <EmployeeDialog businessId={business.businessId} employee={editingEmployee} onOpenChange={setDialogOpen} open={dialogOpen} services={services} today={today} /> : null}
+      <ConfirmActionDialog confirmVariant="destructive" cancelLabel={t("table.actions.deleteCancel")} confirmLabel={t("table.actions.deleteConfirm")} description={t("table.actions.deleteDescription")} onConfirm={async () => { if (!pendingDelete) return; await remove.mutateAsync(pendingDelete); setPendingDelete(null); toast.success(t("table.actions.deleted")); }} onOpenChange={(open) => { if (!open && !remove.isPending) setPendingDelete(null); }} open={Boolean(pendingDelete)} pending={remove.isPending} title={t("table.actions.deleteTitle")} />
+    </div>
+  );
+}
+
+function ServicesPicker({ id, invalid, label, onChange, services, value }: { id: string; invalid: boolean; label: string; onChange: (value: string[]) => void; services: ServiceOption[]; value: string[] }) {
+  const { t } = useTranslation("employees");
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const chosen = new Set(value);
+  const visible = services.filter((service) => service.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const allVisibleChosen = visible.length > 0 && visible.every((service) => chosen.has(service.id));
+  // Select all applies to the services the filter shows, so a search can narrow it.
+  const toggleVisible = () => {
+    const visibleIds = new Set(visible.map((service) => service.id));
+    onChange(allVisibleChosen ? value.filter((serviceId) => !visibleIds.has(serviceId)) : services.filter((service) => chosen.has(service.id) || visibleIds.has(service.id)).map((service) => service.id));
+  };
+  const toggle = (serviceId: string, checked: boolean) => onChange(services.filter((service) => service.id === serviceId ? checked : chosen.has(service.id)).map((service) => service.id));
+
+  return <Popover onOpenChange={(next) => { setOpen(next); if (!next) setQuery(""); }} open={open}>
+    <PopoverTrigger render={<button aria-describedby={invalid ? `${id}-error` : undefined} className={PICKER_TRIGGER_CLASS} data-invalid={invalid || undefined} id={id} type="button" />}>
+      <span className={label ? "min-w-0 flex-1 truncate text-left" : "min-w-0 flex-1 truncate text-left text-muted-foreground"}>{label || t("add.fields.services.placeholder")}</span>
+      <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+    </PopoverTrigger>
+    <PopoverContent align="start" className="w-(--anchor-width) gap-0 p-0" initialFocus={searchRef}>
+      <div className="border-b p-2">
+        <SearchInput aria-label={t("add.fields.services.search")} onValueChange={setQuery} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} placeholder={t("add.fields.services.search")} ref={searchRef} value={query} />
+      </div>
+      {visible.length ? <div className="flex max-h-64 flex-col overflow-x-hidden overflow-y-auto p-1">
+        <label className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 font-medium hover:bg-muted">
+          <Checkbox checked={allVisibleChosen} onCheckedChange={toggleVisible} />{t(allVisibleChosen ? "add.fields.services.unselectAll" : "add.fields.services.selectAll")}
+        </label>
+        <div className="mx-3 my-1 border-t" />
+        {visible.map((service) => <label className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 hover:bg-muted" key={service.id}>
+          <Checkbox checked={chosen.has(service.id)} onCheckedChange={(checked) => toggle(service.id, checked)} /><span className="min-w-0 truncate">{service.name}</span>
+        </label>)}
+      </div> : <p className="px-3 py-6 text-center text-muted-foreground">{t("add.fields.services.noMatches")}</p>}
+    </PopoverContent>
+  </Popover>;
+}
+
+function TimeOffPicker({ invalid, label, locale, onChange, today, value }: { invalid: boolean; label: string; locale: string; onChange: (value: TimeOff | null) => void; today: string; value: TimeOff | null }) {
+  const { t } = useTranslation("employees");
+  const selected: DateRange | undefined = value ? { from: parseDay(value.startsOn), to: parseDay(value.endsOn) } : undefined;
+  // New time off with no dates yet goes straight to the calendar.
+  return <Popover defaultOpen={!value}>
+    <PopoverTrigger render={<button aria-label={label} className={PICKER_TRIGGER_CLASS} data-invalid={invalid || undefined} type="button" />}>
+      <span className={value ? "min-w-0 flex-1 truncate text-left" : "min-w-0 flex-1 truncate text-left text-muted-foreground"}>{value ? formatTimeOff(value, locale) : t("add.fields.timeOff.placeholder")}</span>
+      <CalendarDays aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+    </PopoverTrigger>
+    <PopoverContent align="start" className="w-auto p-0">
+      <Calendar defaultMonth={selected?.from ?? parseDay(today)} disabled={{ before: parseDay(today) }} locale={DAY_PICKER_LOCALES[locale as keyof typeof DAY_PICKER_LOCALES] ?? enUS} mode="range" onSelect={(range: DateRange | undefined) => onChange(range?.from ? { startsOn: toDay(range.from), endsOn: toDay(range.to ?? range.from) } : null)} selected={selected} />
+    </PopoverContent>
+  </Popover>;
+}
+
+function serviceSummary(serviceIds: string[], services: ServiceOption[], allLabel: string): string {
+  const chosen = new Set(serviceIds);
+  if (services.length > 1 && services.every((service) => chosen.has(service.id))) return allLabel;
+  return services.filter((service) => chosen.has(service.id)).map((service) => service.name).join(", ");
+}
+
+function EmployeeDialog({ businessId, employee, open, onOpenChange, services, today }: { businessId: string; employee: Employee | null; open: boolean; onOpenChange: (open: boolean) => void; services: ServiceOption[]; today: string }) {
+  const { i18n, t } = useTranslation("employees");
+  const locale = i18n.resolvedLanguage ?? i18n.language;
+  const queryClient = useQueryClient();
+  const defaultCountry = getDefaultTransferCountry(locale) as Country;
+  const countries = useMemo(() => getPhoneCountryOptions(locale), [locale]);
+  const [dayNames] = useDayNames();
+  const businessHours = useBusinessHours(businessId);
+  const nameId = useId();
+  const phoneId = useId();
+  const servicesId = useId();
+  const hoursId = useId();
+  const timeOffId = useId();
+  const addTimeOffId = useId();
+  const [name, setName] = useState("");
+  const [country, setCountry] = useState<Country>(defaultCountry);
+  const [phone, setPhone] = useState("");
+  // What was typed, so a blank phone (allowed) can be told apart from an incomplete one.
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [phoneProblem, setPhoneProblem] = useState<"exists" | "invalid" | "trialLocked" | "countryUnsupported" | null>(null);
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
+  const [serviceInvalid, setServiceInvalid] = useState(false);
+  // On: the business's hours. Off: the employee's own days and times.
+  const [sameHours, setSameHours] = useState(true);
+  const [days, setDays] = useState<HoursWindowInput[][]>(() => toDays([]));
+  // Each entry keeps its key while its dates change, so its open calendar stays open.
+  const nextTimeOffKey = useRef(0);
+  const [timeOff, setTimeOff] = useState<Array<{ key: number; value: TimeOff | null }>>([]);
+  const [timeOffInvalid, setTimeOffInvalid] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(employee?.name ?? ""); setPhone(employee?.phone ?? ""); setPhoneDraft(employee?.phone ?? ""); setCountry(employee ? (inferPhoneCountry(employee.phone, defaultCountry) ?? defaultCountry) as Country : defaultCountry); setSubmitted(false); setPhoneProblem(null); setServiceInvalid(false);
+    // A new employee starts with every service; anyone can be narrowed down from there.
+    setServiceIds(employee ? employee.serviceIds : services.map((service) => service.id));
+    setSameHours(!employee?.hours);
+    setDays(toDays(employee?.hours ?? []));
+    setTimeOff((employee?.timeOff ?? []).map((value) => ({ key: nextTimeOffKey.current++, value })));
+    setTimeOffInvalid(false);
+  }, [defaultCountry, employee, open, services]);
+
+  const hours = sameHours ? null : windowsForSave(days);
+  const save = useMutation({
+    mutationFn: () => {
+      const query = `businessId=${encodeURIComponent(businessId)}`;
+      const body = JSON.stringify({ name: name.trim(), phone: phone || null, serviceIds, hours: hours?.ok ? hours.hours : null, timeOff: timeOff.flatMap((entry) => entry.value ? [entry.value] : []) });
+      return employee
+        ? requestJson(`/api/employees/${encodeURIComponent(employee.id)}?${query}`, { method: "PATCH", body })
+        : requestJson(`/api/employees?${query}`, { method: "POST", body });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["employees", businessId] });
+      // The appointments calendar shows employees' time off.
+      void queryClient.invalidateQueries({ queryKey: ["time-off", businessId] });
+      toast.success(t(employee ? "edit.updated" : "add.created"));
+      onOpenChange(false);
+    },
+    onError: (error) => {
+      const code = errorCode(error);
+      if (code === "employee_phone_exists") setPhoneProblem("exists");
+      else if (code === "trial_transfer_locked") setPhoneProblem("trialLocked");
+      else if (code === "transfer_number_invalid") setPhoneProblem("invalid");
+      else if (code === "transfer_country_unsupported") setPhoneProblem("countryUnsupported");
+      else if (code === "employee_time_off_invalid") setTimeOffInvalid(true);
+      else if (code === "employee_service_invalid") { setServiceInvalid(true); void queryClient.invalidateQueries({ queryKey: ["employees", businessId] }); }
+      else toast.error(t(employee ? "edit.failed" : "add.failed"));
+    },
+  });
+
+  const nameMissing = submitted && !name.trim();
+  const phoneIncomplete = /\d/.test(phoneDraft) && !phone;
+  const phoneError = submitted && phoneIncomplete ? t("add.fields.phone.invalid") : phoneProblem ? t(`add.fields.phone.${phoneProblem}`) : null;
+  const knownServiceIds = serviceIds.filter((id) => services.some((service) => service.id === id));
+  const servicesError = submitted && !knownServiceIds.length && services.length ? t("add.fields.services.required") : serviceInvalid ? t("add.fields.services.invalid") : null;
+  const servicesLabel = serviceSummary(knownServiceIds, services, t("table.allServices"));
+  const hoursProblem = !hours ? null : !hours.ok ? t("hours.invalid", { ns: "agent", day: dayNames[hours.dayOfWeek] }) : !hours.hours.length ? t("add.fields.hours.required") : null;
+  const hoursError = submitted ? hoursProblem : null;
+  const timeOffMissing = timeOff.some((entry) => !entry.value);
+  const timeOffError = submitted && timeOffMissing ? t("add.fields.timeOff.required") : timeOffInvalid ? t("add.fields.timeOff.invalid") : null;
+  const editTimeOff = (next: Array<{ key: number; value: TimeOff | null }>) => { setTimeOff(next); setTimeOffInvalid(false); };
+
+  return <Dialog onOpenChange={onOpenChange} open={open}>
+    <DialogContent className="max-h-[calc(100svh-2rem)] grid-rows-[auto_minmax(0,1fr)]">
+      <DialogHeader><DialogTitle>{t(employee ? "edit.title" : "add.title")}</DialogTitle><DialogDescription>{t(employee ? "edit.description" : "add.description")}</DialogDescription></DialogHeader>
+      <form className="flex min-h-0 flex-col gap-6" noValidate onSubmit={(event) => { event.preventDefault(); setSubmitted(true); if (!save.isPending && name.trim() && !phoneIncomplete && knownServiceIds.length && !hoursProblem && !timeOffMissing) save.mutate(); }}>
+        <div className="-m-1 min-h-0 overflow-x-hidden overflow-y-auto p-1">
+          <FieldGroup>
+            <Field data-invalid={nameMissing || undefined}>
+              <FieldLabel htmlFor={nameId}>{t("add.fields.name.label")}</FieldLabel>
+              <Input aria-describedby={nameMissing ? `${nameId}-error` : undefined} aria-invalid={nameMissing || undefined} id={nameId} maxLength={200} onChange={(event) => setName(event.target.value)} placeholder={t("add.fields.name.placeholder")} value={name} />
+              {nameMissing ? <FieldError id={`${nameId}-error`}>{t("add.fields.name.required")}</FieldError> : null}
+            </Field>
+            <Field data-invalid={phoneError ? true : undefined}>
+              <FieldContent><FieldLabel htmlFor={phoneId}>{t("add.fields.phone.label")}</FieldLabel><FieldDescription>{t("add.fields.phone.hint")}</FieldDescription></FieldContent>
+              <div className="flex min-w-0">
+                <PhoneCountrySelect ariaLabel={t("add.fields.phone.country")} className="rounded-r-none px-4 font-medium text-muted-foreground" countries={countries.filter((option) => isTransferCountry(option.code))} onChange={(next) => { setCountry(next as Country); setPhone(""); setPhoneDraft(""); setPhoneProblem(null); }} value={country} />
+                <PhoneInput aria-describedby={phoneError ? `${phoneId}-error` : undefined} aria-invalid={phoneError ? true : undefined} className="rounded-l-none border-l-0" containerClassName="min-w-0 flex-1" country={country} id={phoneId} limitNationalDigits locale={locale} onChange={(value) => { setPhone(value ?? ""); setPhoneProblem(null); }} onRawValueChange={(raw) => { setPhoneDraft(raw); if (raw.trim().startsWith("+")) { const inferred = inferPhoneCountry(raw, country); if (inferred && inferred !== country) setCountry(inferred as Country); } }} value={phone} />
+              </div>
+              {phoneError ? <FieldError id={`${phoneId}-error`}>{phoneError}</FieldError> : null}
+            </Field>
+            <Field data-invalid={servicesError ? true : undefined}>
+              <FieldContent><FieldLabel htmlFor={servicesId}>{t("add.fields.services.label")}</FieldLabel><FieldDescription>{t(services.length ? "add.fields.services.hint" : "add.fields.services.empty")}</FieldDescription></FieldContent>
+              {services.length ? (
+                <ServicesPicker id={servicesId} invalid={Boolean(servicesError)} label={servicesLabel} onChange={(value) => { setServiceIds(value); setServiceInvalid(false); }} services={services} value={knownServiceIds} />
+              ) : (
+                <Button className="w-fit" nativeButton={false} render={<Link href="/business/services" />} variant="outline">{t("add.fields.services.goToServices")}</Button>
+              )}
+              {servicesError ? <FieldError id={`${servicesId}-error`}>{servicesError}</FieldError> : null}
+            </Field>
+            <div className="flex flex-col gap-3">
+              <Field orientation="horizontal">
+                <FieldContent><FieldLabel htmlFor={hoursId}>{t("add.fields.hours.label")}</FieldLabel><FieldDescription>{t("add.fields.hours.hint")}</FieldDescription></FieldContent>
+                {/* Custom hours start from the business's, so the owner only changes what differs. */}
+                <Switch checked={sameHours} id={hoursId} onCheckedChange={(checked) => { setSameHours(checked); if (!checked && !days.some((day) => day.length)) setDays(toDays(businessHours.data?.hours ?? [])); }} />
+              </Field>
+              {sameHours ? null : <Field data-invalid={hoursError ? true : undefined}>
+                <WeeklyHoursEditor days={days} disabled={save.isPending} onChange={(dayOfWeek, windows) => setDays((current) => current.map((day, index) => (index === dayOfWeek ? windows : day)))} />
+                {hoursError ? <FieldError>{hoursError}</FieldError> : null}
+              </Field>}
+            </div>
+            <Field data-invalid={timeOffError ? true : undefined}>
+              <FieldContent><FieldLabel htmlFor={addTimeOffId} id={timeOffId}>{t("add.fields.timeOff.label")}</FieldLabel><FieldDescription>{t("add.fields.timeOff.hint")}</FieldDescription></FieldContent>
+              {timeOff.map((entry) => <div className="flex items-center gap-2" key={entry.key}>
+                <div className="min-w-0 flex-1"><TimeOffPicker invalid={(submitted && !entry.value) || timeOffInvalid} label={t("add.fields.timeOff.dates")} locale={locale} onChange={(value) => editTimeOff(timeOff.map((item) => (item.key === entry.key ? { ...item, value } : item)))} today={today} value={entry.value} /></div>
+                <Button aria-label={t("add.fields.timeOff.remove")} onClick={() => editTimeOff(timeOff.filter((item) => item.key !== entry.key))} size="icon-sm" type="button" variant="ghost"><X /></Button>
+              </div>)}
+              <Button aria-labelledby={`${timeOffId} ${addTimeOffId}`} className="w-fit" id={addTimeOffId} onClick={() => editTimeOff([...timeOff, { key: nextTimeOffKey.current++, value: null }])} size="sm" type="button" variant="outline"><Plus data-icon="inline-start" />{t("add.fields.timeOff.add")}</Button>
+              {timeOffError ? <FieldError>{timeOffError}</FieldError> : null}
+            </Field>
+          </FieldGroup>
+        </div>
+        <DialogFooter><Button disabled={save.isPending} onClick={() => onOpenChange(false)} type="button" variant="outline">{t("add.cancel")}</Button><Button disabled={save.isPending || !services.length} type="submit">{save.isPending ? t("add.saving") : t(employee ? "edit.save" : "add.save")}</Button></DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>;
+}

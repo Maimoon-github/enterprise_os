@@ -1,0 +1,145 @@
+---
+title: "Dokploy on a VPS"
+description: "Deploy AgentSDR on your own server with Dokploy: Dockerfile build, environment, domain with HTTPS, Postgres, scheduled jobs and deploy on push."
+icon: "server-cog"
+---
+
+[Dokploy](https://dokploy.com) is a self-hosted platform that builds and runs Docker apps on your own VPS, with domains and HTTPS handled for you. The AgentSDR maintainers deploy this way. Use it when you want deploy-on-push instead of managing Compose by hand.
+
+<Info>
+**What you need**
+
+- A VPS with Dokploy installed ([Dokploy installation docs](https://docs.dokploy.com/docs/core/installation)) and access to its dashboard.
+- A domain whose DNS you control, pointing at the server's IP address.
+- The AgentSDR repository on GitHub (the public one, or your fork).
+- About 30 minutes.
+</Info>
+
+## Overview
+
+Dokploy builds the repository's `Dockerfile` into an image and runs it as one **Application**. It does not run `docker-compose.yml`, so the database is set up by hand here. The schema and the scheduled jobs need nothing from you: the image creates the schema on start and runs the jobs itself.
+
+| Compose gave you | On Dokploy |
+|---|---|
+| `db` service | A Dokploy **Postgres** database service, or an external PostgreSQL 16+. |
+| Schema creation | Automatic: the app creates it in an empty database when it starts. |
+| Scheduled jobs | Automatic: the app runs them itself. |
+
+```mermaid
+flowchart LR
+  gh[GitHub push] --> dok[Dokploy builds the Dockerfile]
+  dok --> app[AgentSDR app container]
+  app --> pg[(Postgres service)]
+  traefik[Traefik + Let's Encrypt] --> app
+```
+
+<Warning>
+Run exactly one replica of the app. The outreach sender loop has no distributed lock; two instances would each send.
+</Warning>
+
+<Steps>
+  <Step title="Create the Postgres database">
+    In your Dokploy project, create a service of type **Postgres** and deploy it. Make sure its Docker image is PostgreSQL 16 or newer (the database Advanced settings let you set a custom Docker image), and set a strong password (`openssl rand -hex 32`). On the database's page, copy the **Internal** connection details: the internal host name, port, user, password and database name. Use the internal credentials, not the external ones: the app runs in the same network, and the Dokploy docs advise against exposing the database publicly ([connection docs](https://docs.dokploy.com/docs/core/databases/connection)).
+
+    Your connection string is:
+
+    ```text
+    postgres://USER:PASSWORD@INTERNAL_HOST:5432/DATABASE
+    ```
+
+    Alternatively use any external PostgreSQL 16+ (a hosted one) and skip this step. The database must be **empty**.
+  </Step>
+  <Step title="Create the application from GitHub">
+    In the same project, create a service of type **Application**. In its **General** tab choose your Git provider (GitHub, after connecting Dokploy to your GitHub account; a plain **Git** URL also works for a public repository), select the repository, and set the branch to `main` (or the branch you deploy). Save.
+
+    {/* SCREENSHOT: the Provider section of an application's General tab with the AgentSDR repository and branch selected | Dokploy dashboard, Application, General | the repository, branch and Save button */}
+  </Step>
+  <Step title="Set the build type to Dockerfile">
+    Still in **General**, under **Build Type** choose **Dockerfile** and set:
+
+    - **Dockerfile Path**: `Dockerfile`
+    - **Docker Context Path**: `.`
+    - **Docker Build Stage**: leave empty (the Dockerfile's last stage is the one to run).
+
+    Field names are from the [Dokploy build type docs](https://docs.dokploy.com/docs/core/applications/build-type). Save.
+
+    The image builds the Next.js app (`bun run build`) and needs **no secrets at build time**: Dokploy writes the environment you set into a `.env` file, and this repository's `.dockerignore` excludes `.env*` from the build context, so secrets never enter the image. All settings are read at runtime, and `BETTER_AUTH_URL` too, so you do not set Build-time Arguments.
+  </Step>
+  <Step title="Set the environment variables">
+    Open the **Environment** tab and paste the variables below (generate each secret with `openssl rand -hex 32`; see the [Docker Compose page](/self-hosting/docker-compose) for what each is). Save.
+
+    ```sh
+    DATABASE_URL=postgres://USER:PASSWORD@INTERNAL_HOST:5432/DATABASE
+    DATABASE_SSL=disable
+    BETTER_AUTH_URL=https://sdr.example.com
+    BETTER_AUTH_SECRET=PASTE
+    INTEGRATION_CREDENTIALS_KEY=PASTE
+    UNSUBSCRIBE_SECRET=PASTE
+    RESEND_API_KEY=PASTE
+    AUTH_EMAIL_FROM="AgentSDR <auth@yourdomain.com>"
+    ```
+
+    `DATABASE_SSL=disable` is for Dokploy's own Postgres, which does not use TLS inside the network. For a hosted external database leave `DATABASE_SSL` out so TLS stays on. `BETTER_AUTH_URL` must be the final public https origin with no trailing slash. Store a copy of `INTEGRATION_CREDENTIALS_KEY` outside Dokploy. `CRON_SECRET` and `OUTREACH_TICK_SECRET` are optional: add them only if you call the job endpoints from outside.
+  </Step>
+  <Step title="Add the domain">
+    First create a DNS `A` record for your host (for example `sdr.example.com`) pointing at the VPS IP. Then open the **Domains** tab and add a domain with:
+
+    - **Host**: `sdr.example.com`
+    - **Path**: `/`
+    - **Container Port**: `3000` (the image listens on 3000)
+    - **HTTPS**: on
+    - **Certificate**: Let's Encrypt
+
+    Dokploy routes through Traefik and obtains the certificate ([domains docs](https://docs.dokploy.com/docs/core/domains)). Do not publish port 3000 on the host.
+
+    {/* SCREENSHOT: the add-domain dialog | Dokploy dashboard, Application, Domains | Host, Container Port 3000, HTTPS toggle and Let's Encrypt certificate */}
+  </Step>
+  <Step title="Deploy">
+    Click **Deploy** and watch the build in the **Deployments** tab and the **Logs** tab. The first build takes several minutes. Next.js builds use a lot of memory; if the build is killed on a small VPS, add swap or build the image elsewhere (Dokploy recommends building in a CI pipeline and deploying a registry image for production).
+  </Step>
+  <Step title="Check the first start">
+    On its first start the app creates the database schema (the **Logs** tab shows `Database ready: N tables.`) and starts the [scheduled jobs](/self-hosting/production#scheduled-jobs) inside the container, so there is nothing to schedule in Dokploy. If the schema step fails the app does not start; see [Troubleshooting](/self-hosting/troubleshooting).
+
+    Upgrading from a version that used Schedule Jobs? Create the scheduler's table once, inside the app container: `docker exec -it CONTAINER_NAME bun scripts/create-scheduled-job-runs.ts` (until then the app runs no scheduled jobs and says so in its log). The existing Schedule Jobs are harmless (the app skips work it already did, see [Scheduled jobs](/self-hosting/production#scheduled-jobs)), so you can delete them. Keep `CRON_SECRET` and `OUTREACH_TICK_SECRET` only if you keep calling the endpoints.
+  </Step>
+  <Step title="Turn on deploy on push">
+    In the application's settings enable **Auto Deploy**. With the GitHub provider Dokploy deploys when you push; for other Git providers copy the generated webhook URL into your repository's webhooks. The branch configured in Dokploy must match the branch you push to, otherwise Dokploy reports "Branch Not Match" ([auto deploy docs](https://docs.dokploy.com/docs/core/auto-deploy)).
+
+    Before pushing an update, check [Upgrading](/self-hosting/production#upgrading): a release may name a database migration to run first.
+  </Step>
+</Steps>
+
+## Check that it works
+
+<Check>
+`https://sdr.example.com/sign-in` loads over HTTPS, the **Logs** tab shows no database errors, and the logs show `[scheduler] ...` lines as jobs run. Sign up, create your organization, then continue with [Going to production](/self-hosting/production).
+</Check>
+
+## Backups
+
+Dokploy can back up its Postgres service to an S3 destination from the database's backups section. Keep a copy of `INTEGRATION_CREDENTIALS_KEY` separately; see [Backups and restore](/self-hosting/production#backups-and-restore).
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="DATABASE_URL is not set — copy .env.example to .env.local and fill it in">
+    The environment was not saved or the app was not redeployed after saving it. Check the **Environment** tab and redeploy.
+  </Accordion>
+  <Accordion title="This database already has tables">
+    The start-up setup only runs on an empty database; on an existing one it prints `Database already initialised — nothing to do.` and continues. See [Troubleshooting](/self-hosting/troubleshooting).
+  </Accordion>
+  <Accordion title="Bad gateway or the certificate is not issued">
+    Check that the DNS record points at the server, the **Container Port** is `3000`, and ports 80 and 443 are open on the VPS.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Going to production" icon="rocket" href="/self-hosting/production">
+    Sign-up policy, email, upgrades.
+  </Card>
+  <Card title="Troubleshooting" icon="life-buoy" href="/self-hosting/troubleshooting">
+    Real error messages and fixes.
+  </Card>
+</CardGroup>

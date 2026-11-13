@@ -1,0 +1,15 @@
+{
+  "title": "Boîte de réception",
+  "filters": {
+    "label": "Canal",
+    "all": "Tout",
+    "agent": "Agent",
+    "allAgents": "Tous les agents"
+  },
+  "empty": "Aucun appel ni message pour l'instant.",
+  "noMatch": "Rien ne correspond à ces filtres.",
+  "pick": "Choisissez une conversation pour la lire.",
+  "loadMore": "Charger plus",
+  "back": "Boîte de réception",
+  "handledBy": "Pris en charge par <agent>{{name}}</agent>"
+}

@@ -1,0 +1,1060 @@
+{
+  "l1": [
+    "Adult",
+    "Antiques & Collectibles",
+    "Apparel",
+    "Arts & Entertainment",
+    "Attractions",
+    "Autos & Vehicles",
+    "Beauty & Fitness",
+    "Books & Literature",
+    "Business & Industrial",
+    "Computers",
+    "Consumer Electronics",
+    "Coupons & Discounts",
+    "Finance",
+    "Firearms & Weapons",
+    "Food & Drink",
+    "Games",
+    "Gifts & Special Events",
+    "Health",
+    "Holidays & Seasonal",
+    "Home & Garden",
+    "Internet",
+    "Jobs & Education",
+    "Legal Services",
+    "Libraries & Museums",
+    "Mass Merchants & Department Stores",
+    "None",
+    "People & Society",
+    "Pets & Animals",
+    "Photo & Video Services",
+    "Safety & Survival",
+    "Science",
+    "Smoking & Vaping",
+    "Sports",
+    "Toys & Hobbies",
+    "Travel",
+    "Wedding"
+  ],
+  "l2": {
+    "Apparel": [
+      "Athletic Apparel",
+      "Casual Apparel",
+      "Children's Clothing",
+      "Clothing Accessories",
+      "Costumes",
+      "Eyewear",
+      "Footwear",
+      "Formal Wear",
+      "Headwear",
+      "Men's Clothing",
+      "Swimwear",
+      "Undergarments",
+      "Women's Clothing"
+    ],
+    "Arts & Entertainment": [
+      "Comics & Animation",
+      "Concerts & Music Festivals",
+      "Humor",
+      "Movies",
+      "Music & Audio",
+      "Performing Arts",
+      "TV Shows & Programs",
+      "Visual Art & Design"
+    ],
+    "Beauty & Fitness": [
+      "Body Art",
+      "Cosmetic Procedures",
+      "Face & Body Care",
+      "Fitness",
+      "Hair Care",
+      "Spas & Beauty Services",
+      "Weight Loss"
+    ],
+    "Health": [
+      "Aging & Geriatrics",
+      "Health Conditions",
+      "Health Education & Medical Training",
+      "Medical Devices & Equipment",
+      "Medical Services",
+      "Men's Health",
+      "Mental Health",
+      "Nursing",
+      "Nutrition",
+      "Occupational Health & Safety",
+      "Oral & Dental Care",
+      "Pharmacy",
+      "Reproductive Health",
+      "Social Services",
+      "Substance Abuse",
+      "Vision Care",
+      "Women's Health"
+    ],
+    "Home & Garden": [
+      "Bed & Bath",
+      "Cleaning",
+      "Gardening & Landscaping",
+      "HVAC & Climate Control",
+      "Home & Interior Decor",
+      "Home Appliances",
+      "Home Furnishings",
+      "Home Improvement",
+      "Home Safety & Security",
+      "Home Storage & Shelving",
+      "Home Swimming Pools Saunas & Spas",
+      "Kitchen & Dining",
+      "Laundry",
+      "Nursery & Playroom",
+      "Pest Control",
+      "Yard & Patio"
+    ],
+    "Business & Industrial": [
+      "Advertising & Marketing",
+      "Agriculture & Forestry",
+      "Business Finance",
+      "Business Operations",
+      "Business Services",
+      "Chemicals Industry",
+      "Construction & Maintenance",
+      "Industrial Materials & Equipment",
+      "Mail & Package Delivery",
+      "Manufacturing",
+      "Metals & Mining",
+      "Moving & Relocation",
+      "Packaging",
+      "Pharmaceuticals & Biotech",
+      "Printing & Publishing",
+      "Renewable & Alternative Energy",
+      "Retail Equipment & Technology"
+    ],
+    "Games": [
+      "Arcade & Coin-Op Games",
+      "Board Games",
+      "Card Games",
+      "Computer & Video Games",
+      "Puzzles & Brainteasers",
+      "Roleplaying Games",
+      "Table Games"
+    ],
+    "Sports": [
+      "Animal Sports",
+      "College Sports",
+      "Combat Sports",
+      "Extreme Sports",
+      "Fantasy Sports",
+      "Individual Sports",
+      "Motor Sports",
+      "Sporting Goods",
+      "Sports Coaching & Training",
+      "Team Sports",
+      "Trophies and Awards",
+      "Water Sports",
+      "Winter Sports"
+    ],
+    "Autos & Vehicles": [
+      "Boats & Watercraft",
+      "Campers & RVs",
+      "Classic Vehicles",
+      "Motor Vehicles",
+      "Parts & Services",
+      "Repair & Maintenance",
+      "Safety"
+    ],
+    "Finance": [
+      "Accounting & Auditing",
+      "Investing"
+    ],
+    "Toys & Hobbies": [
+      "Arts & Crafts",
+      "Building Toys",
+      "Die-cast & Toy Vehicles",
+      "Dolls",
+      "Drawing & Coloring",
+      "Radio Control & Modeling",
+      "Ride-On Toys",
+      "Stuffed Toys"
+    ],
+    "Food & Drink": [
+      "Beverages",
+      "Food"
+    ],
+    "Gifts & Special Events": [
+      "Cards & Greetings",
+      "Flowers"
+    ],
+    "People & Society": [
+      "Family & Relationships",
+      "Kids & Teens",
+      "Politics",
+      "Religion & Belief",
+      "Social Issues & Advocacy",
+      "Social Networks",
+      "Subcultures & Niche Interests"
+    ],
+    "Safety & Survival": [
+      "Military",
+      "Safety"
+    ],
+    "Books & Literature": [
+      "Calendars",
+      "Children's Literature",
+      "E-Books",
+      "Geographic Reference",
+      "Language",
+      "Notebooks & Planners",
+      "Poetry",
+      "Writers Resources"
+    ],
+    "Jobs & Education": [
+      "Business",
+      "Education",
+      "Health",
+      "Jobs"
+    ],
+    "Science": [
+      "Astronomy",
+      "Biological Sciences",
+      "Chemistry",
+      "Computer Science",
+      "Earth Sciences",
+      "Ecology & Environment",
+      "Engineering & Technology",
+      "Mathematics"
+    ],
+    "Pets & Animals": [
+      "Birds",
+      "Cats",
+      "Dogs",
+      "Exotic Pets",
+      "Fish & Aquaria",
+      "Horses",
+      "Pet Food & Supplies",
+      "Rabbits & Rodents",
+      "Reptiles & Amphibians",
+      "Veterinary & Health"
+    ],
+    "Computers": [
+      "CAD & CAM",
+      "Computer Hardware",
+      "Computer Security",
+      "Electronics & Electrical",
+      "Game Systems & Consoles",
+      "Networking",
+      "Software"
+    ],
+    "Consumer Electronics": [
+      "Audio Equipment",
+      "Camera & Photo Equipment",
+      "Car Electronics",
+      "Drones & RC Aircraft",
+      "GPS & Navigation",
+      "Mobile & Wireless",
+      "Radio & Communications",
+      "TV & Video Equipment"
+    ],
+    "Internet": [
+      "Voice & Video Chat",
+      "Web Services"
+    ],
+    "Travel": [
+      "Air Travel",
+      "Bags & Luggage",
+      "Bus & Rail",
+      "Car Rental & Taxi Services",
+      "Cruises & Charters",
+      "Hotels & Accommodations"
+    ],
+    "Attractions": [
+      "Regional Parks & Gardens",
+      "Theme Parks",
+      "Zoos, Aquariums & Preserves"
+    ],
+    "Smoking & Vaping": [
+      "Cannabis"
+    ],
+    "Legal Services": [
+      "Visa & Immigration"
+    ]
+  },
+  "l3": {
+    "Arts & Entertainment > Performing Arts": [
+      "Acting & Theater",
+      "Circus",
+      "Dance",
+      "Magic"
+    ],
+    "Beauty & Fitness > Face & Body Care": [
+      "Hygiene & Toiletries",
+      "Make-Up & Cosmetics",
+      "Perfumes & Fragrances",
+      "Shaving & Hair Removal",
+      "Skin & Nail Care"
+    ],
+    "Beauty & Fitness > Spas & Beauty Services": [
+      "Massage Therapy"
+    ],
+    "Health > Nutrition": [
+      "Special & Restricted Diets",
+      "Vitamins & Supplements"
+    ],
+    "Business & Industrial > Metals & Mining": [
+      "Precious Metals"
+    ],
+    "Arts & Entertainment > Comics & Animation": [
+      "Anime & Manga",
+      "Cartoons",
+      "Comics"
+    ],
+    "Games > Card Games": [
+      "Collectible Card Games",
+      "Poker & Casino Games"
+    ],
+    "Sports > Sporting Goods": [
+      "Fishing",
+      "Hiking & Camping",
+      "Outdoors",
+      "Sports Memorabilia"
+    ],
+    "Arts & Entertainment > Music & Audio": [
+      "Classical Music",
+      "Country Music",
+      "Dance & Electronic Music",
+      "Jazz & Blues",
+      "Music Education & Instruction",
+      "Music Equipment & Technology",
+      "Music Reference",
+      "Pop Music",
+      "Radio & Podcast",
+      "Religious Music",
+      "Rock Music",
+      "Urban & Hip-Hop"
+    ],
+    "Arts & Entertainment > Visual Art & Design": [
+      "Architecture",
+      "Art Museums & Galleries",
+      "Design",
+      "Painting"
+    ],
+    "Business & Industrial > Business Services": [
+      "Consulting",
+      "Corporate Events",
+      "E-Commerce Services",
+      "Office Services",
+      "Office Supplies",
+      "Writing & Editing Services"
+    ],
+    "Food & Drink > Beverages": [
+      "Alcoholic Beverages",
+      "Coffee & Tea",
+      "Juice",
+      "Soft Drinks"
+    ],
+    "Games > Board Games": [
+      "Chess & Abstract Strategy Games",
+      "Miniatures & Wargaming"
+    ],
+    "Home & Garden > Home Furnishings": [
+      "Curtains & Window Treatments",
+      "Kitchen & Dining Furniture",
+      "Lamps & Lighting",
+      "Living Room Furniture",
+      "Rugs & Carpets"
+    ],
+    "Home & Garden > Home Improvement": [
+      "Construction & Power Tools",
+      "Doors & Windows",
+      "Flooring",
+      "House Painting & Finishing",
+      "Plumbing"
+    ],
+    "Home & Garden > HVAC & Climate Control": [
+      "Fireplaces & Stoves"
+    ],
+    "Home & Garden > Kitchen & Dining": [
+      "Cookware & Diningware",
+      "Small Kitchen Appliances"
+    ],
+    "Sports > Combat Sports": [
+      "Boxing",
+      "Martial Arts",
+      "Wrestling"
+    ],
+    "Sports > Team Sports": [
+      "American Football",
+      "Australian Football",
+      "Baseball",
+      "Basketball",
+      "Cheerleading",
+      "Cricket",
+      "Hockey",
+      "Rugby",
+      "Soccer",
+      "Volleyball"
+    ],
+    "Toys & Hobbies > Arts & Crafts": [
+      "Fiber & Textile Arts"
+    ],
+    "People & Society > Family & Relationships": [
+      "Family",
+      "Marriage",
+      "Troubled Relationships"
+    ],
+    "Sports > Individual Sports": [
+      "Cycling",
+      "Golf",
+      "Gymnastics",
+      "Racquet Sports",
+      "Skate Sports",
+      "Track & Field"
+    ],
+    "Sports > Winter Sports": [
+      "Ice Skating",
+      "Skiing & Snowboarding"
+    ],
+    "Autos & Vehicles > Motor Vehicles": [
+      "Electric & Alternative",
+      "Motorcycles & Scooters",
+      "Off-Road",
+      "Trucks & SUVs"
+    ],
+    "Jobs & Education > Jobs": [
+      "Career Resources & Planning",
+      "Job Listings",
+      "Resumes & Portfolios"
+    ],
+    "Business & Industrial > Chemicals Industry": [
+      "Plastics & Polymers"
+    ],
+    "People & Society > Social Issues & Advocacy": [
+      "Charity & Philanthropy",
+      "Green Living & Environmental Issues"
+    ],
+    "Consumer Electronics > Mobile & Wireless": [
+      "Mobile & Wireless Accessories",
+      "Mobile Apps & Add-Ons",
+      "Mobile Phones"
+    ],
+    "Food & Drink > Food": [
+      "BBQ & Grilling",
+      "Baked Goods & Desserts",
+      "Breakfast Foods",
+      "Candy & Sweets",
+      "Grains & Pasta",
+      "Meat & Seafood",
+      "Pizza",
+      "Snack Foods",
+      "Soups & Stews"
+    ],
+    "Jobs & Education > Education": [
+      "Colleges & Universities",
+      "Distance Learning",
+      "Homeschooling",
+      "Languages",
+      "Legal Education",
+      "Primary & Secondary Schooling (K-12)",
+      "Standardized & Admissions Tests",
+      "Teaching & Classroom Resources",
+      "Training & Certification",
+      "Vocational & Continuing Education"
+    ],
+    "Sports > Water Sports": [
+      "Surfing",
+      "Swimming"
+    ],
+    "Computers > Electronics & Electrical": [
+      "Electronic Components",
+      "Power Supplies"
+    ],
+    "Computers > Computer Hardware": [
+      "Computer Components",
+      "Computer Drives & Storage",
+      "Computer Peripherals",
+      "Desktop Computers",
+      "Laptops & Notebooks"
+    ],
+    "Internet > Web Services": [
+      "Web Design & Development"
+    ],
+    "Safety & Survival > Safety": [
+      "Law Enforcement",
+      "Rescue & Emergency",
+      "Security Products"
+    ],
+    "Science > Earth Sciences": [
+      "Geology"
+    ],
+    "Health > Vision Care": [
+      "Eyeglasses & Contacts"
+    ],
+    "Health > Health Conditions": [
+      "AIDS & HIV",
+      "Allergies",
+      "Arthritis",
+      "Cancer",
+      "Diabetes",
+      "Ear Nose & Throat",
+      "Heart & Hypertension",
+      "Pain Management",
+      "Respiratory Conditions",
+      "Skin Conditions",
+      "Sleep Disorders"
+    ],
+    "Beauty & Fitness > Hair Care": [
+      "Hair Loss"
+    ],
+    "Home & Garden > Bed & Bath": [
+      "Bathroom"
+    ],
+    "Computers > Software": [
+      "Business & Productivity Software",
+      "Multimedia Software"
+    ],
+    "Business & Industrial > Agriculture & Forestry": [
+      "Agricultural Equipment",
+      "Beekeeping",
+      "Livestock",
+      "Wood & Forestry"
+    ],
+    "Business & Industrial > Industrial Materials & Equipment": [
+      "Heavy Machinery"
+    ],
+    "Sports > Extreme Sports": [
+      "Drag & Street Racing"
+    ],
+    "Health > Substance Abuse": [
+      "Drug & Alcohol Testing",
+      "Drug & Alcohol Treatment"
+    ],
+    "Health > Pharmacy": [
+      "Drugs & Medications"
+    ],
+    "Health > Medical Services": [
+      "Physical Therapy"
+    ],
+    "Health > Mental Health": [
+      "Anxiety & Stress"
+    ],
+    "Business & Industrial > Advertising & Marketing": [
+      "Public Relations"
+    ],
+    "Science > Engineering & Technology": [
+      "Robotics"
+    ],
+    "Computers > Computer Security": [
+      "Hacking & Cracking"
+    ],
+    "Games > Computer & Video Games": [
+      "Shooter Games",
+      "Simulation Games",
+      "Sports Games"
+    ],
+    "Finance > Investing": [
+      "Currencies & Foreign Exchange",
+      "Stocks & Bonds"
+    ],
+    "Games > Table Games": [
+      "Billiards"
+    ],
+    "Health > Nursing": [
+      "Assisted Living & Long Term Care"
+    ],
+    "Science > Biological Sciences": [
+      "Neuroscience"
+    ],
+    "Science > Mathematics": [
+      "Statistics"
+    ],
+    "Toys & Hobbies > Radio Control & Modeling": [
+      "Model Trains & Railroads"
+    ],
+    "Travel > Air Travel": [
+      "Airport Parking & Transportation"
+    ]
+  },
+  "l4": {},
+  "tree": {
+    "Adult": {},
+    "Apparel": {
+      "Undergarments": {},
+      "Men's Clothing": {},
+      "Women's Clothing": {},
+      "Clothing Accessories": {},
+      "Athletic Apparel": {},
+      "Casual Apparel": {},
+      "Children's Clothing": {},
+      "Eyewear": {},
+      "Footwear": {},
+      "Costumes": {},
+      "Formal Wear": {},
+      "Headwear": {},
+      "Swimwear": {}
+    },
+    "Arts & Entertainment": {
+      "Performing Arts": {
+        "Dance": {},
+        "Acting & Theater": {},
+        "Circus": {},
+        "Magic": {}
+      },
+      "Comics & Animation": {
+        "Anime & Manga": {},
+        "Comics": {},
+        "Cartoons": {}
+      },
+      "Movies": {},
+      "Music & Audio": {
+        "Music Equipment & Technology": {},
+        "Country Music": {},
+        "Dance & Electronic Music": {},
+        "Classical Music": {},
+        "Radio & Podcast": {},
+        "Music Education & Instruction": {},
+        "Music Reference": {},
+        "Jazz & Blues": {},
+        "Religious Music": {},
+        "Pop Music": {},
+        "Rock Music": {},
+        "Urban & Hip-Hop": {}
+      },
+      "Visual Art & Design": {
+        "Art Museums & Galleries": {},
+        "Painting": {},
+        "Architecture": {},
+        "Design": {}
+      },
+      "TV Shows & Programs": {},
+      "Concerts & Music Festivals": {},
+      "Humor": {}
+    },
+    "Beauty & Fitness": {
+      "Fitness": {},
+      "Face & Body Care": {
+        "Hygiene & Toiletries": {},
+        "Perfumes & Fragrances": {},
+        "Make-Up & Cosmetics": {},
+        "Shaving & Hair Removal": {},
+        "Skin & Nail Care": {}
+      },
+      "Spas & Beauty Services": {
+        "Massage Therapy": {}
+      },
+      "Cosmetic Procedures": {},
+      "Hair Care": {
+        "Hair Loss": {}
+      },
+      "Body Art": {},
+      "Weight Loss": {}
+    },
+    "Autos & Vehicles": {
+      "Classic Vehicles": {},
+      "Boats & Watercraft": {},
+      "Motor Vehicles": {
+        "Electric & Alternative": {},
+        "Motorcycles & Scooters": {},
+        "Trucks & SUVs": {},
+        "Off-Road": {}
+      },
+      "Parts & Services": {},
+      "Campers & RVs": {},
+      "Repair & Maintenance": {},
+      "Safety": {}
+    },
+    "Health": {
+      "Reproductive Health": {},
+      "Medical Devices & Equipment": {},
+      "Men's Health": {},
+      "Nutrition": {
+        "Vitamins & Supplements": {},
+        "Special & Restricted Diets": {}
+      },
+      "Women's Health": {},
+      "Vision Care": {
+        "Eyeglasses & Contacts": {}
+      },
+      "Health Conditions": {
+        "Pain Management": {},
+        "Cancer": {},
+        "Diabetes": {},
+        "Ear Nose & Throat": {},
+        "Sleep Disorders": {},
+        "Skin Conditions": {},
+        "Heart & Hypertension": {},
+        "Allergies": {},
+        "AIDS & HIV": {},
+        "Respiratory Conditions": {},
+        "Arthritis": {}
+      },
+      "Occupational Health & Safety": {},
+      "Aging & Geriatrics": {},
+      "Nursing": {
+        "Assisted Living & Long Term Care": {}
+      },
+      "Medical Services": {
+        "Physical Therapy": {}
+      },
+      "Substance Abuse": {
+        "Drug & Alcohol Testing": {},
+        "Drug & Alcohol Treatment": {}
+      },
+      "Oral & Dental Care": {},
+      "Pharmacy": {
+        "Drugs & Medications": {}
+      },
+      "Mental Health": {
+        "Anxiety & Stress": {}
+      },
+      "Social Services": {},
+      "Health Education & Medical Training": {}
+    },
+    "Books & Literature": {
+      "Children's Literature": {},
+      "Poetry": {},
+      "Notebooks & Planners": {},
+      "Writers Resources": {},
+      "E-Books": {},
+      "Calendars": {},
+      "Geographic Reference": {},
+      "Language": {}
+    },
+    "Home & Garden": {
+      "Home Furnishings": {
+        "Lamps & Lighting": {},
+        "Rugs & Carpets": {},
+        "Living Room Furniture": {},
+        "Curtains & Window Treatments": {},
+        "Kitchen & Dining Furniture": {}
+      },
+      "Bed & Bath": {
+        "Bathroom": {}
+      },
+      "Home & Interior Decor": {},
+      "Home Improvement": {
+        "Flooring": {},
+        "Plumbing": {},
+        "Construction & Power Tools": {},
+        "Doors & Windows": {},
+        "House Painting & Finishing": {}
+      },
+      "HVAC & Climate Control": {
+        "Fireplaces & Stoves": {}
+      },
+      "Kitchen & Dining": {
+        "Cookware & Diningware": {},
+        "Small Kitchen Appliances": {}
+      },
+      "Nursery & Playroom": {},
+      "Laundry": {},
+      "Cleaning": {},
+      "Home Storage & Shelving": {},
+      "Gardening & Landscaping": {},
+      "Yard & Patio": {},
+      "Home Appliances": {},
+      "Pest Control": {},
+      "Home Swimming Pools Saunas & Spas": {},
+      "Home Safety & Security": {}
+    },
+    "People & Society": {
+      "Religion & Belief": {},
+      "Family & Relationships": {
+        "Family": {},
+        "Marriage": {},
+        "Troubled Relationships": {}
+      },
+      "Social Issues & Advocacy": {
+        "Charity & Philanthropy": {},
+        "Green Living & Environmental Issues": {}
+      },
+      "Kids & Teens": {},
+      "Politics": {},
+      "Subcultures & Niche Interests": {},
+      "Social Networks": {}
+    },
+    "Smoking & Vaping": {
+      "Cannabis": {}
+    },
+    "Antiques & Collectibles": {},
+    "Business & Industrial": {
+      "Metals & Mining": {
+        "Precious Metals": {}
+      },
+      "Business Services": {
+        "Office Supplies": {},
+        "E-Commerce Services": {},
+        "Corporate Events": {},
+        "Writing & Editing Services": {},
+        "Consulting": {},
+        "Office Services": {}
+      },
+      "Mail & Package Delivery": {},
+      "Agriculture & Forestry": {
+        "Agricultural Equipment": {},
+        "Livestock": {},
+        "Wood & Forestry": {},
+        "Beekeeping": {}
+      },
+      "Business Operations": {},
+      "Chemicals Industry": {
+        "Plastics & Polymers": {}
+      },
+      "Packaging": {},
+      "Retail Equipment & Technology": {},
+      "Industrial Materials & Equipment": {
+        "Heavy Machinery": {}
+      },
+      "Construction & Maintenance": {},
+      "Manufacturing": {},
+      "Moving & Relocation": {},
+      "Renewable & Alternative Energy": {},
+      "Pharmaceuticals & Biotech": {},
+      "Advertising & Marketing": {
+        "Public Relations": {}
+      },
+      "Business Finance": {},
+      "Printing & Publishing": {}
+    },
+    "Games": {
+      "Card Games": {
+        "Collectible Card Games": {},
+        "Poker & Casino Games": {}
+      },
+      "Arcade & Coin-Op Games": {},
+      "Board Games": {
+        "Chess & Abstract Strategy Games": {},
+        "Miniatures & Wargaming": {}
+      },
+      "Computer & Video Games": {
+        "Shooter Games": {},
+        "Sports Games": {},
+        "Simulation Games": {}
+      },
+      "Roleplaying Games": {},
+      "Table Games": {
+        "Billiards": {}
+      },
+      "Puzzles & Brainteasers": {}
+    },
+    "Sports": {
+      "Sporting Goods": {
+        "Sports Memorabilia": {},
+        "Outdoors": {},
+        "Hiking & Camping": {},
+        "Fishing": {}
+      },
+      "Combat Sports": {
+        "Martial Arts": {},
+        "Wrestling": {},
+        "Boxing": {}
+      },
+      "Team Sports": {
+        "Baseball": {},
+        "Soccer": {},
+        "Volleyball": {},
+        "Basketball": {},
+        "Cheerleading": {},
+        "Cricket": {},
+        "Rugby": {},
+        "American Football": {},
+        "Hockey": {},
+        "Australian Football": {}
+      },
+      "Individual Sports": {
+        "Skate Sports": {},
+        "Cycling": {},
+        "Racquet Sports": {},
+        "Gymnastics": {},
+        "Golf": {},
+        "Track & Field": {}
+      },
+      "Extreme Sports": {
+        "Drag & Street Racing": {}
+      },
+      "College Sports": {},
+      "Winter Sports": {
+        "Skiing & Snowboarding": {},
+        "Ice Skating": {}
+      },
+      "Water Sports": {
+        "Surfing": {},
+        "Swimming": {}
+      },
+      "Motor Sports": {},
+      "Trophies and Awards": {},
+      "Sports Coaching & Training": {},
+      "Fantasy Sports": {},
+      "Animal Sports": {}
+    },
+    "Toys & Hobbies": {
+      "Arts & Crafts": {
+        "Fiber & Textile Arts": {}
+      },
+      "Building Toys": {},
+      "Dolls": {},
+      "Stuffed Toys": {},
+      "Radio Control & Modeling": {
+        "Model Trains & Railroads": {}
+      },
+      "Die-cast & Toy Vehicles": {},
+      "Ride-On Toys": {},
+      "Drawing & Coloring": {}
+    },
+    "Finance": {
+      "Investing": {
+        "Currencies & Foreign Exchange": {},
+        "Stocks & Bonds": {}
+      },
+      "Accounting & Auditing": {}
+    },
+    "Food & Drink": {
+      "Beverages": {
+        "Alcoholic Beverages": {},
+        "Coffee & Tea": {},
+        "Juice": {},
+        "Soft Drinks": {}
+      },
+      "Food": {
+        "Pizza": {},
+        "Baked Goods & Desserts": {},
+        "Candy & Sweets": {},
+        "Meat & Seafood": {},
+        "Snack Foods": {},
+        "Grains & Pasta": {},
+        "Breakfast Foods": {},
+        "BBQ & Grilling": {},
+        "Soups & Stews": {}
+      }
+    },
+    "Gifts & Special Events": {
+      "Cards & Greetings": {},
+      "Flowers": {}
+    },
+    "Libraries & Museums": {},
+    "Safety & Survival": {
+      "Military": {},
+      "Safety": {
+        "Law Enforcement": {},
+        "Security Products": {},
+        "Rescue & Emergency": {}
+      }
+    },
+    "Travel": {
+      "Air Travel": {
+        "Airport Parking & Transportation": {}
+      },
+      "Hotels & Accommodations": {},
+      "Cruises & Charters": {},
+      "Car Rental & Taxi Services": {},
+      "Bus & Rail": {},
+      "Bags & Luggage": {}
+    },
+    "Wedding": {},
+    "Mass Merchants & Department Stores": {},
+    "Jobs & Education": {
+      "Jobs": {
+        "Career Resources & Planning": {},
+        "Job Listings": {},
+        "Resumes & Portfolios": {}
+      },
+      "Education": {
+        "Colleges & Universities": {},
+        "Primary & Secondary Schooling (K-12)": {},
+        "Teaching & Classroom Resources": {},
+        "Distance Learning": {},
+        "Vocational & Continuing Education": {},
+        "Training & Certification": {},
+        "Languages": {},
+        "Standardized & Admissions Tests": {},
+        "Legal Education": {},
+        "Homeschooling": {}
+      },
+      "Business": {},
+      "Health": {}
+    },
+    "Science": {
+      "Earth Sciences": {
+        "Geology": {}
+      },
+      "Astronomy": {},
+      "Ecology & Environment": {},
+      "Engineering & Technology": {
+        "Robotics": {}
+      },
+      "Computer Science": {},
+      "Chemistry": {},
+      "Mathematics": {
+        "Statistics": {}
+      },
+      "Biological Sciences": {
+        "Neuroscience": {}
+      }
+    },
+    "Pets & Animals": {
+      "Dogs": {},
+      "Pet Food & Supplies": {},
+      "Fish & Aquaria": {},
+      "Cats": {},
+      "Horses": {},
+      "Veterinary & Health": {},
+      "Birds": {},
+      "Reptiles & Amphibians": {},
+      "Rabbits & Rodents": {},
+      "Exotic Pets": {}
+    },
+    "Computers": {
+      "Computer Hardware": {
+        "Computer Drives & Storage": {},
+        "Laptops & Notebooks": {},
+        "Computer Components": {},
+        "Computer Peripherals": {},
+        "Desktop Computers": {}
+      },
+      "Software": {
+        "Multimedia Software": {},
+        "Business & Productivity Software": {}
+      },
+      "Electronics & Electrical": {
+        "Power Supplies": {},
+        "Electronic Components": {}
+      },
+      "CAD & CAM": {},
+      "Computer Security": {
+        "Hacking & Cracking": {}
+      },
+      "Game Systems & Consoles": {},
+      "Networking": {}
+    },
+    "Consumer Electronics": {
+      "Audio Equipment": {},
+      "Mobile & Wireless": {
+        "Mobile & Wireless Accessories": {},
+        "Mobile Apps & Add-Ons": {},
+        "Mobile Phones": {}
+      },
+      "Camera & Photo Equipment": {},
+      "GPS & Navigation": {},
+      "TV & Video Equipment": {},
+      "Car Electronics": {},
+      "Radio & Communications": {},
+      "Drones & RC Aircraft": {}
+    },
+    "Holidays & Seasonal": {},
+    "Internet": {
+      "Web Services": {
+        "Web Design & Development": {}
+      },
+      "Voice & Video Chat": {}
+    },
+    "Coupons & Discounts": {},
+    "Photo & Video Services": {},
+    "Attractions": {
+      "Theme Parks": {},
+      "Regional Parks & Gardens": {},
+      "Zoos, Aquariums & Preserves": {}
+    },
+    "Legal Services": {
+      "Visa & Immigration": {}
+    },
+    "Firearms & Weapons": {},
+    "None": {}
+  }
+}

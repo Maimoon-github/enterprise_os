@@ -1,0 +1,16 @@
+{
+  "utilities": {
+    "testCall": "Appel test",
+    "endTestCall": "Terminer l'appel test",
+    "connecting": "Connexion...",
+    "affiliate": "Affiliation",
+    "appointments": "Rendez-vous",
+    "demos": "Démos",
+    "billingAttention": "Attention facturation",
+    "feedback": "Commentaires",
+    "feedbackPlaceholder": "Partager un commentaire",
+    "feedbackSending": "Envoi...",
+    "feedbackSent": "Commentaire envoyé",
+    "feedbackFailed": "Impossible d'envoyer le commentaire"
+  }
+}

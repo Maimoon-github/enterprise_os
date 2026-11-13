@@ -1,0 +1,292 @@
+import { z } from "zod";
+import { env } from "@/env";
+import type { EmailAccountWithAI } from "@/utils/llms/types";
+import type { Group, GroupItem, Rule } from "@/generated/prisma/client";
+import { GroupItemType } from "@/generated/prisma/enums";
+import prisma from "@/utils/prisma";
+import { DEFAULT_COLD_EMAIL_PROMPT } from "@/utils/cold-email/prompt";
+import { stringifyEmail } from "@/utils/stringify-email";
+import type { Logger } from "@/utils/logger";
+import type { EmailForLLM } from "@/utils/types";
+import type { EmailProvider } from "@/utils/email/types";
+import { getModel, type ModelType } from "@/utils/llms/model";
+import { createGenerateObject } from "@/utils/llms";
+import { extractEmailAddress, isSameOrganization } from "@/utils/email";
+import { isWhitelistedSender } from "@/utils/email/whitelist";
+import { hasUserSentEmail } from "@/utils/cold-email/has-user-sent-email";
+import { hasPriorContactOrAssumeYes } from "@/utils/cold-email/has-prior-contact";
+import { decideColdEmail } from "@/utils/decision-model/cold-email";
+import { runDecisionModelOrFallback } from "@/utils/decision-model/decision-model";
+
+export const COLD_EMAIL_FOLDER_NAME = "Cold Emails";
+
+type ColdEmailBlockerReason =
+  | "hasPreviousEmail"
+  | "applicationSender"
+  | "ai"
+  | "ai-already-labeled"
+  | "excluded";
+
+export type ColdEmailPatternMatch = {
+  group: Pick<Group, "id" | "name">;
+  groupItem: Pick<GroupItem, "id" | "type" | "value" | "exclude">;
+};
+
+type ColdEmailResult = {
+  isColdEmail: boolean;
+  reason: ColdEmailBlockerReason;
+  aiReason?: string | null;
+  patternMatch?: ColdEmailPatternMatch;
+};
+
+type ColdEmailGuardsInput = {
+  email: EmailForLLM & { threadId?: string };
+  emailAccount: EmailAccountWithAI;
+  provider: EmailProvider;
+  coldEmailRule: Pick<Rule, "instructions" | "groupId"> | null;
+  logger: Logger;
+};
+
+/**
+ * Runs the deterministic cold-email checks (whitelist, same org, learned
+ * patterns, prior contact). Returns null when only the AI check remains.
+ */
+export async function checkColdEmailGuards({
+  email,
+  emailAccount,
+  provider,
+  coldEmailRule,
+  logger,
+}: ColdEmailGuardsInput): Promise<ColdEmailResult | null> {
+  logger.info("Checking is cold email");
+
+  if (
+    isWhitelistedSender(email.from, env.RESEND_FROM_EMAIL) ||
+    isWhitelistedSender(email.from, env.WHITELIST_FROM)
+  ) {
+    logger.info("Sender is an application sender");
+    return { isColdEmail: false, reason: "applicationSender" };
+  }
+
+  // Nobody at your own company is a cold emailer. Checked here rather than only at the
+  // actions, so a colleague is never labelled or archived either.
+  if (isSameOrganization(email.from, emailAccount.email)) {
+    logger.info("Sender is internal");
+    return { isColdEmail: false, reason: "hasPreviousEmail" };
+  }
+
+  // Check if we marked it as a cold email already
+  const groupId = coldEmailRule?.groupId;
+  let patternMatch:
+    | (Pick<GroupItem, "id" | "type" | "value" | "exclude"> & {
+        group: Pick<Group, "id" | "name"> | null;
+      })
+    | null = null;
+
+  if (groupId) {
+    const normalizedFrom = extractEmailAddress(email.from) || email.from;
+    patternMatch = await prisma.groupItem.findFirst({
+      where: {
+        groupId,
+        type: GroupItemType.FROM,
+        // Learned patterns are stored lowercased, but older rows may not be.
+        value: { equals: normalizedFrom, mode: "insensitive" },
+      },
+      // If casing left both a block and an exclusion, the user's
+      // "not a cold email" wins.
+      orderBy: { exclude: "desc" },
+      select: {
+        id: true,
+        type: true,
+        value: true,
+        exclude: true,
+        group: { select: { id: true, name: true } },
+      },
+    });
+  }
+
+  if (patternMatch?.exclude) {
+    logger.info("Sender explicitly excluded from cold email blocker", {
+      from: email.from,
+    });
+    return { isColdEmail: false, reason: "excluded" };
+  }
+
+  if (patternMatch) {
+    const sender = extractEmailAddress(email.from);
+    if (!sender) return { isColdEmail: false, reason: "hasPreviousEmail" };
+
+    // An old cold-sender pattern must not override correspondence the user initiated.
+    // Checking sent mail preserves blocking for repeated unanswered pitches.
+    try {
+      if (
+        await hasUserSentEmail({
+          provider,
+          emailAccountId: emailAccount.id,
+          sender,
+        })
+      ) {
+        return { isColdEmail: false, reason: "hasPreviousEmail" };
+      }
+    } catch (error) {
+      logger.warn("Assuming prior contact - could not check for sent replies", {
+        error,
+      });
+      return { isColdEmail: false, reason: "hasPreviousEmail" };
+    }
+
+    logger.info("Known cold email sender", { from: email.from });
+    const { group, ...groupItem } = patternMatch;
+    return {
+      isColdEmail: true,
+      reason: "ai-already-labeled",
+      ...(group ? { patternMatch: { group, groupItem } } : {}),
+    };
+  }
+
+  const hasPreviousEmail = await hasPriorContactOrAssumeYes({
+    provider,
+    from: extractEmailAddress(email.from) || email.from,
+    date: email.date,
+    messageId: email.id,
+    logger,
+  });
+
+  if (hasPreviousEmail) {
+    logger.info("Has previous email");
+    return { isColdEmail: false, reason: "hasPreviousEmail" };
+  }
+
+  return null;
+}
+
+export async function isColdEmail({
+  email,
+  emailAccount,
+  provider,
+  modelType,
+  coldEmailRule,
+  logger,
+}: ColdEmailGuardsInput & {
+  modelType?: ModelType;
+}): Promise<ColdEmailResult> {
+  const guardResult = await checkColdEmailGuards({
+    email,
+    emailAccount,
+    provider,
+    coldEmailRule,
+    logger,
+  });
+
+  if (guardResult) return guardResult;
+
+  // Off by default: a false "cold" archives a real email, and in evals the
+  // decision model could not separate personalized pitches from legitimate outreach.
+  if (!env.DECISION_MODEL_COLD_EMAIL_ENABLED) {
+    return checkColdEmailWithLlm({
+      email,
+      emailAccount,
+      coldEmailRule,
+      modelType,
+      logger,
+    });
+  }
+
+  return runDecisionModelOrFallback({
+    emailAccount,
+    logger,
+    feature: "cold-email classification",
+    decide: async (config) => {
+      const result = await decideColdEmail({
+        config,
+        email,
+        emailAccount,
+        coldEmailRule,
+        logger,
+      });
+      logger.info("Decision model checked cold email", {
+        coldEmail: result.coldEmail,
+      });
+      return {
+        isColdEmail: result.coldEmail,
+        reason: "ai" as const,
+        aiReason: result.reason,
+      };
+    },
+    fallback: () =>
+      checkColdEmailWithLlm({
+        email,
+        emailAccount,
+        coldEmailRule,
+        modelType,
+        logger,
+      }),
+  });
+}
+
+export async function checkColdEmailWithLlm({
+  email,
+  emailAccount,
+  coldEmailRule,
+  modelType,
+  logger,
+}: Omit<ColdEmailGuardsInput, "provider"> & {
+  modelType?: ModelType;
+}): Promise<ColdEmailResult> {
+  const res = await aiIsColdEmail(
+    email,
+    emailAccount,
+    coldEmailRule?.instructions || DEFAULT_COLD_EMAIL_PROMPT,
+    modelType,
+  );
+
+  logger.info("AI is cold email?", {
+    coldEmail: res.coldEmail,
+  });
+
+  return {
+    isColdEmail: !!res.coldEmail,
+    reason: "ai",
+    aiReason: res.reason,
+  };
+}
+
+async function aiIsColdEmail(
+  email: EmailForLLM,
+  emailAccount: EmailAccountWithAI,
+  coldEmailPrompt: string,
+  modelType?: ModelType,
+) {
+  const system = `Decide whether the email is cold outreach. Give a concise reason.
+
+Evaluate from the recipient's perspective. A sender seeking to buy or get help with the recipient's offering is a prospective customer, not a vendor pitching the recipient, even on first contact.
+
+<instructions>
+${coldEmailPrompt || DEFAULT_COLD_EMAIL_PROMPT}
+</instructions>`;
+
+  const prompt = `<email>
+${stringifyEmail(email, 500)}
+</email>`;
+
+  const modelOptions = getModel(emailAccount.user, modelType);
+
+  const generateObject = createGenerateObject({
+    emailAccount,
+    label: "Cold email check",
+    modelOptions,
+    promptHardening: { trust: "untrusted", level: "compact" },
+  });
+
+  const response = await generateObject({
+    ...modelOptions,
+    instructions: system,
+    prompt,
+    schema: z.object({
+      coldEmail: z.boolean(),
+      reason: z.string(),
+    }),
+  });
+
+  return response.object;
+}

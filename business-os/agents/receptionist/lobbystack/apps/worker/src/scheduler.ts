@@ -1,0 +1,85 @@
+import { createQueue, type JobQueue, type JobType } from "@lobbystack/jobs";
+
+/** A job scheduler as last set in Redis; `every` is 0 once removed. */
+export type Schedule = { queue: JobQueue; name: string; type: JobType; every: number; businessId: string | null };
+
+// A dormant business (see listSchedulerBusinesses) runs a job every
+// `idleEvery` instead, or not at all when that is 0. The per-minute jobs only
+// matter to a business someone uses.
+const tenantSchedules: Array<{ queue: JobQueue; name: string; type: JobType; every: number; idleEvery?: number }> = [
+  { queue: "maintenance", name: "privacy-retention-sweep", type: "privacy.scrubMessage", every: 60 * 60_000 },
+  { queue: "maintenance", name: "pending-upload-cleanup", type: "privacy.cleanupPendingUpload", every: 15 * 60_000 },
+  { queue: "default", name: "calendar-reconcile", type: "calendar.reconcileBusiness", every: 15 * 60_000 },
+  { queue: "maintenance", name: "phone-number-reclaim", type: "phoneNumber.reclaim", every: 60 * 60_000 },
+  // A trial ends and sends its emails on time even when nobody uses the workspace.
+  { queue: "maintenance", name: "number-trial-sweep", type: "numberTrial.sweep", every: 60 * 60_000 },
+  // Once an hour: the handler skips until the business's summary hour.
+  { queue: "maintenance", name: "operator-daily-summary", type: "notification.dailySummary", every: 60 * 60_000, idleEvery: 0 },
+  // A closed demo still records events (a failed claim, a call that ends late), and only this job sends them.
+  { queue: "maintenance", name: "telemetry-flush", type: "telemetry.flush", every: 5 * 60_000, idleEvery: 60 * 60_000 },
+  // Five minutes: a shorter backlog is a blip, not an alert.
+  { queue: "maintenance", name: "outbox-backlog-sample", type: "outbox.backlogSample", every: 5 * 60_000, idleEvery: 0 },
+  { queue: "maintenance", name: "unit-economics-rollup", type: "billing.refreshUnitEconomics", every: 60 * 60_000 },
+  { queue: "maintenance", name: "api-retention", type: "api.retention", every: 60 * 60_000 },
+  // Posts each released changelog entry marked notify: true to the business's bell, within the hour of its release.
+  { queue: "maintenance", name: "product-updates", type: "notification.productUpdates", every: 60 * 60_000, idleEvery: 24 * 60 * 60_000 },
+  // Instagram tokens lapse after 60 days unless refreshed, even for a workspace nobody opens.
+  { queue: "maintenance", name: "instagram-token-refresh", type: "instagram.refreshToken", every: 24 * 60 * 60_000 },
+];
+
+/**
+ * Brings the job schedulers in Redis in line with the business list. `applied`
+ * holds what this process last set, so a refresh only calls Redis for what
+ * changed: pass the same map every time. An empty map, as after a boot,
+ * applies everything. Upserts and removals are idempotent, so several worker
+ * processes can each keep their own map.
+ */
+export async function configureSchedulers(
+  queues = new Map<JobQueue, ReturnType<typeof createQueue>>(),
+  businesses: ReadonlyArray<{ id: string; active: boolean }> = [],
+  applied = new Map<string, Schedule>(),
+): Promise<void> {
+  const desired: Schedule[] = [
+    { queue: "maintenance", name: "prospect-demo-expiry", type: "prospectDemo.expire", every: 60 * 60_000, businessId: null },
+    { queue: "maintenance", name: "affiliate-payout", type: "affiliate.generatePayoutRun", every: 24 * 60 * 60_000, businessId: null },
+    // A dead-lettered retirement must not keep a disconnected connection's tokens forever, in any business.
+    { queue: "maintenance", name: "calendar-retired-sweep", type: "calendar.sweepRetired", every: 24 * 60 * 60_000, businessId: null },
+    // A number a partner's business buys is charged within the hour, and again each month it's held.
+    { queue: "maintenance", name: "partner-number-charges", type: "billing.chargePartnerNumbers", every: 60 * 60_000, businessId: null },
+    // An extra number a business buys is charged within the hour, and again each month it's held.
+    { queue: "maintenance", name: "extra-number-charges", type: "billing.chargeExtraNumbers", every: 60 * 60_000, businessId: null },
+    // A partner's businesses pause within the hour once their 30 days after its tier ended are up, and the host deletes them within the hour at 90.
+    { queue: "maintenance", name: "partner-lifecycle", type: "partnerLifecycle.advance", every: 60 * 60_000, businessId: null },
+    // A partner's new domain goes live within a minute of the provider activating it; older ones are checked less often.
+    { queue: "maintenance", name: "partner-domain-check", type: "partnerDomain.check", every: 60_000, businessId: null },
+    // The Partner endpoints' Idempotency-Key records belong to no business, so one hourly job prunes them for every partner.
+    { queue: "maintenance", name: "partner-api-retention", type: "api.partnerRetention", every: 60 * 60_000, businessId: null },
+    // A call whose worker died keeps talking with nobody answering, so look every minute.
+    { queue: "critical", name: "live-orphan-recovery", type: "live.recoverOrphans", every: 60_000, businessId: null },
+  ];
+  for (const { id: businessId, active } of businesses) {
+    for (const schedule of tenantSchedules) {
+      desired.push({ queue: schedule.queue, name: `${schedule.name}:${businessId}`, type: schedule.type, every: active ? schedule.every : schedule.idleEvery ?? schedule.every, businessId });
+    }
+    // Orphan recovery used to run once per business. shortcut: this removes those schedulers at every boot, drop it once every environment has deployed it.
+    desired.push({ queue: "critical", name: `live-orphan-recovery:${businessId}`, type: "live.recoverOrphans", every: 0, businessId });
+  }
+  const wanted = new Set(desired.map((schedule) => schedule.name));
+  // A business that left the list keeps no schedulers.
+  for (const schedule of applied.values()) {
+    if (!wanted.has(schedule.name)) desired.push({ ...schedule, every: 0 });
+  }
+  for (const schedule of desired) {
+    const queue = queues.get(schedule.queue);
+    if (!queue || applied.get(schedule.name)?.every === schedule.every) continue;
+    if (schedule.every) {
+      await queue.upsertJobScheduler(schedule.name, { every: schedule.every }, { name: schedule.type, data: { jobId: schedule.name, type: schedule.type, queue: schedule.queue, businessId: schedule.businessId, payload: {}, trace: {}, idempotencyKey: schedule.name, scheduled: true, recurring: true } });
+    } else {
+      await queue.removeJobScheduler(schedule.name);
+    }
+    applied.set(schedule.name, schedule);
+  }
+  for (const name of applied.keys()) {
+    if (!wanted.has(name)) applied.delete(name);
+  }
+}

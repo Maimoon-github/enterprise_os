@@ -1,0 +1,166 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  requireOperator: vi.fn(),
+  transaction: vi.fn(),
+  resolveWebVoiceAccess: vi.fn(),
+  verifyWidgetSessionToken: vi.fn(),
+  widgetKey: { status: "active", allowedOrigins: ["https://client.example"] } as { status: string; allowedOrigins: string[] } | undefined,
+}));
+
+vi.mock("./api-helpers", () => ({ getWorkerDatabase: () => ({ db: {} }) }));
+vi.mock("./operator-request", () => ({ requireOperator: mocks.requireOperator }));
+vi.mock("@lobbystack/db", async (original) => ({
+  ...(await original<typeof import("@lobbystack/db")>()),
+  withBusinessTransaction: vi.fn(async () => mocks.widgetKey),
+}));
+vi.mock("./prospect-demo", () => ({ resolveWebVoiceAccess: mocks.resolveWebVoiceAccess }));
+vi.mock("./widget-keys", async (original) => ({
+  ...(await original<typeof import("./widget-keys")>()),
+  verifyWidgetSessionToken: mocks.verifyWidgetSessionToken,
+}));
+
+import { resolveLiveWebCallAccess } from "./live-web-call";
+
+const app = "https://admin.lobbystack.test";
+// What the proxy passes on for the host's own domain, and for a partner's host.
+const hostBrand = { "x-lobbystack-brand": "host" };
+const partnerOrigin = "https://bright.portal.lobbystack.test";
+const partnerBrand = { "x-lobbystack-brand": "partner:5b1f6c43-34a5-4a8e-9a43-6c1f8d5f1c11", "x-lobbystack-brand-origin": partnerOrigin };
+function request(headers: Record<string, string> = {}, brand: Record<string, string> = hostBrand) {
+  return new Request(`${app}/api/voice/live/session`, { method: "POST", headers: { ...brand, ...headers } });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv("AUTH_TRUSTED_ORIGINS", "");
+  vi.stubEnv("APP_BASE_URL", app);
+  mocks.widgetKey = { status: "active", allowedOrigins: ["https://client.example"] };
+});
+afterEach(() => { vi.unstubAllEnvs(); });
+
+describe("resolveLiveWebCallAccess", () => {
+  it("lets an operator test-call their own business from the dashboard", async () => {
+    mocks.requireOperator.mockResolvedValue({ businessId: "biz_1", transaction: mocks.transaction });
+    await expect(resolveLiveWebCallAccess(request({ origin: app }), { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" })).resolves.toMatchObject({ businessId: "biz_1", dashboardTestCall: true, origin: app });
+    expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), { minimumRole: "business_admin" });
+  });
+
+  it("accepts the dashboard's origin when the proxy hands the app an internal URL", async () => {
+    mocks.requireOperator.mockResolvedValue({ businessId: "biz_1", transaction: mocks.transaction });
+    const internal = new Request("http://[::]:3000/api/voice/live/session", { method: "POST", headers: { origin: app, ...hostBrand } });
+    await expect(resolveLiveWebCallAccess(internal, { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" })).resolves.toMatchObject({ businessId: "biz_1", dashboardTestCall: true, origin: app });
+  });
+
+  it("records the trusted origin the call came from, not the first configured one", async () => {
+    vi.stubEnv("AUTH_TRUSTED_ORIGINS", "https://second.lobbystack.test");
+    mocks.requireOperator.mockResolvedValue({ businessId: "biz_1", transaction: mocks.transaction });
+    await expect(resolveLiveWebCallAccess(request({ origin: "https://second.lobbystack.test" }), { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" })).resolves.toMatchObject({ businessId: "biz_1", origin: "https://second.lobbystack.test" });
+  });
+
+  it("refuses a DNS-rebinding request whose host and origin match each other but not the app", async () => {
+    const rebound = new Request("https://evil.example/api/voice/live/session", { method: "POST", headers: { origin: "https://evil.example" } });
+    await expect(resolveLiveWebCallAccess(rebound, { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" })).resolves.toEqual({ status: 403, code: "origin_denied" });
+    expect(mocks.requireOperator).not.toHaveBeenCalled();
+  });
+
+  it("lets a test call start from a partner's host only once the proxy resolved the request to it", async () => {
+    mocks.requireOperator.mockResolvedValue({ businessId: "biz_1", transaction: mocks.transaction });
+    const testCall = { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" };
+    await expect(resolveLiveWebCallAccess(request({ origin: partnerOrigin }, partnerBrand), testCall)).resolves.toMatchObject({ businessId: "biz_1", dashboardTestCall: true, origin: partnerOrigin });
+    // On the partner's host the host's own origin is another site, and the other way round.
+    await expect(resolveLiveWebCallAccess(request({ origin: app }, partnerBrand), testCall)).resolves.toEqual({ status: 403, code: "origin_denied" });
+    await expect(resolveLiveWebCallAccess(request({ origin: partnerOrigin }), testCall)).resolves.toEqual({ status: 403, code: "origin_denied" });
+    // A request the proxy resolved no brand for trusts no origin at all.
+    await expect(resolveLiveWebCallAccess(request({ origin: app }, {}), testCall)).resolves.toEqual({ status: 403, code: "origin_denied" });
+  });
+
+  it("refuses a dashboard test call started from another site", async () => {
+    await expect(resolveLiveWebCallAccess(request({ origin: "https://evil.example" }), { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" })).resolves.toEqual({ status: 403, code: "origin_denied" });
+    expect(mocks.requireOperator).not.toHaveBeenCalled();
+  });
+
+  it("accepts the widget's session token from the page it was issued to", async () => {
+    mocks.verifyWidgetSessionToken.mockReturnValue({ businessId: "biz_2", widgetKeyId: "key_1", visitorId: "visitor_1", origin: "https://client.example" });
+    await expect(resolveLiveWebCallAccess(request({ authorization: "Bearer token", "x-widget-parent-origin": "https://client.example" }), { sdp: "v=0", widgetId: "lobbystack-widget", visitorId: "visitor_1" }))
+      .resolves.toMatchObject({ businessId: "biz_2", origin: "https://client.example", widgetId: "lobbystack-widget", visitorId: "visitor_1", dashboardTestCall: false });
+  });
+
+  it("rejects a widget token presented from a different page", async () => {
+    mocks.verifyWidgetSessionToken.mockReturnValue({ businessId: "biz_2", widgetKeyId: "key_1", visitorId: "visitor_1", origin: "https://client.example" });
+    await expect(resolveLiveWebCallAccess(request({ authorization: "Bearer token", "x-widget-parent-origin": "https://other.example" }), { sdp: "v=0", widgetId: "lobbystack-widget" })).resolves.toEqual({ status: 403, code: "widget_session_invalid" });
+  });
+
+  it("rejects a widget whose key was revoked", async () => {
+    mocks.verifyWidgetSessionToken.mockReturnValue({ businessId: "biz_2", widgetKeyId: "key_1", visitorId: "visitor_1", origin: "https://client.example" });
+    mocks.widgetKey = { status: "revoked", allowedOrigins: ["https://client.example"] };
+    await expect(resolveLiveWebCallAccess(request({ authorization: "Bearer token", "x-widget-parent-origin": "https://client.example" }), { sdp: "v=0", widgetId: "lobbystack-widget" })).resolves.toEqual({ status: 403, code: "widget_origin_denied" });
+  });
+
+  it("runs prospect demos under their demo, without counting the host's demos against minutes", async () => {
+    mocks.resolveWebVoiceAccess.mockResolvedValue({ allowed: true, businessId: "biz_3", mode: "prospect_demo", prospectDemoId: "demo_1", partnerId: null });
+    await expect(resolveLiveWebCallAccess(request(), { sdp: "v=0", widgetId: "lobbystack-prospect-demo", businessSlug: "acme", prospectDemoToken: "secret" })).resolves.toMatchObject({ businessId: "biz_3", prospectDemoId: "demo_1", billable: false });
+  });
+
+  it("counts a partner's demo against its minutes on the partner's host, and refuses each brand's demo on the other's", async () => {
+    const partnerId = "5b1f6c43-34a5-4a8e-9a43-6c1f8d5f1c11";
+    const demo = { sdp: "v=0", widgetId: "lobbystack-prospect-demo", businessSlug: "acme", prospectDemoToken: "secret" };
+    mocks.resolveWebVoiceAccess.mockResolvedValue({ allowed: true, businessId: "biz_3", mode: "prospect_demo", prospectDemoId: "demo_1", partnerId });
+    await expect(resolveLiveWebCallAccess(request({}, partnerBrand), demo)).resolves.toMatchObject({ businessId: "biz_3", prospectDemoId: "demo_1", origin: partnerOrigin, billable: true });
+    await expect(resolveLiveWebCallAccess(request(), demo)).resolves.toEqual({ status: 403, code: "invalid" });
+    mocks.resolveWebVoiceAccess.mockResolvedValue({ allowed: true, businessId: "biz_3", mode: "prospect_demo", prospectDemoId: "demo_1", partnerId: null });
+    await expect(resolveLiveWebCallAccess(request({}, partnerBrand), demo)).resolves.toEqual({ status: 403, code: "invalid" });
+  });
+
+  it("allows the landing demo only from an allowed origin", async () => {
+    vi.stubEnv("WEB_CALL_PUBLIC_BUSINESS_SLUG", "lobbystack-demo");
+    vi.stubEnv("WEB_CALL_ALLOWED_ORIGINS", "https://lobbystack.com");
+    mocks.resolveWebVoiceAccess.mockResolvedValue({ allowed: true, businessId: "biz_4", mode: "normal" });
+    await expect(resolveLiveWebCallAccess(request({ origin: "https://lobbystack.com" }), { sdp: "v=0", widgetId: "lobbystack-landing", businessSlug: "lobbystack-demo" })).resolves.toMatchObject({ businessId: "biz_4", origin: "https://lobbystack.com" });
+    await expect(resolveLiveWebCallAccess(request({ origin: "https://evil.example" }), { sdp: "v=0", widgetId: "lobbystack-landing", businessSlug: "lobbystack-demo" })).resolves.toEqual({ status: 403, code: "web_voice_authorization_required" });
+  });
+});
+
+describe("which agent a browser call answers as", () => {
+  const agentId = "6b0c1f8e-3f5a-4d57-9f7c-1b2f7c3f2a11";
+  const testCall = { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call", agentId };
+  /** What the agent lookup finds under the operator's access: rows of the operator's own business, and none of another's. */
+  const operatorFinds = (rows: unknown[]) => {
+    const chain = { from: () => chain, where: () => chain, limit: async () => rows };
+    const tx = { select: () => chain };
+    mocks.requireOperator.mockResolvedValue({ businessId: "biz_1", transaction: async (run: (tx: unknown) => Promise<unknown>) => await run(tx) });
+  };
+
+  it("starts a test call as an agent of the operator's business", async () => {
+    operatorFinds([{ id: agentId }]);
+    await expect(resolveLiveWebCallAccess(request({ origin: app }), testCall)).resolves.toMatchObject({ businessId: "biz_1", agentId, dashboardTestCall: true });
+  });
+
+  it("refuses an agent the operator can't reach, such as another business's", async () => {
+    operatorFinds([]);
+    await expect(resolveLiveWebCallAccess(request({ origin: app }), testCall)).resolves.toEqual({ status: 404, code: "agent_not_found" });
+  });
+
+  it("leaves a test call with no agent to the default agent, without looking one up", async () => {
+    operatorFinds([]);
+    const access = await resolveLiveWebCallAccess(request({ origin: app }), { sdp: "v=0", widgetId: "lobbystack-dashboard-test-call" });
+    expect(access).toMatchObject({ businessId: "biz_1", dashboardTestCall: true });
+    expect(access).not.toHaveProperty("agentId");
+  });
+
+  it("answers widget voice as the key's agent, whatever the browser asks for", async () => {
+    mocks.verifyWidgetSessionToken.mockReturnValue({ businessId: "biz_1", widgetKeyId: "key_1", origin: "https://client.example", visitorId: "visitor_1" });
+    mocks.widgetKey = { status: "active", allowedOrigins: ["https://client.example"], agentId: "agent_of_key" } as typeof mocks.widgetKey;
+    const widget = new Request(`${app}/api/voice/live/session`, { method: "POST", headers: { authorization: "Bearer token", "x-widget-parent-origin": "https://client.example" } });
+    await expect(resolveLiveWebCallAccess(widget, { sdp: "v=0", widgetId: "lobbystack-widget", agentId })).resolves.toMatchObject({ agentId: "agent_of_key" });
+  });
+
+  it("never lets a landing page visitor choose an agent", async () => {
+    vi.stubEnv("WEB_CALL_PUBLIC_BUSINESS_SLUG", "demo");
+    vi.stubEnv("WEB_CALL_ALLOWED_ORIGINS", "https://www.lobbystack.test");
+    mocks.resolveWebVoiceAccess.mockResolvedValue({ allowed: true, businessId: "biz_1" });
+    const access = await resolveLiveWebCallAccess(request({ origin: "https://www.lobbystack.test" }), { sdp: "v=0", widgetId: "lobbystack-landing", businessSlug: "demo", agentId });
+    expect(access).toMatchObject({ businessId: "biz_1" });
+    expect(access).not.toHaveProperty("agentId");
+  });
+});

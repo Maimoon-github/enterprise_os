@@ -1,0 +1,181 @@
+// Agent settings rules the dashboard and the v1 API share.
+
+/** When the agent may put a caller through to the team. */
+export const transferModes = ["never", "always", "on_request", "on_urgent", "during_business_hours"] as const;
+
+/** When a call rings the staff phone before the agent answers. */
+export const staffFirstModes = ["never", "business_hours", "always"] as const;
+export type StaffFirstMode = (typeof staffFirstModes)[number];
+
+/** How long the staff phone may ring. */
+export const staffFirstRingSeconds = [10, 15, 20, 30, 45, 60] as const;
+export type StaffFirstRingSeconds = (typeof staffFirstRingSeconds)[number];
+export const DEFAULT_STAFF_FIRST_RING_SECONDS: StaffFirstRingSeconds = 15;
+
+/** The longest message the carrier reads to a caller before ringing or at handover. */
+export const STAFF_FIRST_MESSAGE_MAX_LENGTH = 200;
+
+/** How the agent handles appointment requests. */
+export const bookingModes = ["off", "request", "instant"] as const;
+
+/**
+ * The GPT-Live built-in voices a business can pick for its agent.
+ * agent-core checks this list against the OpenAI SDK's BuiltInVoice type.
+ */
+export const agentVoices = ["alloy", "ash", "ballad", "beacon", "bossa", "cedar", "cinder", "coral", "delta", "echo", "gleam", "marin", "meridian", "quartz", "ripple", "sage", "shimmer", "stone", "tempo", "verse", "vesper", "willow"] as const;
+
+export type AgentVoice = (typeof agentVoices)[number];
+
+export type AgentVoicePitch = "low" | "mid" | "high";
+export type AgentVoicePace = "slow" | "steady" | "quick";
+
+/**
+ * How each voice sounds, measured from the preview clips (scripts/voice/record-voice-previews.ts):
+ * pitch from the median fundamental frequency, pace from how long the same line takes.
+ * The dashboard shows these as each voice's description.
+ */
+export const agentVoiceTraits: Record<AgentVoice, { pitch: AgentVoicePitch; pace: AgentVoicePace }> = {
+  alloy: { pitch: "mid", pace: "quick" },
+  ash: { pitch: "low", pace: "quick" },
+  ballad: { pitch: "high", pace: "steady" },
+  beacon: { pitch: "low", pace: "steady" },
+  bossa: { pitch: "high", pace: "steady" },
+  cedar: { pitch: "mid", pace: "quick" },
+  cinder: { pitch: "low", pace: "slow" },
+  coral: { pitch: "high", pace: "steady" },
+  delta: { pitch: "high", pace: "steady" },
+  echo: { pitch: "low", pace: "slow" },
+  gleam: { pitch: "high", pace: "slow" },
+  marin: { pitch: "high", pace: "quick" },
+  meridian: { pitch: "low", pace: "quick" },
+  quartz: { pitch: "mid", pace: "slow" },
+  ripple: { pitch: "low", pace: "slow" },
+  sage: { pitch: "mid", pace: "quick" },
+  shimmer: { pitch: "mid", pace: "steady" },
+  stone: { pitch: "low", pace: "quick" },
+  tempo: { pitch: "low", pace: "steady" },
+  verse: { pitch: "mid", pace: "quick" },
+  vesper: { pitch: "low", pace: "steady" },
+  willow: { pitch: "high", pace: "steady" },
+};
+
+export type AgentVoiceGender = "female" | "male" | "neutral";
+
+/**
+ * Whether each voice sounds like a woman or a man, so the agent uses
+ * matching grammar when it talks about itself ("ravie" or "ravi"). From OpenAI's
+ * descriptions where it gives one, otherwise from the preview clips' median
+ * pitch: 99 to 117 Hz is male, 188 to 213 Hz female. alloy sits between them,
+ * at 150 Hz, and OpenAI calls it neutral.
+ */
+export const agentVoiceGenders: Record<AgentVoice, AgentVoiceGender> = {
+  alloy: "neutral",
+  ash: "male",
+  ballad: "male",
+  beacon: "male",
+  bossa: "female",
+  cedar: "male",
+  cinder: "male",
+  coral: "female",
+  delta: "female",
+  echo: "male",
+  gleam: "female",
+  marin: "female",
+  meridian: "male",
+  quartz: "female",
+  ripple: "male",
+  sage: "female",
+  shimmer: "female",
+  stone: "male",
+  tempo: "male",
+  verse: "male",
+  vesper: "male",
+  willow: "female",
+};
+
+/** The voice calls used before businesses could pick one, and still the default. */
+export const DEFAULT_AGENT_VOICE: AgentVoice = "marin";
+
+export function isAgentVoice(value: unknown): value is AgentVoice {
+  return (agentVoices as readonly unknown[]).includes(value);
+}
+
+/** Missing, unknown or retired voices fall back to the default, so a call always has a voice. */
+export function normalizeAgentVoice(value: unknown): AgentVoice {
+  return isAgentVoice(value) ? value : DEFAULT_AGENT_VOICE;
+}
+
+/** Longest greeting, tone, summary or booking policy. */
+export const AGENT_TEXT_MAX_LENGTH = 2_000;
+
+/** Longest voice, SMS or chat instructions. */
+export const AGENT_INSTRUCTIONS_MAX_LENGTH = 8_000;
+
+/** Longest rule title. */
+export const RULE_TITLE_MAX_LENGTH = 160;
+
+/** Longest rule text the dashboard saves. */
+export const RULE_CONTENT_MAX_LENGTH = 10_000;
+
+/** Most rules the API lets an agent keep. Adding one past it is refused; nothing else is. */
+export const RULES_MAX = 100;
+
+/**
+ * The most ids one reorder sends. Migration 0203 added up to one rule per
+ * channel (ruleChannels) to an agent's rules, which can take an agent at
+ * RULES_MAX past it, and that agent can still put them in order.
+ */
+export const RULES_REORDER_MAX = RULES_MAX + 4;
+
+/** Rule text calls read. The dashboard keeps longer text, but calls use only this much of it. */
+export const RULE_CONTENT_CALL_MAX_LENGTH = 4_000;
+
+/** Active rules calls follow, in order. */
+export const RULES_CALL_MAX = 50;
+
+/** How a caller proves an appointment is theirs before changing it. */
+export const appointmentChangeVerificationModes = ["phone_match_and_facts", "otp_required", "passcode_required", "operator_only"] as const;
+
+/** Shortest and longest keypad PIN a contact can have, for passcode_required. */
+export const CONTACT_PASSCODE_MIN_LENGTH = 4;
+export const CONTACT_PASSCODE_MAX_LENGTH = 8;
+
+/** Digits in a PIN the dashboard or the API makes up. */
+export const CONTACT_PASSCODE_DEFAULT_LENGTH = 6;
+
+/** Wrong PINs in a row, across calls, that lock a PIN until someone sets a new one. */
+export const CONTACT_PASSCODE_LOCK_ATTEMPTS = 5;
+
+/** Whether a value can be a contact's keypad PIN: digits only, of an allowed length. */
+export function isContactPasscode(value: string): boolean {
+  return new RegExp(`^\\d{${CONTACT_PASSCODE_MIN_LENGTH},${CONTACT_PASSCODE_MAX_LENGTH}}$`).test(value);
+}
+
+/**
+ * Whether a PIN is one of the first a stranger would try: one digit repeated
+ * or digits counting up or down, like 1111, 1234 or 4321. A PIN locks after a
+ * few wrong tries, so these would fall within them.
+ */
+export function isGuessableContactPasscode(value: string): boolean {
+  const digits = [...value].map(Number);
+  const step = (digits[1] ?? 0) - (digits[0] ?? 0);
+  return Math.abs(step) <= 1 && digits.every((digit, index) => index === 0 || digit - digits[index - 1]! === step);
+}
+
+/**
+ * A random PIN with each digit drawn evenly from the platform's secure random
+ * source. Guessable PINs are drawn again, since they're refused when saved.
+ */
+export function randomContactPasscode(length = CONTACT_PASSCODE_DEFAULT_LENGTH): string {
+  if (!Number.isInteger(length) || length < CONTACT_PASSCODE_MIN_LENGTH || length > CONTACT_PASSCODE_MAX_LENGTH) throw new RangeError(`A PIN has ${CONTACT_PASSCODE_MIN_LENGTH} to ${CONTACT_PASSCODE_MAX_LENGTH} digits.`);
+  const bytes = new Uint8Array(length);
+  let passcode = "";
+  while (passcode.length < length || isGuessableContactPasscode(passcode)) {
+    if (passcode.length === length) passcode = "";
+    // Each half of a byte is 0 to 15. Keeping only 0 to 9 leaves every digit equally likely.
+    for (const byte of crypto.getRandomValues(bytes)) {
+      for (const half of [byte >> 4, byte & 0x0f]) if (half < 10 && passcode.length < length) passcode += String(half);
+    }
+  }
+  return passcode;
+}

@@ -1,0 +1,268 @@
+"""
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import pytest
+from unittest.mock import MagicMock, patch
+import numpy as np
+
+from agno.document import Document
+from agno.vectordb.pgvector.pgvector import PgVector
+from app.knowledge.optimized_pgvector import OptimizedPgVector
+from sqlalchemy.dialects import postgresql
+
+
+class TestOptimizedPgVector:
+    """Test cases for OptimizedPgVector"""
+    
+    @pytest.fixture
+    def mock_embedder(self):
+        """Create a mock embedder"""
+        mock = MagicMock()
+        mock.get_embedding.return_value = np.array([0.1, 0.2, 0.3])
+        mock.dimensions = 3
+        return mock
+    
+    @pytest.fixture
+    def mock_session(self):
+        """Create a mock database session"""
+        mock = MagicMock()
+        # Configure session to return a context manager
+        mock.return_value.__enter__.return_value = mock
+        return mock
+    
+    @patch('sqlalchemy.engine.create_engine')
+    def test_init(self, mock_create_engine, mock_embedder):
+        """Test initialization"""
+        # Arrange
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+        
+        # Act
+        db = OptimizedPgVector(
+            table_name="test_table",
+            db_url="postgresql+psycopg://user:pass@localhost/testdb",
+            embedder=mock_embedder
+        )
+        
+        # Assert
+        assert db.table_name == "test_table"
+        assert db.embedder == mock_embedder
+        assert db.dimensions == 3
+    
+    @patch('sqlalchemy.engine.create_engine')
+    def test_upsert_with_pre_embedded_documents(self, mock_create_engine, mock_embedder, mock_session):
+        """Test upserting pre-embedded documents"""
+        # Arrange
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+        
+        db = OptimizedPgVector(
+            table_name="test_table",
+            db_url="postgresql+psycopg://user:pass@localhost/testdb",
+            embedder=mock_embedder
+        )
+        db.Session = mock_session
+        db._clean_content = lambda x: x  # Mock the content cleaning function
+        
+        # Create a document with an existing embedding
+        pre_embedded_doc = Document(
+            id="test1",
+            name="Test Document 1",
+            content="This is a test document",
+            embedding=np.array([0.5, 0.6, 0.7])
+        )
+        
+        # Create a document without an embedding
+        unembedded_doc = Document(
+            id="test2",
+            name="Test Document 2",
+            content="This is another test document"
+        )
+        
+        # Mock the document's embed method
+        with patch.object(Document, 'embed') as mock_embed:
+            # Act
+            with patch('sqlalchemy.dialects.postgresql.insert') as mock_insert:
+                mock_insert.return_value.on_conflict_do_update.return_value = "upsert_stmt"
+                db.upsert([pre_embedded_doc, unembedded_doc])
+            
+            # Assert
+            # The document's embed method should be called for the unembedded document
+            mock_embed.assert_called_once_with(embedder=mock_embedder)
+            
+            # Both documents should be passed to the upsert statement
+            assert mock_session.execute.call_count == 1
+        
+    @patch('sqlalchemy.engine.create_engine')
+    def test_insert_with_pre_embedded_documents(self, mock_create_engine, mock_embedder, mock_session):
+        """Test inserting pre-embedded documents"""
+        # Arrange
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+        
+        db = OptimizedPgVector(
+            table_name="test_table",
+            db_url="postgresql+psycopg://user:pass@localhost/testdb",
+            embedder=mock_embedder
+        )
+        db.Session = mock_session
+        db._clean_content = lambda x: x  # Mock the content cleaning function
+        
+        # Create a document with an existing embedding
+        pre_embedded_doc = Document(
+            id="test1",
+            name="Test Document 1",
+            content="This is a test document",
+            embedding=np.array([0.5, 0.6, 0.7])
+        )
+        
+        # Create a document without an embedding
+        unembedded_doc = Document(
+            id="test2",
+            name="Test Document 2",
+            content="This is another test document"
+        )
+        
+        # Mock the document's embed method
+        with patch.object(Document, 'embed') as mock_embed:
+            # Act
+            with patch('sqlalchemy.dialects.postgresql.insert'):
+                db.insert([pre_embedded_doc, unembedded_doc])
+            
+            # Assert
+            # The document's embed method should be called for the unembedded document
+            mock_embed.assert_called_once_with(embedder=mock_embedder)
+            
+            # Both documents should be passed to the insert statement
+            assert mock_session.execute.call_count == 1
+
+
+if __name__ == "__main__":
+    pytest.main(["-v", "test_optimized_pgvector.py"])
+
+
+class _PgError(Exception):
+    """Stand-in for a psycopg error, which carries the SQLSTATE as .sqlstate."""
+
+    def __init__(self, sqlstate):
+        super().__init__(sqlstate)
+        self.sqlstate = sqlstate
+
+
+class TestConcurrentTableCreate:
+    """The per-org vector table is created by whichever queue item gets there first.
+
+    agno's PgVector.create() does table_exists() and then CREATE TABLE, which is
+    not atomic. The processor runs two items at once, so an organisation whose
+    first two sources are queued together had both workers create the table and
+    the loser died with
+    `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`,
+    losing that source (production queue item 372, goldmaidsteam.com).
+    """
+
+    def _vector_db(self):
+        return OptimizedPgVector.__new__(OptimizedPgVector)
+
+    @pytest.mark.parametrize("sqlstate", ["42P07", "23505"])
+    def test_losing_the_create_race_is_not_an_error(self, sqlstate):
+        db = self._vector_db()
+        db.table_name = "d_org"
+        db.schema = "ai"
+
+        with patch.object(PgVector, "create", side_effect=_PgError(sqlstate)):
+            db.create()  # the other worker created it; that is the table we wanted
+
+    def test_a_real_create_failure_still_raises(self):
+        db = self._vector_db()
+        db.table_name = "d_org"
+        db.schema = "ai"
+
+        with patch.object(PgVector, "create", side_effect=_PgError("42501")):
+            with pytest.raises(_PgError):
+                db.create()
+
+    def test_duplicate_detected_through_sqlalchemy_wrapping(self):
+        """SQLAlchemy wraps the driver error; the SQLSTATE lives on .orig."""
+        wrapped = RuntimeError("duplicate")
+        wrapped.orig = _PgError("23505")
+
+        with patch.object(PgVector, "create", side_effect=wrapped):
+            db = self._vector_db()
+            db.table_name = "d_org"
+            db.schema = "ai"
+            db.create()
+
+
+class TestUpsertPage:
+    """A page is stored in one transaction, and a page that shrank since it
+    was last read loses its old tail."""
+
+    @pytest.fixture
+    def store(self):
+        mock_embedder = MagicMock(dimensions=3)
+        with patch('sqlalchemy.engine.create_engine'):
+            db = OptimizedPgVector(
+                table_name="d_org",
+                db_url="postgresql+psycopg://user:pass@localhost/testdb",
+                embedder=mock_embedder,
+            )
+        session = MagicMock()
+        db.Session = MagicMock(return_value=session)
+        session.__enter__.return_value = session
+        db._clean_content = lambda x: x
+        return db, session
+
+    @staticmethod
+    def chunk(n):
+        doc = Document(id=f"https://shop.example/a::{n}", name="https://shop.example", content=f"part {n}")
+        doc.embedding = [0.1, 0.2, 0.3]
+        return doc
+
+    @staticmethod
+    def sql(statement):
+        compiled = statement.compile(dialect=postgresql.dialect())
+        return str(compiled), compiled.params
+
+    def test_it_writes_the_page_and_drops_its_stale_chunks_together(self, store):
+        db, session = store
+
+        db.upsert_page([self.chunk(1), self.chunk(2)], {"name": "https://shop.example"})
+
+        session.begin.assert_called_once()
+        upsert, stale = [c.args[0] for c in session.execute.call_args_list]
+        upsert_sql, upsert_params = self.sql(upsert)
+        assert "ON CONFLICT (id) DO UPDATE" in upsert_sql
+        assert {upsert_params[k] for k in upsert_params if k.startswith("id_")} == {
+            "https://shop.example/a::1", "https://shop.example/a::2"}
+        stale_sql, stale_params = self.sql(stale)
+        assert stale_sql.startswith("DELETE FROM")
+        values = {v for v in stale_params.values() if isinstance(v, str)}
+        assert ["https://shop.example/a::1", "https://shop.example/a::2"] in stale_params.values()
+        # Only this source's rows of this page: the bare page id or its ::n chunks
+        assert {"https://shop.example", "https://shop.example/a", "https://shop.example/a::"} <= values
+        assert "NOT IN" in stale_sql
+
+    def test_a_failed_write_raises(self, store):
+        db, session = store
+        session.execute.side_effect = RuntimeError("connection reset")
+
+        with pytest.raises(RuntimeError):
+            db.upsert_page([self.chunk(1)], {})
+
+    def test_nothing_to_write_touches_nothing(self, store):
+        db, session = store
+        db.upsert_page([], {})
+        db.Session.assert_not_called()

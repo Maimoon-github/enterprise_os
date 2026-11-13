@@ -1,0 +1,557 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockDeep } from "vitest-mock-extended";
+import type { DriveProvider } from "@/utils/drive/types";
+import prisma from "@/utils/__mocks__/prisma";
+import { getEmailAccount, createTestLogger } from "@/__tests__/helpers";
+import {
+  createMockEmailProvider,
+  getMockParsedMessage,
+} from "@/__tests__/mocks/email-provider.mock";
+import type {
+  DocumentFiling,
+  DriveConnection,
+  Prisma,
+} from "@/generated/prisma/client";
+import { DocumentFilingStatus } from "@/generated/prisma/enums";
+import { aiParseFilingReply } from "@/utils/ai/document-filing/parse-filing-reply";
+import { processFilingReply } from "./handle-filing-reply";
+
+vi.mock("@/utils/prisma");
+vi.mock("@/utils/ai/document-filing/parse-filing-reply", () => ({
+  aiParseFilingReply: vi.fn(),
+}));
+vi.mock("@/utils/ai/content-sanitizer", () => ({
+  emailToContentForAI: vi.fn().mockReturnValue("Update the second document"),
+}));
+vi.mock("@/utils/drive/provider", () => ({
+  createDriveProviderWithRefresh: vi.fn(),
+}));
+vi.mock("@/utils/drive/folder-utils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/utils/drive/folder-utils")>()),
+  createAndSaveFilingFolder: vi.fn(),
+}));
+
+import { createDriveProviderWithRefresh } from "@/utils/drive/provider";
+import { createAndSaveFilingFolder } from "@/utils/drive/folder-utils";
+
+const logger = createTestLogger();
+const emailAccountId = "email-account-id";
+const userEmail = "user@example.com";
+
+describe("processFilingReply", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma.filingFolder.findMany.mockResolvedValue([]);
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [],
+      reply: "",
+    });
+  });
+
+  it("applies a named action to the correct filing in a batch", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [{ filingId: "filing-2", action: "approve", folderPath: null }],
+      reply: "",
+    });
+
+    await processFilingReply(getReplyParams());
+
+    expect(prisma.documentFiling.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          emailAccountId,
+          notificationMessageId: "notification-1",
+        },
+      }),
+    );
+    expect(prisma.documentFiling.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { emailAccountId, notificationBatchId: "batch-1" },
+      }),
+    );
+    expect(aiParseFilingReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filingContexts: [
+          {
+            id: "filing-1",
+            filename: "first.pdf",
+            currentFolder: "Receipts",
+            knownFolderPaths: [],
+          },
+          {
+            id: "filing-2",
+            filename: "second.pdf",
+            currentFolder: "Invoices",
+            knownFolderPaths: [],
+          },
+        ],
+      }),
+    );
+    expect(prisma.documentFiling.update).toHaveBeenCalledOnce();
+    expect(prisma.documentFiling.update).toHaveBeenCalledWith({
+      where: { id: "filing-2" },
+      data: {
+        feedbackPositive: true,
+        feedbackAt: expect.any(Date),
+      },
+    });
+  });
+
+  it("applies multiple actions to their matching filings", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        { filingId: "filing-1", action: "approve", folderPath: null },
+        { filingId: "filing-2", action: "approve", folderPath: null },
+        { filingId: "filing-1", action: "undo", folderPath: null },
+      ],
+      reply: "",
+    });
+
+    await processFilingReply(getReplyParams());
+
+    expect(prisma.documentFiling.update).toHaveBeenCalledTimes(2);
+    expect(prisma.documentFiling.update).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: { id: "filing-1" } }),
+    );
+    expect(prisma.documentFiling.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: { id: "filing-2" } }),
+    );
+  });
+
+  it("ignores actions for filings outside the notification batch", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        { filingId: "unrelated-filing", action: "approve", folderPath: null },
+      ],
+      reply: "",
+    });
+
+    await processFilingReply(getReplyParams());
+
+    expect(prisma.documentFiling.update).not.toHaveBeenCalled();
+  });
+
+  it("continues processing the batch when one filing action fails", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    prisma.documentFiling.update
+      .mockRejectedValueOnce(new Error("Database unavailable"))
+      .mockResolvedValueOnce(filings[1]);
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        { filingId: "filing-1", action: "approve", folderPath: null },
+        { filingId: "filing-2", action: "approve", folderPath: null },
+      ],
+      reply: "Done",
+    });
+    const params = getReplyParams();
+
+    await processFilingReply(params);
+
+    expect(prisma.documentFiling.update).toHaveBeenCalledTimes(2);
+    expect(prisma.documentFiling.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: { id: "filing-2" } }),
+    );
+    expect(params.emailProvider.replyToEmail).toHaveBeenCalledWith(
+      params.message,
+      expect.stringContaining("couldn&#x27;t complete"),
+      expect.any(Object),
+    );
+    expect(params.emailProvider.replyToEmail).not.toHaveBeenCalledWith(
+      params.message,
+      "Done",
+      expect.any(Object),
+    );
+  });
+
+  it("replaces confirmation when a requested move is incomplete", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [{ filingId: "filing-1", action: "move", folderPath: null }],
+      reply: "Done",
+    });
+    const params = getReplyParams();
+
+    await processFilingReply(params);
+
+    expect(prisma.documentFiling.update).not.toHaveBeenCalled();
+    expect(params.emailProvider.replyToEmail).toHaveBeenCalledWith(
+      params.message,
+      expect.stringContaining("couldn&#x27;t complete"),
+      expect.any(Object),
+    );
+  });
+
+  it("passes only the current drive's known paths for each filing", async () => {
+    const filings = getFilingBatch();
+    filings[1].driveConnectionId = "drive-2";
+    filings[1].driveConnection.id = "drive-2";
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    prisma.filingFolder.findMany.mockResolvedValue([
+      knownFolder("receipts", "Receipts"),
+      knownFolder("receipts-2025", "Receipts/2025"),
+      { ...knownFolder("invoices", "Invoices"), driveConnectionId: "drive-2" },
+    ]);
+
+    await processFilingReply(getReplyParams());
+
+    expect(aiParseFilingReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filingContexts: [
+          expect.objectContaining({
+            id: "filing-1",
+            knownFolderPaths: ["Receipts", "Receipts/2025"],
+          }),
+          expect.objectContaining({
+            id: "filing-2",
+            knownFolderPaths: ["Invoices"],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("does not recreate another drive's known destination on the current drive", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    prisma.filingFolder.findMany.mockResolvedValue([
+      {
+        ...knownFolder("other-receipts", "Receipts"),
+        driveConnectionId: "drive-2",
+      },
+    ]);
+    const moveFile = vi.fn();
+    vi.mocked(createDriveProviderWithRefresh).mockResolvedValue(
+      mockDeep<DriveProvider>({ moveFile }),
+    );
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        { filingId: "filing-1", action: "move", folderPath: "Receipts/2026" },
+      ],
+      reply: "Moved it.",
+    });
+
+    await processFilingReply(getReplyParams());
+
+    expect(createAndSaveFilingFolder).not.toHaveBeenCalled();
+    expect(moveFile).not.toHaveBeenCalled();
+  });
+
+  it("moves a file into a new subfolder nested under the known folder that prefixes the path", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    prisma.filingFolder.findMany.mockResolvedValue([
+      knownFolder("receipts", "Receipts"),
+      knownFolder("receipts-2025", "Receipts/2025"),
+    ]);
+    const moveFile = vi.fn().mockResolvedValue({ id: "filing-2-file" });
+    vi.mocked(createDriveProviderWithRefresh).mockResolvedValue(
+      mockDeep<DriveProvider>({ moveFile }),
+    );
+    vi.mocked(createAndSaveFilingFolder).mockResolvedValue({
+      id: "amazon-folder",
+      name: "Amazon",
+      path: "Receipts/2025/Amazon",
+    });
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        {
+          filingId: "filing-2",
+          action: "move",
+          folderPath: "Receipts/2025/Amazon",
+        },
+      ],
+      reply: "Moved it.",
+    });
+    const params = getReplyParams();
+
+    await processFilingReply(params);
+
+    expect(createAndSaveFilingFolder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folderPath: "Amazon",
+        parent: { id: "receipts-2025", path: "Receipts/2025" },
+        driveConnectionId: "drive-1",
+        emailAccountId,
+      }),
+    );
+    expect(moveFile).toHaveBeenCalledWith("filing-2-file", "amazon-folder");
+    expect(prisma.documentFiling.update).toHaveBeenCalledWith({
+      where: { id: "filing-2" },
+      data: expect.objectContaining({
+        folderId: "amazon-folder",
+        folderPath: "Receipts/2025/Amazon",
+        status: "FILED",
+      }),
+    });
+    expect(params.emailProvider.replyToEmail).toHaveBeenCalledWith(
+      params.message,
+      "Moved it.",
+      expect.any(Object),
+    );
+  });
+
+  it.each([
+    { requestedPath: "Plans:2026", actualPath: "Plans-2026" },
+    {
+      requestedPath: "Receipts/Plans:2026/Reports",
+      actualPath: "Receipts/PLANS-2026/Reports",
+    },
+  ])("records the resolved Microsoft path when moving to $requestedPath", async ({
+    requestedPath,
+    actualPath,
+  }) => {
+    const filings = getFilingBatch();
+    for (const filing of filings) filing.driveConnection.provider = "microsoft";
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    const parent = knownFolder("receipts", "Receipts");
+    parent.driveConnection.provider = "microsoft";
+    prisma.filingFolder.findMany.mockResolvedValue([parent]);
+    const moveFile = vi.fn().mockResolvedValue({ id: "filing-1-file" });
+    vi.mocked(createDriveProviderWithRefresh).mockResolvedValue(
+      mockDeep<DriveProvider>({ name: "microsoft", moveFile }),
+    );
+    vi.mocked(createAndSaveFilingFolder).mockResolvedValueOnce({
+      id: "resolved-folder",
+      name: actualPath.split("/").at(-1)!,
+      path: actualPath,
+    });
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        { filingId: "filing-1", action: "move", folderPath: requestedPath },
+      ],
+      reply: "Moved it.",
+    });
+
+    await processFilingReply(getReplyParams());
+
+    expect(moveFile).toHaveBeenCalledWith("filing-1-file", "resolved-folder");
+    expect(prisma.documentFiling.update).toHaveBeenCalledWith({
+      where: { id: "filing-1" },
+      data: expect.objectContaining({
+        folderId: "resolved-folder",
+        folderPath: actualPath,
+      }),
+    });
+  });
+
+  it("moves a file into an existing known folder without creating anything", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst.mockResolvedValue(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+    prisma.filingFolder.findMany.mockResolvedValue([
+      knownFolder("receipts", "Receipts"),
+      knownFolder("receipts-2025", "Receipts/2025"),
+    ]);
+    const moveFile = vi.fn().mockResolvedValue({ id: "filing-1-file" });
+    vi.mocked(createDriveProviderWithRefresh).mockResolvedValue(
+      mockDeep<DriveProvider>({ moveFile }),
+    );
+    vi.mocked(aiParseFilingReply).mockResolvedValue({
+      actions: [
+        { filingId: "filing-1", action: "move", folderPath: "receipts/2025" },
+      ],
+      reply: "Moved it.",
+    });
+
+    await processFilingReply(getReplyParams());
+
+    expect(createAndSaveFilingFolder).not.toHaveBeenCalled();
+    expect(moveFile).toHaveBeenCalledWith("filing-1-file", "receipts-2025");
+    expect(prisma.documentFiling.update).toHaveBeenCalledWith({
+      where: { id: "filing-1" },
+      data: expect.objectContaining({
+        folderId: "receipts-2025",
+        folderPath: "Receipts/2025",
+      }),
+    });
+  });
+
+  it("limits legacy notifications without a batch ID to their anchor filing", async () => {
+    const legacyFiling = {
+      ...getFilingBatch()[0],
+      notificationBatchId: null,
+    };
+    prisma.documentFiling.findFirst.mockResolvedValue(legacyFiling);
+    prisma.documentFiling.findMany.mockResolvedValue([legacyFiling]);
+
+    await processFilingReply(getReplyParams());
+
+    expect(prisma.documentFiling.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "filing-1" } }),
+    );
+    expect(aiParseFilingReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filingContexts: [expect.objectContaining({ id: "filing-1" })],
+      }),
+    );
+  });
+
+  it("falls back to the source message when the provider message ID changed", async () => {
+    const filings = getFilingBatch();
+    prisma.documentFiling.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(filings[0]);
+    prisma.documentFiling.findMany.mockResolvedValue(filings);
+
+    await processFilingReply(getReplyParams());
+
+    expect(prisma.documentFiling.findFirst).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          emailAccountId,
+          messageId: "source-1",
+        },
+      }),
+    );
+    expect(aiParseFilingReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filingContexts: expect.arrayContaining([
+          expect.objectContaining({ id: "filing-1" }),
+          expect.objectContaining({ id: "filing-2" }),
+        ]),
+      }),
+    );
+  });
+});
+
+function getReplyParams() {
+  const sourceMessage = getMockParsedMessage({
+    id: "source-1",
+    threadId: "thread-1",
+    headers: { "message-id": "<source-1@example.com>" },
+  });
+  const notificationMessage = getMockParsedMessage({
+    id: "notification-1",
+    threadId: "thread-1",
+    headers: {
+      "in-reply-to": "<source-1@example.com>",
+      "message-id": "<notification-1@example.com>",
+    },
+  });
+  const message = getMockParsedMessage({
+    id: "reply-1",
+    threadId: "thread-1",
+    headers: {
+      from: userEmail,
+      "in-reply-to": "<notification-1@example.com>",
+    },
+  });
+  const emailProvider = createMockEmailProvider({
+    getThreadMessages: vi
+      .fn()
+      .mockResolvedValue([sourceMessage, notificationMessage, message]),
+    isSentMessage: vi.fn().mockReturnValue(true),
+  });
+
+  return {
+    emailAccountId,
+    userEmail,
+    message,
+    emailProvider,
+    emailAccount: getEmailAccount({ id: emailAccountId }),
+    logger,
+  };
+}
+
+function knownFolder(folderId: string, folderPath: string) {
+  return mockDeep<
+    Prisma.FilingFolderGetPayload<{ include: { driveConnection: true } }>
+  >({
+    folderId,
+    folderName: folderPath.split("/").at(-1) ?? folderPath,
+    folderPath,
+    driveConnectionId: "drive-1",
+    driveConnection: { provider: "google" },
+  });
+}
+
+function getFilingBatch(): Array<
+  DocumentFiling & { driveConnection: DriveConnection }
+> {
+  return [
+    getFiling({
+      id: "filing-1",
+      filename: "first.pdf",
+      folderPath: "Receipts",
+      notificationMessageId: "notification-1",
+    }),
+    getFiling({
+      id: "filing-2",
+      filename: "second.pdf",
+      folderPath: "Invoices",
+    }),
+  ];
+}
+
+function getFiling({
+  id,
+  filename,
+  folderPath,
+  notificationMessageId = null,
+}: {
+  id: string;
+  filename: string;
+  folderPath: string;
+  notificationMessageId?: string | null;
+}): DocumentFiling & { driveConnection: DriveConnection } {
+  const now = new Date();
+
+  return {
+    id,
+    createdAt: now,
+    updatedAt: now,
+    messageId: "source-1",
+    attachmentId: `${id}-attachment`,
+    filename,
+    folderId: "folder-1",
+    folderPath,
+    fileId: `${id}-file`,
+    reasoning: null,
+    confidence: 1,
+    status: DocumentFilingStatus.FILED,
+    wasAsked: false,
+    wasCorrected: false,
+    originalPath: null,
+    correctedAt: null,
+    feedbackPositive: null,
+    feedbackAt: null,
+    notificationMessageId,
+    notificationSentAt: now,
+    notificationBatchId: "batch-1",
+    driveConnectionId: "drive-1",
+    emailAccountId,
+    driveConnection: {
+      id: "drive-1",
+      createdAt: now,
+      updatedAt: now,
+      provider: "google",
+      email: userEmail,
+      accessToken: null,
+      refreshToken: null,
+      expiresAt: null,
+      isConnected: true,
+      emailAccountId,
+    },
+  };
+}

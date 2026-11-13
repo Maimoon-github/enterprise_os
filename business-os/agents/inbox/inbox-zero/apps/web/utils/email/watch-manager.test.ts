@@ -1,0 +1,439 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestLogger } from "@/__tests__/helpers";
+import prisma from "@/utils/__mocks__/prisma";
+import { cleanupInvalidTokens } from "@/utils/auth/cleanup-invalid-tokens";
+import { createEmailProvider } from "@/utils/email/provider";
+import { captureException } from "@/utils/error";
+import {
+  clearWatchErrorsIfResolved,
+  mailboxFullErrorKey,
+} from "@/utils/error-messages";
+import { fetchGoogleOpenIdProfile } from "@/utils/gmail/oauth";
+import { logErrorWithDedupe } from "@/utils/log-error-with-dedupe";
+import {
+  ensureEmailAccountsWatched,
+  stopWatchingEmailAccount,
+} from "./watch-manager";
+
+vi.mock("@/utils/prisma");
+
+vi.mock("@/utils/error-messages", async (importActual) => ({
+  ...(await importActual<typeof import("@/utils/error-messages")>()),
+  clearWatchErrorsIfResolved: vi.fn(),
+}));
+
+vi.mock("@/utils/auth/cleanup-invalid-tokens", () => ({
+  cleanupInvalidTokens: vi.fn(),
+}));
+
+vi.mock("@/utils/email/provider", () => ({
+  createEmailProvider: vi.fn(),
+}));
+
+vi.mock("@/utils/error", async (importActual) => ({
+  ...(await importActual<typeof import("@/utils/error")>()),
+  captureException: vi.fn(),
+}));
+
+vi.mock("@/utils/gmail/oauth", () => ({
+  fetchGoogleOpenIdProfile: vi.fn(),
+}));
+
+vi.mock("@/utils/redis/account-validation", () => ({
+  invalidateAccountValidation: vi.fn(),
+}));
+
+vi.mock("@/utils/log-error-with-dedupe", () => ({
+  logErrorWithDedupe: vi.fn(),
+}));
+
+vi.mock("@/utils/premium", () => ({
+  getPremiumUserFilter: vi.fn(() => ({})),
+  getUserTier: vi.fn(() => "PRO"),
+  hasAiAccess: vi.fn(() => true),
+  premiumEntitlementSelect: {},
+}));
+
+const logger = createTestLogger();
+
+describe("ensureEmailAccountsWatched", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    vi.mocked(cleanupInvalidTokens).mockResolvedValue(undefined);
+    vi.mocked(fetchGoogleOpenIdProfile).mockResolvedValue({
+      email: "account@example.com",
+      email_verified: true,
+      hd: "example.com",
+      sub: "google-subject",
+    });
+  });
+
+  it("cleans up invalid tokens when watch setup reports a detailed invalid_grant error", async () => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      {
+        id: "email-account-id",
+        email: "account@example.com",
+        watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+        watchEmailsSubscriptionId: null,
+        account: {
+          provider: "google",
+          access_token: "access-token",
+          refresh_token: "refresh-token",
+          expires_at: Date.now() + 3_600_000,
+          disconnectedAt: null,
+        },
+        user: {
+          id: "user-id",
+          aiApiKey: null,
+          premium: null,
+        },
+      },
+    ] as any);
+
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      name: "google",
+      getAccessToken: () => "access-token",
+      watchEmails: vi
+        .fn()
+        .mockRejectedValue(
+          new Error("invalid_grant: token has been expired or revoked"),
+        ),
+    } as any);
+
+    const results = await ensureEmailAccountsWatched({
+      userIds: null,
+      logger,
+    });
+
+    expect(cleanupInvalidTokens).toHaveBeenCalledTimes(1);
+    expect(cleanupInvalidTokens).toHaveBeenCalledWith(
+      expect.objectContaining({
+        emailAccountId: "email-account-id",
+        reason: "invalid_grant",
+      }),
+    );
+    expect(captureException).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      {
+        emailAccountId: "email-account-id",
+        status: "error",
+        message: "Failed to set up watch for this account.",
+        errorDetails: "invalid_grant: token has been expired or revoked",
+      },
+    ]);
+  });
+
+  it.each([
+    {
+      name: "Gmail is disabled for the account",
+      error: createGmailApiError({
+        status: 400,
+        reason: "failedPrecondition",
+        message: "Mail service not enabled",
+      }),
+    },
+    {
+      name: "Google has a transient server error",
+      error: createGmailApiError({
+        status: 500,
+        reason: "backendError",
+        message: "Internal error encountered.",
+      }),
+    },
+    {
+      name: "another push client still holds the Gmail watch",
+      error: createGmailApiError({
+        status: 400,
+        reason: "failedPrecondition",
+        message:
+          "Only one user push notification client allowed per developer (call /stop then try again)",
+      }),
+    },
+  ])("warns without reporting to Sentry when $name", async ({ error }) => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      getWatchedEmailAccount({
+        watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    ] as any);
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      name: "google",
+      getAccessToken: () => "access-token",
+      watchEmails: vi.fn().mockRejectedValue(error),
+    } as any);
+
+    const results = await ensureEmailAccountsWatched({ userIds: null, logger });
+
+    expect(captureException).not.toHaveBeenCalled();
+    expect(logErrorWithDedupe).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "warn" }),
+    );
+    expect(results).toEqual([
+      expect.objectContaining({ status: "error", errorDetails: error.message }),
+    ]);
+  });
+
+  it("reports unexpected watch failures to Sentry", async () => {
+    const error = new Error("Unexpected watch failure");
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      getWatchedEmailAccount({
+        watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    ] as any);
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      name: "google",
+      getAccessToken: () => "access-token",
+      watchEmails: vi.fn().mockRejectedValue(error),
+    } as any);
+
+    await ensureEmailAccountsWatched({ userIds: null, logger });
+
+    expect(captureException).toHaveBeenCalledWith(error, {
+      emailAccountId: "email-account-id",
+    });
+    expect(logErrorWithDedupe).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "error" }),
+    );
+  });
+
+  it("clears the watch lapsed error after re-establishing a lapsed watch", async () => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      getWatchedEmailAccount({
+        watchEmailsExpirationDate: new Date(Date.now() - 3_600_000),
+      }),
+    ] as any);
+
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      name: "google",
+      getAccessToken: () => "access-token",
+      watchEmails: vi.fn().mockResolvedValue({
+        expirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    } as any);
+
+    const results = await ensureEmailAccountsWatched({
+      userIds: null,
+      logger,
+    });
+
+    expect(results).toEqual([
+      expect.objectContaining({
+        emailAccountId: "email-account-id",
+        status: "success",
+      }),
+    ]);
+    expect(clearWatchErrorsIfResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-id",
+        emailAccountId: "email-account-id",
+      }),
+    );
+  });
+
+  it("does not touch the watch lapsed error when the watch was already healthy", async () => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      getWatchedEmailAccount({
+        watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    ] as any);
+
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      name: "google",
+      getAccessToken: () => "access-token",
+      watchEmails: vi.fn().mockResolvedValue({
+        expirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    } as any);
+
+    await ensureEmailAccountsWatched({ userIds: null, logger });
+
+    expect(clearWatchErrorsIfResolved).not.toHaveBeenCalled();
+  });
+
+  it("clears the mailbox full banner after a healthy watch renewal", async () => {
+    const emailAccount = getWatchedEmailAccount({
+      watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+    });
+    emailAccount.user.errorMessages = {
+      [mailboxFullErrorKey("email-account-id")]: {
+        message: "Mailbox full",
+        timestamp: new Date().toISOString(),
+      },
+    };
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      emailAccount,
+    ] as any);
+
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      name: "google",
+      getAccessToken: () => "access-token",
+      watchEmails: vi.fn().mockResolvedValue({
+        expirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    } as any);
+
+    await ensureEmailAccountsWatched({ userIds: null, logger });
+
+    expect(clearWatchErrorsIfResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ emailAccountId: "email-account-id" }),
+    );
+  });
+
+  it("updates a renamed Google mailbox address once a day so webhooks keep matching", async () => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      getWatchedEmailAccount({
+        watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    ] as any);
+    vi.mocked(createEmailProvider).mockResolvedValue(getGoogleProvider());
+    vi.mocked(fetchGoogleOpenIdProfile).mockResolvedValue({
+      email: "renamed@example.org",
+      email_verified: true,
+      hd: "example.org",
+      sub: "google-subject",
+    });
+    prisma.$transaction.mockResolvedValue([]);
+
+    for (let hour = 0; hour < 24; hour++) {
+      vi.useFakeTimers({ now: Date.UTC(2026, 0, 1, hour), toFake: ["Date"] });
+      await ensureEmailAccountsWatched({ userIds: null, logger });
+    }
+
+    expect(fetchGoogleOpenIdProfile).toHaveBeenCalledTimes(1);
+    expect(prisma.emailAccount.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "email-account-id",
+          email: "account@example.com",
+        }),
+        data: expect.objectContaining({ email: "renamed@example.org" }),
+      }),
+    );
+  });
+
+  it("still renews the watch when the mailbox address check fails", async () => {
+    vi.mocked(prisma.emailAccount.findMany).mockResolvedValue([
+      getWatchedEmailAccount({
+        watchEmailsExpirationDate: new Date(Date.now() + 3_600_000),
+      }),
+    ] as any);
+    vi.mocked(createEmailProvider).mockResolvedValue(getGoogleProvider());
+    vi.mocked(fetchGoogleOpenIdProfile).mockRejectedValue(
+      new Error("Failed to fetch Google profile (500)"),
+    );
+
+    const results = [];
+    for (let hour = 0; hour < 24; hour++) {
+      vi.useFakeTimers({ now: Date.UTC(2026, 0, 1, hour), toFake: ["Date"] });
+      results.push(
+        ...(await ensureEmailAccountsWatched({ userIds: null, logger })),
+      );
+    }
+
+    expect(fetchGoogleOpenIdProfile).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(24);
+    expect(results.every((result) => result.status === "success")).toBe(true);
+  });
+});
+
+function createGmailApiError({
+  status,
+  reason,
+  message,
+}: {
+  status: number;
+  reason: string;
+  message: string;
+}) {
+  return Object.assign(new Error(message), {
+    status,
+    code: status,
+    errors: [{ message, reason }],
+    response: { status, data: { error: { code: status, message } } },
+  });
+}
+
+function getGoogleProvider() {
+  return {
+    name: "google",
+    getAccessToken: () => "access-token",
+    watchEmails: vi.fn().mockResolvedValue({
+      expirationDate: new Date(Date.now() + 3_600_000),
+    }),
+  } as any;
+}
+
+function getWatchedEmailAccount({
+  watchEmailsExpirationDate,
+}: {
+  watchEmailsExpirationDate: Date;
+}) {
+  return {
+    id: "email-account-id",
+    email: "account@example.com",
+    userId: "user-id",
+    accountId: "account-id",
+    watchEmailsExpirationDate,
+    watchEmailsSubscriptionId: null,
+    account: {
+      provider: "google",
+      providerAccountId: "google-subject",
+      access_token: "access-token",
+      refresh_token: "refresh-token",
+      expires_at: Date.now() + 3_600_000,
+      disconnectedAt: null,
+    },
+    user: {
+      id: "user-id",
+      email: "owner@example.com",
+      aiApiKey: null,
+      errorMessages: null as Record<string, unknown> | null,
+      premium: null,
+    },
+  };
+}
+
+describe("stopWatchingEmailAccount", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stops the provider watch and clears the stored subscription", async () => {
+    const unwatchEmails = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      unwatchEmails,
+    } as unknown as Awaited<ReturnType<typeof createEmailProvider>>);
+
+    await stopWatchingEmailAccount({
+      emailAccountId: "account-1",
+      provider: "microsoft",
+      subscriptionId: "subscription-1",
+      logger,
+    });
+
+    expect(unwatchEmails).toHaveBeenCalledWith("subscription-1");
+    expect(prisma.emailAccount.updateMany).toHaveBeenCalledWith({
+      where: { id: "account-1" },
+      data: {
+        watchEmailsExpirationDate: null,
+        watchEmailsSubscriptionId: null,
+      },
+    });
+  });
+
+  it("does nothing when a revoked token prevents provider creation", async () => {
+    vi.mocked(createEmailProvider).mockRejectedValue(
+      new Error("invalid_grant"),
+    );
+
+    await expect(
+      stopWatchingEmailAccount({
+        emailAccountId: "account-1",
+        provider: "google",
+        subscriptionId: null,
+        logger,
+      }),
+    ).resolves.toBeUndefined();
+    expect(prisma.emailAccount.updateMany).not.toHaveBeenCalled();
+  });
+});

@@ -1,0 +1,292 @@
+"use client";
+
+import { type DragEvent, FormEvent, useMemo, useRef, useState } from "react";
+
+import { useTranslation } from "react-i18next";
+import { Upload } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { uploadErrorMessage } from "@/lib/storage-upload";
+const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt,.md,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MAX_DOCUMENT_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+function parseTags(value: string): Array<string> {
+  return value
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function stripExtension(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/u, "").trim();
+}
+
+function inferContentTypeFromFileName(fileName: string): string {
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "pdf":
+      return "application/pdf";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "md":
+      return "text/markdown";
+    case "txt":
+      return "text/plain";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function isSupportedContentType(contentType: string): boolean {
+  return [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "text/plain",
+    "text/markdown",
+    "text/x-markdown",
+  ].includes(contentType);
+}
+
+function resolveFileContentType(file: File): string {
+  const providedType = file.type.trim();
+  if (providedType.length > 0) {
+    return providedType;
+  }
+
+  return inferContentTypeFromFileName(file.name);
+}
+
+export function UploadKnowledgeDocumentSheet({
+  upload,
+  open,
+  onOpenChange,
+}: {
+  upload: (input: { file: File; contentType: string; title: string; tags: string[] }) => Promise<void>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useTranslation("agent");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [tags, setTags] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const resolvedFileName = useMemo(() => selectedFile?.name ?? "", [selectedFile]);
+
+  function resetState(): void {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setSelectedFile(null);
+    setTitle("");
+    setTags("");
+    setErrorMessage(null);
+    setIsUploading(false);
+    setIsDraggingFile(false);
+  }
+
+  function handleSelectedFile(file: File | null): void {
+    if (file && file.size > MAX_DOCUMENT_UPLOAD_BYTES) {
+      setSelectedFile(null);
+      setTitle("");
+      setErrorMessage(t("sections.knowledge.uploadValidation.maxSize"));
+      return;
+    }
+
+    setSelectedFile(file);
+    setTitle(file ? stripExtension(file.name) : "");
+    setErrorMessage(null);
+  }
+
+  function handleFileDrop(event: DragEvent<HTMLLabelElement>): void {
+    event.preventDefault();
+    setIsDraggingFile(false);
+    handleSelectedFile(event.dataTransfer.files?.[0] ?? null);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!selectedFile) {
+      setErrorMessage(t("sections.knowledge.uploadValidation.fileRequired"));
+      return;
+    }
+
+    const contentType = resolveFileContentType(selectedFile);
+    if (!isSupportedContentType(contentType)) {
+      setErrorMessage(t("sections.knowledge.uploadValidation.unsupportedFile"));
+      return;
+    }
+
+    if (selectedFile.size > MAX_DOCUMENT_UPLOAD_BYTES) {
+      setErrorMessage(t("sections.knowledge.uploadValidation.maxSize"));
+      return;
+    }
+
+    setIsUploading(true);
+    setErrorMessage(null);
+    try {
+      await upload({ file: selectedFile, contentType, title: title.trim(), tags: parseTags(tags) });
+
+      onOpenChange(false);
+      resetState();
+    } catch (error) {
+      setErrorMessage(
+        uploadErrorMessage(
+          error,
+          t("sections.knowledge.uploadValidation.uploadFailed"),
+        ),
+      );
+    } finally {
+      setIsUploading(false);
+    }
+  }
+
+  return (
+    <Dialog
+      onOpenChange={(nextOpen) => {
+        onOpenChange(nextOpen);
+        if (!nextOpen) {
+          resetState();
+        }
+      }}
+      open={open}
+    >
+      <DialogContent size="sm" >
+        <DialogHeader>
+          <DialogTitle>{t("sections.knowledge.uploadDocument")}</DialogTitle>
+          <DialogDescription>
+            {t("sections.knowledge.uploadDocumentDescription")}
+          </DialogDescription>
+        </DialogHeader>
+        <form className="flex flex-col gap-6" onSubmit={(event) => void handleSubmit(event)}>
+          <FieldGroup>
+            <Field data-invalid={errorMessage ? true : undefined}>
+              <FieldContent>
+                <FieldLabel htmlFor="knowledge-document-file">
+                  {t("sections.knowledge.fields.file.label")}
+                </FieldLabel>
+                <FieldDescription>
+                  {t("sections.knowledge.fields.file.hint")}
+                </FieldDescription>
+              </FieldContent>
+              <Input
+                accept={ACCEPTED_FILE_TYPES}
+                aria-describedby={errorMessage ? "knowledge-document-file-error" : undefined}
+                aria-invalid={errorMessage ? true : undefined}
+                className="peer sr-only"
+                id="knowledge-document-file"
+                onChange={(event) => {
+                  handleSelectedFile(event.target.files?.[0] ?? null);
+                }}
+                ref={fileInputRef}
+                type="file"
+              />
+              <label
+                className={`flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border bg-input/30 px-6 py-8 text-center transition-colors outline-none peer-focus-visible:border-ring peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50 ${
+                  isDraggingFile
+                    ? "border-ring ring-[3px] ring-ring/50"
+                    : errorMessage
+                      ? "border-destructive ring-[3px] ring-destructive/20 dark:border-destructive/50 dark:ring-destructive/40"
+                      : "border-input hover:bg-input/50 peer-hover:bg-input/50"
+                }`}
+                htmlFor="knowledge-document-file"
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsDraggingFile(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    return;
+                  }
+                  setIsDraggingFile(false);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDraggingFile(true);
+                }}
+                onDrop={handleFileDrop}
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <Upload className="size-5 text-muted-foreground" />
+                  <p className="type-body-muted">
+                    {t("sections.knowledge.fields.file.dropzonePrefix")}{" "}
+                    <span className="underline underline-offset-2">
+                      {t("sections.knowledge.fields.file.chooseFile")}
+                    </span>
+                  </p>
+                  {resolvedFileName ? (
+                    <p className="type-item-title">{resolvedFileName}</p>
+                  ) : null}
+                </div>
+              </label>
+              {errorMessage ? <FieldError id="knowledge-document-file-error">{errorMessage}</FieldError> : null}
+            </Field>
+
+            <Field>
+              <FieldContent>
+                <FieldLabel htmlFor="knowledge-document-title">
+                  {t("sections.knowledge.fields.title.label")}
+                </FieldLabel>
+                <FieldDescription>
+                  {t("sections.knowledge.fields.title.hint")}
+                </FieldDescription>
+              </FieldContent>
+              <Input
+                id="knowledge-document-title"
+                placeholder={t("sections.knowledge.fields.title.placeholder")}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </Field>
+
+            <Field>
+              <FieldContent>
+                <FieldLabel htmlFor="knowledge-document-tags">
+                  {t("sections.knowledge.fields.tags.label")}
+                </FieldLabel>
+                <FieldDescription>
+                  {t("sections.knowledge.fields.tags.hint")}
+                </FieldDescription>
+              </FieldContent>
+              <Input
+                id="knowledge-document-tags"
+                placeholder={t("sections.knowledge.fields.tags.placeholder")}
+                value={tags}
+                onChange={(event) => setTags(event.target.value)}
+              />
+            </Field>
+          </FieldGroup>
+
+          <DialogFooter>
+            <DialogClose render={<Button disabled={isUploading} type="button" variant="outline" />}>{t("actions.cancel")}</DialogClose>
+            <Button disabled={isUploading} type="submit">
+              {isUploading ? t("actions.uploading") : t("actions.upload")}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

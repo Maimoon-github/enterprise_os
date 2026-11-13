@@ -1,0 +1,67 @@
+"use client";
+
+import { useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useTranslation } from "react-i18next";
+
+import { useBranding } from "@/components/branding-provider";
+import { ForgotPasswordForm } from "@/components/forgot-password-form";
+import { ReplacementOnboardingShell } from "@/components/replacement-onboarding-shell";
+import { resolveLocale } from "@/lib/locale";
+import { localizePublicPath } from "@/lib/locale-path";
+import { buildPartnerLoginPath, getSafeReturnTo } from "@/lib/auth-return-to";
+
+export default function ForgotPasswordPage() {
+  const { t, i18n } = useTranslation("auth");
+  const router = useRouter();
+  const [step, setStep] = useState<"request" | "verify">("request");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // White Label's sign-in links here with the console page to come back to. A partner's host has no White Label pages.
+  const onPartnerHost = useBranding().partner !== null;
+  const [partnerReturnTo, setPartnerReturnTo] = useState<string | null>(null);
+  useEffect(() => {
+    const returnTo = getSafeReturnTo(new URLSearchParams(window.location.search).get("returnTo"));
+    setPartnerReturnTo(!onPartnerHost && returnTo && /^\/partner(?:[/?]|$)/.test(returnTo) ? returnTo : null);
+  }, [onPartnerHost]);
+  const loginPath = partnerReturnTo ? buildPartnerLoginPath(partnerReturnTo) : localizePublicPath("/login", resolveLocale(i18n?.resolvedLanguage, i18n?.language));
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+    setIsSubmitting(true);
+    let signingIn = false;
+    try {
+      const normalizedEmail = email.trim().toLowerCase();
+      const response = await fetch(`/api/auth/email-otp/${step === "request" ? "request-password-reset" : "reset-password"}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(step === "request" ? { email: normalizedEmail } : { email: normalizedEmail, otp: code.trim(), password: newPassword }),
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        const key = step === "request" ? "passwordResetRequestFailed"
+          : failure.code === "INVALID_PASSWORD" || failure.code === "PASSWORD_TOO_SHORT" || failure.code === "PASSWORD_TOO_LONG" ? "invalidPassword"
+          : failure.code === "USER_NOT_FOUND" || failure.code === "INVALID_OTP" || failure.code === "OTP_EXPIRED" || failure.code === "TOO_MANY_ATTEMPTS" ? "invalidResetCode" : "passwordResetFailed";
+        throw new Error(t(`errors.${key}`));
+      }
+      if (step === "request") { setStep("verify"); return; }
+      const login = await fetch("/api/auth/sign-in/email", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail, password: newPassword }),
+      });
+      // The password has changed even if a transient login/rate-limit error occurs.
+      signingIn = true;
+      router.replace(login.ok ? partnerReturnTo ?? "/" : loginPath);
+      router.refresh();
+    } catch (cause) {
+      setErrorMessage(cause instanceof Error ? cause.message : t("errors.passwordResetFailed"));
+    } finally { if (!signingIn) setIsSubmitting(false); }
+  }
+
+  return <ReplacementOnboardingShell legalAgreement="passwordReset" description={step === "verify" ? t("forgotPassword.verifySubtitle", { email }) : t("forgotPassword.subtitle")} progress={null} title={step === "verify" ? t("forgotPassword.verifyTitle") : t("forgotPassword.title")} width="sm">
+    <ForgotPasswordForm loginPath={loginPath} step={step} email={email} code={code} newPassword={newPassword} isSubmitting={isSubmitting} errorMessage={errorMessage} onEmailChange={setEmail} onCodeChange={setCode} onNewPasswordChange={setNewPassword} onSubmit={submit} onBackToRequest={() => { setStep("request"); setCode(""); setNewPassword(""); setErrorMessage(null); }} />
+  </ReplacementOnboardingShell>;
+}

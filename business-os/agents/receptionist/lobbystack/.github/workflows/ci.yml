@@ -1,0 +1,187 @@
+name: CI
+
+on:
+  pull_request:
+  # Every push to main runs, docs-only ones included: a run releases only when
+  # main has not moved past it, so a skipped run would strand the release before it.
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:build-config
+      - run: pnpm typecheck
+      - run: pnpm --filter @lobbystack/admin lint
+      - run: pnpm telemetry:coverage
+      - run: pnpm build
+      - name: Validate the marketing site's SEO
+        run: pnpm --filter @lobbystack/admin marketing:validate
+      - name: Verify the committed embed loader matches the build
+        run: git diff --exit-code -- apps/admin/public/embed/embed.js
+      - name: Check the lobbystack CLI bundle runs with plain node
+        run: |
+          node packages/cli/dist/bin.js --help > /dev/null
+          status=0
+          XDG_CONFIG_HOME="$(mktemp -d)" node packages/cli/dist/bin.js whoami || status=$?
+          test "$status" -eq 3
+      - run: pnpm test
+      - run: pnpm replacement:telemetry
+      - name: Validate Compose config
+        run: docker compose --env-file .env.example -f docker-compose.yml config --quiet
+
+  # The Zapier integration is a standalone npm package on the Node version
+  # Zapier runs (22). Its tests mock every HTTP call.
+  zapier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/zapier
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: integrations/zapier/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      LOBBYSTACK_SKIP_ENV_FILES: "true"
+      DATABASE_URL: postgres://postgres:lobbystack@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_RELIABILITY_TEST_DATABASE_URL: postgres://postgres:lobbystack@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_AUTH_TEST_DATABASE_URL: postgres://postgres:lobbystack@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_APP_DATABASE_URL: postgres://lobbystack_app:app@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_AUTH_DATABASE_URL: postgres://lobbystack_auth:auth@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_WORKER_DATABASE_URL: postgres://lobbystack_worker:worker@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_DISPATCHER_DATABASE_URL: postgres://lobbystack_dispatcher:dispatcher@127.0.0.1:5432/lobbystack_test
+      LOBBYSTACK_APP_PASSWORD: app
+      LOBBYSTACK_AUTH_PASSWORD: auth
+      LOBBYSTACK_WORKER_PASSWORD: worker
+      LOBBYSTACK_DISPATCHER_PASSWORD: dispatcher
+      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_TEST_URL: redis://127.0.0.1:6379
+      VERIFY_RLS_BEHAVIOR: "true"
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: lobbystack
+          POSTGRES_DB: lobbystack_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d lobbystack_test"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r --filter "./packages/**" build
+      - name: Migrate and bootstrap twice
+        run: |
+          for pass in 1 2; do
+            pnpm db:migrate
+            pnpm --filter @lobbystack/db exec tsx src/cli.ts bootstrap
+          done
+      - run: pnpm db:check
+      - run: pnpm db:verify-rls
+      - name: Test transactional reliability with PostgreSQL roles
+        run: pnpm test:reliability
+      - name: Test verification persistence and concurrent quotas
+        run: pnpm --filter @lobbystack/admin exec vitest run src/lib/auth-issuance.integration.test.ts src/lib/email-verification-policy.test.ts
+      - name: Test live-call presence against Redis
+        run: pnpm --filter @lobbystack/admin exec vitest run src/lib/voice-presence.integration.test.ts
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm --filter @lobbystack/admin exec playwright install --with-deps chromium
+      - name: Run supported browser journeys against an isolated stack
+        run: bash scripts/e2e-local.sh
+
+  images:
+    uses: ./.github/workflows/runtime-images.yml
+
+  # Post-merge certification. Releases wait for it, so production only moves
+  # once every check on the commit has passed.
+  replacement:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/replacement-platform.yml
+
+  validate:
+    if: always()
+    needs: [checks, zapier, database, e2e, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require all PR and release gates
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e 'const results = JSON.parse(process.env.RESULTS); if (Object.values(results).some(job => job.result !== "success")) process.exit(1);'
+
+  # Ships each main commit to Dokploy production once every check above and
+  # the post-merge certification passed. It runs only on lobbystack/lobbystack
+  # with the repository variable DOKPLOY_AUTO_RELEASE set to "true", so a fork
+  # skips it. docs/deployment/dokploy-release.md explains the release.
+  release-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'lobbystack/lobbystack' && vars.DOKPLOY_AUTO_RELEASE == 'true'
+    needs: [validate, replacement]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/dokploy-release.yml
+    with:
+      environment: production
+      ref: ${{ github.sha }}
+      # A newer push to main releases itself, so an older run steps aside.
+      extra-args: --skip-superseded
+    secrets: inherit

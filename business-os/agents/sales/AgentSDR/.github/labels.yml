@@ -1,0 +1,63 @@
+# The repository's issue and pull request labels, kept in sync by
+# .github/workflows/labels.yml. Meanings: docs/maintainers/triage.md.
+# Labels used by the issue templates, the stale bot and Dependabot are here
+# too, so they exist before anything applies them.
+
+# Type
+- name: bug
+  color: "d73a4a"
+  description: Something is broken or behaves contrary to the documentation
+- name: enhancement
+  color: "a2eeef"
+  description: A feature request or improvement
+- name: documentation
+  color: "0075ca"
+  description: A docs fix or addition
+- name: security
+  color: "b60205"
+  description: Security-related; never discuss a vulnerability in a public issue
+
+# Contribution
+- name: good first issue
+  color: "7057ff"
+  description: Small, well-scoped, with a clear pointer to the code
+- name: help wanted
+  color: "008672"
+  description: A contribution is welcome; not on the maintainers' near-term list
+
+# Process
+- name: needs-triage
+  color: "fbca04"
+  description: New; not yet read by a maintainer
+- name: pinned
+  color: "5319e7"
+  description: Exempt from the stale bot
+- name: stale
+  color: "cfd3d7"
+  description: No activity for a while; closes soon unless someone responds
+- name: dependencies
+  color: "0366d6"
+  description: Dependency updates
+- name: ci
+  color: "ededed"
+  description: Continuous integration and workflows
+
+# Area
+- name: outreach
+  color: "c5def5"
+  description: "Area: email campaigns, mailboxes and sending"
+- name: linkedin
+  color: "c5def5"
+  description: "Area: LinkedIn accounts, campaigns and inbox"
+- name: whatsapp
+  color: "c5def5"
+  description: "Area: WhatsApp messaging and recorded calls"
+- name: crm
+  color: "c5def5"
+  description: "Area: replies, classification, drafts, pipeline"
+- name: tables
+  color: "c5def5"
+  description: "Area: Tables and enrichment providers"
+- name: self-hosting
+  color: "c5def5"
+  description: "Area: Docker, configuration, installation"

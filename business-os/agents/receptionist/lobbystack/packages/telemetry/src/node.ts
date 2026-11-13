@@ -1,0 +1,402 @@
+import {
+  type Attributes,
+  context,
+  propagation,
+  SpanStatusCode,
+  trace,
+  metrics,
+  type Span,
+  type SpanOptions,
+} from "@opentelemetry/api";
+import { logs, SeverityNumber, type AnyValue, type AnyValueMap, type Logger } from "@opentelemetry/api-logs";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { BatchLogRecordProcessor, type LogRecordProcessor } from "@opentelemetry/sdk-logs";
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { BatchSpanProcessor, ParentBasedSampler, TraceIdRatioBasedSampler, type ReadableSpan, type SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
+import { UndiciInstrumentation } from "@opentelemetry/instrumentation-undici";
+import { monitorEventLoopDelay } from "node:perf_hooks";
+import { format } from "node:util";
+import { PostHog } from "posthog-node";
+
+import { maskString, redactOtelAttributes, redactSignedStorageUrls, shouldRedactKey } from "./redaction.js";
+
+export { redactOtelAttributes } from "./redaction.js";
+
+/**
+ * The share of traces to keep when the environment names no sampler. Every
+ * database transaction and outgoing call makes a span, so a busy worker writes
+ * gigabytes a day at 100%; errors reach error tracking on their own.
+ */
+export function traceSampleRatio(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.OTEL_TRACES_SAMPLER_ARG?.trim();
+  if (!raw) return 0.1;
+  const ratio = Number(raw);
+  return Number.isFinite(ratio) && ratio >= 0 && ratio <= 1 ? ratio : 0.1;
+}
+
+export type TelemetryInitializationOptions = {
+  serviceName?: string;
+  endpoint?: string;
+};
+
+export type TraceContextCarrier = Record<string, string | undefined>;
+
+let sdk: NodeSDK | undefined;
+let activeLogRecordProcessors: LogRecordProcessor[] = [];
+let initialized = false;
+let stopRuntimeMetrics: (() => void) | undefined;
+let restoreConsole: (() => void) | undefined;
+const storageHttpOrigins = new Set<string>();
+const forcedExportRedactionKeys = new Set([
+  "db.statement",
+  "http.request.body",
+  "http.target",
+  "http.url",
+  "lobbystack.prompt",
+  "lobbystack.transcript",
+  "messaging.message.body",
+  "url.full",
+  "url.path",
+  "url.query",
+]);
+
+export function redactExportAttributes(attributes: Attributes): Attributes {
+  return Object.fromEntries(Object.entries(attributes).map(([key, value]) => {
+    if (forcedExportRedactionKeys.has(key) || shouldRedactKey(key)) {
+      return [key, typeof value === "string" && key.toLowerCase().includes("phone") ? maskString(value) : "[redacted]"];
+    }
+    return [key, typeof value === "string" ? redactOtelExceptionText(value) : value];
+  }));
+}
+
+export function redactExportLogValue(value: AnyValue, key?: string): AnyValue {
+  if (key && (forcedExportRedactionKeys.has(key) || shouldRedactKey(key))) {
+    return typeof value === "string" && key.toLowerCase().includes("phone") ? maskString(value) : "[redacted]";
+  }
+  if (typeof value === "string") return redactOtelExceptionText(value);
+  if (Array.isArray(value)) return value.map((item) => redactExportLogValue(item));
+  if (value && typeof value === "object" && !(value instanceof Uint8Array)) {
+    return Object.fromEntries(Object.entries(value).map(([nestedKey, nestedValue]) => [
+      nestedKey,
+      redactExportLogValue(nestedValue, nestedKey),
+    ]));
+  }
+  return value;
+}
+
+function redactLogExportAttributes(attributes: AnyValueMap): AnyValueMap {
+  return Object.fromEntries(Object.entries(attributes).map(([key, value]) => [key, redactExportLogValue(value, key)]));
+}
+
+function replaceAttributes(target: Attributes, sanitized: Attributes): void {
+  for (const key of Object.keys(target)) delete target[key];
+  Object.assign(target, sanitized);
+}
+
+class RedactingSpanProcessor implements SpanProcessor {
+  onStart(): void {}
+
+  onEnd(span: ReadableSpan): void {
+    replaceAttributes(span.attributes, redactExportAttributes(span.attributes));
+    for (const event of span.events) {
+      if (event.attributes) replaceAttributes(event.attributes, redactExportAttributes(event.attributes));
+    }
+    for (const link of span.links) {
+      if (link.attributes) replaceAttributes(link.attributes, redactExportAttributes(link.attributes));
+    }
+    if (span.status.message) span.status.message = redactOtelExceptionText(span.status.message);
+  }
+
+  forceFlush(): Promise<void> { return Promise.resolve(); }
+  shutdown(): Promise<void> { return Promise.resolve(); }
+}
+
+export function registerStorageHttpEndpoint(endpoint: string | undefined): void {
+  if (!endpoint) return;
+  try { storageHttpOrigins.add(new URL(endpoint).host.toLowerCase()); } catch { /* Invalid provider configuration is handled by the provider. */ }
+}
+
+export function isStorageHttpRequest(request: unknown): boolean {
+  const value = request as { origin?: string | URL; host?: string; hostname?: string; getHeader?(name: string): string | string[] | number | undefined };
+  const candidates = [value.origin instanceof URL ? value.origin.host : value.origin, value.host, value.hostname, value.getHeader?.("host")].flatMap((candidate) => Array.isArray(candidate) ? candidate : candidate === undefined ? [] : [String(candidate)]);
+  return candidates.some((candidate) => {
+    let host = candidate.toLowerCase();
+    try { host = new URL(candidate).host.toLowerCase(); } catch { /* Header values are already host-only. */ }
+    return storageHttpOrigins.has(host) || /(^|\.)s3[.-][a-z0-9-]+\.amazonaws\.com(?::\d+)?$/.test(host) || /(^|\.)s3\.amazonaws\.com(?::\d+)?$/.test(host);
+  });
+}
+
+export function redactOtelExceptionText(value: string): string {
+  return redactSignedStorageUrls(value)
+    // Drizzle appends every bound parameter (tokens, ids, emails) to query errors.
+    // Stop only at a V8 frame ("\n    at "): a parameter may hold "\n\nat 3pm ...".
+    .replace(/(^|\n)params: [\s\S]*?(?=\n {4}at |$)/, "$1params: [omitted]")
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_-]+\b/g, "[redacted-key]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[redacted-phone]")
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+/g, "[redacted-token]")
+    .slice(0, 500);
+}
+
+export async function initializeTelemetry(
+  options: TelemetryInitializationOptions = {},
+): Promise<void> {
+  if (initialized) {
+    return;
+  }
+  initialized = true;
+
+  const endpoint = (options.endpoint ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT)?.replace(/\/$/, "");
+  if (!endpoint) {
+    return;
+  }
+
+  const resource = resourceFromAttributes({
+    "service.namespace": "lobbystack",
+    "service.name": options.serviceName ?? process.env.OTEL_SERVICE_NAME ?? "lobbystack-service",
+    // Match the admin's releaseVersion(): SERVICE_VERSION can go stale on Railway.
+    "service.version": process.env.RAILWAY_GIT_COMMIT_SHA || process.env.RAILWAY_DEPLOYMENT_ID || process.env.SERVICE_VERSION || "development",
+    "deployment.environment": process.env.NODE_ENV ?? "development",
+  });
+  // The OTLP exporters read OTEL_EXPORTER_OTLP_HEADERS from the environment.
+  const logRecordProcessors: LogRecordProcessor[] = [
+    {
+      onEmit(logRecord) {
+        const sanitized = redactLogExportAttributes(logRecord.attributes);
+        for (const [key, value] of Object.entries(sanitized)) logRecord.setAttribute(key, value);
+        logRecord.setBody(redactExportLogValue(logRecord.body));
+      },
+      forceFlush: () => Promise.resolve(),
+      shutdown: () => Promise.resolve(),
+    },
+    new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: `${endpoint}/v1/logs` }) }),
+  ];
+  activeLogRecordProcessors = logRecordProcessors;
+
+  sdk = new NodeSDK({
+    // OTEL_TRACES_SAMPLER wins when a deployment sets one.
+    ...(process.env.OTEL_TRACES_SAMPLER ? {} : { sampler: new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(traceSampleRatio()) }) }),
+    resource,
+    spanProcessors: [new RedactingSpanProcessor(), new BatchSpanProcessor(new OTLPTraceExporter({ url: `${endpoint}/v1/traces` }))],
+    logRecordProcessors,
+    instrumentations: [new HttpInstrumentation({ ignoreOutgoingRequestHook: isStorageHttpRequest }), new UndiciInstrumentation({ ignoreRequestHook: isStorageHttpRequest })],
+    metricReader: new PeriodicExportingMetricReader({
+      exporter: new OTLPMetricExporter({ url: `${endpoint}/v1/metrics` }),
+      exportIntervalMillis: 15_000,
+    }),
+  });
+
+  try {
+    await sdk.start();
+    const delay = monitorEventLoopDelay({ resolution: 20 });
+    delay.enable();
+    const meter = getMeter("lobbystack-runtime");
+    const heap = meter.createObservableGauge("process.memory.heap_used_bytes", { unit: "By" });
+    const rss = meter.createObservableGauge("process.memory.rss_bytes", { unit: "By" });
+    const external = meter.createObservableGauge("process.memory.external_bytes", { unit: "By" });
+    const arrayBuffers = meter.createObservableGauge("process.memory.array_buffers_bytes", { unit: "By" });
+    const eventLoop = meter.createObservableGauge("process.event_loop.delay_p99_ms", { unit: "ms" });
+    const callback: Parameters<typeof meter.addBatchObservableCallback>[0] = result => {
+      const memory = process.memoryUsage();
+      result.observe(heap, memory.heapUsed);
+      result.observe(rss, memory.rss);
+      result.observe(external, memory.external);
+      result.observe(arrayBuffers, memory.arrayBuffers);
+      if (delay.count > 0) result.observe(eventLoop, delay.percentile(99) / 1_000_000);
+      delay.reset();
+    };
+    const runtimeMetrics = [heap, rss, external, arrayBuffers, eventLoop];
+    meter.addBatchObservableCallback(callback, runtimeMetrics);
+    stopRuntimeMetrics = () => { delay.disable(); meter.removeBatchObservableCallback(callback, runtimeMetrics); };
+    restoreConsole = forwardConsoleToLogs();
+  } catch (error) {
+    // Telemetry is deliberately best effort and must never block startup.
+    console.warn("[otel] exporter initialization failed", error instanceof Error ? error.message : String(error));
+  }
+}
+
+// Console warnings and errors also go out as OTel logs, tied to the active
+// trace. The redacting processor scrubs them like any other log.
+function forwardConsoleToLogs(): () => void {
+  const logger = getLogger("lobbystack.console");
+  const originals = { warn: console.warn, error: console.error };
+  const severities = { warn: SeverityNumber.WARN, error: SeverityNumber.ERROR };
+  for (const level of ["warn", "error"] as const) {
+    console[level] = (...args: unknown[]) => {
+      originals[level].apply(console, args);
+      logger.emit({ severityNumber: severities[level], severityText: level.toUpperCase(), body: format(...args) });
+    };
+  }
+  return () => { Object.assign(console, originals); };
+}
+
+export async function shutdownTelemetry(): Promise<void> {
+  restoreConsole?.();
+  restoreConsole = undefined;
+  stopRuntimeMetrics?.();
+  stopRuntimeMetrics = undefined;
+  const activeSdk = sdk;
+  sdk = undefined;
+  activeLogRecordProcessors = [];
+  initialized = false;
+
+  const shutdown = Promise.allSettled(activeSdk ? [activeSdk.shutdown()] : []);
+  await Promise.race([shutdown, new Promise<void>((resolve) => setTimeout(resolve, 5_000))]);
+  logs.disable();
+}
+
+export async function forceFlushTelemetryLogs(): Promise<void> {
+  await Promise.all(activeLogRecordProcessors.map((processor) => processor.forceFlush()));
+}
+
+export function getTracer(name = "lobbystack"): ReturnType<typeof trace.getTracer> {
+  return trace.getTracer(name);
+}
+
+export function getMeter(name = "lobbystack"): ReturnType<typeof metrics.getMeter> {
+  return metrics.getMeter(name);
+}
+
+export function getLogger(name = "lobbystack"): Logger {
+  return logs.getLogger(name);
+}
+
+// Structured failure records reach PostHog Logs through the OTLP exporter.
+// Plain console output is not exported, so worker failures must call this.
+export function emitErrorLog(
+  loggerName: string,
+  body: string,
+  attributes: Record<string, string | number | boolean> = {},
+): void {
+  logs.getLogger(loggerName).emit({
+    severityNumber: SeverityNumber.ERROR,
+    severityText: "ERROR",
+    body,
+    attributes,
+  });
+}
+
+// Ordinary progress records reach PostHog Logs through the OTLP exporter.
+// Pair them with console.info in the caller, which stays in container logs and
+// is not exported, so a record is not duplicated.
+export function emitInfoLog(
+  loggerName: string,
+  body: string,
+  attributes: Record<string, string | number | boolean> = {},
+): void {
+  logs.getLogger(loggerName).emit({
+    severityNumber: SeverityNumber.INFO,
+    severityText: "INFO",
+    body,
+    attributes,
+  });
+}
+
+export function injectTraceContext(carrier: TraceContextCarrier): TraceContextCarrier {
+  propagation.inject(context.active(), carrier, {
+    set(target, key, value) {
+      target[key] = value;
+    },
+  });
+  return carrier;
+}
+
+export function extractTraceContext(carrier: TraceContextCarrier) {
+  return propagation.extract(context.active(), carrier, {
+    get(target, key) {
+      return target[key];
+    },
+    keys(target) {
+      return Object.keys(target);
+    },
+  });
+}
+
+export async function withExtractedTraceContext<T>(
+  carrier: TraceContextCarrier,
+  callback: () => Promise<T> | T,
+): Promise<T> {
+  return await context.with(extractTraceContext(carrier), callback);
+}
+
+export async function withSpan<T>(
+  name: string,
+  options: SpanOptions,
+  callback: (span: Span) => Promise<T> | T,
+): Promise<T> {
+  const tracer = getTracer();
+  return await tracer.startActiveSpan(name, options, async (span) => {
+    try {
+      return await callback(span);
+    } catch (error) {
+      recordException(error, {}, span);
+      throw error;
+    } finally {
+      span.end();
+    }
+  });
+}
+
+let exceptionClient: PostHog | undefined;
+
+// The admin sets POSTHOG_KEY or its public project token, and the worker sets
+// POSTHOG_API_KEY for product analytics. All three name the same project.
+export function postHogProjectKey(): string | undefined {
+  return process.env.POSTHOG_KEY ?? process.env.POSTHOG_API_KEY ?? process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
+}
+
+export type ExceptionProperties = Record<string, string | number | boolean | null | undefined | Record<string, string>>;
+
+// Sends one exception to PostHog error tracking. Server runtimes use a shared
+// system identity, so issues group by fingerprint instead of by person.
+export async function captureExceptionToPostHog(
+  error: Error,
+  distinctId: string,
+  properties: ExceptionProperties = {},
+): Promise<void> {
+  const key = postHogProjectKey();
+  if (!key) return;
+  try {
+    exceptionClient ??= new PostHog(key, {
+      host: process.env.POSTHOG_HOST ?? process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
+      flushAt: 1,
+      flushInterval: 0,
+    });
+    await exceptionClient.captureExceptionImmediate(error, distinctId, properties);
+  } catch {
+    // Error reporting must never replace the failure it describes.
+    console.warn("[telemetry] exception delivery failed");
+  }
+}
+
+export function recordException(
+  error: unknown,
+  attributes: Record<string, string | number | boolean | undefined> = {},
+  span?: Span,
+): void {
+  const activeSpan = span ?? trace.getActiveSpan();
+  if (!activeSpan) {
+    return;
+  }
+  const exception = error instanceof Error ? error : new Error(String(error));
+  activeSpan.recordException({
+    name: exception.name,
+    message: redactOtelExceptionText(exception.message),
+    ...(exception.stack ? { stack: redactOtelExceptionText(exception.stack) } : {}),
+  });
+  activeSpan.setStatus({ code: SpanStatusCode.ERROR });
+  activeSpan.setAttributes(redactOtelAttributes(attributes));
+}
+
+export function setSpanAttributes(
+  span: Span,
+  attributes: Record<string, string | number | boolean | undefined>,
+): void {
+  span.setAttributes(redactOtelAttributes(attributes));
+}

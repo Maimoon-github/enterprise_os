@@ -1,0 +1,385 @@
+{
+  "headers": {
+    "dashboardTitle": "Tableau de bord",
+    "dashboardDescription": "Suivez l'état de préparation pour les appels, les messages et la prise de rendez-vous."
+  },
+  "analyticsPage": {
+    "title": "Analytique",
+    "description": "Consultez les tendances d'engagement pour les appels, les messages et l'activite de reservation."
+  },
+  "home": {
+    "title": "Accueil",
+    "phone": {
+      "status": {
+        "ready": "Prêt pour votre premier appel",
+        "live": "Votre agent prend les appels",
+        "liveMany": "Vos agents prennent les appels"
+      },
+      "answersFirst": {
+        "agent": "Votre agent répond en premier",
+        "team": "Votre équipe répond en premier",
+        "teamDuringHours": "Votre équipe répond en premier pendant les heures d'ouverture"
+      }
+    },
+    "download": "Télécharger",
+    "liveCalls": "En direct",
+    "tabs": {
+      "overview": "Vue d'ensemble",
+      "analytics": "Analytique",
+      "reports": "Rapports",
+      "notifications": "Notifications"
+    },
+    "analytics": {
+      "chart": {
+        "title": "Vue d'ensemble de l'activite",
+        "description": "Appels et messages dans votre espace de travail."
+      },
+      "cards": {
+        "calls": "Nombre d'appels",
+        "messages": "Nombre de messages",
+        "appointments": "Rendez-vous reserves",
+        "agentResponseTime": "Temps de reponse agent"
+      },
+      "controls": {
+        "dateRange": "Plage de dates",
+        "granularity": "Intervalle d'agregation",
+        "more": "Plus d'options",
+        "presetRange": "Periode predeterminee",
+        "granularities": {
+          "hourly": "Horaire",
+          "daily": "Quotidien",
+          "weekly": "Hebdomadaire",
+          "monthly": "Mensuel",
+          "yearly": "Annuel"
+        },
+        "presets": {
+          "today": "Aujourd'hui",
+          "yesterday": "Hier",
+          "thisWeek": "Cette semaine",
+          "thisMonth": "Ce mois-ci",
+          "lastMonth": "Mois dernier",
+          "last30": "30 derniers jours",
+          "last3Months": "3 derniers mois",
+          "thisYear": "Cette annee",
+          "lastYear": "Annee derniere",
+          "allTime": "Depuis le debut",
+          "custom": "Plage personnalisee"
+        }
+      },
+      "metrics": {
+        "flat": "Aucun changement vs periode precedente",
+        "percentUp": "+{{value}}% vs periode precedente",
+        "percentDown": "-{{value}}% vs periode precedente",
+        "durationUp": "+{{value}} vs periode precedente",
+        "durationDown": "-{{value}} vs periode precedente",
+        "pointsUp": "+{{value}} pts vs période précédente",
+        "pointsDown": "-{{value}} pts vs période précédente",
+        "noPreviousCalls": "Aucun appel sur la période précédente"
+      },
+      "outcomes": {
+        "title": "Resultats des appels",
+        "description": "Comment le volume d'appels de cette semaine s'est termine.",
+        "labels": {
+          "completed": "Termines",
+          "transferred": "Transferes",
+          "live": "En direct",
+          "missed": "Manques"
+        }
+      },
+      "channels": {
+        "title": "Canaux",
+        "description": "Appels et messages par canal pour les dates choisies.",
+        "labels": {
+          "other": "Autre"
+        }
+      },
+      "agents": {
+        "title": "Par agent",
+        "calls": "Appels",
+        "chats": "Clavardages",
+        "removed": "Retiré"
+      },
+      "overview": {
+        "calls": {
+          "title": "Appels"
+        },
+        "today": {
+          "title": "Aujourd'hui",
+          "next": "Prochain à {{time}}",
+          "none": "Plus rien aujourd'hui"
+        },
+        "appointments": {
+          "title": "Rendez-vous"
+        },
+        "averageDuration": {
+          "title": "Durée moyenne"
+        }
+      }
+    },
+    "results": {
+      "bookedValue": "Valeur réservée",
+      "timeSaved": "Temps gagné",
+      "withoutTransfer": "Appels sans transfert"
+    },
+    "metrics": {
+      "loading": "Chargement de la comparaison mensuelle...",
+      "calls": {
+        "title": "Appels"
+      },
+      "messages": {
+        "title": "Messages"
+      },
+      "contacts": {
+        "title": "Contacts"
+      }
+    },
+    "chart": {
+      "title": "Appels par mois"
+    },
+    "recentCalls": {
+      "title": "Appels récents",
+      "durationValue": "{{value}} sec"
+    },
+    "actionRequired": {
+      "title": "Action requise",
+      "description": "Tâches de suivi client qui nécessitent encore une intervention humaine.",
+      "titleWithContact": "{{message}} pour {{name}}",
+      "urgent": "Urgent",
+      "emptyTitle": "Aucune tâche de suivi ouverte",
+      "fields": {
+        "callback": "Rappel",
+        "callbackWindow": "Rappel préféré"
+      },
+      "kinds": {
+        "voice_message": "Rappel",
+        "human_handoff": "Transfert",
+        "other": "Ouvert",
+        "cancellation": "Annulation",
+        "reschedule": "Report"
+      },
+      "appointment": "Rendez-vous : {{appointment}}",
+      "noAppointment": "Aucun rendez-vous à venir ne correspond à cette demande. Consultez la page Rendez-vous.",
+      "alreadyCancelled": "Ce rendez-vous est déjà annulé.",
+      "cancellationRequest": "Demande d'annulation",
+      "requested": "Demandé : {{details}}",
+      "notes": "Notes : {{notes}}",
+      "rescheduleRequest": "Demande de report",
+      "newTime": "Nouvel horaire : {{time}}",
+      "inboxLink": "Tout voir dans la boîte de réception"
+    },
+    "upcoming": {
+      "title": "À venir",
+      "appointmentsLink": "Voir tous les rendez-vous",
+      "description": "Les prochains rendez-vous au calendrier.",
+      "unknownService": "Service inconnu",
+      "employee": "Employé : {{name}}",
+      "withStaff": "avec {{staff}}",
+      "emptyTitle": "Aucun rendez-vous à venir",
+      "status": {
+        "booked": "Réservé",
+        "confirmed": "Confirmé"
+      }
+    }
+  },
+  "setup": {
+    "title": "Créer votre premier espace de travail",
+    "description": "Cela initialise l'espace de travail, le profil de l'agent et le premier instantané utilisé par la voix.",
+    "businessName": "Nom de l'entreprise",
+    "slug": "Slug",
+    "timezone": "Fuseau horaire",
+    "businessType": "Type d'entreprise",
+    "placeholders": {
+      "businessName": "Clinique familiale Maple",
+      "slug": "clinique-familiale-maple"
+    },
+    "businessTypes": {
+      "clinic": "Clinique",
+      "repair_shop": "Atelier de réparation",
+      "salon": "Salon",
+      "service_company": "Entreprise de services",
+      "other": "Autre"
+    },
+    "selectBusinessType": "Choisir un type d'entreprise",
+    "create": "Créer l'espace de travail",
+    "creating": "Création...",
+    "created": "Espace de travail créé. L'instantané de l'agent se met à jour.",
+    "failed": "Impossible de créer l'espace de travail."
+  },
+  "cards": {
+    "calls": {
+      "title": "Appels traités",
+      "footer": "La dernière activité entrante est disponible dans la boîte de réception."
+    },
+    "services": {
+      "title": "Services configurés",
+      "footer": "Ils alimentent à la fois l'agent et le moteur de réservation."
+    },
+    "hours": {
+      "title": "Jours d'ouverture définis",
+      "footer": "Les heures structurées font autorité sur les documents."
+    },
+    "knowledge": {
+      "title": "Éléments de connaissance",
+      "footer": "Les connaissances et documents renforcent les réponses d'aperçu et par SMS."
+    },
+    "snapshot": "Instantané {{version}}"
+  },
+  "quickActions": {
+    "title": "Actions rapides",
+    "description": "Gardez {{businessName}} prêt pour les appels, les SMS et les flux de réservation.",
+    "configureProfile": "Configurer le profil de l'agent",
+    "addKnowledge": "Ajouter des connaissances et des documents",
+    "reviewInbox": "Consulter la boîte d'appels",
+    "readiness": "État de préparation",
+    "servicesConfigured": "{{count}} services configurés",
+    "daysConfigured": "{{count}} jours avec heures d'ouverture",
+    "knowledgeItems": "{{count}} éléments de connaissance indexés",
+    "phoneNumbers": "{{count}} numéros de téléphone associés",
+    "currentGreeting": "Salutation actuelle"
+  },
+  "nextSteps": {
+    "title": "Prochaines étapes",
+    "description": "Ajustez le comportement de l'agent avant d'acheminer du trafic réel.",
+    "hours": "Définissez les heures, les services et les affectations d'équipe afin que la réservation puisse proposer de vrais créneaux.",
+    "transfer": "Ajoutez des règles de transfert et un numéro de secours avant de transférer les appels urgents.",
+    "snapshot": "Actualisez l'instantané après des changements de politique importants pour que la voix les prenne rapidement en compte."
+  },
+  "activation": {
+    "hearIt": {
+      "title": "Écoutez votre agent répondre",
+      "description": "Appelez-le depuis votre navigateur et écoutez comment il accueille un client.",
+      "descriptionWithPages_one": "Il a lu {{count}} page de {{host}}. Appelez-le et posez une question que seule votre entreprise connaît.",
+      "descriptionWithPages_many": "Il a lu {{count}} pages de {{host}}. Appelez-le et posez une question que seule votre entreprise connaît.",
+      "descriptionWithPages_other": "Il a lu {{count}} pages de {{host}}. Appelez-le et posez une question que seule votre entreprise connaît.",
+      "cta": "Lancer un appel"
+    },
+    "claimNumber": {
+      "title": "Réservez votre numéro",
+      "description": "Votre forfait inclut un numéro dédié et vous n'en avez pas encore choisi un. Choisissez-le et l'agent commence à répondre.",
+      "cta": "Choisir un numéro"
+    },
+    "freeTrial": {
+      "title": "Répondez à vos appels manqués gratuitement pendant 14 jours",
+      "description": "Choisissez un numéro local, puis renvoyez-y les appels que vous ne pouvez pas prendre. Aucune carte requise.",
+      "cta": "Choisir mon numéro"
+    },
+    "forwardTrial": {
+      "title": "Envoyez vos appels manqués au {{number}}",
+      "description": "Activez le renvoi d'appels chez votre opérateur, et les appels que vous ne pouvez pas prendre vont à votre agent plutôt qu'à la messagerie vocale.",
+      "cta": "Configurer le renvoi"
+    },
+    "upgrade": {
+      "title": "Donnez un numéro à votre agent",
+      "description": "Vous l'avez entendu travailler. Un numéro dédié lui permet de répondre à vos vrais clients, jour et nuit.",
+      "cta": "Choisir un forfait"
+    }
+  },
+  "setupGuide": {
+    "title": "Premiers pas",
+    "skip": "Ignorer la configuration",
+    "skipStep": "Ignorer",
+    "finished": "Configuration terminée.",
+    "description": "{{completed}} étape(s) sur {{total}} complétée(s).",
+    "lastCall": "Votre appel test",
+    "lastCallDetails": "{{date}}, {{duration}}",
+    "readTranscript": "Lire la transcription",
+    "callAgain": "Rappeler",
+    "steps": {
+      "fullScan": "Lire le reste de votre site",
+      "sources": "Ajoutez d'autres sources",
+      "hours": "Ajoutez vos heures d'ouverture",
+      "testCall": "Écoutez votre agent",
+      "phoneNumber": "Associez un numéro",
+      "forwardCalls": "Transférez vos appels",
+      "callNumber": "Appelez votre numéro",
+      "forwardFromCurrent": "Gardez votre numéro existant"
+    },
+    "stepDescriptions": {
+      "fullScan": "Votre agent a lu un échantillon de votre site.",
+      "sources": "Téléversez vos politiques, FAQ ou tarifs.",
+      "hours": "Votre agent réserve des rendez-vous seulement pendant ces heures.",
+      "testCall": "Posez la question que vos appelants posent le plus.",
+      "phoneNumber": "Donnez à votre agent son propre numéro pour répondre à vos vrais clients.",
+      "phoneNumberTrial": "Répondez à vos appels manqués gratuitement pendant 14 jours, sans carte.",
+      "forwardCalls": "Vous gardez le numéro que vos clients appellent déjà ? Votre agent peut aussi y répondre. Facultatif.",
+      "numberLost": "Votre essai gratuit est terminé. Choisissez un forfait pour récupérer votre numéro."
+    },
+    "stepActions": {
+      "fullScan": "Lire le reste",
+      "sources": "Téléverser un document",
+      "hours": "Ajouter les heures",
+      "testCall": "Lancer un appel",
+      "phoneNumber": "Choisir un numéro",
+      "callNumber": "Appeler le {{number}}",
+      "copyNumber": "Copier le numéro",
+      "numberCopied": "Copié",
+      "forwardCalls": "Configurer le transfert",
+      "choosePlan": "Choisir un forfait",
+      "tryAgain": "Réessayer"
+    },
+    "forwardingFrom": "Transfert depuis le {{number}}",
+    "forwardingWorks": "Le transfert fonctionne"
+  },
+  "forwarding": {
+    "title": "Renvoyez vos appels vers le {{number}}",
+    "description": "Choisissez votre fournisseur.",
+    "modes": {
+      "missed": {
+        "label": "Appels manqués",
+        "help": "Votre téléphone sonne d'abord. Si vous ne répondez pas, votre agent prend l'appel."
+      },
+      "all": {
+        "label": "Tous les appels",
+        "help": "Votre agent répond à chaque appel, et votre téléphone ne sonne pas."
+      }
+    },
+    "carrier": {
+      "label": "Fournisseur ou système téléphonique",
+      "placeholder": "Rechercher un fournisseur",
+      "empty": "Aucun fournisseur à ce nom."
+    },
+    "groups": {
+      "usMobile": "Mobile (États-Unis)",
+      "caMobile": "Mobile (Canada)",
+      "landline": "Lignes fixes",
+      "voip": "Systèmes téléphoniques d'entreprise",
+      "ukMobile": "Mobile au Royaume-Uni"
+    },
+    "code": {
+      "dial": "Sur le téléphone que vos clients appellent, composez ce code :",
+      "call": "Appuyez sur Appeler.",
+      "busy": "Pour renvoyer aussi les appels reçus pendant que vous êtes au téléphone, composez :",
+      "off": "Pour le désactiver plus tard, composez {{code}}.",
+      "unreachable": "Pour renvoyer aussi les appels quand votre téléphone est éteint ou sans réseau, composez :",
+      "enterNumber": "Quand on vous le demande, entrez le {{number}}."
+    },
+    "settings": {
+      "open": "Dans {{name}}, ouvrez {{path}}.",
+      "missed": "Renvoyez les appels sans réponse vers le {{number}}, puis enregistrez.",
+      "all": "Renvoyez tous les appels vers le {{number}}, puis enregistrez.",
+      "openPhone": "Sur votre téléphone, ouvrez {{path}}."
+    },
+    "notes": {
+      "planFeature": "Si le renvoi ne s'active pas, demandez à {{name}} d'ajouter le renvoi d'appel à votre forfait.",
+      "iphone": "Sur un iPhone, désactivez la messagerie vocale en direct dans les réglages de Téléphone. Sinon, elle répond avant votre agent.",
+      "ringTime": "Si vous pouvez choisir la durée de sonnerie, 15 à 20 secondes vous laissent environ quatre sonneries avant que votre agent réponde.",
+      "voicemail": "Si vous avez la messagerie vocale de {{name}}, demandez à {{name}} de la retirer. Les appels manqués ne peuvent pas être renvoyés tant qu'elle est active.",
+      "androidOnly": "Ces étapes sont pour les téléphones Android. Sur un iPhone, demandez à {{name}} de l'activer pour vous.",
+      "adminOnly": "Seul un administrateur de votre compte {{name}} peut modifier ce réglage.",
+      "verifyNumber": "{{name}} envoie un code au {{number}} avant d'activer le renvoi. Choisissez de recevoir le code par appel, puis lisez-le dans la transcription de cet appel, dans la Boîte de réception."
+    },
+    "unsupported": {
+      "missed": "{{name}} ne propose pas de renvoi pour les appels manqués seulement. Choisissez Tous les appels, ou demandez à {{name}} de renvoyer les appels sans réponse vers le {{number}}.",
+      "all": "{{name}} n'indique pas comment renvoyer tous les appels. Demandez à {{name}} de renvoyer vos appels vers le {{number}}."
+    },
+    "notListed": {
+      "missed": "Votre fournisseur n'est pas dans la liste? Demandez-lui de renvoyer les appels sans réponse vers le {{number}}.",
+      "all": "Votre fournisseur n'est pas dans la liste? Demandez-lui de renvoyer tous vos appels vers le {{number}}."
+    },
+    "general": {
+      "missed": "Sur un mobile, ouvrez les réglages d'appel de votre téléphone et renvoyez les appels sans réponse vers le {{number}}. Sur une ligne fixe ou un système téléphonique d'entreprise, demandez-le à votre fournisseur.",
+      "all": "Sur un mobile, ouvrez les réglages d'appel de votre téléphone et renvoyez tous les appels vers le {{number}}. Sur une ligne fixe ou un système téléphonique d'entreprise, demandez-le à votre fournisseur."
+    },
+    "itWorks": "Ça fonctionne"
+  }
+}

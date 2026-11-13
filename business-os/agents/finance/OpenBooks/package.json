@@ -1,0 +1,60 @@
+{
+  "name": "openbooks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "Open-source, AI-native, modular double-entry accounting system",
+  "engines": {
+    "node": ">=22.11.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "lint:deps": "depcruise packages --config .dependency-cruiser.cjs",
+    "lint:tokens": "bash .github/scripts/check-token-lint.sh",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "yarn workspaces foreach --all --parallel --topological-dev run typecheck",
+    "test": "vitest run",
+    "test:web": "vitest run --project web",
+    "test:watch": "vitest",
+    "e2e": "yarn workspace @openbooks/e2e test:e2e",
+    "e2e:install": "yarn workspace @openbooks/e2e test:e2e:install",
+    "build": "yarn workspaces foreach --all --topological-dev run build",
+    "build:web": "yarn workspace @openbooks/web build",
+    "dev": "yarn workspace @openbooks/server dev",
+    "migrate": "yarn workspace @openbooks/server migrate",
+    "migrate:down": "yarn workspace @openbooks/server migrate:down",
+    "codegen": "yarn workspace @openbooks/server codegen",
+    "spec": "yarn workspace @openbooks/server spec",
+    "spec:check": "yarn workspace @openbooks/server spec --check",
+    "client:check": "node packages/web/scripts/check-client-drift.mjs",
+    "drift": "yarn spec:check && yarn client:check",
+    "check": "yarn format:check && yarn lint && yarn lint:tokens && yarn lint:deps && yarn typecheck && yarn drift && yarn build && yarn test"
+  },
+  "resolutions": {
+    "@fastify/static": "10.1.10",
+    "js-yaml": "4.3.2",
+    "brace-expansion@npm:^2.0.1": "5.0.12",
+    "brace-expansion@npm:^2.0.2": "5.0.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@openbooks/eslint-plugin": "workspace:*",
+    "@types/node": "^22.15.0",
+    "dependency-cruiser": "^18.1.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^10.8.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  },
+  "packageManager": "yarn@4.17.1"
+}

@@ -1,0 +1,127 @@
+---
+title: "Automatiser la configuration avec des clés de plateforme et la ligne de commande"
+description: "Créez une clé de plateforme dans la console partenaire, créez et configurez vos entreprises par l'API, et intégrez une entreprise à partir d'un seul fichier avec lobbystack onboard."
+sidebarTitle: "Clés API et ligne de commande"
+contentType: "How-to"
+---
+
+import SaasPrompt from "/snippets/fr/setup-prompts/saas.mdx";
+
+Une clé de plateforme permet à votre propre code de créer des entreprises et de les configurer par l'[API](/fr/api/overview) de LobbyStack. Elle permet aussi à la commande `lobbystack onboard` de créer une entreprise à partir d'un seul fichier. Les propriétaires et les administrateurs créent les clés sur la page **Clés API** de la console. Une clé agit au nom de votre partenaire et n'atteint que vos entreprises.
+
+## Créer une clé de plateforme
+
+Donnez à chaque outil sa propre clé, pour pouvoir en révoquer une sans briser les autres :
+
+<Steps>
+  <Step title="Ouvrir le formulaire">
+    Sur **Clés API**, cliquez sur **Créer une clé API**.
+  </Step>
+  <Step title="Nommer la clé et choisir son accès">
+    Entrez un **Nom** que vous reconnaîtrez, comme `Intégration des clients`. Sous **Accès**, sélectionnez seulement ce dont l'outil a besoin. Pour créer des entreprises, sélectionnez **Créer des entreprises et inviter leurs propriétaires**. Pour gérer votre partenaire depuis du code, sélectionnez les accès partenaire dont l'outil a besoin. Seuls les propriétaires voient les accès à la facturation.
+  </Step>
+  <Step title="Copier la clé">
+    Cliquez sur **Créer la clé**, puis copiez la clé et conservez-la dans un gestionnaire de mots de passe ou dans les réglages de votre outil. La console ne l'affiche qu'une fois.
+  </Step>
+</Steps>
+
+La page liste chaque clé par son nom, avec la personne qui l'a créée, sa date de création et la date de sa dernière utilisation. Les membres voient la page, mais ne peuvent ni créer, ni modifier, ni révoquer de clés.
+
+## Ce que peut faire la clé d'un partenaire
+
+La clé d'un partenaire agit au nom de votre partenaire plutôt qu'au nom d'une personne : elle continue donc de fonctionner quand le collègue qui l'a créée quitte l'équipe. Elle atteint vos entreprises actives, y compris celles créées depuis la console, et aucune autre :
+
+- `POST /businesses` crée une entreprise encore sans propriétaire. Indiquez le propriétaire dans `owner_email`, et LobbyStack lui envoie votre invitation par courriel. Laissez ce champ de côté pour [gérer l'entreprise depuis votre propre produit](#gérer-des-entreprises-depuis-votre-propre-produit). `access_level` accepte `full`, la valeur par défaut, ou `activity`.
+- Toutes les autres requêtes nomment leur entreprise dans l'en-tête `LobbyStack-Business`.
+- Les liens que l'API renvoie, comme la balise de script d'un widget ou un lien de connexion d'agenda, mènent à votre adresse.
+
+Vos clés peuvent créer 30 entreprises par heure au total. `POST /businesses` accepte `template_id` pour partir d'un de vos modèles, avec la portée `partner:read`, et `package_id` pour vendre une de vos formules, avec la portée `partner.businesses:write`. Une clé ne peut pas modifier les préférences d'alertes : faites-le dans la console.
+
+[Clés de plateforme](/fr/api/authentication#clés-de-plateforme) liste les portées, les en-têtes et les réponses.
+
+## Gérer des entreprises depuis votre propre produit
+
+Si vos clients utilisent votre produit sans jamais voir LobbyStack, laissez `owner_email` hors de `POST /businesses`. Personne ne reçoit d'invitation, et votre clé configure et gère l'entreprise. Une clé ne peut pas inviter de propriétaire : l'entreprise reste donc sans propriétaire.
+
+<SaasPrompt />
+
+Sur un palier payant, une clé avec `phone_numbers:manage` et `phone_numbers:purchase` achète le numéro de l'entreprise. Une clé n'a pas `phone_numbers:purchase` par défaut : activez d'abord **Rechercher, acheter et remplacer des numéros de téléphone** sur la clé. Nommez l'entreprise dans l'en-tête `LobbyStack-Business` :
+
+<Steps>
+  <Step title="Rechercher">
+    `POST /phone-numbers/search` renvoie des offres. Chaque offre dure 5 minutes, et seule la clé qui a fait la recherche peut la réserver.
+  </Step>
+  <Step title="Réserver">
+    `POST /phone-numbers/claims` achète le numéro. Interrogez `GET /phone-numbers/claims/{claim_id}` jusqu'à ce que son statut soit `claimed` ou `failed`.
+  </Step>
+  <Step title="Remplacer, au besoin">
+    Relancez la recherche avec `replaces`, puis appelez `POST /phone-numbers/{phone_number_id}/replace`. Une entreprise peut remplacer son numéro une fois.
+  </Step>
+</Steps>
+
+Sur le palier Free, ces requêtes renvoient `409`. Une clé n'obtient jamais votre numéro d'essai de 14 jours, parce que cet essai demande le mobile vérifié d'une personne. Vos clés partagent 20 recherches par tranche de 10 minutes, et [les limites de votre palier sur les nouveaux numéros](/fr/white-label/tiers#numéros-de-téléphone-par-palier) s'appliquent.
+
+Une entreprise sans propriétaire n'a personne dans son équipe, ce qui change quatre choses :
+
+- **Alertes :** les [webhooks](/fr/api/webhooks) couvrent les appels, les messages, les rendez-vous et les contacts. LobbyStack envoie un courriel à vos propriétaires et administrateurs quand un visiteur du site demande une personne, qu'un transfert ou un texto échoue, qu'un texto d'un client attend une réponse, qu'un agenda cesse de se synchroniser, qu'une réponse de l'IA échoue ou qu'un point de terminaison de webhook se désactive. Vous avez 3 minutes pour répondre à un visiteur depuis la **Boîte de réception** de l'entreprise. Personne ne reçoit d'alerte pour les nouvelles discussions du site ou d'Instagram.
+- **Appels que la réceptionniste ne peut pas prendre :** LobbyStack les transfère au numéro de transfert de l'entreprise, et les refuse s'il n'y en a pas. Définissez `transfer_number` avec `PATCH /receptionist`.
+- **Intégration :** votre clé la termine avec `POST /onboarding/complete`. Envoyez `skip_number: true` si l'entreprise n'a pas de numéro.
+- **Vente et remise :** une formule demande un propriétaire, parce que le paiement s'ouvre depuis son invitation. `package_id` renvoie `400` sans `owner_email`, et définir une formule plus tard renvoie `409`. Vous pouvez supprimer l'entreprise, mais pas la remettre à quelqu'un.
+
+## Gérer votre partenaire depuis du code
+
+Avec les accès partenaire, une clé fait ce que fait la console. Elle crée et publie des démos, gère les formules, modifie votre image de marque et votre domaine, enregistre des modèles, invite votre équipe, cède ou supprime des entreprises, et affiche votre palier et votre compte Stripe. Un assistant de programmation ou vos propres scripts peuvent alors faire votre travail en marque blanche par l'API ou la commande `lobbystack` :
+
+```bash
+lobbystack demos create "Harbor Dental" https://harbordental.example
+lobbystack packages list
+lobbystack partner-team invite sam@youragency.example member
+```
+
+La clé agit comme un administrateur : elle ne peut pas inviter de propriétaire ni changer le rôle d'un propriétaire. Seuls les propriétaires peuvent donner à une clé l'accès à la facturation, et un paiement de palier lancé par la clé est établi au nom du propriétaire qui lui a donné cet accès, en créant la clé ou en la modifiant en dernier. L'accès à la facturation dure tant que cette personne reste propriétaire. Si elle devient administrateur ou quitte votre équipe, la clé perd l'accès à la facturation et garde le reste. L'écriture de la facturation comprend sa lecture. [Points de terminaison partenaire](/fr/api/authentication#points-de-terminaison-partenaire) liste ce que permet chaque accès.
+
+## Intégrer une entreprise à partir d'un fichier
+
+`lobbystack onboard` lit un fichier YAML ou JSON qui décrit une entreprise, crée l'entreprise et la configure. Connectez-vous d'abord avec la clé de votre partenaire. Sur la version hébergée de LobbyStack, utilisez `https://app.lobbystack.com` :
+
+```bash
+lobbystack login --url https://app.lobbystack.com --key-stdin < key.txt
+```
+
+La clé a besoin de `businesses:create`, `business:read`, `business:write`, `knowledge:read`, `knowledge:write` et `team:manage`, plus `phone_numbers:manage` et `phone_numbers:purchase` pour un numéro. Le manifeste d'une clé de partenaire peut nommer le propriétaire, qui reçoit votre invitation quand la commande crée l'entreprise :
+
+```yaml harbor-dental.yaml
+business:
+  name: Harbor Dental
+  timezone: America/Toronto
+  access_level: activity
+knowledge:
+  websites: [https://harbordental.example]
+receptionist:
+  greeting: Merci d'avoir appelé Harbor Dental, comment puis-je vous aider ?
+owner:
+  email: owner@harbordental.example
+```
+
+Laissez `plan` hors du manifeste : vos entreprises n'achètent pas les forfaits de LobbyStack. Sur un palier payant, ajoutez `phone_number` et la commande réserve le premier numéro que la recherche propose. Laissez `owner` de côté pour une entreprise sans propriétaire, et la commande termine son intégration. Prévisualisez l'exécution avec `--plan`, puis lancez-la :
+
+```bash
+lobbystack onboard harbor-dental.yaml --plan
+lobbystack onboard harbor-dental.yaml
+```
+
+Relancez la commande chaque fois que le fichier change : elle ne change que ce qui diffère. Votre clé continue d'atteindre l'entreprise après l'arrivée de son propriétaire. [Intégrer une entreprise en ligne de commande](/fr/api/cli) couvre chaque section du fichier.
+
+## Modifier une clé
+
+Cliquez sur **Modifier** à côté de la clé pour changer son nom ou son accès, puis sur **Enregistrer**. La clé reste la même : vos outils continuent de l'utiliser et obtiennent le nouvel accès dès leur prochaine requête. Vous ne pouvez pas modifier une clé révoquée.
+
+Seuls les propriétaires peuvent modifier une clé qui a accès à la facturation : les administrateurs voient **Modifier** désactivé sur ces clés. Le propriétaire qui enregistre une clé avec l'accès à la facturation devient celui dont cet accès dépend.
+
+## Révoquer une clé
+
+Cliquez sur **Révoquer** à côté de la clé, puis sur **Révoquer la clé**. Tout ce qui l'utilise cesse immédiatement de fonctionner, et vous ne pouvez pas annuler l'opération :
+
+- les points de terminaison webhook que la clé a créés se désactivent, sur toutes les entreprises
+- personne ne peut accepter les invitations qu'elle a envoyées, à l'équipe d'une entreprise ou à la vôtre
+- les propriétaires qu'elle a invités en créant leur entreprise peuvent toujours rejoindre leur entreprise

@@ -1,0 +1,129 @@
+// @vitest-environment jsdom
+import * as React from "react";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  flexRender,
+  useTable,
+  type ColumnDef,
+  type PaginationState,
+} from "@tanstack/react-table";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { DataTablePagination, paginationFeatures } from "@/components/data-table/pagination";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+type Row = {
+  value: string;
+};
+
+const columns: Array<ColumnDef<typeof paginationFeatures, Row>> = [
+  {
+    accessorKey: "value",
+    header: () => "Value",
+  },
+];
+
+function PaginationHarness() {
+  return <PaginationHarnessWithRowCount rowCount={12} />;
+}
+
+function PaginationHarnessWithRowCount({ rowCount }: { rowCount: number }) {
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 5,
+  });
+
+  const data = React.useMemo(
+    () => Array.from({ length: rowCount }, (_, index) => ({ value: `Row ${index + 1}` })),
+    [rowCount],
+  );
+
+  const table = useTable({
+    features: paginationFeatures,
+    columns,
+    data,
+    onPaginationChange: setPagination,
+    state: {
+      pagination,
+    },
+  });
+
+  return (
+    <div>
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((headerGroup) => (
+            <TableRow key={headerGroup.id}>
+              {headerGroup.headers.map((header) => (
+                <TableHead key={header.id}>
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                </TableHead>
+              ))}
+            </TableRow>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.map((row) => (
+            <TableRow key={row.id}>
+              {row.getAllCells().map((cell) => (
+                <TableCell key={cell.id}>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <DataTablePagination
+        labels={{
+          rowsPerPage: "Rows per page",
+          viewing: (start, end, total) => `Viewing ${start}-${end} of ${total}`,
+          viewingAll: (total) => `Viewing all ${total} rows`,
+          firstPage: "First page",
+          previousPage: "Previous page",
+          nextPage: "Next page",
+          lastPage: "Last page",
+        }}
+        table={table}
+      />
+    </div>
+  );
+}
+
+describe("DataTablePagination", () => {
+  it("changes the active page when the next control is clicked", async () => {
+    const user = userEvent.setup();
+
+    render(<PaginationHarness />);
+
+    expect(screen.getByText("Row 1")).toBeTruthy();
+    expect(screen.queryByText("Row 6")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+
+    expect(screen.queryByText("Row 1")).toBeNull();
+    expect(screen.getByText("Row 6")).toBeTruthy();
+    expect(screen.getByText("Viewing 6-10 of 12")).toBeTruthy();
+  });
+
+  it("hides pagination when there are 10 or fewer rows", () => {
+    render(<PaginationHarnessWithRowCount rowCount={10} />);
+
+    expect(screen.queryByText("Rows per page")).toBeNull();
+    expect(screen.queryByText(/^Viewing/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+});
+
+afterEach(cleanup);

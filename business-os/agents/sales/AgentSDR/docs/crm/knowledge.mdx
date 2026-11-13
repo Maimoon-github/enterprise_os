@@ -1,0 +1,99 @@
+---
+title: "Instructions, knowledge and lead categories"
+description: "Steer how the CRM AI classifies replies and writes drafts with instructions, a knowledge base and your own lead categories."
+icon: "book-open"
+---
+
+Three settings decide what the CRM AI does with a reply. **Lead categories** say how replies are sorted. **Instructions** say how to behave. **Knowledge** gives it facts about you. All three are per organization, and they apply to email, LinkedIn and WhatsApp replies alike.
+
+## Instructions
+
+Instructions are standing guidance added to the AI's prompt. Open **Settings → AI → Instructions**. There are two lists, shown as two tabs with a count each:
+
+- **Reply drafting**: added to every draft the AI writes. Use it for tone, length, sign-off and what to offer or avoid. For example: "Sign off as Priya from Youse. Keep emails under 120 words. Never offer discounts; suggest a 20-minute call instead."
+- **Reply classification**: added to every classification of a reply or call. Use it to settle edge cases. For example: "A referral to a colleague counts as Interested, not Other. Replies from agencies are Not interested."
+
+<Frame caption="Instructions are split into Reply drafting and Reply classification.">
+  <img src="/assets/screenshots/app/instructions.png" alt="Settings, Instructions page with Reply drafting and Reply classification tabs and an empty list with an Add instruction button" />
+</Frame>
+
+<Steps>
+  <Step title="Add an instruction">
+    Click **Add instruction**. Give it a short title and write the guidance. The AI receives each instruction as its own titled section.
+  </Step>
+  <Step title="Organize">
+    Expand or collapse instructions, duplicate or delete one, and use **Copy all** or **Export JSON** to keep a backup.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The page shows **Unsaved changes** until you do, and **Discard** drops your edits.
+  </Step>
+</Steps>
+
+Limits: 50 instructions per list, titles up to 200 characters, each instruction up to 8,000 characters, and 20,000 characters across a list. The page warns before you reach them.
+
+Instructions steer the AI but do not unlock anything. It still never sends a message itself, and still does not state facts that are not in the context it is given.
+
+## Knowledge
+
+Knowledge is the product, pricing and policy material the AI grounds its drafts in. Open **Settings → AI → Knowledge**, then click **Add document**.
+
+<Frame caption="Documents marked Always included go into every draft.">
+  <img src="/assets/screenshots/app/knowledge.png" alt="Settings, Knowledge page listing one document, About Northwind Demo, marked Always included, with an Add document button" />
+</Frame>
+
+Each document has:
+
+- **Title**, such as "Pricing and plans".
+- **Kind**: Custom, Company, Product, Pricing, FAQ, Scheduling, Objection or Case study.
+- **Content**, written in Markdown. Headings and lists help the AI find the right part.
+- **Tags**, comma separated, for example "pricing, onboarding".
+- **Always include in draft context**. Documents marked **Always included** go into every draft. Keep these short.
+
+Every saved edit creates a new version. **Archive** takes a document out of drafts, and **Restore** brings it back. The **Active** and **Archived** tabs list each.
+
+For each draft the AI is given the always-included documents first, then the best matches for the conversation, up to a limit of about 2,000 tokens. Longer excerpts are cut off to fit. Under a draft, **Knowledge used** shows which excerpts it relied on, so you can check where a claim came from. The classifier also receives your knowledge as background about you, not about the person replying.
+
+<Tip>
+Put the facts people ask for in separate short documents, such as pricing, scheduling and one common objection. A single long document wastes the limit on text that is not relevant.
+</Tip>
+
+## Lead categories
+
+Open **Settings → CRM & leads → Lead categories**. Replies are sorted into four fixed categories: **Interested**, **Customer**, **Not interested** and **Other**. Under each are **subcategories**, which you can change. Each row shows:
+
+- **Subcategory**, with how many active records it holds and its funnel stage, or "Not a funnel stage".
+- **Classification description**: tells the AI when a reply belongs here. A subcategory with no description shows a prompt to add one. Be concrete: "The person explicitly asks for a product demo".
+- **Sequence**: the [sequence](/crm/sequences) that starts for it, or **No sequence**.
+
+<Frame caption="Each subcategory has a description for the AI and a sequence to start.">
+  <img src="/assets/screenshots/app/lead-categories.png" alt="Settings, Lead categories page listing the Interested subcategories with their classification descriptions and a sequence selector for each" />
+</Frame>
+
+Use **Add subcategory** in a category to create one. Its dialog asks for a **Name**, a **Classification description** and a **Funnel stage**. Use **Edit** on a row to change them. **Delete** removes a subcategory, but not one that still holds CRM records or classification history.
+
+The **Funnel stage** is a number. The AI can move a lead only to the same or a higher stage. Leave it empty for outcomes that are not funnel stages, such as Out of Office or Not interested. See [Pipeline](/crm/pipeline) for the starter set and how stages interact.
+
+<Note>
+New organizations start with a default set of subcategories but no sequences. Add yours and attach them here.
+</Note>
+
+## How they work together
+
+When a reply arrives, the classifier sees your categories and their descriptions, your classification instructions and your knowledge. It returns a category, a subcategory, a confidence and a reason. After classification, the draft is written from the conversation, the sequence step's goal, your drafting instructions and the matching knowledge. If a result looks wrong, fix the wording of the description or the instruction rather than correcting every reply by hand.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Sequences" icon="list-checks" href="/crm/sequences">
+    Build the flows you attach to subcategories.
+  </Card>
+  <Card title="Action required" icon="inbox" href="/crm/action-required">
+    Review the drafts these settings shape.
+  </Card>
+  <Card title="AI provider" icon="sparkles" href="/workspace/ai-provider">
+    Choose the model that runs all of this.
+  </Card>
+  <Card title="Pipeline" icon="kanban" href="/crm/pipeline">
+    Funnel stages and the default pipeline.
+  </Card>
+</CardGroup>

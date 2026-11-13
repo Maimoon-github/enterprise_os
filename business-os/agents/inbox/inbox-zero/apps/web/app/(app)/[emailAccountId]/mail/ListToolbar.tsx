@@ -1,0 +1,688 @@
+"use client";
+
+import {
+  MailListToolbarSurface,
+  MailSearchSurface,
+} from "@inboxzero/mail-ui/MailListToolbarSurface";
+import {
+  memo,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  ChevronDownIcon,
+  MailIcon,
+  MailOpenIcon,
+  MoreHorizontalIcon,
+  PanelLeftIcon,
+  SearchIcon,
+  SettingsIcon,
+  SlidersHorizontalIcon,
+  SparklesIcon,
+  SplitIcon,
+  StarIcon,
+  StarOffIcon,
+  TagIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { MailSearchFiltersForm } from "@/app/(app)/[emailAccountId]/mail/MailSearchFilters";
+import { OutlookSearchFiltersForm } from "@/app/(app)/[emailAccountId]/mail/OutlookSearchFilters";
+import {
+  MailSearchHint,
+  MailSearchSuggestionList,
+  suggestionOptionId,
+  useMailSearchSuggestions,
+} from "@/app/(app)/[emailAccountId]/mail/MailSearchSuggestions";
+import {
+  readRecentSearches,
+  rememberRecentSearch,
+} from "@/store/mail-search-history";
+import { parseMailSearchQuery } from "@/app/(app)/[emailAccountId]/mail/mail-search-query";
+import { parseOutlookSearchQuery } from "@/app/(app)/[emailAccountId]/mail/outlook-search-query";
+import type { MailLayoutMode } from "@/app/(app)/[emailAccountId]/mail/types";
+import { Tooltip } from "@/components/Tooltip";
+import { useSidebar } from "@/components/ui/sidebar";
+import { getShortcutHint } from "@/lib/shortcuts/registry";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { cn } from "@/utils";
+
+export type ListToolbarProps = {
+  layout: MailLayoutMode;
+  expandedPreview: boolean;
+  /** Committed search query. */
+  searchQuery: string;
+  onSearch: (query: string) => void;
+  searchValue: string;
+  onSearchChange: (query: string) => void;
+  /** Lets `/` focus the mail search field from the shortcut handler. */
+  searchInputRef?: RefObject<HTMLInputElement | null>;
+  /** Gmail labels or Outlook categories offered in the Search dropdown. */
+  searchLabels?: { name: string }[];
+  searchFolders?: { name: string }[];
+  searchVariant?: "gmail" | "outlook" | "common";
+  onToggleLayout: () => void;
+  onTogglePreview: () => void;
+  bundleInbox: boolean;
+  /** Omitted outside the single-account inbox, where bundling never applies. */
+  onToggleBundleInbox?: () => void;
+  onToggleAssistant: () => void;
+  /** Omitted where the setup card can't apply, or while it's open. */
+  onOpenSetup?: () => void;
+  /** Marks the view options menu until the reader has been through setup once. */
+  isSetupSuggested: boolean;
+  /** Rendered here only when the split tabs row isn't showing to hold it. */
+  selectAll?: ReactNode;
+  selectedCount: number;
+  onArchiveSelected: () => void;
+  /** Set when every selected conversation is already archived; replaces Archive. */
+  onMoveToInboxSelected?: () => void;
+  onDeleteSelected: () => void;
+  isUnreadSelected: boolean;
+  onMarkReadSelected: () => void;
+  onMarkUnreadSelected: () => void;
+  /** True when every selected conversation is already starred. */
+  isStarredSelected: boolean;
+  onStarSelected: () => void;
+  /** Omitted when the current view can't label (combined inboxes). */
+  onLabelSelected?: () => void;
+  /** Omitted when there's no split the senders could join. */
+  onAddToSplitSelected?: () => void;
+  onClearSelection: () => void;
+  /** Opens the mail navigation panel on screens too narrow for the rail. */
+  onOpenMailNav: () => void;
+};
+
+export const ListToolbar = memo(function ListToolbar({
+  layout,
+  expandedPreview,
+  searchQuery = "",
+  onSearch,
+  onSearchChange,
+  searchValue,
+  searchInputRef,
+  searchLabels,
+  searchFolders,
+  searchVariant = "gmail",
+  onToggleLayout,
+  onTogglePreview,
+  bundleInbox,
+  onToggleBundleInbox,
+  onToggleAssistant,
+  onOpenSetup,
+  isSetupSuggested,
+  selectAll,
+  selectedCount,
+  onArchiveSelected,
+  onMoveToInboxSelected,
+  onDeleteSelected,
+  isUnreadSelected,
+  onMarkReadSelected,
+  onMarkUnreadSelected,
+  isStarredSelected,
+  onStarSelected,
+  onLabelSelected,
+  onAddToSplitSelected,
+  onClearSelection,
+  onOpenMailNav,
+}: ListToolbarProps) {
+  const { t } = useLingui();
+  const { state } = useSidebar();
+  const isSidebarCollapsed = !state.includes("left-sidebar");
+
+  return (
+    <MailListToolbarSurface
+      className={cn(
+        // The collapsed rail is narrower than the mac traffic lights, so the
+        // toolbar starts after them and the sidebar toggle lifted beside them.
+        isSidebarCollapsed &&
+          "lg:pl-[max(0.75rem,calc(var(--desktop-traffic-lights-width,0px)-0.75rem))]",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onOpenMailNav}
+        aria-label={t`Open navigation`}
+        className={cn(toolbarButton, "w-8 justify-center px-0 lg:hidden")}
+      >
+        <PanelLeftIcon className="size-3.5" />
+      </button>
+      {selectAll}
+
+      {/* Selection swaps the toolbar's controls in place so the list never
+          shifts down to make room for a new row. */}
+      {selectedCount > 0 ? (
+        <>
+          <span
+            aria-live="polite"
+            className="min-w-0 flex-1 truncate font-medium text-sm"
+          >
+            <Plural value={selectedCount} one="# selected" other="# selected" />
+          </span>
+
+          {onMoveToInboxSelected ? (
+            <Tooltip content={t`Move to inbox`}>
+              <button
+                type="button"
+                onClick={onMoveToInboxSelected}
+                aria-label={t`Move to inbox`}
+                className={cn(toolbarButton, "w-8 justify-center px-0")}
+              >
+                <ArchiveRestoreIcon className="size-3.5" />
+              </button>
+            </Tooltip>
+          ) : (
+            <Tooltip shortcuts={["archive"]}>
+              <button
+                type="button"
+                onClick={onArchiveSelected}
+                aria-label={t`Archive`}
+                className={cn(toolbarButton, "w-8 justify-center px-0")}
+              >
+                <ArchiveIcon className="size-3.5" />
+              </button>
+            </Tooltip>
+          )}
+
+          <Tooltip
+            content={isUnreadSelected ? t`Mark as read` : undefined}
+            shortcuts={isUnreadSelected ? undefined : ["markUnread"]}
+          >
+            <button
+              type="button"
+              onClick={
+                isUnreadSelected ? onMarkReadSelected : onMarkUnreadSelected
+              }
+              aria-label={
+                isUnreadSelected ? t`Mark as read` : t`Mark as unread`
+              }
+              className={cn(toolbarButton, "w-8 justify-center px-0")}
+            >
+              {isUnreadSelected ? (
+                <MailOpenIcon className="size-3.5" />
+              ) : (
+                <MailIcon className="size-3.5" />
+              )}
+            </button>
+          </Tooltip>
+
+          <Tooltip shortcuts={["star"]}>
+            <button
+              type="button"
+              onClick={onStarSelected}
+              aria-label={isStarredSelected ? t`Unstar` : t`Star`}
+              className={cn(toolbarButton, "w-8 justify-center px-0")}
+            >
+              {isStarredSelected ? (
+                <StarOffIcon className="size-3.5" />
+              ) : (
+                <StarIcon className="size-3.5" />
+              )}
+            </button>
+          </Tooltip>
+
+          <Tooltip shortcuts={["delete"]}>
+            <button
+              type="button"
+              onClick={onDeleteSelected}
+              aria-label={t`Delete`}
+              className={cn(
+                toolbarButton,
+                "w-8 justify-center px-0 hover:bg-destructive/10 hover:text-destructive",
+              )}
+            >
+              <Trash2Icon className="size-3.5" />
+            </button>
+          </Tooltip>
+
+          {onLabelSelected ? (
+            <Tooltip shortcuts={["label"]}>
+              <button
+                type="button"
+                onClick={onLabelSelected}
+                aria-label={t`Label`}
+                className={cn(toolbarButton, "w-8 justify-center px-0")}
+              >
+                <TagIcon className="size-3.5" />
+              </button>
+            </Tooltip>
+          ) : null}
+
+          {onAddToSplitSelected ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t`More selection actions`}
+                  className={cn(toolbarButton, "w-8 justify-center px-0")}
+                >
+                  <MoreHorizontalIcon className="size-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onAddToSplitSelected}>
+                  <SplitIcon className="mr-2 size-4" />
+                  <Trans>Add senders to split</Trans>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+
+          <Tooltip
+            shortcuts={[{ id: "backToList", label: t`Clear selection` }]}
+          >
+            <button
+              type="button"
+              onClick={onClearSelection}
+              aria-label={t`Clear selection`}
+              className={cn(toolbarButton, "w-8 justify-center px-0")}
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          </Tooltip>
+        </>
+      ) : (
+        <MailSearchInput
+          // Reset the advanced-search form when the committed query changes.
+          key={searchQuery}
+          searchQuery={searchQuery}
+          onSearch={onSearch}
+          onSearchChange={onSearchChange}
+          searchValue={searchValue}
+          inputRef={searchInputRef}
+          searchLabels={searchLabels}
+          searchFolders={searchFolders}
+          searchVariant={searchVariant}
+        />
+      )}
+
+      {selectedCount === 0 ? (
+        <ViewOptionsMenu
+          layout={layout}
+          expandedPreview={expandedPreview}
+          onToggleLayout={onToggleLayout}
+          onTogglePreview={onTogglePreview}
+          bundleInbox={bundleInbox}
+          onToggleBundleInbox={onToggleBundleInbox}
+          onOpenSetup={onOpenSetup}
+          isSetupSuggested={isSetupSuggested}
+        />
+      ) : null}
+
+      {selectedCount === 0 ? (
+        <Tooltip shortcuts={["toggleAssistant"]}>
+          <button
+            type="button"
+            onClick={onToggleAssistant}
+            aria-label={t`Toggle the assistant`}
+            className={cn(
+              toolbarButton,
+              "w-8 justify-center bg-blue-500/10 px-0 text-blue-600 hover:bg-blue-500/20 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300",
+            )}
+          >
+            <SparklesIcon className="size-4" />
+          </button>
+        </Tooltip>
+      ) : null}
+    </MailListToolbarSurface>
+  );
+});
+
+function MailSearchInput({
+  searchQuery,
+  onSearch,
+  onSearchChange,
+  searchValue,
+  inputRef: inputRefProp,
+  searchLabels = [],
+  searchFolders = [],
+  searchVariant = "gmail",
+}: {
+  searchQuery: string;
+  onSearch: (query: string) => void;
+  searchValue: string;
+  onSearchChange: (query: string) => void;
+  inputRef?: RefObject<HTMLInputElement | null>;
+  searchLabels?: { name: string }[];
+  searchFolders?: { name: string }[];
+  searchVariant?: "gmail" | "outlook" | "common";
+}) {
+  const { t } = useLingui();
+  const localRef = useRef<HTMLInputElement>(null);
+  const inputRef = inputRefProp ?? localRef;
+  const { emailAccountId } = useAccount();
+  const suggestionListId = useId();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState(searchQuery);
+  const draft = searchValue;
+  const [focused, setFocused] = useState(false);
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  const suggestions = useMailSearchSuggestions({
+    draft,
+    emailAccountId,
+    enabled: focused && !filtersOpen && !suggestionsDismissed,
+    recentSearches,
+  });
+  const suggestionsOpen = suggestions.length > 0;
+  const hintOpen =
+    focused &&
+    !draft &&
+    !suggestionsOpen &&
+    !filtersOpen &&
+    !suggestionsDismissed;
+  const highlightedIndex = activeIndex < suggestions.length ? activeIndex : -1;
+
+  const commitSearch = (query: string) => {
+    const trimmed = query.trim();
+    if (trimmed) rememberRecentSearch(emailAccountId, trimmed);
+    onSearch(trimmed);
+  };
+
+  return (
+    <Popover
+      modal
+      open={filtersOpen}
+      onOpenChange={(open) => {
+        if (open) setFilterDraft(draft);
+        setFiltersOpen(open);
+      }}
+    >
+      <PopoverAnchor asChild>
+        <MailSearchSurface
+          active={filtersOpen}
+          searchIcon={<SearchIcon className="size-3.5 shrink-0" />}
+          onSubmit={(event) => {
+            event.preventDefault();
+            commitSearch(draft);
+          }}
+          controls={
+            <>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t`Show search options`}
+                  aria-expanded={filtersOpen}
+                  className={cn(
+                    "flex h-full w-7 shrink-0 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    filtersOpen && "text-foreground",
+                  )}
+                >
+                  <ChevronDownIcon
+                    className={cn(
+                      "size-3.5 transition-transform",
+                      filtersOpen && "rotate-180",
+                    )}
+                  />
+                </button>
+              </PopoverTrigger>
+              {suggestionsOpen ? (
+                <MailSearchSuggestionList
+                  activeIndex={highlightedIndex}
+                  id={suggestionListId}
+                  onSelect={(suggestion) => commitSearch(suggestion.query)}
+                  suggestions={suggestions}
+                />
+              ) : null}
+              {hintOpen ? <MailSearchHint /> : null}
+            </>
+          }
+        >
+          <input
+            ref={inputRef}
+            value={draft}
+            placeholder={t`Search mail`}
+            enterKeyHint="search"
+            role="combobox"
+            aria-label={t`Search mail`}
+            aria-autocomplete="list"
+            aria-expanded={suggestionsOpen}
+            aria-controls={suggestionsOpen ? suggestionListId : undefined}
+            aria-activedescendant={
+              highlightedIndex >= 0
+                ? suggestionOptionId(suggestionListId, highlightedIndex)
+                : undefined
+            }
+            // The forms plugin sizes untyped inputs at 1rem, so the size has
+            // to be stated for the field to match the rest of the toolbar.
+            className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-foreground text-sm outline-none focus:ring-0 placeholder:text-muted-foreground"
+            onChange={(event) => {
+              onSearchChange(event.target.value);
+              setActiveIndex(-1);
+              setSuggestionsDismissed(false);
+            }}
+            onFocus={() => {
+              setRecentSearches(readRecentSearches(emailAccountId));
+              setFocused(true);
+            }}
+            onBlur={() => {
+              setFocused(false);
+              setActiveIndex(-1);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" && suggestionsOpen) {
+                event.preventDefault();
+                setActiveIndex(
+                  Math.min(highlightedIndex + 1, suggestions.length - 1),
+                );
+                return;
+              }
+              if (event.key === "ArrowUp" && suggestionsOpen) {
+                event.preventDefault();
+                setActiveIndex(Math.max(highlightedIndex - 1, -1));
+                return;
+              }
+              if (event.key === "Enter" && highlightedIndex >= 0) {
+                event.preventDefault();
+                commitSearch(suggestions[highlightedIndex].query);
+                return;
+              }
+              if (event.key !== "Escape") return;
+              // The mail-wide Escape shortcut also clears the search, so a
+              // press handled here must not reach it.
+              if (suggestionsOpen || filtersOpen || draft || searchQuery) {
+                event.preventDefault();
+              }
+              if (suggestionsOpen) {
+                setSuggestionsDismissed(true);
+                setActiveIndex(-1);
+                return;
+              }
+              if (filtersOpen) {
+                setFiltersOpen(false);
+                return;
+              }
+              if (draft || searchQuery) {
+                onSearchChange("");
+                onSearch("");
+              } else {
+                inputRef.current?.blur();
+              }
+            }}
+          />
+          {draft || searchQuery ? (
+            <button
+              type="button"
+              aria-label={t`Clear search`}
+              onClick={() => onSearch("")}
+              className="shrink-0 rounded p-0.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          ) : null}
+        </MailSearchSurface>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[min(34rem,calc(100vw-1.5rem))] p-4"
+        onPointerDownOutside={(event) => {
+          const target = event.target as HTMLElement | null;
+          if (target?.closest("[data-radix-select-viewport]")) {
+            event.preventDefault();
+          }
+        }}
+      >
+        {filtersOpen ? (
+          <AdvancedSearchForm
+            filterDraft={filterDraft}
+            searchFolders={searchFolders}
+            searchLabels={searchLabels}
+            searchVariant={searchVariant}
+            onSearch={(query) => {
+              commitSearch(query);
+              setFiltersOpen(false);
+            }}
+          />
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function AdvancedSearchForm({
+  filterDraft,
+  searchFolders,
+  searchLabels,
+  searchVariant,
+  onSearch,
+}: {
+  filterDraft: string;
+  searchFolders: { name: string }[];
+  searchLabels: { name: string }[];
+  searchVariant: "gmail" | "outlook" | "common";
+  onSearch: (query: string) => void;
+}) {
+  if (searchVariant === "outlook") {
+    return (
+      <OutlookSearchFiltersForm
+        key={filterDraft}
+        initialFields={parseOutlookSearchQuery(filterDraft)}
+        folders={searchFolders}
+        categories={searchLabels}
+        onSearch={onSearch}
+      />
+    );
+  }
+
+  return (
+    <MailSearchFiltersForm
+      key={filterDraft}
+      initialFields={parseMailSearchQuery(filterDraft)}
+      extraLocations={searchLabels}
+      variant={searchVariant === "common" ? "common" : "gmail"}
+      onSearch={onSearch}
+    />
+  );
+}
+
+function ViewOptionsMenu({
+  layout,
+  expandedPreview,
+  onToggleLayout,
+  onTogglePreview,
+  bundleInbox,
+  onToggleBundleInbox,
+  onOpenSetup,
+  isSetupSuggested,
+}: Pick<
+  ListToolbarProps,
+  | "layout"
+  | "expandedPreview"
+  | "onToggleLayout"
+  | "onTogglePreview"
+  | "bundleInbox"
+  | "onToggleBundleInbox"
+  | "onOpenSetup"
+  | "isSetupSuggested"
+>) {
+  const { t } = useLingui();
+  return (
+    <DropdownMenu>
+      <Tooltip content={t`View options`}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={t`View options`}
+            className={cn(toolbarButton, "relative w-8 justify-center px-0")}
+          >
+            <SlidersHorizontalIcon className="size-3.5" />
+            {isSetupSuggested && onOpenSetup ? (
+              <span className="absolute top-1 right-1 flex size-2">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-blue-500 opacity-75 motion-reduce:animate-none" />
+                <span className="relative inline-flex size-2 rounded-full bg-blue-500" />
+              </span>
+            ) : null}
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-64">
+        {onToggleBundleInbox ? (
+          <DropdownMenuCheckboxItem
+            checked={bundleInbox}
+            onCheckedChange={onToggleBundleInbox}
+          >
+            <Trans>Bundle low-priority emails</Trans>
+          </DropdownMenuCheckboxItem>
+        ) : null}
+        <DropdownMenuCheckboxItem
+          checked={expandedPreview}
+          onCheckedChange={onTogglePreview}
+        >
+          <Trans>Expanded preview text</Trans>
+          <DropdownMenuShortcut>
+            {getShortcutHint("togglePreview")}
+          </DropdownMenuShortcut>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={layout === "split"}
+          onCheckedChange={onToggleLayout}
+        >
+          <Trans>Split view</Trans>
+          <DropdownMenuShortcut>
+            {getShortcutHint("toggleLayout")}
+          </DropdownMenuShortcut>
+        </DropdownMenuCheckboxItem>
+        {onOpenSetup ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onOpenSetup}>
+              <SettingsIcon className="mr-2 size-4" />
+              {isSetupSuggested ? (
+                <Trans>Set up your inbox</Trans>
+              ) : (
+                <Trans>Run mail setup again</Trans>
+              )}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+const toolbarButton =
+  "flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";

@@ -1,0 +1,129 @@
+---
+title: "Sending rules"
+description: "Every limit that paces email, LinkedIn and WhatsApp sending: defaults, hard limits, safe edges and per-account overrides."
+icon: "settings"
+---
+
+Sending rules are the numbers that keep your mailboxes, LinkedIn profiles and WhatsApp numbers out of trouble: how many messages a day, how long to wait between them and when they may go out. They are set per organization, so each organization paces its own accounts.
+
+You never have to touch them. Every rule has a default chosen to be safe, and an organization that never opens these pages behaves with the defaults.
+
+## Where to change them
+
+Each channel has a **Sending rules** tab under **Settings**:
+
+- **Email**, then **Sending rules**
+- **LinkedIn**, then **Sending rules**
+- **WhatsApp**, then **Sending rules**
+- **General**, under **Organization**, holds the default phone country, the time zone and when a new day starts
+
+Edit the values and choose **Save changes**. **Discard** drops your edits, and **Use default** next to a changed rule puts that rule back. Sending follows the new rules within a minute. Only owners and admins can edit; members see the page read-only.
+
+## Hard limits and safe edges
+
+Each rule has two kinds of bound.
+
+- **Min and max** are hard limits. A value outside them is refused, so a typo cannot, for example, queue thousands of LinkedIn invitations a day.
+- **Safe edge** is the point beyond which the platforms tend to react. A value past it still saves, but the page shows a warning explaining the risk.
+
+Rules that take a range (such as 18 to 24 minutes) pick a random value inside it each time, so activity does not follow a fixed rhythm.
+
+## Resolution order
+
+For any account, AgentSDR resolves a limit in this order:
+
+1. The account's own override, if you set one.
+2. The organization's rule.
+3. The built-in default.
+
+Overrides exist for three limits, listed in the tables below. Where a table says "when connected", the organization rule is copied onto each new account at the moment you connect it, and later changes to the rule do not rewrite accounts you already connected.
+
+## Email
+
+| Rule | Default | Min | Max | Safe edge |
+|---|---|---|---|---|
+| Emails per day, per mailbox | 30 | 1 | 200 | Warns above 50 |
+| Gap between emails from one mailbox | 18 to 24 minutes | 1 | 240 | Warns below 10 minutes |
+| Sending hours for new mailboxes | Monday to Friday, 09:00 to 18:00, Asia/Kolkata | n/a | n/a | n/a |
+
+- **Emails per day** is the starting limit for a newly connected mailbox. Warm mailboxes can send more; new ones should start low. Above about 50 a day from one Google Workspace mailbox, deliverability usually drops and Google may throttle it.
+- **Gap between emails** is how long a mailbox waits after each send. Sending more often than every 10 minutes from one mailbox looks automated to spam filters. Unlike the other two, this rule is read at send time.
+- **Sending hours** are copied to a mailbox when it is connected. You can change a mailbox's own hours on the **Mailboxes** tab, in the **Sending hours** column.
+- **Override:** each mailbox has its own daily limit, shown on the **Mailboxes** tab.
+
+<Frame caption="Email rules: daily limit, gap between sends and sending hours.">
+  <img src="/assets/screenshots/app/email-rules.png" alt="Settings, Email, Sending rules tab with emails per day, the gap between emails and sending hours for new mailboxes" />
+</Frame>
+
+## LinkedIn
+
+| Rule | Default | Min | Max | Safe edge |
+|---|---|---|---|---|
+| Invitations per day, premium accounts | 30 | 1 | 100 | Warns above 30 |
+| Invitations per day, free accounts | 5 | 1 | 50 | Warns above 10 |
+| Invitations per run | 3 to 4 | 1 | 20 | Warns above 8 |
+| Delay between invitations | 30 to 60 seconds | 5 | 600 | Warns below 20 seconds |
+| Rest between runs | 30 to 60 minutes | 10 | 720 | Warns below 20 minutes |
+| Follow-up messages per run | 3 to 6 | 1 | 30 | Warns above 10 |
+| Profile lookups per run | 4 to 8 | 1 | 40 | Warns above 15 |
+| Search leads per day, per account | 400 | 10 | 2500 | Warns above 1000 |
+| Working hours for accounts without their own | Any time | n/a | n/a | n/a |
+
+- **Invitations per day** applies to connection requests, with separate numbers for accounts that have Premium or Sales Navigator and free accounts. LinkedIn restricts accounts that send much more than 30 a day, and free accounts have a much smaller weekly allowance.
+- **Runs.** The engine sends in runs: a random number of invitations from **Invitations per run**, spaced by **Delay between invitations**, then the account rests for **Rest between runs**. **Follow-up messages per run** covers messages to people who accepted, and **Profile lookups per run** covers profiles opened to find the LinkedIn member behind a lead.
+- **Working hours** are any time unless you choose **Set hours**. An account's own working hours always win.
+- **Override:** each account can set its own daily invitation limit on **LinkedIn**, **Accounts**. The account's value replaces the premium or free rule for that account, and the page marks it "Own limit".
+
+<Frame caption="LinkedIn rules, with each default shown beside its field.">
+  <img src="/assets/screenshots/app/linkedin-rules.png" alt="Settings, LinkedIn, Sending rules tab with invitations per day for premium and free accounts, invitations per run and delays between invitations and runs" />
+</Frame>
+
+## WhatsApp
+
+| Rule | Default | Min | Max | Safe edge |
+|---|---|---|---|---|
+| Sending hours for campaigns | Any time | n/a | n/a | n/a |
+| Warm-up after linking a number | 24 hours | 0 | 336 | Warns below 24 hours |
+| New chats per day, per number | 25 | 1 | 200 | Warns above 25 |
+| Seconds between messages, per number | 10 | 3 | 600 | Warns below 10 seconds |
+
+- **Sending hours** apply to campaign messages only. Messages you send yourself are not affected.
+- **Warm-up.** A newly linked number replies to existing chats right away but starts no new chats for this long. New numbers that message strangers on day one are banned far more often.
+- **New chats per day** counts conversations a number starts in a rolling day. Replies to people who wrote first are not counted. WhatsApp bans numbers that start many chats with people who do not have them saved.
+- **Seconds between messages** is the shortest gap between two messages from one number.
+- **Override:** each number can set its own **New chats a day** on **WhatsApp**, **Numbers**.
+
+Whatever the rules say, AgentSDR never sends WhatsApp messages to someone marked Do Not Contact.
+
+<Frame caption="WhatsApp rules: warm-up, new chats a day and the gap between messages.">
+  <img src="/assets/screenshots/app/whatsapp-rules.png" alt="Settings, WhatsApp, Sending rules tab with sending hours for campaigns, warm-up hours, new chats per day and seconds between messages" />
+</Frame>
+
+## General
+
+| Rule | Default |
+|---|---|
+| Default phone country | None |
+| Time zone | `UTC` |
+| New day starts at | `00:00` |
+
+The country assumed for phone numbers typed or imported without a `+` and country code. Enter a two-letter country code, such as `IN` or `US`, or leave it unset.
+
+**Time zone** (an IANA name such as `Europe/Berlin`) and **New day starts at** (`HH:MM`) set when your organization's day begins. Daily limits reset and the day's email queue is built at that time. The first-run setup page stores the browser's time zone for the first organization.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Email campaigns" icon="mail" href="/email/campaigns">
+    How campaigns use these limits.
+  </Card>
+  <Card title="LinkedIn accounts" icon="linkedin" href="/linkedin/accounts">
+    Connect accounts and set their own limits.
+  </Card>
+  <Card title="WhatsApp accounts" icon="message-circle" href="/whatsapp/accounts">
+    Numbers, warm-up and new chats a day.
+  </Card>
+  <Card title="Responsible use" icon="shield-check" href="/responsible-use">
+    Keep outreach lawful and your accounts healthy.
+  </Card>
+</CardGroup>

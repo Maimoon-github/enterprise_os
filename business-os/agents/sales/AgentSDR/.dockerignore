@@ -1,0 +1,30 @@
+# Never send secrets or local data into the build context.
+.env*
+!.env.example
+*.dump
+*.key
+*.pem
+
+.git
+.next
+node_modules
+coverage
+output
+reports
+feedback
+.playwright-cli
+.claude
+.conductor
+docs
+tests
+extensions/*/dist
+extensions/*/release
+
+# Migrations run by hand against a database, not from the image — except
+# the fresh-install setup the entrypoint runs before the app starts, and the
+# scheduler's migration, so Docker installs can run it in the container.
+scripts
+!scripts/db/setup.ts
+!scripts/create-scheduled-job-runs.ts
+
+README.md

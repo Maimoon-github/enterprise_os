@@ -1,0 +1,263 @@
+"""
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+from typing import Any, Dict, List, Optional, Union
+from hashlib import md5
+
+from agno.document import Document
+from agno.embedder import Embedder
+from agno.reranker.base import Reranker
+from agno.utils.log import logger
+from agno.vectordb.pgvector.pgvector import PgVector
+from agno.vectordb.distance import Distance
+from agno.vectordb.pgvector.index import HNSW, Ivfflat
+from agno.vectordb.search import SearchType
+from sqlalchemy import delete, func, or_
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.engine import Engine
+
+from app.knowledge.chunking import CHUNK_ID_SEPARATOR, page_id_of
+
+
+class OptimizedPgVector(PgVector):
+    """
+    OptimizedPgVector class that extends the standard PgVector implementation 
+    to avoid re-embedding documents that already have embeddings.
+    
+    This class optimizes the workflow for web crawling by allowing embeddings
+    to be generated during the crawling phase, and then preserved during insertion
+    into the database.
+    """
+
+    def __init__(
+        self,
+        table_name: str,
+        schema: str = "ai",
+        db_url: Optional[str] = None,
+        db_engine: Optional[Engine] = None,
+        embedder: Optional[Embedder] = None,
+        search_type: SearchType = SearchType.vector,
+        vector_index: Union[Ivfflat, HNSW] = HNSW(),
+        distance: Distance = Distance.cosine,
+        prefix_match: bool = False,
+        vector_score_weight: float = 0.5,
+        content_language: str = "english",
+        schema_version: int = 1,
+        auto_upgrade_schema: bool = False,
+        reranker: Optional[Reranker] = None,
+    ):
+        """Initialize the OptimizedPgVector with the same parameters as PgVector."""
+        super().__init__(
+            table_name=table_name,
+            schema=schema,
+            db_url=db_url,
+            db_engine=db_engine,
+            embedder=embedder,
+            search_type=search_type,
+            vector_index=vector_index,
+            distance=distance,
+            prefix_match=prefix_match,
+            vector_score_weight=vector_score_weight,
+            content_language=content_language,
+            schema_version=schema_version,
+            auto_upgrade_schema=auto_upgrade_schema,
+            reranker=reranker,
+        )
+
+    def create(self) -> None:
+        """Create the per-org table, tolerating a concurrent creator.
+
+        agno's PgVector.create() checks table_exists() and then issues CREATE
+        TABLE, which is not atomic. The knowledge processor runs two queue items
+        at once, so an organisation whose first two sources are queued together
+        has both workers find no table and both create it; the loser died with
+        `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`
+        — Postgres rejecting the second table's implicit row type — and the user
+        lost that source.
+
+        Losing the race is not an error: the table the other worker created is
+        the one we wanted. Anything else still raises.
+        """
+        try:
+            super().create()
+        except Exception as e:
+            if not self._is_duplicate_object_error(e):
+                raise
+            logger.debug(
+                f"Table {self.schema}.{self.table_name} was created concurrently; continuing"
+            )
+
+    @staticmethod
+    def _is_duplicate_object_error(error: Exception) -> bool:
+        """True when the failure is 'someone else already created this'.
+
+        Matched on SQLSTATE rather than message text: 42P07 duplicate_table and
+        23505 unique_violation, the latter being how a clash on the pg_type
+        catalog index surfaces.
+        """
+        for exc in (error, getattr(error, 'orig', None)):
+            sqlstate = getattr(exc, 'sqlstate', None) or getattr(exc, 'pgcode', None)
+            if sqlstate in ('42P07', '23505'):
+                return True
+        return False
+
+    def insert(
+        self,
+        documents: List[Document],
+        filters: Optional[Dict[str, Any]] = None,
+        batch_size: int = 100,
+    ) -> None:
+        """
+        Insert documents into the database, preserving existing embeddings.
+
+        Args:
+            documents (List[Document]): List of documents to insert.
+            filters (Optional[Dict[str, Any]]): Filters to apply to the documents.
+            batch_size (int): Number of documents to insert in each batch.
+        """
+        try:
+            with self.Session() as sess:
+                for i in range(0, len(documents), batch_size):
+                    batch_docs = documents[i : i + batch_size]
+                    try:
+                        # Prepare documents for insertion
+                        batch_records = []
+                        for doc in batch_docs:
+                            try:
+                                # Embed document only if not already embedded (should be rare)
+                                if doc.embedding is None:
+                                    if self.embedder is not None:
+                                        doc.embed(embedder=self.embedder)
+                                        logger.debug(f"Document embedding done for {doc.name}")
+                                    else:
+                                        logger.warning(f"Document '{doc.name}' has no embedding and no embedder available - skipping")
+                                        continue
+                                
+                                batch_records.append(self._record(doc, filters))
+                            except Exception as e:
+                                logger.error(f"Error processing document '{doc.name}': {e}")
+
+                        # Insert the batch of records
+                        insert_stmt = postgresql.insert(self.table)
+                        sess.execute(insert_stmt, batch_records)
+                        sess.commit()  # Commit batch independently
+                    except Exception as e:
+                        logger.error(f"Error with batch starting at index {i}: {e}")
+                        sess.rollback()  # Rollback the current batch if there's an error
+                        raise
+        except Exception as e:
+            logger.error(f"Error inserting documents: {e}")
+            raise
+
+    def upsert(
+        self,
+        documents: List[Document],
+        filters: Optional[Dict[str, Any]] = None,
+        batch_size: int = 100,
+    ) -> None:
+        """
+        Upsert (insert or update) documents in the database, preserving existing embeddings.
+
+        Args:
+            documents (List[Document]): List of documents to upsert.
+            filters (Optional[Dict[str, Any]]): Filters to apply to the documents.
+            batch_size (int): Number of documents to upsert in each batch.
+        """
+        try:
+            with self.Session() as sess:
+                for i in range(0, len(documents), batch_size):
+                    batch_docs = documents[i : i + batch_size]
+                    try:
+                        # Prepare documents for upserting
+                        batch_records = []
+                        for doc in batch_docs:
+                            try:
+                                # Skip embedding if the document already has an embedding
+                                if doc.embedding is None:
+                                    doc.embed(embedder=self.embedder)
+                                batch_records.append(self._record(doc, filters))
+                            except Exception as e:
+                                logger.error(f"Error processing document '{doc.name}': {e}")
+
+                        sess.execute(self._upsert_statement(batch_records))
+                        sess.commit()  # Commit batch independently
+                    except Exception as e:
+                        logger.error(f"Error with batch starting at index {i}: {e}")
+                        sess.rollback()  # Rollback the current batch if there's an error
+                        raise
+        except Exception as e:
+            logger.error(f"Error upserting documents: {e}")
+            raise 
+
+    def _record(self, doc: Document, filters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """One row for an embedded document, its filters merged into the
+        metadata so they are searchable."""
+        merged_meta_data = doc.meta_data.copy() if doc.meta_data else {}
+        if filters:
+            merged_meta_data.update(filters)
+        cleaned_content = self._clean_content(doc.content)
+        content_hash = md5(cleaned_content.encode()).hexdigest()
+        return {
+            "id": doc.id or content_hash,
+            "name": doc.name,
+            "meta_data": merged_meta_data,
+            "filters": filters,
+            "content": cleaned_content,
+            "embedding": doc.embedding,
+            "usage": doc.usage,
+            "content_hash": content_hash,
+        }
+
+    def _upsert_statement(self, records: List[Dict[str, Any]]):
+        insert_stmt = postgresql.insert(self.table).values(records)
+        return insert_stmt.on_conflict_do_update(
+            index_elements=["id"],
+            set_=dict(
+                name=insert_stmt.excluded.name,
+                meta_data=insert_stmt.excluded.meta_data,
+                filters=insert_stmt.excluded.filters,
+                content=insert_stmt.excluded.content,
+                embedding=insert_stmt.excluded.embedding,
+                usage=insert_stmt.excluded.usage,
+                content_hash=insert_stmt.excluded.content_hash,
+            ),
+        )
+
+    def upsert_page(self, documents: List[Document], filters: Dict[str, Any]) -> None:
+        """Store one page's embedded chunks in a single transaction, and drop
+        any chunk the page no longer has (a page that shrank since it was last
+        read leaves its old tail behind otherwise). Raises on failure, so the
+        caller knows the page is not searchable.
+
+        Every document must be a chunk of the same page of the same source.
+        """
+        if not documents:
+            return
+        page_id = page_id_of(documents[0].id)
+        records = [self._record(doc, filters) for doc in documents]
+        kept_ids = [record["id"] for record in records]
+        chunk_prefix = f"{page_id}{CHUNK_ID_SEPARATOR}"
+        stale = delete(self.table).where(
+            self.table.c.name == documents[0].name,
+            or_(
+                self.table.c.id == page_id,
+                func.left(self.table.c.id, len(chunk_prefix)) == chunk_prefix,
+            ),
+            self.table.c.id.notin_(kept_ids),
+        )
+        with self.Session() as sess, sess.begin():
+            sess.execute(self._upsert_statement(records))
+            sess.execute(stale)

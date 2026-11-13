@@ -1,0 +1,84 @@
+---
+title: "Write agent rules"
+description: "Use plain text rules to define how your agent acts on every channel, or only on calls, texts, website chat or Instagram."
+sidebarTitle: "Rules"
+contentType: "How-to"
+---
+
+The **Rules** page lets you shape your agent's behavior in plain text. Instead of building workflows or maintaining decision trees, write the instruction the way you would explain it to a teammate.
+
+Rules are useful for actions, policies, and judgment calls: when to transfer a caller, when to take a callback message, what to do after hours, and how to handle questions that need a human response.
+
+## What to put in rules
+
+Good rules are specific and action-oriented:
+
+- "If a caller says there is an emergency, transfer to the default transfer number."
+- "If the caller asks for a human and transfer is unavailable, take a callback message with their name, phone number, and preferred callback time."
+- "If the agent is not sure of an answer, say that the team will follow up instead of guessing."
+- "For after-hours callers, take a message and include the caller's preferred callback window."
+
+<Note>
+  Rules let you define agent behavior in clear language. Keep each rule updated as your process changes.
+</Note>
+
+## Rule templates
+
+| Scenario | Template |
+| --- | --- |
+| Live transfer | If a caller asks for a human or describes an urgent issue, transfer to the default transfer number. |
+| Callback | If the caller wants a callback, collect their name, phone number, reason for calling, and preferred callback window. |
+| Uncertain answer | If the agent is not confident, take a message for the team instead of guessing. |
+| After-hours | Outside business hours, take a message and tell the caller the team will follow up during the next business day. |
+| Pricing questions | If pricing depends on the customer's situation, explain the starting point and offer to have the team follow up with details. |
+
+## Add a rule
+
+<Steps>
+  <Step title="Open Rules">
+    Click **Agents** in the sidebar, open the agent, and click **Rules** in its menu. Each agent has its own rules.
+  </Step>
+  <Step title="Add a rule">
+    Click **Add Rule**.
+  </Step>
+  <Step title="Write the instruction">
+    Add a short title and the full instruction in the content field. To keep the rule to one channel, choose it under **Channel**.
+  </Step>
+  <Step title="Add">
+    Click **Add**. The rule appears at the bottom of the table.
+  </Step>
+</Steps>
+
+## Keep a rule to one channel
+
+A rule applies on every channel until you choose one. Pick it under **Channel** when you add or edit the rule:
+
+| Channel | Where the agent follows the rule |
+| --- | --- |
+| **All channels** | Calls, texts, website chat and Instagram |
+| **Calls** | Phone calls and calls from your browser |
+| **Text messages** | Replies to texts |
+| **Website chat** | The chat widget on your website |
+| **Instagram** | Instagram direct messages |
+
+The **Channel** column shows where each rule applies. Use a channel rule for how the agent talks there, such as "Keep replies under 300 characters" for texts.
+
+<Note>
+  Rules replaced the **Instructions** page. Each agent's instructions became a rule for their channel, titled in your business's language, such as **On calls** or **In texts**. Chat instructions became a **Website chat** rule, and an **Instagram** rule too if your business had Instagram connected.
+</Note>
+
+## Order your rules
+
+Your agent reads rules in priority order, starting at the top of the table. Put the rules that matter most first.
+
+To move a rule, drag it by its handle. You can also open **More options** on the rule and choose **Move up** or **Move down**.
+
+## Transfers and callbacks
+
+Transfers use the [default transfer number](/agent/calls-and-booking#default-transfer-number) on the agent's **General** page, or the number of an [employee](/settings/employees) the caller asks for. Transfer numbers must be in a [country LobbyStack can call](/agent/calls-and-booking#default-transfer-number), and during a free trial that started with a verified mobile number, calls transfer only to that mobile. When a live handoff is not the right next step, the agent can create a follow-up task with callback details. Those tasks appear in the dashboard and on call detail pages.
+
+## Recording and transcripts
+
+LobbyStack stores call transcripts and can store call recordings. Operators review recordings in the [Inbox](/dashboard/inbox) when a recording is available.
+
+Use rules for call-handling behavior. Manage recording and retention policy in your workspace and compliance settings.

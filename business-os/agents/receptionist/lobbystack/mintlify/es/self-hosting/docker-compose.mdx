@@ -1,0 +1,167 @@
+---
+title: "Implemente con Docker Compose"
+description: "Ejecute LobbyStack en un solo servidor con Docker Compose. Configurará PostgreSQL, Redis, el almacenamiento de archivos y HTTPS, y luego verificará la implementación antes de ponerla en producción."
+sidebarTitle: "Docker Compose"
+contentType: "Tutorial"
+---
+
+## Requisitos previos
+
+- Docker Engine 24 o posterior con Compose v2
+- Node.js 22 o posterior, para generar los secretos
+- al menos 2 vCPU, 4 GB de RAM y almacenamiento en disco persistente
+- un nombre DNS público para el panel
+- cuentas de Twilio y OpenAI para las llamadas en vivo, y un trunk Elastic SIP de Twilio para las llamadas telefónicas
+
+## Configure el entorno
+
+```bash
+git clone https://github.com/lobbystack/lobbystack.git
+cd lobbystack
+node scripts/generate-env.mjs
+```
+
+El script copia `.env.example` en `.env` y rellena cada contraseña de rol de PostgreSQL y cada secreto interno con un valor aleatorio de 64 caracteres. No sobrescribe un `.env` existente a menos que pase `--force`, que también reemplaza todos sus secretos.
+
+Luego abra `.env` y configure `APP_BASE_URL`, `OPENAI_API_KEY` y sus credenciales de Twilio. Los servicios construyen sus cadenas de conexión a la base de datos a partir de las contraseñas de los roles, así que no necesita escribir ninguna URL de base de datos.
+
+Compose configura `STORAGE_PROVIDER=local` por defecto. El servicio de administración y el worker montan el mismo volumen persistente `storage_data` en `/var/lib/lobbystack/storage`.
+
+<Warning>
+  No exponga una pila que todavía use las contraseñas de ejemplo o los secretos `change-me`.
+</Warning>
+
+## Inicie LobbyStack
+
+```bash
+docker compose --env-file .env up -d --build
+docker compose ps
+```
+
+El migrador aplica las migraciones de PostgreSQL antes de que se inicien los servicios de administración y worker. Las comprobaciones de estado retienen los servicios dependientes hasta que sus requisitos estén listos.
+
+La respuesta de disponibilidad del servicio de administración incluye comprobaciones de PostgreSQL, Redis y el almacenamiento. La respuesta de disponibilidad del worker incluye el estado de PostgreSQL, Redis y el almacenamiento.
+
+LobbyStack no ejecuta contenedores de monitoreo. Los registros de la aplicación siguen disponibles mediante `docker compose logs`, y los endpoints de estado siguen funcionando.
+
+## Sirva HTTPS desde Caddy
+
+De forma predeterminada, el Caddy de Compose sirve `APP_HOSTNAME` por HTTP simple y no publica el puerto 443, para uso local o detrás de su propio proxy HTTPS. En un servidor público, Caddy puede servir HTTPS por sí mismo: `docker-compose.tls.yml` lo cambia a `docker/caddy/Caddyfile.tls` y publica el puerto 443. Defina estos valores en `.env`:
+
+```dotenv
+COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml
+HTTP_BIND_ADDRESS=0.0.0.0
+CADDY_ON_DEMAND_TLS=true
+```
+
+Con `COMPOSE_FILE`, cada comando `docker compose` usa los dos archivos. Apunte el nombre DNS del panel al servidor, abra los puertos 80 y 443, y reinicie la pila. Caddy obtiene el certificado de un nombre de host la primera vez que alguien lo visita. Antes, consulta al admin en `/api/tls/ask`, que solo aprueba estos nombres de host:
+
+- el nombre de host de `APP_BASE_URL`, los orígenes de `AUTH_TRUSTED_ORIGINS` y los hosts de `MARKETING_HOSTS`
+- los subdominios de `PARTNER_BASE_DOMAIN` de sus socios
+- los dominios que sus socios conectaron, una vez que el worker comprobó que su DNS apunta a su servidor y que su registro TXT está en su lugar
+
+Un dominio que otra persona apunte a su servidor no obtiene certificado. El admin responde a Caddy también durante el mantenimiento, para que los dominios nuevos de los socios y las renovaciones sigan funcionando.
+
+Con `CADDY_ON_DEMAND_TLS=true`, los socios conectan un subdominio de su propio sitio web en la página **Marca y dominio** de la consola. Mientras venda niveles de socio con los productos `POLAR_PARTNER_*`, un socio necesita un nivel de pago para hacerlo; si no, cualquier socio puede. La página muestra dos registros que agregar: un CNAME que apunta a [`PARTNER_DOMAIN_CNAME_TARGET`](/es/self-hosting/environment-variables#socios), y un registro TXT que demuestra que el socio controla el dominio. Deje `CADDY_ON_DEMAND_TLS` en `false` mientras su Caddy sirva HTTP simple, porque los dominios de los socios no obtendrían certificado.
+
+## Conecte los dominios de los socios con Cloudflare for SaaS
+
+Si el DNS de `PARTNER_BASE_DOMAIN` está en Cloudflare, los dominios propios de sus socios pueden pasar por Cloudflare for SaaS en lugar del TLS bajo demanda de Caddy. Cloudflare emite entonces el certificado de cada dominio, y el worker registra y comprueba cada dominio mediante la API de Cloudflare. Configúrelo una vez:
+
+1. En la zona de Cloudflare de `PARTNER_BASE_DOMAIN`, abra **SSL/TLS** > **Custom Hostnames** y active Cloudflare for SaaS.
+2. Agregue un registro DNS con proxy que apunte a su servidor, como `host.partners.example.com`, y agréguelo con **Add Fallback Origin** en la página **Custom Hostnames**.
+3. Cree un token de API con el permiso **Zone** > **SSL and Certificates** > **Edit** para esa zona.
+4. En `.env`, defina el token en `CLOUDFLARE_SAAS_API_TOKEN` y el ID de la zona en `CLOUDFLARE_SAAS_ZONE_ID`, y reinicie la pila.
+5. Configure el modo de cifrado SSL/TLS de la zona en **Full**. Cloudflare se conecta a su servidor con el dominio propio de cada socio, que su certificado de origen no cubre.
+
+Su servidor debe responder por HTTPS en el puerto 443 para cualquier nombre de host, y pasar cada solicitud al admin con su encabezado `Host`. Luego, los socios apuntan un registro CNAME al origen de respaldo, o a [`PARTNER_DOMAIN_CNAME_TARGET`](/es/self-hosting/environment-variables#socios) si lo define, y agregan el registro TXT que muestra su consola. Si define tanto Cloudflare for SaaS como `CADDY_ON_DEMAND_TLS`, el despliegue usa Cloudflare for SaaS.
+
+## Elija un backend de almacenamiento
+
+El proveedor local predeterminado admite un solo host de Docker. Haga una copia de seguridad del volumen `storage_data` junto con PostgreSQL y restaure ambos desde el mismo punto de recuperación.
+
+Use S3 cuando el servicio de administración y el worker se ejecuten en hosts distintos. Configure estos valores en `.env`:
+
+```dotenv
+STORAGE_PROVIDER=s3
+S3_BUCKET=lobbystack
+S3_REGION=us-east-1
+S3_ENDPOINT=
+S3_ACCESS_KEY_ID=replace-with-access-key
+S3_SECRET_ACCESS_KEY=replace-with-secret-key
+S3_FORCE_PATH_STYLE=false
+```
+
+Las cargas de trabajo en AWS pueden omitir las variables de la clave de acceso cuando el contenedor puede usar un rol de credenciales de AWS.
+
+MinIO sigue disponible mediante un perfil de Compose. Configure las variables de S3 para MinIO y luego inicie la pila con el perfil:
+
+```dotenv
+STORAGE_PROVIDER=s3
+S3_ENDPOINT=http://minio:9000
+S3_BUCKET=lobbystack
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=replace-with-a-long-minio-password
+S3_FORCE_PATH_STYLE=true
+```
+
+```bash
+docker compose --env-file .env --profile minio up -d --build
+```
+
+Para revisar el correo electrónico en local, inicie Mailpit:
+
+```bash
+docker compose --env-file .env --profile development up -d mailpit
+```
+
+## Exporte datos de OpenTelemetry
+
+La exportación de OpenTelemetry está desactivada cuando `OTEL_EXPORTER_OTLP_ENDPOINT` está vacía. Para enviar trazas, métricas y registros de OpenTelemetry a PostHog, agregue estos valores a `.env`:
+
+```dotenv
+OTEL_EXPORTER_OTLP_ENDPOINT=https://us.i.posthog.com/i
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer your_posthog_project_token_here
+```
+
+Use el host regional de PostHog y el token de su proyecto. LobbyStack agrega `/v1/traces`, `/v1/metrics` y `/v1/logs` a la URL base. Puede usar las mismas variables con otro backend compatible con OTLP.
+
+Reinicie los contenedores de la aplicación después de cambiar los valores:
+
+```bash
+docker compose --env-file .env up -d
+```
+
+Las analíticas de producto directas y el reporte de errores usan su propia configuración de PostHog.
+
+## Verifique la implementación
+
+```bash
+curl -fsS http://127.0.0.1:3000/api/health/ready
+curl -fsS http://127.0.0.1:3002/health/ready
+docker compose logs --since=10m admin worker
+```
+
+Los puertos predeterminados de los servicios se vinculan a localhost. Haga pasar el tráfico público por Caddy o por otro proxy inverso de confianza.
+
+## Lista de comprobación para producción
+
+- reemplace todas las credenciales de desarrollo y restrinja los permisos de `.env`
+- use un valor HTTPS de producción para `APP_BASE_URL`
+- configure `OPENAI_WEBHOOK_SECRET` y `TWILIO_SIP_TRUNK_SID` para contestar llamadas telefónicas. El worker no aprovisiona un número de teléfono sin `TWILIO_SIP_TRUNK_SID`. Las [variables de llamadas de voz](/es/self-hosting/environment-variables#llamadas-de-voz) explican para qué sirve cada una
+- configure `WEB_CALL_ALLOWED_ORIGINS` con los sitios exactos que alojan su llamada de demostración pública, si tiene una
+- configure copias de seguridad de PostgreSQL y del almacenamiento de archivos fuera del host
+- haga un simulacro de restauración antes de aceptar tráfico de producción
+- restrinja los puertos de PostgreSQL, Redis y, si lo usa, MinIO a redes privadas
+- monitoree el estado del servicio de administración, el worker, las colas, la base de datos y el almacenamiento de objetos
+- fije las versiones de las imágenes antes de las actualizaciones planificadas
+
+## Actualizaciones
+
+```bash
+git pull --ff-only
+docker compose --env-file .env build
+docker compose --env-file .env up -d
+```
+
+Haga una copia de seguridad de PostgreSQL y del backend de almacenamiento configurado antes de actualizar. Revise las nuevas migraciones y variables de entorno antes de reiniciar los servicios.

@@ -1,0 +1,109 @@
+{
+  "page": {},
+  "table": {
+    "name": "Nom",
+    "phone": "Numéro de téléphone",
+    "services": "Services",
+    "allServices": "Tous les services",
+    "status": "Statut",
+    "statuses": {
+      "working": "En service",
+      "off": "En congé",
+      "no_services": "Non réservable"
+    },
+    "statusDetail": {
+      "until": "Jusqu'au {{date}}",
+      "offFrom": "En congé à partir du {{date}}",
+      "noServices": "Aucun service choisi"
+    },
+    "statusTooltip": {
+      "timeOff": "Congés : {{dates}}",
+      "noServices": "Modifiez cet employé et choisissez ses services pour que les clients puissent le réserver."
+    },
+    "added": "Ajouté",
+    "emptyState": "Aucun employé pour le moment.",
+    "actions": {
+      "moreOptions": "Plus d'options",
+      "editEmployee": "Modifier",
+      "deleteEmployee": "Supprimer",
+      "deleteTitle": "Supprimer l'employé ?",
+      "deleteDescription": "L'employé sera définitivement retiré de votre tableau de bord.",
+      "deleteConfirm": "Supprimer",
+      "deleteCancel": "Annuler",
+      "deleted": "Employé supprimé.",
+      "deleteFailed": "Impossible de supprimer l'employé."
+    }
+  },
+  "add": {
+    "button": "Ajouter un employé",
+    "title": "Ajouter un employé",
+    "description": "Enregistrez les coordonnées, les services et l'horaire d'un employé.",
+    "fields": {
+      "name": {
+        "label": "Nom",
+        "placeholder": "Marie Tremblay",
+        "required": "Saisissez le nom de l'employé."
+      },
+      "phone": {
+        "label": "Numéro de téléphone",
+        "country": "Pays",
+        "hint": "Facultatif. Les appelants qui demandent cet employé sont transférés ici ; sinon, ils joignent le numéro de transfert de l'entreprise.",
+        "invalid": "Saisissez un numéro de téléphone valide.",
+        "exists": "Un employé avec ce numéro de téléphone existe déjà.",
+        "trialLocked": "Pendant l'essai gratuit, les appels ne peuvent être transférés qu'au mobile de la personne qui a demandé l'essai.",
+        "countryUnsupported": "Votre agent ne peut pas encore transférer d'appels vers ce pays."
+      },
+      "services": {
+        "label": "Services",
+        "hint": "Les clients ne peuvent réserver cet employé que pour ces services.",
+        "placeholder": "Choisir des services",
+        "search": "Rechercher des services...",
+        "selectAll": "Tout sélectionner",
+        "unselectAll": "Tout désélectionner",
+        "noMatches": "Aucun service ne correspond.",
+        "required": "Choisissez au moins un service.",
+        "invalid": "Un service choisi a été supprimé. Vérifiez la liste et réessayez.",
+        "empty": "Ajoutez d'abord un service, puis choisissez ceux que cet employé propose.",
+        "goToServices": "Aller aux services"
+      },
+      "hours": {
+        "label": "Mêmes horaires que l'entreprise",
+        "hint": "Désactivez pour choisir les jours et heures de travail de cet employé. Il n'est réservé que lorsqu'il travaille et que l'entreprise est ouverte.",
+        "required": "Ajoutez au moins un jour de travail."
+      },
+      "timeOff": {
+        "label": "Congés",
+        "hint": "Facultatif. L'agent ne réserve pas cet employé ces jours-là et indique aux clients quand il revient.",
+        "add": "Ajouter un congé",
+        "placeholder": "Choisissez le premier et le dernier jour",
+        "dates": "Dates du congé",
+        "remove": "Retirer le congé",
+        "required": "Choisissez le premier et le dernier jour de chaque congé.",
+        "invalid": "Les congés ne peuvent pas se chevaucher ni se terminer dans le passé."
+      }
+    },
+    "cancel": "Annuler",
+    "save": "Ajouter",
+    "saving": "Enregistrement...",
+    "created": "Employé ajouté.",
+    "failed": "Impossible d'ajouter l'employé."
+  },
+  "edit": {
+    "title": "Modifier l'employé",
+    "description": "Mettez à jour les coordonnées, les services et l'horaire de cet employé.",
+    "save": "Enregistrer",
+    "updated": "Employé mis à jour.",
+    "failed": "Impossible de mettre à jour l'employé."
+  },
+  "pagination": {
+    "rowsPerPage": "Lignes par page",
+    "viewing": "Lignes {{start}} à {{end}} sur {{total}}",
+    "viewingAll_one": "{{count}} ligne affichée",
+    "viewingAll_many": "Les {{count}} lignes affichées",
+    "viewingAll_other": "Les {{count}} lignes affichées",
+    "firstPage": "Aller a la premiere page",
+    "previousPage": "Aller a la page precedente",
+    "nextPage": "Aller a la page suivante",
+    "lastPage": "Aller a la derniere page"
+  }
+}

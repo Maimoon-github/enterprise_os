@@ -1,0 +1,57 @@
+---
+title: "Gestione los contactos y el consentimiento"
+description: "Revise los perfiles de quienes llaman, el historial de interacciones, las citas, el estado de bloqueo y el consentimiento para SMS."
+sidebarTitle: "Contactos"
+contentType: "How-to"
+---
+
+La página **Contactos** muestra las personas vinculadas a sus llamadas, mensajes y citas. Los contactos se crean automáticamente a partir de las interacciones telefónicas y se actualizan con cada nueva actividad.
+
+## Lista de contactos
+
+Cada fila puede mostrar:
+
+- El nombre del contacto o contacto desconocido.
+- El número de teléfono y el correo electrónico, si están disponibles.
+- El número de llamadas y mensajes.
+- El número de citas.
+- La hora de la última interacción.
+- El estado de bloqueo.
+
+Para encontrar un contacto, haga clic en **Buscar** en la barra lateral o pulse `Cmd+K` (`Ctrl+K` en Windows).
+
+## Añadir un contacto
+
+Haga clic en **Nuevo contacto**, escriba un nombre y un teléfono o un correo electrónico, y haga clic en **Crear contacto**. LobbyStack abre el contacto nuevo. Los lectores no pueden añadir contactos.
+
+Si otro contacto ya tiene ese número, la ventana se lo indica y enlaza a ese contacto.
+
+## Detalle del contacto
+
+Abra un contacto para ver:
+
+| Pestaña | Qué muestra |
+| --- | --- |
+| **Actividad** | Llamadas, mensajes SMS y actividad de citas en orden cronológico. |
+| **Citas** | Servicio, fecha y hora, estado, canal y estado de sincronización con el calendario. |
+| **Detalles** | Datos del contacto, estado de bloqueo, consentimiento para SMS, PIN del teclado y metadatos del sistema. |
+
+## Bloquear contactos
+
+Si bloquea un contacto, ya no se le pueden enviar respuestas por SMS y las nuevas llamadas entrantes de ese contacto se cuelgan de inmediato. Puede desbloquear el contacto más adelante desde el mismo menú.
+
+## Consentimiento para SMS
+
+La página de detalle del contacto indica si el contacto está suscrito a los SMS o se dio de baja, cuándo cambió el estado del consentimiento y el origen de ese cambio, si se conoce.
+
+## PIN del teclado
+
+Cuando los ajustes de cambios de citas de un agente exigen un PIN del teclado, quien llama marca en el teclado del teléfono el PIN guardado en su contacto. En la pestaña **Detalles**, los administradores y propietarios pueden configurar un PIN, configurar uno nuevo o eliminarlo. La pestaña indica si el contacto tiene PIN, cuándo se configuró y si está bloqueado tras demasiados intentos fallidos. LobbyStack no puede mostrar un PIN guardado, así que compártalo con el cliente al configurarlo. Consulte [Configurar los cambios de citas](/es/agent/appointment-changes#configurar-los-pin).
+
+## Eliminar contactos
+
+Los contactos con conversaciones o citas vinculadas se conservan para que el historial de actividad quede completo. Puede eliminar los contactos sin registros vinculados desde la página de detalle del contacto.
+
+<Note>
+  La eliminación de un contacto es permanente. Las conversaciones y citas vinculadas quedan protegidas para que su historial de actividad se mantenga intacto.
+</Note>

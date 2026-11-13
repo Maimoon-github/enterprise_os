@@ -1,0 +1,112 @@
+---
+title: "Configure las alertas por SMS y el consentimiento"
+description: "Qué número envía los SMS de LobbyStack, cómo dan su consentimiento clientes y operadores, y qué hace STOP."
+sidebarTitle: "Alertas por SMS y consentimiento"
+contentType: "Reference"
+---
+
+LobbyStack envía por SMS notificaciones de cuenta salientes que no son de marketing.
+
+LobbyStack envía:
+
+- Una confirmación de reserva, un recordatorio 24 horas antes de la cita y una confirmación de cancelación, a los clientes que lo aceptan.
+- Un código de un solo uso cuando una persona que llama cambia una cita por teléfono y su negocio lo exige.
+- Alertas del espacio de trabajo a los operadores verificados.
+
+LobbyStack no envía marketing, promociones, contenido con restricción de edad, respuestas por SMS de la IA ni conversaciones manuales por SMS desde su número de notificaciones.
+
+## Qué número envía sus SMS
+
+En LobbyStack cloud, los SMS de todos los negocios salen de un solo número gratuito (toll-free) que pertenece a LobbyStack: +1 844 656 2290. Twilio lo verificó para notificaciones de cuenta. LobbyStack obtiene el consentimiento de cada cliente y redacta cada mensaje, así que este número puede enviar SMS por todos los negocios. Usted no registra ningún número para enviar SMS.
+
+Un número gratuito solo puede enviar SMS a números de Estados Unidos, Canadá y Puerto Rico. El agente con IA no ofrece SMS a quienes llaman desde otros números.
+
+En una instalación autoalojada de LobbyStack, los SMS salen del número de Twilio de su negocio con SMS activado. Registre ese número antes de enviar SMS a sus clientes. Un número local de Estados Unidos necesita una marca y una campaña 10DLC (10-digit long code), y un número gratuito necesita la verificación de números gratuitos (toll-free verification). Los operadores de Estados Unidos bloquean los SMS de números sin registrar.
+
+Cuando un cliente envía un mensaje de texto al número de su negocio, LobbyStack guarda el mensaje en la [Bandeja de entrada](/es/dashboard/inbox) y avisa a su equipo. La IA no responde. `STOP` y `HELP` reciben respuestas fijas. El número gratuito compartido no mantiene conversaciones y solo responde a `STOP`, `START` y `HELP`.
+
+## Modelo de consentimiento
+
+LobbyStack obtiene el consentimiento para SMS antes de enviar alertas.
+
+Los clientes con citas y los operadores reciben los SMS del mismo número, pero dan su consentimiento en lugares distintos.
+
+### Clientes con citas
+
+Cuando un cliente reserva por teléfono, el agente con IA le pide su consentimiento verbal para recibir SMS antes de enviarle una confirmación o un recordatorio de la cita.
+
+El aviso es:
+
+> ¿Puede Example Business enviarle a este número un mensaje de texto con la confirmación y el recordatorio de su cita? Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja o HELP para obtener ayuda.
+
+Si la persona que llama acepta, LobbyStack registra la aceptación y envía los SMS de la cita a ese número de teléfono.
+
+El primer SMS de su negocio a ese cliente confirma la aceptación. Nombra a LobbyStack y a su negocio, y sale justo antes del primer SMS de la cita o del primer código. Un cliente que no acepta, responde `STOP` o cambia de número, y luego vuelve a aceptar, recibe una nueva confirmación. En una instalación autoalojada de LobbyStack, la confirmación y las respuestas a `HELP` y `START` usan el nombre de su implementación.
+
+Si la persona que llama no acepta, la cita se reserva igualmente y no se envía ningún SMS de la cita.
+
+Cuando alguien cancela una cita por teléfono y nunca ha respondido a la pregunta, el agente pregunta:
+
+> ¿Puede Example Business enviarle un mensaje de texto a este número para confirmar la cancelación? Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja o HELP para obtener ayuda.
+
+A quien ya respondió no se le vuelve a preguntar: LobbyStack sigue su respuesta anterior.
+
+LobbyStack registra el consentimiento solo en llamadas telefónicas, para el número desde el que llama el cliente. El chat del sitio web y las llamadas desde el navegador no ofrecen SMS, y una respuesta dada ahí no se registra.
+
+### Operadores
+
+Los operadores son usuarios verificados del espacio de trabajo.
+
+Antes de que se envíen alertas del espacio de trabajo por SMS a un operador, este debe activar las alertas por SMS en **Configuración** > **Notificaciones** y aceptar el aviso sobre SMS en el panel.
+
+El aviso para operadores es:
+
+> Acepto recibir alertas por SMS de LobbyStack sobre llamadas perdidas, mensajes nuevos, actividad de citas y notificaciones del espacio de trabajo en mi número de teléfono verificado. La frecuencia de los mensajes varía. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja o HELP para obtener ayuda. Las alertas por SMS son opcionales.
+
+Los operadores pueden desactivar las alertas por SMS más adelante en la configuración de notificaciones.
+
+## Mensajes de ejemplo
+
+La confirmación de la aceptación, el primer SMS de su negocio a cada cliente que aceptó:
+
+> LobbyStack: mensajes de citas de Example Business. Frecuencia variable. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja o HELP para obtener ayuda.
+
+Los SMS siguientes nombran solo a su negocio. Cada SMS de una cita termina con el aviso sobre tarifas y las instrucciones de `STOP` y `HELP`, en el idioma del cliente.
+
+Confirmación de cita:
+
+> Example Business: Su cita de corte de cabello está confirmada para el 24 de mayo a las 2:00 p. m. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja o HELP para obtener ayuda.
+
+Código para cambiar una cita:
+
+> Example Business: su código de verificación es 123456. Caduca en 10 minutos.
+
+Alerta para operadores:
+
+> LobbyStack: Nuevo mensaje de voz para Example Business. Abra su panel para revisarlo. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja o HELP para obtener ayuda.
+
+## Baja y ayuda
+
+Un cliente que responde `STOP` al número gratuito compartido deja de recibir SMS de ese número, de cualquier negocio. Twilio envía la respuesta a `STOP` e impide que el número le escriba a ese teléfono. LobbyStack marca el teléfono como dado de baja en cada negocio que lo tiene como contacto, para que ningún negocio le prepare SMS.
+
+Un cliente que responde `START` o `SUBSCRIBE` puede volver a recibir SMS. Cada negocio vuelve a la respuesta que el cliente le había dado. Un cliente que había aceptado los SMS de un negocio los vuelve a recibir, y uno que los había rechazado sigue sin recibirlos. La respuesta, en inglés, nombra los negocios que le volverán a escribir:
+
+> LobbyStack: You can get appointment texts from Example Business again. Msg frequency varies. Msg & data rates may apply. Reply HELP for help or STOP to opt out.
+
+Un cliente que responde `STOP` al número de su negocio se da de baja solo de los SMS de su negocio. `START` a ese número lo vuelve a suscribir.
+
+Los destinatarios pueden responder `HELP` para obtener información de asistencia. En el número compartido, la respuesta, en inglés, nombra a LobbyStack y a los negocios que le escriben a ese teléfono:
+
+> LobbyStack sends appointment texts for Example Business. For help with an appointment, call Example Business. For anything else, email hello@lobbystack.com. Reply STOP to opt out.
+
+Para obtener ayuda, escriba a [hello@lobbystack.com](mailto:hello@lobbystack.com) o visite [https://lobbystack.com](https://lobbystack.com).
+
+Pueden aplicarse tarifas de mensajes y datos.
+
+## Los SMS son opcionales
+
+Las alertas por SMS son opcionales.
+
+Los clientes pueden reservar citas sin recibir confirmaciones ni recordatorios por SMS.
+
+Los operadores pueden usar el panel sin activar las alertas por SMS.

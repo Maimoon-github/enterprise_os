@@ -1,0 +1,576 @@
+{
+  "page": {
+    "eyebrow": "Agent workspace",
+    "title": "Agent",
+    "description": "Configure how your AI agent behaves, what it knows, and how it handles calls and messages."
+  },
+  "sections": {
+    "basicSettings": {
+      "title": "AI settings",
+      "description": "Greeting and transfer settings for your agent."
+    },
+    "knowledge": {
+      "selection": {"select": "Select", "count_one": "{{count}} selected", "count_other": "{{count}} selected", "selectAll": "Select all", "selectRow": "Select {{title}}", "cancel": "Cancel"},
+      "batch": {"delete": "Delete", "disable": "Turn off", "enable": "Turn on", "reimport": "Re-import", "agentDisable": "Turn off for this agent", "agentEnable": "Turn on", "deleteTitle_one": "Delete this source?", "deleteTitle_other": "Delete {{count}} sources?", "deleteDescription": "You can't undo this.", "done": {"delete_one": "Source deleted.", "delete_other": "{{count}} sources deleted.", "disable_one": "Source turned off.", "disable_other": "{{count}} sources turned off.", "enable_one": "Source turned on.", "enable_other": "{{count}} sources turned on.", "reimport_one": "Re-import started.", "reimport_other": "Re-import started for {{count}} websites."}},
+      "website": {"pages_one": "{{count}} page", "pages_other": "{{count}} pages", "pagesOff_one": "{{count}} off", "pagesOff_other": "{{count}} off"},
+      "pagesDialog": {"title": "Website", "listLabel": "Pages", "usePage": "Use {{title}}", "remove": "Remove {{title}}", "removeAddress": "Delete the website to remove its address page.", "removeConfirm": "Remove", "removeTitle": "Remove {{title}}?", "removeDescription": "A re-import can bring it back.", "offForBusiness": "Off for every agent"},
+      "agent": {"ownTitle": "Only this agent", "sharedTitle": "Shared with every agent", "ownEmpty": "Nothing added for this agent yet.", "sharedEmpty": "No shared knowledge yet.", "manageShared": "Manage shared knowledge", "toggleHeading": "This agent", "useSource": "Use {{title}} for this agent"},
+      "title": "Knowledge",
+      "description": "Information and guidelines your agent uses to answer questions.",
+      "listTitle": "Knowledge Base",
+      "addKnowledge": "Add Knowledge",
+      "addKnowledgeOptions": {
+        "upload": "Upload",
+        "website": "Website",
+        "text": "Text"
+      },
+      "editKnowledge": "Edit Knowledge",
+      "deleteWebsite": { "action": "Delete all pages", "title": "Delete all pages from this website?", "description": "This will permanently remove every page imported from {{host}}.", "deleted": "All pages from {{host}} deleted." },
+      "toast": { "added": "Knowledge added.", "updated": "Knowledge updated.", "uploaded": "Document uploaded. It will be ready shortly.", "deleted": "Knowledge deleted.", "enabled": "Knowledge enabled.", "disabled": "Knowledge disabled." },
+      "uploadDocument": "Upload Document",
+      "websiteImport": { "inShared": "This website is already in your shared knowledge. Turn it off for the agents that shouldn't use it.", "inAgent": "This website is already in {{name}}'s knowledge.",
+        "badge": "Website",
+        "title": "Import Website",
+        "description": "Crawl the public pages of your website so your agent can use them as knowledge.",
+        "submit": "Import",
+        "submitting": "Importing…",
+        "success": "Website import started. Pages will appear here as they finish processing.",
+        "submitFailed": "We couldn't start the website import. Please try again.",
+        "previewPending": "We're crawling this website. Imported pages will appear here automatically.",
+        "previewFailed": "Import failed. Please try again.",
+        "previewStalled": "We couldn't finish reading this website.",
+        "tryAgain": "Try again",
+        "status": {
+          "inProgress": "In progress",
+          "failed": "Failed",
+          "stalled": "Stopped"
+        },
+        "validation": {
+          "urlRequired": "Enter a website URL to import."
+        }
+      },
+      "addKnowledgeDescription": "Add opening hours, pricing, policies, or any other information your agent should know.",
+      "editKnowledgeDescription": "Update the information your agent should use when answering customer questions.",
+      "uploadDocumentDescription": "Upload a file so your agent can use it.",
+      "documentBadge": "Document",
+      "textBadge": "Text",
+      "emptyState": "No knowledge added yet.",
+      "previewPending": "This document is being processed.",
+      "previewError": "This document couldn't be processed.",
+      "status": {
+        "analyzing": "Analyzing...",
+        "inProgress": "In progress",
+        "queued": "Queued",
+        "indexing": "Indexing",
+        "indexed": "Ready",
+        "error": "Error",
+        "cancelled": "Cancelled"
+      },
+      "uploadValidation": {
+        "fileRequired": "Choose a file to upload.",
+        "unsupportedFile": "Supported document types are PDF, DOCX, TXT, and Markdown.",
+        "maxSize": "Documents must be 10 MB or smaller.",
+        "uploadFailed": "We couldn't upload this document. Please try again."
+      },
+      "fields": {
+        "file": {
+          "label": "File",
+          "hint": "Supports PDF, DOCX, TXT, and Markdown.",
+          "dropzonePrefix": "Drag and drop a file here, or",
+          "chooseFile": "Choose File"
+        },
+        "websiteUrl": {
+          "label": "Website URL",
+          "placeholder": "example.com",
+          "hint": "Use the public home page or section you want to import."
+        },
+        "title": {
+          "label": "Title",
+          "placeholder": "Opening Hours",
+          "hint": "A short, descriptive title for this piece of knowledge.",
+          "required": "Enter a title for this knowledge."
+        },
+        "content": {
+          "label": "Content",
+          "placeholder": "We are open Monday to Friday from 9am to 5pm.",
+          "hint": "The actual information the agent should use.",
+          "required": "Enter the information the agent should use."
+        },
+        "tags": {
+          "label": "Tags",
+          "placeholder": "Hours, location",
+          "hint": "Optional. Comma-separated keywords to help categorize this knowledge."
+        }
+      }
+    },
+    "services": {
+      "title": "Services",
+      "description": "Service details your agent can use to explain offerings and help book the right appointment.",
+      "listTitle": "Services",
+      "addKnowledge": "Add Service",
+      "editKnowledge": "Edit Service",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "price": {
+        "column": "Price",
+        "from": "from {{amount}}",
+        "range": "{{min}} – {{max}}",
+        "inPerson": "Set in person",
+        "none": "Not set",
+        "discounted": "{{price}} (−{{percent}}%)"
+      },
+      "duplicated": "Service duplicated.",
+      "duplicateFailed": "Couldn't duplicate the service.",
+      "copyName": "{{name}} (copy)",
+      "copyNameNumbered": "{{name}} (copy {{number}})",
+      "uploadDocument": "Upload Document",
+      "addKnowledgeDescription": "Add your services, what they include, who they are for, and anything your agent should mention.",
+      "editKnowledgeDescription": "Update the service details your agent should mention and use while booking.",
+      "uploadDocumentDescription": "Upload a file so your agent can use it.",
+      "documentBadge": "Document",
+      "textBadge": "Text",
+      "emptyState": "No services added yet.",
+      "unavailable": "Service catalog is unavailable.",
+      "durationValue": "{{duration}} appointment",
+      "previewPending": "This document is being processed.",
+      "previewError": "This document couldn't be processed.",
+      "status": {
+        "analyzing": "Analyzing...",
+        "inProgress": "In progress",
+        "queued": "Queued",
+        "indexing": "Indexing",
+        "indexed": "Ready",
+        "error": "Error"
+      },
+      "uploadValidation": {
+        "fileRequired": "Choose a file to upload.",
+        "unsupportedFile": "Supported document types are PDF, DOCX, TXT, and Markdown.",
+        "maxSize": "Documents must be 10 MB or smaller.",
+        "uploadFailed": "We couldn't upload this document. Please try again."
+      },
+      "fields": {
+        "file": {
+          "label": "File",
+          "hint": "Supports PDF, DOCX, TXT, and Markdown.",
+          "dropzonePrefix": "Drag and drop a file here, or",
+          "chooseFile": "Choose File"
+        },
+        "title": {
+          "label": "Title",
+          "placeholder": "Initial Consultation",
+          "hint": "A short, descriptive title for this service.",
+          "required": "Enter a name for this service."
+        },
+        "content": {
+          "label": "Content",
+          "placeholder": "A 30-minute consultation to understand the caller's needs and recommend the right next step.",
+          "hint": "Describe the service so the agent can explain it clearly."
+        },
+        "duration": {
+          "label": "Duration",
+          "placeholder": "30",
+          "hint": "Appointment length, used for availability checks.",
+          "required": "Choose a duration of at least 1 minute.",
+          "hours": "Hours",
+          "minutes": "Minutes",
+          "hoursTitle": "h",
+          "minutesTitle": "min"
+        },
+        "price": {
+          "label": "Price",
+          "hint": "Optional. The agent quotes this price exactly; leave the amount empty and it won't guess one.",
+          "placeholder": "0",
+          "amount": "Price",
+          "lowest": "Lowest price",
+          "highest": "Highest price",
+          "inPersonHint": "The agent tells callers the price is set once the business knows what they need.",
+          "types": {
+            "fixed": "Fixed",
+            "from": "From",
+            "range": "Between",
+            "in_person": "In person"
+          },
+          "errors": {
+            "invalid": "Enter a price, such as 3,500 or 12.50.",
+            "rangeIncomplete": "Enter both the lowest and the highest price.",
+            "rangeOrder": "The highest price must be more than the lowest.",
+            "discountInvalid": "Enter a discount from 0 to 100%."
+          },
+          "discount": "Discount",
+          "discountPercent": "Discount percentage",
+          "discountPreview": "Customers pay {{price}} instead of {{regular}}."
+        },
+        "active": {
+          "label": "Bookable",
+          "hint": "Only bookable services are offered during calls."
+        },
+        "tags": {
+          "label": "Tags",
+          "placeholder": "Consultation, new clients",
+          "hint": "Optional. Comma-separated keywords to help categorize these services."
+        }
+      },
+      "deleteTitle": "Delete service?",
+      "deleteDescription": "Your agent stops offering it. Past appointments still show it."
+    },
+    "employees": {
+      "title": "Employees",
+      "description": "People your agent can book appointments with and transfer calls to."
+    },
+    "rules": {
+      "title": "Rules",
+      "description": "Instructions that guide how your agent should handle calls and messages.",
+      "listTitle": "Rules",
+      "addKnowledge": "Add Rule",
+      "editKnowledge": "Edit Rule",
+      "uploadDocument": "Upload Document",
+      "addKnowledgeDescription": "What your agent should do, like transfer calls, ask questions and send texts.",
+      "editKnowledgeDescription": "What your agent should do, on every channel or on one.",
+      "uploadDocumentDescription": "Upload a file so your agent can use it.",
+      "documentBadge": "Document",
+      "textBadge": "Text",
+      "emptyState": "No rules added yet.",
+      "previewPending": "This document is being processed.",
+      "previewError": "This document couldn't be processed.",
+      "status": {
+        "analyzing": "Analyzing...",
+        "inProgress": "In progress",
+        "queued": "Queued",
+        "indexing": "Indexing",
+        "indexed": "Ready",
+        "error": "Error"
+      },
+      "uploadValidation": {
+        "fileRequired": "Choose a file to upload.",
+        "unsupportedFile": "Supported document types are PDF, DOCX, TXT, and Markdown.",
+        "maxSize": "Documents must be 10 MB or smaller.",
+        "uploadFailed": "We couldn't upload this document. Please try again."
+      },
+      "fields": {
+        "file": {
+          "label": "File",
+          "hint": "Supports PDF, DOCX, TXT, and Markdown.",
+          "dropzonePrefix": "Drag and drop a file here, or",
+          "chooseFile": "Choose File"
+        },
+        "title": {
+          "label": "Title",
+          "placeholder": "Transfer requests to talk to someone to Jannie",
+          "hint": "A short, descriptive title for this rule.",
+          "required": "Enter a title for this rule."
+        },
+        "content": {
+          "label": "Content",
+          "placeholder": "When someone asks to speak to a human, transfer them to 555-123-4567.",
+          "hint": "Describe what the agent should do.",
+          "required": "Describe what the agent should do."
+        },
+        "tags": {
+          "label": "Tags",
+          "placeholder": "Transfers, escalation",
+          "hint": "Optional. Comma-separated keywords to help categorize these rules."
+        },
+        "channel": {
+          "label": "Channel",
+          "all": "All channels",
+          "voice": "Calls",
+          "sms": "Text messages",
+          "web_chat": "Website chat",
+          "instagram": "Instagram"
+        }
+      }
+    }
+  },
+  "table": {
+    "title": "Title",
+    "channel": "Channel",
+    "preview": "Preview",
+    "status": "Status",
+    "disabled": "Disabled",
+    "added": "Added",
+    "documentPreviewHint": "Click to preview this document.",
+    "documentPreviewUnavailable": "Document preview is available on the Knowledge page."
+  },
+  "pagination": {
+    "rowsPerPage": "Rows per page",
+    "viewing": "Viewing {{start}}-{{end}} of {{total}}",
+    "viewingAll_one": "Viewing {{count}} row",
+    "viewingAll_other": "Viewing all {{count}} rows",
+    "firstPage": "First page",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "lastPage": "Last page"
+  },
+  "fields": {
+    "defaults": {
+      "title": "Defaults"
+    },
+    "summary": {
+      "label": "Business summary",
+      "hint": "What your agent tells callers about the business.",
+      "placeholder": "For example: Maple Family Clinic is a family practice in Toronto offering checkups, vaccinations and physiotherapy.",
+      "regenerate": "Rewrite with AI",
+      "regenerating": "AI is rewriting it from your knowledge. This takes a moment.",
+      "rewriteCompleted": "Business summary rewritten.",
+      "rewriteEmpty": "Your knowledge doesn't say what the business does yet, so the summary wasn't changed.",
+      "rewriteFailed": "We couldn't rewrite the summary. Please try again.",
+      "rewriteNeedsKnowledge": "Add knowledge first, so AI has something to write from."
+    },
+    "bookingPolicy": {
+      "label": "Booking policy",
+      "hint": "Instructions for offering and confirming appointments."
+    },
+    "voiceInstructions": {
+      "label": "Voice instructions"
+    },
+    "smsInstructions": {
+      "label": "SMS instructions"
+    },
+    "name": {
+      "label": "Name",
+      "hint": "Only your team sees it."
+    },
+    "greeting": {
+      "label": "Greeting",
+      "placeholder": "Hello, thank you for calling…",
+      "hint": "The opening line your agent uses when answering a call or starting a conversation."
+    },
+    "defaultLocale": {
+      "label": "Default customer language",
+      "placeholder": "Select a default language",
+      "hint": "Choose the fallback language your agent should use when a caller's preference is unknown."
+    },
+    "teamLocale": {
+      "label": "Team language",
+      "hint": "The language your agent writes messages, notes and requests in for your team. Callers are still answered in their own language.",
+      "sameAsCaller": "Same as customer language"
+    },
+    "voice": {
+      "label": "Voice",
+      "change": "Change voice",
+      "play": "Play {{voice}}",
+      "stop": "Stop {{voice}}",
+      "inUse": "In use",
+      "traits": "{{pitch}}, {{pace}}",
+      "summary": "{{voice}} · {{traits}}",
+      "pitch": {
+        "low": "Deep",
+        "mid": "Mid-range",
+        "high": "Bright"
+      },
+      "pace": {
+        "slow": "unhurried",
+        "steady": "steady",
+        "quick": "quick"
+      },
+      "dialog": {
+        "title": "Voices",
+        "description": "Play a voice to hear it, then pick one.",
+        "current": "Current",
+        "all": "All voices",
+        "cancel": "Cancel",
+        "use": "Use this voice"
+      }
+    },
+    "timezone": {
+      "label": "Business timezone",
+      "hint": "Your agent uses this timezone for your opening hours and the appointment times it offers customers.",
+      "search": "Search time zones...",
+      "noResults": "No time zones found.",
+      "regions": {
+        "africa": "Africa",
+        "america": "Americas",
+        "antarctica": "Antarctica",
+        "arctic": "Arctic",
+        "asia": "Asia",
+        "atlantic": "Atlantic",
+        "australia": "Australia",
+        "europe": "Europe",
+        "indian": "Indian Ocean",
+        "pacific": "Pacific"
+      }
+    },
+    "currency": {
+      "label": "Currency",
+      "hint": "The currency your service prices are in.",
+      "search": "Search currencies",
+      "noResults": "No currencies found."
+    },
+    "transferNumber": {
+      "label": "Default transfer number",
+      "placeholder": "+1 555-123-4567",
+      "hint": "The phone number your agent should use when handing a caller off to a human.",
+      "country": "Country",
+      "errors": {
+        "invalid": "Enter a complete valid transfer number before saving.",
+        "countryUnsupported": "Your agent can't transfer calls to this country yet."
+      }
+    }
+  },
+  "identity": { "title": "Name, greeting and voice" },
+  "transfers": { "title": "Transfers" },
+  "businessDetails": { "title": "Business details" },
+  "staffFirst": {
+    "title": "Staff answers first",
+    "save": "Save staff answers first",
+    "setUp": "Set up",
+    "state": "{{mode}} · {{number}}",
+    "mode": {
+      "label": "Ring your team first",
+      "hint": "Your phone rings first. Press 1 to take the call. If you don't, the agent answers.",
+      "when": "When",
+      "effect": {
+        "never": "Your agent answers every call.",
+        "business_hours": "During business hours, your phone rings first. If you don't take the call, or after hours, your agent answers."
+      },
+      "options": {
+        "never": "Off",
+        "business_hours": "During business hours",
+        "always": "Always"
+      }
+    },
+    "unavailable": {
+      "plan": "Available on paid plans.",
+      "carrier": "Not available on this number yet.",
+      "setup": "Not set up on this deployment yet."
+    },
+    "number": {
+      "label": "Staff phone",
+      "hint": "Don't use a phone that forwards to your agent's number."
+    },
+    "ring": {
+      "label": "Ring for",
+      "hint": "Each ring uses one transfer.",
+      "seconds": "{{count}} seconds"
+    },
+    "message": {
+      "label": "Message before ringing",
+      "hint": "Optional. Callers hear this first.",
+      "noSerbianVoice": "Callers won't hear this. Messages can't be read in Serbian yet."
+    },
+    "handover": {
+      "label": "Message before the agent answers",
+      "hint": "Optional. Callers hear this if nobody picks up."
+    },
+    "errors": {
+      "numberRequired": "Add a staff phone.",
+      "ownLine": "Use a phone other than your agent's number.",
+      "trialLocked": "During the free trial, use the mobile you verified."
+    }
+  },
+  "booking": {
+    "title": "Appointments",
+    "mode": {
+      "label": "Booking",
+      "options": {
+        "instant": "Books appointments",
+        "request": "Takes requests",
+        "off": "Doesn't book"
+      },
+      "descriptions": {
+        "instant": "The agent checks your open times and books the appointment.",
+        "request": "The agent notes the service and preferred time. You confirm from the inbox.",
+        "off": "The agent takes a message instead of booking."
+      }
+    }
+  },
+  "appointmentChanges": {
+    "allowCancel": {
+      "label": "Cancellations",
+      "hint": "Let the agent cancel a verified future appointment."
+    },
+    "allowReschedule": {
+      "label": "Rescheduling",
+      "hint": "Let the agent move a verified future appointment after availability is checked."
+    },
+    "verification": {
+      "label": "Caller verification",
+      "options": {
+        "phone_match_and_facts": "Phone number and booking details",
+        "otp_required": "Texted one-time code",
+        "passcode_required": "Keypad PIN",
+        "operator_only": "Your team makes changes"
+      },
+      "descriptions": {
+        "phone_match_and_facts": "Callers must call from the number the appointment was booked with and say its time or service.",
+        "otp_required": "Callers also read back a one-time code texted to that number before any cancellation or reschedule.",
+        "passcode_required": "Callers also type the PIN saved on their contact on the phone keypad. Callers without a PIN are passed to your team. Set PINs on each contact's Details tab.",
+        "operator_only": "The agent doesn't change appointments. It passes requests to your team."
+      }
+    }
+  },
+  "actions": {
+    "add": "Add",
+    "save": "Save",
+    "saveChanges": "Save changes",
+    "saving": "Saving…",
+    "saved": "Changes saved.",
+    "deleted": "Deleted",
+    "importCancelled": "Import cancelled.",
+    "moreOptions": "More options",
+    "delete": "Delete",
+    "confirmDelete": "Confirm?",
+    "deleteTitle": "Delete entry?",
+    "deleteDescription": "This will permanently remove this entry from the agent workspace.",
+    "deleteCancel": "Cancel",
+    "cancelImport": "Cancel import",
+    "cancelImportTitle": "Cancel website import?",
+    "cancelImportDescription": "This will stop the website import and remove the in-progress entry from the table.",
+    "enable": "Enable",
+    "disable": "Disable",
+    "retry": "Retry",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "dragToReorder": "Drag to reorder",
+    "activateEntry": "Activate entry",
+    "deactivateEntry": "Deactivate entry",
+    "upload": "Upload",
+    "uploading": "Uploading…",
+    "saveFailed": "We couldn't save your settings. Please try again.",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "editField": "Edit {{field}}"
+  },
+  "loading": {
+    "workspace": "Loading workspace…",
+    "rules": "Loading rules…",
+    "knowledge": "Loading knowledge…"
+  },
+  "readOnly": "Viewer access is read-only.",
+  "empty": {
+    "description": "Create a workspace first, then return here to configure your AI agent."
+  },
+  "hours": {
+    "title": "Opening hours",
+    "generated": "We filled these in from your website and documents. Check them.",
+    "closed": "Closed",
+    "openOn": "Open on {{day}}",
+    "opensAt": "{{day}} opening time",
+    "closesAt": "{{day}} closing time",
+    "addWindow": "Add hours",
+    "removeWindow": "Remove these hours",
+    "picker": { "hours": "Hours", "minutes": "Minutes", "period": "AM or PM", "hoursTitle": "HH", "minutesTitle": "MM" },
+    "save": "Save hours",
+    "invalid": "Check {{day}}: each closing time must come after its opening time, with no overlaps.",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "notSet": "Not set",
+    "neededForBooking": "Not set. Needed to book appointments.",
+    "add": "Add hours",
+    "closures": {
+      "title": "Closures",
+      "description": "Add holidays and other times you're closed. The agent won't book appointments during them. Times are in {{timezone}}.",
+      "startsAt": "Closure {{number}}: closed from",
+      "endsAt": "Closure {{number}}: closed until",
+      "reason": "Closure {{number}}: reason",
+      "reasonPlaceholder": "Reason (optional)",
+      "add": "Add closure",
+      "remove": "Remove closure {{number}}",
+      "summary": "Closures: {{list}}",
+      "order": "Enter a start and a later end for the highlighted closure.",
+      "ended": "The highlighted closure ends in the past. Change its dates or remove it.",
+      "far": "The highlighted closure ends more than two years from now. Change its dates.",
+      "overlap": "The highlighted closure overlaps another one. Change its dates."
+    }
+  }
+}

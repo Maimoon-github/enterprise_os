@@ -1,0 +1,349 @@
+"""Behavior contracts for local projects and editing workflows."""
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+def transcript():
+    return {"video": "source.mp4", "duration": 10.0, "language": "en",
+            "words": [{"word": "Hello", "start": 1.0, "end": 1.4},
+                      {"word": "world.", "start": 1.5, "end": 2.0}]}
+
+
+def test_local_input_bypasses_download(tmp_path, monkeypatch):
+    import download_and_transcribe as dt
+    source = tmp_path / "my recording.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.setattr(dt, "download", lambda *a: pytest.fail("downloaded local file"))
+    assert dt.resolve_source(str(source), tmp_path / "work") == source.resolve()
+
+
+def test_srt_uses_clip_relative_times(tmp_path):
+    import captions
+    out = tmp_path / "clip.srt"
+    captions.write_srt(transcript()["words"], 1.2, 1.8, out)
+    assert out.read_text(encoding="utf-8") == (
+        "1\n00:00:00,000 --> 00:00:00,600\nHello world.\n")
+
+
+def test_caption_edits_rebuild_text_and_reject_bad_times():
+    import captions
+    data = transcript()
+    edited = captions.update_transcript(data, [
+        {"word": "Hi", "start": 1.0, "end": 1.2},
+        {"word": "Chopify!", "start": 1.5, "end": 2.0}])
+    assert edited["segments"][0]["text"] == "Hi Chopify!"
+    assert data["words"][0]["word"] == "Hello"
+    for invalid in [float("nan"), -1, 11]:
+        with pytest.raises(ValueError):
+            captions.update_transcript(data, [{"word": "bad", "start": invalid, "end": 2}])
+    with pytest.raises(ValueError):
+        captions.update_transcript(data, list(reversed(data["words"])))
+
+
+def test_brand_rejects_filter_injection_and_resolves_logo(tmp_path):
+    import branding
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"png")
+    preset = tmp_path / "brand.json"
+    preset.write_text(json.dumps({"font": "Arial", "highlight": "#12AB34", "logo": "logo.png"}))
+    brand = branding.load_brand(preset)
+    assert brand["logo"] == str(logo.resolve())
+    assert brand["highlight"] == "&H0034AB12&"
+    preset.write_text(json.dumps({"font": "Arial,evil\nStyle: injected"}))
+    with pytest.raises(ValueError):
+        branding.load_brand(preset)
+
+
+def test_semantic_search_ranks_meaning_and_caches_documents(tmp_path):
+    import semantic
+    sentences = [
+        {"text": "A banana is yellow.", "start": 0, "end": 3},
+        {"text": "Keep trying after people say no.", "start": 4, "end": 8}]
+    calls = []
+    def embed(texts, model):
+        calls.append(list(texts))
+        return [[0, 1], [1, 0]] if len(texts) == 2 else [[1, 0]]
+    got = semantic.search(sentences, "handling rejection", "test", tmp_path, embed=embed)
+    assert got[0]["index"] == 1
+    semantic.search(sentences, "persistence", "test", tmp_path, embed=embed)
+    assert len([c for c in calls if len(c) == 2]) == 1
+    sentences[1]["text"] = "A new sentence."
+    semantic.search(sentences, "persistence", "test", tmp_path, embed=embed)
+    assert len([c for c in calls if len(c) == 2]) == 2
+
+
+def test_project_ids_isolate_sources_and_reject_traversal(tmp_path):
+    import projects
+    a = projects.create_project(tmp_path, "https://example.com/a", {})
+    b = projects.create_project(tmp_path, "https://example.com/b", {})
+    assert a["id"] != b["id"]
+    assert projects.project_path(tmp_path, a["id"]).parent == tmp_path
+    with pytest.raises(ValueError):
+        projects.project_path(tmp_path, "../outside")
+
+
+def test_resume_reuses_stages_and_invalidates_changed_settings(tmp_path, monkeypatch):
+    import projects
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"video")
+    project = projects.create_project(tmp_path / "projects", str(source), {"min_len": 1})
+    path = projects.project_path(tmp_path / "projects", project["id"])
+    calls = []
+    def transcribe(video, workdir, *args, **kwargs):
+        calls.append("transcribe")
+        data = transcript()
+        data["video"] = str(video)
+        (workdir / "transcript.json").write_text(json.dumps(data))
+    def discover(workdir, **kwargs):
+        calls.append("discover")
+        candidates = [{"start": 1, "end": 2, "duration": 1, "hook": "same",
+                       "overall": 5, "raw_score": 5, "score_parts": {},
+                       "reason": "test"}]
+        (workdir / "candidates.json").write_text(json.dumps(
+            {"version": 1, "candidates": candidates}))
+        return candidates, {"seeds": 1, "windows_scanned": 1,
+                            "source_duration": 10.0}
+    def select(workdir, **kwargs):
+        calls.append("select")
+        segments = [{"start": 1, "end": 2, "hook": "same", "overall": 5}]
+        (workdir / "segments.json").write_text(json.dumps(segments))
+        (workdir / "selection.json").write_text(json.dumps(
+            {"score_min": 5, "score_max": 5, "passing": 1}))
+        return segments, "heuristic"
+    monkeypatch.setattr(projects.dt, "transcribe", transcribe)
+    monkeypatch.setattr(projects.ingest, "probe_source", lambda source: {
+        "source": str(source), "url": False, "duration": 10.0, "size": 5,
+        "estimated_size": 5, "width": 0, "height": 0,
+        "has_audio": True, "has_video": True})
+    monkeypatch.setattr(projects.score_clips, "discover", discover)
+    monkeypatch.setattr(projects.score_clips, "select", select)
+    projects.run_project(path, action="prepare")
+    projects.run_project(path, action="prepare")
+    assert calls == ["transcribe", "discover", "select"]
+    state = projects.read_project(path)
+    state["options"]["min_len"] = 2
+    projects.save_project(path, state)
+    projects.run_project(path, action="prepare")
+    assert calls == ["transcribe", "discover", "select", "discover", "select"]
+    source.write_bytes(b"changed video")
+    projects.run_project(path, action="prepare")
+    assert calls[-3:] == ["transcribe", "discover", "select"]
+
+
+def test_batch_continues_after_failure_and_uses_separate_projects(tmp_path):
+    import projects
+    seen = []
+    def runner(path, **kwargs):
+        seen.append(path)
+        if len(seen) == 1:
+            raise RuntimeError("broken input")
+        return {"status": "complete"}
+    results = projects.run_batch(["first.mp4", "second.mp4"], tmp_path, {}, runner=runner)
+    assert [r["status"] for r in results] == ["failed", "complete"]
+    assert seen[0] != seen[1]
+
+
+def test_saved_local_source_is_absolute_for_later_resume(tmp_path, monkeypatch):
+    import projects
+    source = tmp_path / "recording.mp4"
+    source.write_bytes(b"video")
+    monkeypatch.chdir(tmp_path)
+    state = projects.create_project(tmp_path / "projects", "recording.mp4", {})
+    assert state["source"] == str(source.resolve())
+
+
+def test_invalid_embedding_shapes_and_nonfinite_scores_are_rejected():
+    import projects
+    import semantic
+    for vectors in [[None], [42], [[0, 0]], [[float("nan"), 1]]]:
+        with pytest.raises(ValueError):
+            semantic.validate_vectors(vectors, 1)
+    with pytest.raises(ValueError):
+        projects.validate_segments([{"start": 0, "end": 1, "overall": float("nan")}], 2)
+
+
+class TestProjectOptions:
+    def test_new_defaults(self):
+        import projects
+        options = projects.validate_options({})
+        assert options["min_len"] == 15
+        assert options["max_len"] == 300
+        assert options["max_clips"] is None
+        assert options["min_score"] == 8.0
+        assert options["preferred_len"] is None
+
+    def test_none_cap_and_null_score_are_accepted(self):
+        import projects
+        options = projects.validate_options({"max_clips": None, "min_score": None})
+        assert options["max_clips"] is None
+        assert options["min_score"] is None
+
+    def test_preferred_length_is_parsed_and_clipped(self):
+        import projects
+        assert projects.validate_options(
+            {"min_len": 15, "max_len": 100, "preferred_len": "2m"}
+        )["preferred_len"] == 100
+        assert projects.validate_options(
+            {"min_len": 15, "max_len": 100, "preferred_len": 10}
+        )["preferred_len"] == 15
+
+    @pytest.mark.parametrize("value", [0, -1, "abc", "4000s", True])
+    def test_invalid_preferred_length_rejected(self, value):
+        import projects
+        with pytest.raises(ValueError):
+            projects.validate_options({"preferred_len": value})
+
+    @pytest.mark.parametrize("value", [0, 3601, 1.5, True])
+    def test_invalid_cap_rejected(self, value):
+        import projects
+        with pytest.raises(ValueError):
+            projects.validate_options({"max_clips": value})
+
+    def test_changing_score_keeps_discovery_key(self):
+        import projects
+        base = {"min_len": 15, "max_len": 300, "preferred_len": None,
+                "search": None, "semantic": None, "embed_model": "x",
+                "min_score": 8.0, "max_clips": None, "llm": None}
+        d1, s1 = projects.score_keys("transcript", {"words": []}, base)
+        d2, s2 = projects.score_keys(
+            "transcript", {"words": []}, {**base, "min_score": 7.5})
+        assert d1 == d2
+        assert s1 != s2
+
+
+def test_validate_segments_allows_empty_and_preserves_fields():
+    import projects
+    assert projects.validate_segments([], 100) == []
+    rich = {
+        "start": 1.0, "end": 5.0, "hook": "x", "overall": 8.4,
+        "duration": 4.0, "rank": 2, "raw_score": 7.9,
+        "score_parts": {"hook": 0.8}, "evidence": {"audio": 8.0},
+        "reason": "strong",
+    }
+    assert projects.validate_segments([rich], 10)[0] == rich
+
+
+def test_project_detail_exposes_selection(tmp_path):
+    import dashboard
+    import projects
+    projects.init_project(tmp_path / "abc123abc123", "source.mp4", {},
+                          project_id="abc123abc123")
+    (tmp_path / "abc123abc123" / "transcript.json").write_text(
+        json.dumps({"video": "source.mp4", "duration": 100.0, "words": []}),
+        encoding="utf-8")
+    (tmp_path / "abc123abc123" / "segments.json").write_text(
+        json.dumps([{"start": 1.0, "end": 40.0, "hook": "x", "overall": 8.4,
+                     "rank": 1, "duration": 39.0}]), encoding="utf-8")
+    (tmp_path / "abc123abc123" / "selection.json").write_text(
+        json.dumps({"passing": 1, "min_score": 8.0, "content_profile": "mixed"}),
+        encoding="utf-8")
+    detail = dashboard.project_detail(tmp_path, "abc123abc123")
+    assert detail["selection"]["passing"] == 1
+    assert detail["candidates"][0]["rank"] == 1
+
+
+def test_project_detail_without_selection_is_empty(tmp_path):
+    import dashboard
+    import projects
+    projects.init_project(tmp_path / "abc123abc123", "source.mp4", {},
+                          project_id="abc123abc123")
+    (tmp_path / "abc123abc123" / "transcript.json").write_text(
+        json.dumps({"video": "source.mp4", "duration": 10.0, "words": []}),
+        encoding="utf-8")
+    assert dashboard.project_detail(tmp_path, "abc123abc123")["selection"] == {}
+
+
+def test_project_detail_exposes_long_source_fields(tmp_path):
+    import dashboard
+    import projects
+    root = tmp_path / "projects"
+    path = root / "abc123abc123"
+    projects.init_project(path, "https://example.com/long", {},
+                          project_id="abc123abc123")
+    discovery = tmp_path / "discovery.mp4"
+    discovery.write_bytes(b"video")
+    state = projects.read_project(path)
+    state["video"] = str(discovery)
+    state["source_meta"] = {"duration": 9000, "long": True,
+                            "url": True, "media_kind": "audio",
+                            "render_from_sections": True}
+    state["progress"] = {"stage": "transcribe", "done": 3, "total": 5,
+                         "detail": "chunk 3/5"}
+    state["render_errors"] = [{"clip": "001", "error": "section failed"}]
+    projects.save_project(path, state)
+    (path / "transcript.json").write_text(json.dumps({
+        "video": str(discovery), "source": "https://example.com/long",
+        "duration": 9000.0, "words": [], "render_from_sections": True,
+    }), encoding="utf-8")
+
+    detail = dashboard.project_detail(root, "abc123abc123")
+    assert detail["source_meta"]["duration"] == 9000
+    assert detail["progress"]["done"] == 3
+    assert detail["render_errors"] == [
+        {"clip": "001", "error": "section failed"}]
+    assert detail["playable_source"] is False
+
+
+def test_project_detail_playable_source_requires_a_full_video(tmp_path):
+    import dashboard
+    import projects
+    root = tmp_path / "projects"
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+    path = root / "abc123abc123"
+    projects.init_project(path, str(source), {}, project_id="abc123abc123")
+    state = projects.read_project(path)
+    state["video"] = str(source)
+    projects.save_project(path, state)
+    (path / "transcript.json").write_text(json.dumps({
+        "video": str(source), "duration": 10.0, "words": [],
+    }), encoding="utf-8")
+
+    assert dashboard.project_detail(root, "abc123abc123")["playable_source"]
+    source.unlink()
+    assert not dashboard.project_detail(root, "abc123abc123")["playable_source"]
+
+
+def test_project_detail_section_projects_are_never_playable(tmp_path):
+    import dashboard
+    import projects
+    root = tmp_path / "projects"
+    discovery = tmp_path / "discovery.mp4"
+    discovery.write_bytes(b"video")
+    path = root / "abc123abc123"
+    projects.init_project(path, "https://example.com/long", {},
+                          project_id="abc123abc123")
+    state = projects.read_project(path)
+    state["video"] = str(discovery)
+    state["source_meta"] = {"long": True, "render_from_sections": True}
+    projects.save_project(path, state)
+    (path / "transcript.json").write_text(json.dumps({
+        "video": str(discovery), "duration": 9000.0, "words": [],
+    }), encoding="utf-8")
+    assert not dashboard.project_detail(root, "abc123abc123")["playable_source"]
+
+
+def test_settings_accept_null_cap_and_preferred_length():
+    import projects
+    options = projects.validate_options({
+        "max_clips": None, "min_score": 8.0, "preferred_len": "90s"})
+    assert options["max_clips"] is None
+    assert options["preferred_len"] == 90
+
+
+def test_evidence_version_invalidates_discovery_cache(monkeypatch):
+    import evidence
+    import projects
+    options = projects.validate_options({})
+    data = {"words": []}
+    before = projects.score_keys("transcript", data, options)
+    monkeypatch.setattr(evidence, "EVIDENCE_VERSION",
+                        evidence.EVIDENCE_VERSION + 1)
+    after = projects.score_keys("transcript", data, options)
+    assert before[0] != after[0]
+    assert before[1] != after[1]

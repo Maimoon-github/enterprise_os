@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Fake widget frame</title>
+<style>
+  body { margin:0; font-family:system-ui; background:#123; color:#fff; display:flex; flex-direction:column; height:100vh; }
+  #head { padding:10px; background:#0a1522; display:flex; justify-content:space-between; align-items:center; }
+  #head button { border:none; border-radius:6px; padding:4px 10px; cursor:pointer; }
+  #body { flex:1; padding:12px; font-size:13px; } #input { padding:12px; background:#0a1522; font-size:13px; }
+</style>
+</head>
+<body>
+<!--
+  Stand-in for /api/v1/widgets/{id}/frame, served by server.js for ui-test.html's
+  stub mode. It plays the real frame's side of the loader handshake
+  (FRAME_READY → HOST_INIT → WIDGET_READY) and takes its scenario options
+  (style, dashboard display) from the host page URL HOST_INIT carries.
+-->
+<div id="head"><span>FAKE WIDGET</span><button id="minimize">minimize</button></div>
+<div id="body">waiting for WIDGET_DISPLAY…</div>
+<div id="input">input: <span id="prefill">(empty)</span></div>
+<script>
+  var hostOrigin = null
+  function toHost(message) { parent.postMessage(message, hostOrigin || '*') }
+
+  document.getElementById('minimize').onclick = function () { toHost({ type: 'WIDGET_MINIMIZE' }) }
+
+  window.addEventListener('message', function (e) {
+    if (e.source !== parent || !e.data) return
+    if (e.data.type === 'HOST_INIT' && !hostOrigin) {
+      hostOrigin = e.origin
+      var params = new URL(e.data.pageUrl).searchParams
+      var dashboard = params.get('dashboard')
+      toHost({ type: 'CUSTOMIZATION_UPDATE', data: {
+        chat_bubble_color: '#3366FF',
+        chat_style: params.get('style') || 'CHATBOT',
+        chat_initiation_messages: ['Hi from the fake widget!'],
+        widget_display: dashboard ? JSON.parse(dashboard) : undefined
+      } })
+      toHost({ type: 'UNREAD_COUNT', count: 3 })
+      toHost({ type: 'WIDGET_READY' })
+    }
+    if (e.data.type === 'PREFILL_MESSAGE') document.getElementById('prefill').textContent = e.data.text
+    if (e.data.type === 'WIDGET_DISPLAY') document.getElementById('body').textContent = 'WIDGET_DISPLAY: ' + JSON.stringify(e.data)
+  })
+
+  parent.postMessage({ type: 'FRAME_READY' }, '*')
+</script>
+</body>
+</html>

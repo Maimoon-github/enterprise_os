@@ -1,0 +1,94 @@
+---
+title: "Resend"
+description: "Send AgentSDR's own account emails (verification, password reset, invitations) through Resend on a domain you verify."
+icon: "send"
+---
+
+AgentSDR sends a few emails of its own: the confirmation link when someone signs up, password resets, and invitations to an organization. They go out through Resend. This is one setting for the whole instance, in your environment, and it is separate from the mailboxes your campaigns send from ([Google Workspace](/integrations/google-workspace)).
+
+<Info>
+**What you need**
+
+- A [Resend](https://resend.com) account (free to create).
+- A domain you control and access to its DNS settings.
+- Access to your environment variables and a way to restart AgentSDR.
+- About 15 minutes, plus DNS propagation.
+</Info>
+
+## Overview
+
+AgentSDR calls Resend's `POST /emails` API with your key. Sign-up requires a verified email address, so without working email nobody but you (reading the server log) can finish creating an account.
+
+<Steps>
+  <Step title="Add your domain in Resend">
+    In the Resend dashboard open **Domains** and click **Add Domain**. Enter a domain or, as Resend recommends, a subdomain such as `mail.yourcompany.com`, and pick the region closest to your users.
+
+    {/* SCREENSHOT: Resend Add Domain dialog | resend.com/domains | the domain field and region */}
+  </Step>
+  <Step title="Add the DNS records">
+    Resend shows the records to create: an SPF record (TXT), a DKIM record (TXT) and an MX or CNAME record. Add each at your DNS provider exactly as shown, by copy and paste. If your DNS is on Cloudflare, set these records to **DNS only** (grey cloud), because proxying breaks verification.
+
+    {/* SCREENSHOT: Resend domain page listing the DNS records to add | resend.com/domains/<id> | the Name, Type and Value columns */}
+  </Step>
+  <Step title="Wait for verification">
+    Back on the domain page, the status turns to verified. Resend says this typically takes about 15 minutes and can take up to 72 hours for DNS to propagate. If it has not verified after 72 hours, use **Restart verification**. Guide: [Add a domain](https://resend.com/docs/add-a-domain).
+  </Step>
+  <Step title="Create an API key">
+    Open **API Keys → Create API key**. Name it `agentsdr`, set the permission to **Sending access** and, if you want, restrict it to the domain from step 1. Copy the key (it starts with `re_`). Resend never shows it again.
+  </Step>
+  <Step title="Set the environment variables and restart">
+    ```bash
+    RESEND_API_KEY=re_xxxxxxxxxxxx
+    AUTH_EMAIL_FROM="AgentSDR <auth@mail.yourcompany.com>"
+    ```
+
+    `AUTH_EMAIL_FROM` must be an address on the domain you verified. Restart AgentSDR. See [Configuration](/configuration) for where each environment is set.
+  </Step>
+</Steps>
+
+## What happens when it is not set
+
+- **No `RESEND_API_KEY`:** nothing is sent. The message, including its link, is written to the server log. That is enough for you to confirm your own first account on a laptop, but it cannot invite anyone. In production the log shows a one-time warning: `RESEND_API_KEY is not set: verification, password-reset and invitation emails are written to this log instead of being sent.`
+- **`RESEND_API_KEY` set but no `AUTH_EMAIL_FROM`:** sending fails with `AUTH_EMAIL_FROM is not set`.
+- **Resend rejects a message:** the log shows `Resend refused the email (<status>): ...`.
+
+## Check that it works
+
+Sign up with a new address in a private window. The confirmation email should arrive within a minute and its **Confirm email** button should sign you in. You can also use **Forgot password** on `/sign-in`.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="AUTH_EMAIL_FROM is not set">
+    Set `AUTH_EMAIL_FROM` to something like `AgentSDR <auth@yourdomain.com>` and restart.
+  </Accordion>
+  <Accordion title="Resend refused the email (403): domain is not verified">
+    The sender address uses a domain that is not verified in Resend, or a different one from the one you verified. Check the Domains page and `AUTH_EMAIL_FROM`.
+  </Accordion>
+  <Accordion title="Resend refused the email (401)">
+    The API key is wrong, deleted, or lacks sending access. Create a new key.
+  </Accordion>
+  <Accordion title="No email arrives and the log says (not sent — no RESEND_API_KEY)">
+    The variable is missing in the running environment. Set it and restart. The link is in the log in the meantime.
+  </Accordion>
+  <Accordion title="Email arrives in spam">
+    Make sure SPF and DKIM show as verified, and add the DMARC record Resend suggests after verification.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Google sign-in" icon="log-in" href="/integrations/google-sign-in">
+    Add the Continue with Google button.
+  </Card>
+  <Card title="Configuration" icon="settings" href="/configuration">
+    All environment variables.
+  </Card>
+  <Card title="Organizations" icon="users" href="/workspace/organizations">
+    Invite your team.
+  </Card>
+  <Card title="Production setup" icon="rocket" href="/self-hosting/production">
+    Go-live checklist.
+  </Card>
+</CardGroup>

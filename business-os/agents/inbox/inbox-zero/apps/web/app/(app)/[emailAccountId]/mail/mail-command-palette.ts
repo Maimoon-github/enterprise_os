@@ -1,0 +1,319 @@
+import type { I18n } from "@lingui/core";
+import { plural, t } from "@lingui/core/macro";
+import {
+  ArchiveIcon,
+  ArchiveRestoreIcon,
+  Clock3Icon,
+  ExternalLinkIcon,
+  FolderInputIcon,
+  ForwardIcon,
+  MailXIcon,
+  MailIcon,
+  MailOpenIcon,
+  LanguagesIcon,
+  ShieldAlertIcon,
+  TagIcon,
+  StarIcon,
+  Trash2Icon,
+  MessageSquareIcon,
+  SplitIcon,
+} from "lucide-react";
+import type { Command } from "@/lib/commands/types";
+import { getShortcutHint } from "@/lib/shortcuts/registry";
+
+type MailCommandActions = {
+  archive: () => void;
+  /** Replaces archive when every target is already archived. */
+  moveToInbox?: () => void;
+  forward?: () => void;
+  label?: () => void;
+  addToSplit?: () => void;
+  star?: () => void;
+  markRead?: () => void;
+  markSpam?: () => void;
+  markUnread?: () => void;
+  move?: () => void;
+  openSnooze?: () => void;
+  openExternal?: () => void;
+  translate?: () => void;
+  comment?: () => void;
+  trash?: () => void;
+  toggleAutoArchive?: () => void;
+  unsubscribe?: () => void;
+};
+
+export function buildMailCommandPalette({
+  actions,
+  allStarred = false,
+  hasRead,
+  hasUnread,
+  isAutoArchived = false,
+  isAutoArchiveDisabled = false,
+  isUnsubscribeDisabled = false,
+  unsubscribeLabel,
+  openExternalLabel,
+  targetCount,
+  i18n,
+}: {
+  actions: MailCommandActions;
+  allStarred?: boolean;
+  hasRead: boolean;
+  hasUnread: boolean;
+  isAutoArchived?: boolean;
+  isAutoArchiveDisabled?: boolean;
+  isUnsubscribeDisabled?: boolean;
+  unsubscribeLabel?: string;
+  openExternalLabel?: string;
+  targetCount: number;
+  i18n: I18n;
+}): Command[] {
+  if (targetCount === 0) return [];
+
+  const commands: Command[] = [
+    actions.moveToInbox
+      ? {
+          id: "mail-move-to-inbox",
+          label: t(i18n)`${plural(targetCount, {
+            one: "Move to inbox",
+            other: "Move # conversations to inbox",
+          })}`,
+          icon: ArchiveRestoreIcon,
+          section: "actions",
+          priority: 0,
+          keywords: ["unarchive", "restore", "inbox"],
+          action: actions.moveToInbox,
+        }
+      : {
+          id: "mail-archive",
+          label: t(i18n)`${plural(targetCount, {
+            one: "Archive conversation",
+            other: "Archive # conversations",
+          })}`,
+          icon: ArchiveIcon,
+          shortcut: "E",
+          section: "actions",
+          priority: 0,
+          keywords: ["archive", "remove", "inbox"],
+          action: actions.archive,
+        },
+  ];
+
+  if (targetCount === 1 && actions.forward) {
+    commands.push({
+      id: "mail-forward",
+      label: t(i18n)`Forward`,
+      icon: ForwardIcon,
+      shortcut: getShortcutHint("forward"),
+      section: "actions",
+      priority: 1,
+      keywords: ["forward", "send", "share"],
+      action: actions.forward,
+    });
+  }
+
+  if (actions.label) {
+    commands.push({
+      id: "mail-label",
+      label: t(i18n)`Label`,
+      icon: TagIcon,
+      shortcut: getShortcutHint("label"),
+      section: "actions",
+      priority: 2,
+      keywords: ["label", "tag", "categorize"],
+      action: actions.label,
+    });
+  }
+
+  if (actions.addToSplit) {
+    commands.push({
+      id: "mail-add-to-split",
+      label: t(i18n)`Add senders to split`,
+      icon: SplitIcon,
+      section: "actions",
+      priority: 3,
+      keywords: ["split", "sender", "tab", "inbox"],
+      action: actions.addToSplit,
+    });
+  }
+
+  if (actions.move) {
+    commands.push({
+      id: "mail-move",
+      label: t(i18n)`Move`,
+      icon: FolderInputIcon,
+      shortcut: getShortcutHint("move"),
+      section: "actions",
+      priority: 3,
+      keywords: ["move", "folder"],
+      action: actions.move,
+    });
+  }
+
+  if (hasUnread && actions.markRead) {
+    commands.push({
+      id: "mail-mark-read",
+      label: t(i18n)`${plural(targetCount, {
+        one: "Mark as read",
+        other: "Mark # as read",
+      })}`,
+      icon: MailOpenIcon,
+      section: "actions",
+      priority: 1,
+      keywords: ["read", "seen", "open"],
+      action: actions.markRead,
+    });
+  }
+
+  if (hasRead && actions.markUnread) {
+    commands.push({
+      id: "mail-mark-unread",
+      label: t(i18n)`${plural(targetCount, {
+        one: "Mark as unread",
+        other: "Mark # as unread",
+      })}`,
+      icon: MailIcon,
+      shortcut: getShortcutHint("markUnread"),
+      section: "actions",
+      priority: 2,
+      keywords: ["unread", "unseen", "new"],
+      action: actions.markUnread,
+    });
+  }
+
+  if (actions.openSnooze) {
+    commands.push({
+      id: "mail-snooze",
+      label: t(i18n)`${plural(targetCount, {
+        one: "Snooze",
+        other: "Snooze # conversations",
+      })}`,
+      icon: Clock3Icon,
+      shortcut: getShortcutHint("snooze"),
+      section: "actions",
+      priority: 3,
+      keywords: ["snooze", "later", "remind"],
+      action: actions.openSnooze,
+      closeOnSelect: false,
+    });
+  }
+
+  if (targetCount === 1 && actions.translate) {
+    commands.push({
+      id: "mail-translate",
+      label: t(i18n)`Translate`,
+      icon: LanguagesIcon,
+      shortcut: getShortcutHint("translate"),
+      section: "actions",
+      priority: 4,
+      keywords: ["translate", "language", "original"],
+      action: actions.translate,
+    });
+  }
+
+  if (targetCount === 1 && actions.comment) {
+    commands.push({
+      id: "mail-comment",
+      label: t(i18n)`Comment`,
+      icon: MessageSquareIcon,
+      shortcut: getShortcutHint("openTeamComments"),
+      section: "actions",
+      priority: 4,
+      keywords: ["comment", "share", "team", "internal", "mention"],
+      action: actions.comment,
+    });
+  }
+
+  if (actions.trash) {
+    commands.push({
+      id: "mail-delete",
+      label: t(i18n)`${plural(targetCount, {
+        one: "Delete conversation",
+        other: "Delete # conversations",
+      })}`,
+      icon: Trash2Icon,
+      shortcut: "#",
+      section: "actions",
+      priority: 10,
+      keywords: ["delete", "trash", "remove"],
+      action: actions.trash,
+    });
+  }
+
+  if (actions.markSpam) {
+    commands.push({
+      id: "mail-mark-spam",
+      label: t(i18n)`Mark as spam`,
+      icon: ShieldAlertIcon,
+      shortcut: getShortcutHint("markSpam"),
+      section: "actions",
+      priority: 11,
+      keywords: ["spam", "junk", "report"],
+      action: actions.markSpam,
+    });
+  }
+
+  if (targetCount === 1 && actions.unsubscribe) {
+    commands.push({
+      id: "mail-unsubscribe",
+      label: unsubscribeLabel ?? t(i18n)`Unsubscribe`,
+      shortcut: getShortcutHint("unsubscribe"),
+      icon: MailXIcon,
+      section: "actions",
+      priority: 12,
+      keywords: ["unsubscribe", "block", "newsletter", "sender"],
+      action: actions.unsubscribe,
+      disabled: isUnsubscribeDisabled,
+    });
+  }
+
+  if (targetCount === 1 && actions.toggleAutoArchive) {
+    commands.push({
+      id: "mail-auto-archive",
+      shortcut: getShortcutHint("toggleAutoArchive"),
+      label: isAutoArchived
+        ? t(i18n)`Disable auto archive`
+        : t(i18n)`Auto archive future emails`,
+      icon: isAutoArchived ? ArchiveRestoreIcon : ArchiveIcon,
+      section: "actions",
+      priority: 13,
+      keywords: ["auto archive", "future", "sender"],
+      action: actions.toggleAutoArchive,
+      disabled: isAutoArchiveDisabled,
+    });
+  }
+
+  if (targetCount === 1 && actions.openExternal) {
+    commands.push({
+      id: "mail-open-external",
+      label: openExternalLabel ?? t(i18n)`Open in email provider`,
+      icon: ExternalLinkIcon,
+      shortcut: getShortcutHint("openExternal"),
+      section: "actions",
+      priority: 14,
+      keywords: ["open", "external", "provider", "gmail", "outlook"],
+      action: actions.openExternal,
+    });
+  }
+
+  if (actions.star) {
+    commands.push({
+      id: "mail-star",
+      label: allStarred
+        ? t(i18n)`${plural(targetCount, {
+            one: "Unstar",
+            other: "Unstar # conversations",
+          })}`
+        : t(i18n)`${plural(targetCount, {
+            one: "Star",
+            other: "Star # conversations",
+          })}`,
+      icon: StarIcon,
+      shortcut: getShortcutHint("star"),
+      section: "actions",
+      keywords: ["star", "unstar", "favorite"],
+      action: actions.star,
+    });
+  }
+
+  return commands;
+}

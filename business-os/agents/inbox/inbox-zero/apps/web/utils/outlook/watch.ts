@@ -1,0 +1,54 @@
+import type { Client } from "@microsoft/microsoft-graph-client";
+import type { Subscription } from "@microsoft/microsoft-graph-types";
+import { addDays } from "date-fns/addDays";
+import { env } from "@/env";
+import { isNotFoundError } from "@/utils/outlook/errors";
+import { withMicrosoftGraphWriteRetry } from "@/utils/outlook/retry";
+import type { Logger } from "@/utils/logger";
+
+export async function watchOutlook(client: Client, logger: Logger) {
+  const base = env.WEBHOOK_URL || env.NEXT_PUBLIC_BASE_URL;
+
+  // must be https
+  const notificationUrl = new URL("/api/outlook/webhook", base);
+  if (notificationUrl.protocol === "http:") {
+    notificationUrl.protocol = "https:";
+  }
+
+  const subscriptionPayload = {
+    changeType: "created,updated",
+    notificationUrl: notificationUrl.toString(),
+    lifecycleNotificationUrl: notificationUrl.toString(),
+    resource: "/me/messages",
+    expirationDateTime: addDays(new Date(), 3).toISOString(), // 3 days (max allowed)
+    clientState: env.MICROSOFT_WEBHOOK_CLIENT_STATE,
+  };
+
+  const subscription: Subscription = await withMicrosoftGraphWriteRetry(
+    () => client.api("/subscriptions").post(subscriptionPayload),
+    logger,
+  );
+
+  return {
+    id: subscription.id,
+    expirationDateTime: subscription.expirationDateTime,
+  };
+}
+
+export async function unwatchOutlook(
+  client: Client,
+  subscriptionId: string,
+  logger: Logger,
+) {
+  try {
+    await withMicrosoftGraphWriteRetry(
+      () => client.api(`/subscriptions/${subscriptionId}`).delete(),
+      logger,
+    );
+  } catch (error) {
+    // Graph drops expired or removed subscriptions on its own, so a 404 means
+    // the subscription is already gone, which is what unwatching wants.
+    if (!isNotFoundError(error)) throw error;
+    logger.info("Outlook subscription already removed", { subscriptionId });
+  }
+}

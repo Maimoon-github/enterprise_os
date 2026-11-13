@@ -1,0 +1,101 @@
+# syntax=docker/dockerfile:1.7
+FROM node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9 AS build
+# The marketing site's social cards are drawn at build time with text in Arial.
+# fontconfig's aliases map it to Liberation Sans; without them the text falls
+# back to a monospace font.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates fontconfig fonts-liberation && rm -rf /var/lib/apt/lists/*
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN npm install --global pnpm@12.15.0
+WORKDIR /app
+COPY pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
+COPY .github/build/prepare-image-workspace.mjs .github/build/prepare-image-workspace.mjs
+RUN node .github/build/prepare-image-workspace.mjs --lockfile-only
+RUN pnpm fetch --frozen-lockfile
+COPY . .
+RUN node .github/build/prepare-image-workspace.mjs
+RUN pnpm install --offline --frozen-lockfile
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY
+ARG NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN
+ENV NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=$NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN
+ARG NEXT_PUBLIC_POSTHOG_HOST
+ENV NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST
+ARG STORAGE_PROVIDER
+ARG RAILWAY_DEPLOYMENT_ID
+ARG RAILWAY_GIT_COMMIT_SHA
+ARG RAILWAY_ENVIRONMENT_NAME
+ARG SERVICE_VERSION=development
+ARG S3_ENDPOINT
+ARG S3_BUCKET
+ARG S3_REGION
+ARG S3_FORCE_PATH_STYLE
+RUN pnpm --filter @lobbystack/embed build && node scripts/copy-widget-embed.mjs
+ARG POSTHOG_SOURCEMAP_API_KEY
+ARG POSTHOG_PROJECT_ID=266281
+# The admin reads these at run time. At build time they let the prerendered
+# sign-in pages show the name and logo without asking the server first.
+ARG BRAND_APP_NAME
+ARG BRAND_LOGO_URL
+# The cloud ignores saved branding, so its prerendered pages show the logo at once.
+ARG DEPLOYMENT_MODE
+# Where the admin's outside links go: the website, the terms and privacy pages,
+# the docs, and the one contact address. Next.js writes them into the build, so
+# changing one takes a rebuild. Unset or empty links to LobbyStack's.
+ARG NEXT_PUBLIC_LANDING_SITE_URL
+ARG NEXT_PUBLIC_TERMS_URL
+ARG NEXT_PUBLIC_PRIVACY_URL
+ARG NEXT_PUBLIC_DOCS_SITE_URL
+ARG NEXT_PUBLIC_CONTACT_EMAIL
+# The marketing site the admin serves on MARKETING_HOSTS. Images leave it out
+# unless MARKETING_SITE=true, so self-hosted images skip its 300 prerendered
+# pages, social cards and search index. Its pages are built ahead of time, so
+# the dashboard origin for its sign-in links, the voice demo's endpoint and
+# business, and the search engines' verification tokens go in here too.
+ARG MARKETING_SITE=false
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_LIVE_CALL_ENDPOINT
+ARG NEXT_PUBLIC_WEB_CALL_BUSINESS_SLUG
+ARG GOOGLE_SITE_VERIFICATION
+ARG BING_SITE_VERIFICATION
+# Production only: the build submits the pages it changes to IndexNow.
+ARG INDEXNOW_KEY
+RUN pnpm --filter @lobbystack/admin... build
+RUN mkdir -p /prod && cp -R /app/apps/admin/.next/static /prod/admin-static && \
+    find /prod/admin-static -type f -name '*.map' -delete
+RUN swc_helpers_path="$(find /app/node_modules/.pnpm -type d -path '*/node_modules/@swc/helpers' -print -quit)" && \
+    test -n "$swc_helpers_path" && \
+    standalone_path="/app/apps/admin/.next/standalone/${swc_helpers_path#/app/}" && \
+    mkdir -p "$standalone_path" && \
+    cp -R "$swc_helpers_path/." "$standalone_path/"
+RUN find /app/apps/admin/.next/standalone -type f -name '*.map' -delete
+
+FROM node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9 AS runtime
+# The pinned base image can lag Debian security fixes, so install them at build time.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+
+ARG SERVICE_VERSION=development
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+ENV SERVICE_VERSION=$SERVICE_VERSION
+LABEL org.opencontainers.image.revision=$SERVICE_VERSION
+WORKDIR /app
+
+RUN groupadd --system --gid 1001 lobbystack && \
+    useradd --system --uid 1001 --gid lobbystack lobbystack && \
+    mkdir -p /var/lib/lobbystack/storage && \
+    chown -R lobbystack:lobbystack /var/lib/lobbystack && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+COPY --from=build --chown=lobbystack:lobbystack /app/apps/admin/.next/standalone ./
+COPY --from=build --chown=lobbystack:lobbystack /prod/admin-static ./apps/admin/.next/static
+COPY --from=build --chown=lobbystack:lobbystack /app/apps/admin/public ./apps/admin/public
+
+USER lobbystack
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=4 CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/admin/server.js"]

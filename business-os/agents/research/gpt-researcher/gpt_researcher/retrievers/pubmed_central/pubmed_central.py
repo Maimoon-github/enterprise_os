@@ -1,0 +1,243 @@
+from typing import List, Dict, Any, Optional
+import os
+import xml.etree.ElementTree as ET
+import requests
+
+
+# JATS elements that start a block of their own. Text inside anything else, such as
+# <italic>, <sub> or <xref>, belongs to the word or sentence around it.
+_BLOCK_TAGS = {
+    "p", "sec", "title", "label", "caption", "list-item", "fig", "table-wrap",
+    "tr", "th", "td", "disp-formula", "disp-quote", "def-item", "term", "def",
+}
+
+
+def _element_text(element: Optional[ET.Element]) -> str:
+    """The text of `element`, with one line per block and its inline markup kept in place.
+
+    Joining `itertext()` with spaces split words at inline markup (`CO<sub>2</sub>` read
+    `CO 2`), and joining it with nothing would run paragraphs together.
+    """
+    if element is None:
+        return ""
+    parts: List[str] = []
+    # Walked with a stack rather than recursion, so a deeply nested document cannot
+    # exhaust the interpreter's recursion limit
+    stack: List[tuple] = [("start", element)]
+    while stack:
+        step, node = stack.pop()
+        if step == "start":
+            if node.tag in _BLOCK_TAGS:
+                parts.append("\n")
+            parts.append(node.text or "")
+            stack.append(("end", node))
+            for child in reversed(list(node)):
+                stack.append(("tail", child))
+                stack.append(("start", child))
+        elif step == "end":
+            if node.tag in _BLOCK_TAGS:
+                parts.append("\n")
+        else:
+            parts.append(node.tail or "")
+    lines = (" ".join(line.split()) for line in "".join(parts).split("\n"))
+    return "\n".join(line for line in lines if line)
+
+
+class PubMedCentralSearch:
+    """
+    PubMed Central Full-Text Search
+    """
+
+    # PubMed Central returns full article text inline, so there is nothing
+    # left to scrape.
+    requires_scraping = False
+
+    def __init__(self, query: str, query_domains=None):
+        self.base_search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+        self.base_fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+        self.base_link_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
+        
+        # Get API key from environment
+        self.api_key = os.getenv('NCBI_API_KEY')
+        if not self.api_key:
+            print("Warning: NCBI_API_KEY not set. Requests will be rate-limited.")
+        
+        self.query = query
+        self.db_type = os.getenv('PUBMED_DB', 'pmc')  # Default to PMC for full text
+        
+        # Optional parameters from environment
+        self.params = self._populate_params()
+
+    def _populate_params(self) -> Dict[str, Any]:
+        """
+        Populates parameters from environment variables prefixed with 'PUBMED_ARG_'
+        """
+        params = {
+            key[len('PUBMED_ARG_'):].lower(): value
+            for key, value in os.environ.items()
+            if key.startswith('PUBMED_ARG_')
+        }
+        
+        # Set defaults if not provided
+        params.setdefault('sort', 'relevance')
+        params.setdefault('retmode', 'json')
+        return params
+
+    def _search_articles(self, max_results: int) -> Optional[List[str]]:
+        """
+        Search for article IDs based on query
+        """
+        # Build search query with filters for full text
+        if self.db_type == 'pubmed':
+            search_term = f"{self.query} AND (ffrft[filter] OR pmc[filter])"
+        else:  # PMC always has full text
+            search_term = self.query
+        
+        search_params = {
+            "db": self.db_type,
+            "term": search_term,
+            "retmax": max_results,
+            "api_key": self.api_key,
+            **self.params  # Include custom params
+        }
+        
+        try:
+            response = requests.get(self.base_search_url, params=search_params, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data, dict):
+                return []
+
+            # Error / unexpected envelopes may set esearchresult to null,
+            # a list, or omit idlist. Only treat a real list as success.
+            esearch = data.get("esearchresult")
+            if not isinstance(esearch, dict):
+                return []
+            id_list = esearch.get("idlist") or []
+            if not isinstance(id_list, list):
+                return []
+            print(f"Found {len(id_list)} articles with full text available")
+            return id_list
+            
+        except requests.RequestException as e:
+            print(f"Failed to search articles: {e}")
+            return None
+
+    def _pmid_to_pmcid(self, pmid: str) -> Optional[str]:
+        """Resolve a PubMed ID to the numerical PMC ID used by EFetch."""
+        link_params = {
+            "dbfrom": "pubmed",
+            "db": "pmc",
+            "linkname": "pubmed_pmc",
+            "id": pmid,
+            "retmode": "xml",
+            "api_key": self.api_key,
+        }
+        try:
+            response = requests.get(self.base_link_url, params=link_params, timeout=20)
+            response.raise_for_status()
+            root = ET.fromstring(response.text)
+            if root.tag == "ERROR" or root.find(".//ERROR") is not None:
+                return None
+            for link_set in root.findall(".//LinkSetDb"):
+                if link_set.findtext("LinkName") != "pubmed_pmc":
+                    continue
+                pmc_id = link_set.findtext("Link/Id")
+                if pmc_id and pmc_id.strip().isdigit():
+                    return pmc_id.strip()
+        except (requests.RequestException, ET.ParseError):
+            return None
+        return None
+
+    def _fetch_full_text(self, article_id: str) -> Optional[Dict[str, str]]:
+        """
+        Fetch full text content for a single article
+        """
+        if self.db_type == "pubmed":
+            article_id = self._pmid_to_pmcid(article_id)
+            if article_id is None:
+                return None
+
+        fetch_params = {
+            "db": "pmc",  # Always fetch from PMC for full text
+            "id": article_id,
+            "rettype": "full",
+            "retmode": "xml",
+            "api_key": self.api_key
+        }
+        
+        try:
+            response = requests.get(self.base_fetch_url, params=fetch_params, timeout=20)
+            response.raise_for_status()
+            
+            # Parse XML content
+            try:
+                root = ET.fromstring(response.text)
+                if root.tag == "ERROR" or root.find(".//ERROR") is not None:
+                    return None
+                article = root if root.tag == "article" else root.find(".//article")
+                if article is None:
+                    return None
+
+                # Error envelopes and metadata-only responses are not full text.
+                body_text = _element_text(article.find('.//body'))
+                if not body_text:
+                    return None
+
+                # Extract title and abstract, nested formatting tags included
+                title_text = _element_text(article.find('.//article-title'))
+                abstract_text = _element_text(article.find('.//abstract'))
+                
+                # Combine all text content
+                full_content = f"Title: {title_text}\n\nAbstract: {abstract_text}\n\nBody: {body_text}"
+                
+                # Build URL
+                if self.db_type == "pmc" or article_id.startswith("PMC"):
+                    url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{article_id}/"
+                else:
+                    url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{article_id}/"
+                
+                return {
+                    "href": url,
+                    "url": url,
+                    "body": full_content,
+                    "raw_content": full_content,
+                    "title": title_text
+                }
+                
+            except ET.ParseError as e:
+                return None
+                
+        except requests.RequestException as e:
+            return None
+
+    def search(self, max_results: int = 5) -> List[Dict[str, Any]]:
+        """
+        Performs the search and retrieves full text content.
+
+        :param max_results: Maximum number of results to return
+        :return: JSON response in the format:
+            [
+              {
+                "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1234567/",
+                "raw_content": "Full text content of the article..."
+              },
+              ...
+            ]
+        """
+        # Step 1: Search for article IDs. Always return a list (never None):
+        # callers such as actions.query_processing.get_search_results are typed
+        # -> List[Dict] and skills.researcher does len(search_results), which
+        # raises TypeError on None.
+        article_ids = self._search_articles(max_results)
+        if not article_ids:
+            return []
+        
+        # Step 2: Fetch full text for each article
+        results = []
+        for article_id in article_ids:
+            article_content = self._fetch_full_text(article_id)
+            if article_content:
+                results.append(article_content)
+        
+        return results

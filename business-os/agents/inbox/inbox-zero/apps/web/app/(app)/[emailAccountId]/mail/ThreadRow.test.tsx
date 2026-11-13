@@ -1,0 +1,193 @@
+/** @vitest-environment jsdom */
+
+import React from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ThreadRow } from "./ThreadRow";
+import type { ListThread } from "./types";
+import type { EmailLabels } from "@/providers/email-label-types";
+
+(globalThis as { React?: typeof React }).React = React;
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("ThreadRow", () => {
+  it("shows an attachment indicator when any message in the thread has one", () => {
+    render(row(thread([false, true])));
+
+    expect(screen.getByText("Has attachment")).toBeTruthy();
+  });
+
+  it("omits the attachment indicator for threads without attachments", () => {
+    render(row(thread([false, undefined])));
+
+    expect(screen.queryByText("Has attachment")).toBeNull();
+  });
+
+  it("copies a one-time code from the row without opening the thread", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const onOpen = vi.fn();
+    const otpLabel = { id: "Label_otp", name: "OTP" };
+    render(
+      row(thread([undefined], "Use code 235578 to log in", [otpLabel.id]), {
+        onOpen,
+        userLabels: { [otpLabel.id]: otpLabel },
+      }),
+    );
+
+    const button = screen.getByRole("button", { name: "Copy code 235578" });
+    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: "Enter" });
+
+    expect(writeText).toHaveBeenCalledWith("235578");
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("toggles selection instead of opening when the list already has a selection", () => {
+    const onOpen = vi.fn();
+    const onToggleSelect = vi.fn();
+    render(
+      row(thread([undefined]), {
+        hasAnySelection: true,
+        onOpen,
+        onToggleSelect,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("option"));
+
+    expect(onToggleSelect).toHaveBeenCalledWith(0);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("toggles selection on Cmd/Ctrl-click without opening", () => {
+    const onOpen = vi.fn();
+    const onToggleSelect = vi.fn();
+    render(row(thread([undefined]), { onOpen, onToggleSelect }));
+
+    fireEvent.click(screen.getByRole("option"), { metaKey: true });
+    fireEvent.click(screen.getByRole("option"), { ctrlKey: true });
+
+    expect(onToggleSelect).toHaveBeenCalledTimes(2);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("opens the thread on a plain click when nothing is selected", () => {
+    const onOpen = vi.fn();
+    const onToggleSelect = vi.fn();
+    render(row(thread([undefined]), { onOpen, onToggleSelect }));
+
+    fireEvent.click(screen.getByRole("option"));
+
+    expect(onOpen).toHaveBeenCalledWith(0);
+    expect(onToggleSelect).not.toHaveBeenCalled();
+  });
+
+  it("extends a range on Shift-click and opens on Enter", () => {
+    const onOpen = vi.fn();
+    const onSelectRangeTo = vi.fn();
+    render(
+      row(thread([undefined]), {
+        hasAnySelection: true,
+        onOpen,
+        onSelectRangeTo,
+        onToggleSelect: () => {},
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("option"), { shiftKey: true });
+    fireEvent.keyDown(screen.getByRole("option"), { key: "Enter" });
+
+    expect(onSelectRangeTo).toHaveBeenCalledWith(0);
+    expect(onOpen).toHaveBeenCalledWith(0);
+  });
+
+  it("marks the row as a draft while a local reply is unsent", () => {
+    const { rerender } = render(row(thread([undefined])));
+    expect(screen.queryByText("Draft")).toBeNull();
+
+    rerender(row(thread([undefined]), { hasLocalDraft: true }));
+
+    expect(screen.getByText("Draft")).toBeTruthy();
+  });
+
+  it("does not offer a code to copy on ordinary mail with numbers", () => {
+    render(row(thread([undefined], "Invoice 482913 for October")));
+
+    expect(screen.queryByRole("button", { name: /Copy code/ })).toBeNull();
+  });
+});
+
+function row(
+  listThread: ListThread,
+  {
+    hasAnySelection = false,
+    hasLocalDraft = false,
+    onOpen = () => {},
+    onSelectRangeTo = () => {},
+    onToggleSelect,
+    userLabels = {},
+  }: {
+    hasAnySelection?: boolean;
+    hasLocalDraft?: boolean;
+    onOpen?: (index: number) => void;
+    onSelectRangeTo?: (index: number) => void;
+    onToggleSelect?: (index: number) => void;
+    userLabels?: EmailLabels;
+  } = {},
+) {
+  return (
+    <ThreadRow
+      hasAnySelection={hasAnySelection}
+      hasLocalDraft={hasLocalDraft}
+      index={0}
+      isFocused={false}
+      isSelected={false}
+      layout="list"
+      onOpen={onOpen}
+      onSelectRangeTo={onSelectRangeTo}
+      onToggleSelect={onToggleSelect ?? (() => {})}
+      selectionEnabled={Boolean(onToggleSelect)}
+      thread={listThread}
+      userEmail="me@example.com"
+      userLabels={userLabels}
+    />
+  );
+}
+
+function thread(
+  attachments: Array<boolean | undefined>,
+  subject = "Subject",
+  labelIds: string[] = [],
+): ListThread {
+  const date = "2026-10-12T10:00:00.000Z";
+  return {
+    id: "thread-1",
+    messageIds: attachments.map((_, index) => `message-${index}`),
+    snippet: "Snippet",
+    plan: undefined,
+    plans: [],
+    participantMessages: undefined,
+    messages: attachments.map((hasAttachment, index) => ({
+      id: `message-${index}`,
+      threadId: "thread-1",
+      snippet: "Snippet",
+      subject,
+      date,
+      internalDate: String(Date.parse(date)),
+      labelIds: ["INBOX", ...labelIds],
+      parentFolderId: undefined,
+      hasAttachment,
+      headers: {
+        from: "Ada <ada@example.com>",
+        to: "me@example.com",
+        date,
+        subject,
+      },
+    })),
+  };
+}

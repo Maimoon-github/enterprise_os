@@ -1,0 +1,189 @@
+name: Replacement Platform
+
+on:
+  # PRs use CI's required gate. On pushes to main, CI calls this workflow and
+  # releases only after it passes.
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Jobs to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - replacement-validate
+          - staging-provider-certification
+
+permissions:
+  contents: read
+
+concurrency:
+  group: replacement-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  runtime-images:
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'replacement-validate')
+    uses: ./.github/workflows/runtime-images.yml
+
+  # This job is intentionally not named "validate": that context is owned by
+  # .github/workflows/ci.yml (typecheck, build, test), which is the required
+  # status check on main. Keep this name distinct so the two do not collide.
+  replacement-validate:
+    if: github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'replacement-validate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgres://postgres:lobbystack@127.0.0.1:5432/lobbystack
+      REDIS_URL: redis://127.0.0.1:6379
+      LOBBYSTACK_APP_DATABASE_URL: postgres://lobbystack_app:app@127.0.0.1:5432/lobbystack
+      LOBBYSTACK_AUTH_DATABASE_URL: postgres://lobbystack_auth:auth@127.0.0.1:5432/lobbystack
+      LOBBYSTACK_WORKER_DATABASE_URL: postgres://lobbystack_worker:worker@127.0.0.1:5432/lobbystack
+      LOBBYSTACK_DISPATCHER_DATABASE_URL: postgres://lobbystack_dispatcher:dispatcher@127.0.0.1:5432/lobbystack
+      VERIFY_RLS_BEHAVIOR: "true"
+      # The marketing site links to, and asks about the session on, the e2e server
+      # (playwright.config.ts) rather than production. The build fixes it, as in
+      # scripts/e2e-local.sh.
+      NEXT_PUBLIC_APP_URL: http://localhost:13000
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: lobbystack
+          POSTGRES_DB: lobbystack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d lobbystack"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    steps:
+      # The admin UI parity check reads the legacy apps/web source with `git show`
+      # at a pinned commit, so this job needs the full history rather than the
+      # default single-commit shallow checkout.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - name: Initialize replacement runtime roles
+        run: PGPASSWORD=lobbystack PGHOST=127.0.0.1 PGPORT=5432 POSTGRES_USER=postgres POSTGRES_DB=lobbystack bash docker/postgres/init/roles.sh
+      - run: pnpm db:migrate
+      - name: Verify migration rerun safety
+        run: pnpm db:migrate
+      - run: pnpm db:check
+      - run: VERIFY_RLS_BEHAVIOR=true pnpm db:verify-rls
+      - run: pnpm db:seed
+      - run: pnpm replacement:parity
+      - run: pnpm replacement:drift
+      - run: pnpm replacement:security
+      - run: pnpm replacement:recovery
+      - run: pnpm replacement:notifications
+      - run: pnpm replacement:billing
+      # Requires a live admin; run it only when a target environment is set
+      # (e.g. the replacement-staging environment), not on plain PR validation.
+      - name: Verify legacy password rehash against a live admin
+        if: ${{ vars.REPLACEMENT_ADMIN_BASE_URL != '' }}
+        env:
+          ADMIN_BASE_URL: ${{ vars.REPLACEMENT_ADMIN_BASE_URL }}
+        run: pnpm replacement:auth
+      - run: pnpm replacement:email-send
+      - run: pnpm replacement:sms-consent
+      - run: pnpm replacement:feedback
+      - run: pnpm replacement:appointment-audits
+      - run: pnpm replacement:unit-economics
+      - run: pnpm replacement:phone-onboarding
+      - run: pnpm replacement:call-detail
+      - run: pnpm replacement:roles
+      - run: pnpm replacement:locale
+      # Workspace packages resolve their main/subpath exports from dist/, and the
+      # deterministic baseline below runs `pnpm test`. ci.yml builds before testing;
+      # this job must too, or package imports like @lobbystack/telemetry/node fail.
+      - name: Build workspace packages
+        run: pnpm -r --filter "./packages/**" build
+      - name: Run deterministic release baseline
+        run: pnpm exec tsx --tsconfig scripts/tsconfig.json scripts/release-readiness.ts --evidence certification-results/deterministic-baseline.json
+      - name: Retain deterministic release evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: replacement-deterministic-baseline-${{ github.sha }}
+          path: certification-results/deterministic-baseline.json
+          retention-days: 90
+      - run: pnpm --filter @lobbystack/admin exec playwright install --with-deps chromium
+      - run: pnpm --filter @lobbystack/admin e2e
+      - run: pnpm replacement:telemetry
+      - name: Scan repository for vulnerabilities, misconfigurations, and secrets
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - run: docker compose --env-file .env.example -f docker-compose.yml config --quiet
+
+  staging-provider-certification:
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'all' || inputs.target == 'staging-provider-certification')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: replacement-staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run explicit staging certification gates
+        # Only this step sees the staging secrets, not dependency installs.
+        env:
+          ADMIN_BASE_URL: ${{ secrets.REPLACEMENT_ADMIN_BASE_URL }}
+          WORKER_BASE_URL: ${{ secrets.REPLACEMENT_WORKER_BASE_URL }}
+          DATABASE_URL: ${{ secrets.REPLACEMENT_DATABASE_URL }}
+          REPLACEMENT_MIGRATOR_DATABASE_URL: ${{ secrets.REPLACEMENT_MIGRATOR_DATABASE_URL }}
+          REPLACEMENT_APP_DATABASE_URL: ${{ secrets.REPLACEMENT_APP_DATABASE_URL }}
+          REPLACEMENT_WORKER_DATABASE_URL: ${{ secrets.REPLACEMENT_WORKER_DATABASE_URL }}
+          RELEASE_CERTIFICATION_TARGET: isolated-staging
+          REDIS_URL: ${{ secrets.REPLACEMENT_REDIS_URL }}
+          REPLACEMENT_REDIS_HOST: ${{ secrets.REPLACEMENT_REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REPLACEMENT_REDIS_PORT }}
+          REPLACEMENT_S3_ENDPOINT: ${{ secrets.REPLACEMENT_S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.REPLACEMENT_S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.REPLACEMENT_S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.REPLACEMENT_S3_SECRET_ACCESS_KEY }}
+          POLAR_WEBHOOK_SECRET: ${{ secrets.REPLACEMENT_POLAR_WEBHOOK_SECRET }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.REPLACEMENT_TWILIO_AUTH_TOKEN }}
+          INTERNAL_SERVICE_SECRET: ${{ secrets.REPLACEMENT_INTERNAL_SERVICE_SECRET }}
+          REPLACEMENT_TEST_BUSINESS_SLUG: ${{ secrets.REPLACEMENT_TEST_BUSINESS_SLUG }}
+        run: pnpm exec tsx --tsconfig scripts/tsconfig.json scripts/release-readiness.ts --staging --evidence certification-results/staging-gates.json
+      - name: Retain certification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: replacement-staging-certification-${{ github.sha }}
+          path: certification-results
+          retention-days: 90

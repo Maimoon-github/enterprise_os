@@ -1,0 +1,60 @@
+{
+  "header": {
+    "title": "Znanje",
+    "description": "Upravljajte znanjem i dokumentima i isprobajte razgovore."
+  },
+  "manager": {
+    "title": "Baza znanja",
+    "description": "Dodajte znanje i dokumente koje agent može da koristi u pregledu, SMS porukama i pri osvežavanju glasovnog snimka podešavanja.",
+    "items": "Stavke: {{count}}",
+    "manualDocument": "Ručno unet dokument",
+    "placeholders": {
+      "documentTitle": "Pravila klinike",
+      "documentBody": "Pacijenti treba da dođu 10 minuta ranije. Ponesite ličnu kartu i podatke o osiguranju, ako je potrebno."
+    },
+    "documentTagsPlaceholder": "pravila,prijem",
+    "saveDocument": "Dodaj dokument",
+    "savingDocument": "Dodavanje u red...",
+    "currentDocuments": "Trenutni dokumenti",
+    "queuedDocument": "Dokument je dodat u red za indeksiranje.",
+    "noDocuments": "Još nema dokumenata."
+  },
+  "preview": {
+    "title": "Pregled agenta",
+    "description": "Isprobajte isti poslovni kontekst koji se koristi za SMS i asinhrone AI tokove pre nego što ga predstavite pozivaocima.",
+    "promptPlaceholder": "Do koliko sati radite sutra?",
+    "generate": "Pokreni pregled",
+    "generating": "Generisanje...",
+    "emptyResponse": "Odgovori iz pregleda pojaviće se ovde kada pokrenete agenta.",
+    "disabled": "Prijavite se i kreirajte radni prostor da biste pokrenuli pravi pregled."
+  },
+  "unansweredQuestions": {
+    "title": "Pitanja bez odgovora",
+    "timesAsked_one": "Postavljeno {{count}} put",
+    "timesAsked_few": "Postavljeno {{count}} puta",
+    "timesAsked_other": "Postavljeno {{count}} puta",
+    "lastAsked": "Poslednji put {{date}}",
+    "askedSummary": "{{asked}} · {{lastAsked}}",
+    "answer": "Odgovori",
+    "answerLabel": "Odgovor na: {{question}}",
+    "answerPlaceholder": "Napišite šta agent treba da odgovori.",
+    "answerTooLong": "Skratite odgovor na najviše {{max}} karaktera.",
+    "saveAnswer": "Sačuvaj odgovor",
+    "cancel": "Otkaži",
+    "dismiss": "Odbaci",
+    "toast": {
+      "answered": "Odgovor je dodat u znanje.",
+      "dismissed": "Pitanje je odbačeno.",
+      "alreadyHandled": "Neko je već odgovorio na ovo pitanje ili ga je odbacio."
+    },
+    "emptyTitle": "Nema pitanja bez odgovora",
+    "emptyDescription": "Kada agent ne pronađe odgovor u vašem znanju, pitanje ćete videti ovde.",
+    "loadFailed": "Nismo mogli da učitamo pitanja bez odgovora. Osvežite stranicu i pokušajte ponovo.",
+    "home": {
+      "count_one": "{{count}} pitanje na koje agent nije znao odgovor",
+      "count_few": "{{count}} pitanja na koja agent nije znao odgovor",
+      "count_other": "{{count}} pitanja na koja agent nije znao odgovor",
+      "description": "Dodajte odgovore na stranici Znanje."
+    }
+  }
+}

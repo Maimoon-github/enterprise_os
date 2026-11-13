@@ -1,0 +1,220 @@
+import { sql } from "drizzle-orm";
+import { NextResponse } from "next/server";
+
+import { buildPhoneSessionConfig } from "@lobbystack/agent-core/live/session";
+import { finishLiveCall, getBusinessSnapshotForAgent, getCachedBusinessSnapshot, isNumberTrialEnded, markNumberTrialMinutesExhausted, startLivePhoneCall } from "@lobbystack/domain";
+import { getAppDatabase } from "@/lib/api-helpers";
+import { createWorkerDomainContext } from "@/lib/domain-context";
+import { noteForwardedCall } from "@/lib/forwarded-calls";
+import { attachWorkerToLiveSession, getLiveClient } from "@/lib/live-prototype";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// SIP "To"/"From" headers look like `<sip:+15551234567@host>`, `"Name" <sip:...>`
+// or `tel:+1555...`, and one header can list several, comma-separated. Carriers
+// sometimes drop the "+", so restore it.
+function phonesFromSipHeader(value: string | undefined): string[] {
+  return [...(value ?? "").matchAll(/(?:sip|tel):(\+?\d{6,15})\b/g)].map(([, digits = ""]) => digits.startsWith("+") ? digits : `+${digits.length === 10 ? `1${digits}` : digits}`);
+}
+
+// OpenAI calls this when Twilio routes a call to our project's SIP endpoint.
+// We pick the business from the dialled number, accept with client delegation,
+// and hand the session to the worker.
+export async function POST(request: Request) {
+  if (process.env.LIVE_PROTOTYPE_ENABLED !== "true") return new NextResponse(null, { status: 404 });
+  const timing = createTiming();
+  const client = getLiveClient();
+  let event;
+  try {
+    event = await client.webhooks.unwrap(await request.text(), request.headers);
+  } catch {
+    return new NextResponse("Invalid signature.", { status: 400 });
+  }
+  if (event.type !== "live.transport.incoming") return new NextResponse(null, { status: 200 });
+  // created_at has second precision, so this is only a rough delivery delay.
+  timing.eventAgeMs = Math.max(0, Date.now() - event.created_at * 1000);
+
+  const sessionId = event.data.session_id;
+  // Twilio trunks rewrite "To" to our OpenAI SIP URI and keep the dialled
+  // number in "Diversion". A forwarded call can carry several Diversions, the
+  // first of which may be the business's old line, so every number is a
+  // candidate, in this order. A Telnyx number's translated number puts the
+  // project in the Request-URI, and ignore_for_to_header keeps the dialled
+  // number in To. History-Info (RFC 7044) records the original Request-URI.
+  // A voice webhook's <Dial><Sip> sends X-LobbyStack-Called, the only way it
+  // can name the dialled number. See docs/voice/runtime.md.
+  const dialledHeaders = ["diversion", "to", "p-called-party-id", "history-info", "x-lobbystack-called"];
+  const candidates = dialledHeaders.flatMap((name) => event.data.sip_headers.filter((item) => item.name.toLowerCase() === name).flatMap((item) => phonesFromSipHeader(item.value).map((phone) => ({ header: item.name, phone }))));
+  // The fallback when none of them has it: each Telnyx number has its own SIP
+  // connection, which X-Telnyx-Connection-id names.
+  const telnyxConnection = event.data.sip_headers.find((item) => item.name.toLowerCase() === "x-telnyx-connection-id")?.value.trim();
+  if (!candidates.length && telnyxConnection) {
+    try {
+      const phone = (await getAppDatabase().db.execute<{ phone: string | null }>(sql`select app.resolve_phone_by_carrier_connection('telnyx', ${telnyxConnection}) as phone`)).rows[0]?.phone;
+      if (phone) candidates.push({ header: "X-Telnyx-Connection-id", phone });
+    } catch (error) {
+      // As below: ownership is unknown, so a 503 makes OpenAI deliver the event again.
+      console.error("[live] couldn't look up the Telnyx connection", error instanceof Error ? error.message : error);
+      return new NextResponse(null, { status: 503 });
+    }
+  }
+  // Undefined when the caller withheld their number.
+  const from = phonesFromSipHeader(event.data.sip_headers.find((item) => item.name.toLowerCase() === "from")?.value)[0];
+  // Only the dialled-number headers: "From" is the caller's own number.
+  const routing = event.data.sip_headers.filter((item) => dialledHeaders.includes(item.name.toLowerCase()));
+  if (!candidates.length) {
+    // No deployment can route a call without a dialled number.
+    // The header names show which header a new carrier uses, without logging the caller's number.
+    console.warn("[live] incoming call without a dialled number", JSON.stringify({ sessionId, routing, headerNames: event.data.sip_headers.map((item) => item.name), ...(telnyxConnection ? { telnyxConnection } : {}) }));
+    await client.live.sessions.reject(sessionId, { status_code: 404 }).catch(() => undefined);
+    return new NextResponse(null, { status: 200 });
+  }
+
+  // Staging and production share one OpenAI project, so OpenAI sends every
+  // incoming call to both. Only the deployment that owns the number may accept
+  // or reject it; until ownership is known, this deployment leaves the call alone.
+  let businessId: string | null | undefined;
+  let routed: (typeof candidates)[number] | undefined;
+  try {
+    const phones = sql.join(candidates.map(({ phone }) => sql`${phone}`), sql`, `);
+    const resolved = await getAppDatabase().db.execute<{ business_id: string | null; position: number }>(sql`select app.resolve_business_by_phone(phone) as business_id, position::int from unnest(array[${phones}]::text[]) with ordinality as candidate(phone, position) order by position`);
+    const match = resolved.rows.find((row) => row.business_id);
+    businessId = match?.business_id;
+    routed = match && candidates[match.position - 1];
+    timing.mark("lookup");
+  } catch (error) {
+    // Ownership is unknown: don't reject a call that may belong to the other
+    // deployment. A 503 makes OpenAI deliver the event again.
+    console.error("[live] couldn't look up the dialled number", error instanceof Error ? error.message : error);
+    return new NextResponse(null, { status: 503 });
+  }
+  if (!businessId || !routed) {
+    console.info("[live] incoming call for a number this deployment doesn't serve", JSON.stringify({ sessionId, routing }));
+    return new NextResponse(null, { status: 200 });
+  }
+  timing.routedBy = routed.header;
+
+  // A call forwarded from the owner's line names that line in Diversion or
+  // History-Info, beside our own number. Noted once the call is answered.
+  const forwardedFrom = ["diversion", "history-info"].flatMap((name) => event.data.sip_headers.filter((item) => item.name.toLowerCase() === name).flatMap((item) => phonesFromSipHeader(item.value)));
+  try {
+    const answered = await answerCall(client, { sessionId, businessId, from, to: routed.phone, timing });
+    if (forwardedFrom.length) await noteForwardedCall({ businessId, dialled: routed.phone, from, candidates: forwardedFrom, source: "sip" });
+    return answered;
+  } catch (error) {
+    console.error("[live] incoming call failed", error instanceof Error ? error.message : error);
+    await client.live.sessions.reject(sessionId, { status_code: 503 }).catch(() => undefined);
+    return new NextResponse(null, { status: 200 });
+  } finally {
+    timing.log(sessionId);
+  }
+}
+
+// The caller hears ringing until the call is accepted, so each step before
+// accepting is logged as `live.incoming` with its time since the webhook arrived.
+function createTiming() {
+  const receivedAt = performance.now();
+  const steps: Record<string, number> = {};
+  return {
+    eventAgeMs: undefined as number | undefined,
+    // The header whose number picked the business.
+    routedBy: undefined as string | undefined,
+    mark(step: string) {
+      steps[`${step}Ms`] = Math.round(performance.now() - receivedAt);
+    },
+    log(sessionId: string) {
+      console.info(JSON.stringify({ event: "live.incoming", sessionId, ...(this.eventAgeMs !== undefined ? { eventAgeMs: this.eventAgeMs } : {}), ...(this.routedBy ? { routedBy: this.routedBy } : {}), ...steps }));
+    },
+  };
+}
+
+type Timing = ReturnType<typeof createTiming>;
+
+type LiveClient = ReturnType<typeof getLiveClient>;
+
+// Reserves minutes and records the call before accepting it, the same way the
+// Twilio media path does, so billing and limits behave identically. The
+// snapshot loads at the same time, since the caller is still hearing it ring.
+// The call record names the dialled number's agent, so the snapshot projects
+// for it once both finish.
+async function answerCall(client: LiveClient, input: { sessionId: string; businessId: string; from: string | undefined; to: string; timing: Timing }) {
+  const domain = createWorkerDomainContext();
+  // An ended trial's number goes unanswered, as if it were gone. The worker
+  // also takes it off the trunk; this covers calls that arrive before it does.
+  if (await isNumberTrialEnded(domain, { businessId: input.businessId })) {
+    await client.live.sessions.reject(input.sessionId, { status_code: 486 });
+    return new NextResponse(null, { status: 200 });
+  }
+  const [loaded, started] = await Promise.allSettled([
+    getCachedBusinessSnapshot(domain, { businessId: input.businessId }),
+    startLivePhoneCall(domain, { businessId: input.businessId, sessionId: input.sessionId, from: input.from, to: input.to }),
+  ]);
+  input.timing.mark("record");
+  if (started.status === "rejected") {
+    const error: unknown = started.reason;
+    if (error !== null && typeof error === "object" && "code" in error && error.code === "voice_limit_reached") {
+      // 503 makes the Twilio trunk fail over to its disaster recovery URL,
+      // /api/webhooks/twilio/voice, which forwards the call to the transfer
+      // number or the owner's verified phone, and gives a busy signal only
+      // when there's neither. Twilio never fails over on 486 or 6xx. Telnyx
+      // retries a 503 once, then forwards to the number stored on the Telnyx
+      // number. A staff-first number reaches GPT-Live from a <Dial>, so the
+      // refusal comes back to that <Dial>'s action URL instead, which forwards
+      // the same way. A trial number also moves off the agent so later
+      // calls forward directly.
+      await markNumberTrialMinutesExhausted(domain, { businessId: input.businessId }).catch((cause: unknown) => console.error("[live] couldn't switch the trial number to forwarding", cause instanceof Error ? cause.message : cause));
+      await client.live.sessions.reject(input.sessionId, { status_code: 503 });
+      return new NextResponse(null, { status: 200 });
+    }
+    throw error;
+  }
+  const call = started.value;
+  if (call.blocked) {
+    await client.live.sessions.reject(input.sessionId, { status_code: 603 });
+    // Closes the record so the minute reservation doesn't stay open.
+    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "blocked_contact" });
+    return new NextResponse(null, { status: 200 });
+  }
+  const stored = loaded.status === "fulfilled" ? loaded.value : null;
+  const snapshot = stored ? await getBusinessSnapshotForAgent(domain, { businessId: input.businessId, agentId: call.agentId, loaded: stored }) : null;
+  if (!snapshot) {
+    if (loaded.status === "rejected") console.error("[live] couldn't load the snapshot for an incoming call", loaded.reason instanceof Error ? loaded.reason.message : loaded.reason);
+    else console.warn("[live] no published snapshot for incoming call", JSON.stringify({ sessionId: input.sessionId, businessId: input.businessId }));
+    // A retried delivery may belong to a call the first delivery already
+    // answered, so only a first delivery rejects.
+    if (call.duplicate) return new NextResponse(null, { status: 503 });
+    await client.live.sessions.reject(input.sessionId, { status_code: 503 });
+    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" });
+    return new NextResponse(null, { status: 200 });
+  }
+  // A retried delivery's limit is read back from the call's reservation, which
+  // top-ups may have grown. Its call may be under way, so it attaches as a resume:
+  // the worker numbers turns after the saved ones and skips the greeting.
+  const attach = (resume = false) => attachWorkerToLiveSession({ sessionId: input.sessionId, businessId: input.businessId, callId: call.callId, conversationId: call.conversationId, channel: "voice", ...(call.agentId ? { agentId: call.agentId } : {}), ...(input.from ? { callerPhone: input.from } : {}), ...(call.maxDurationMs !== undefined ? { maxDurationMs: call.maxDurationMs } : {}), ...(resume ? { resume } : {}) });
+  // A retried delivery. The first one may have died before accepting or before
+  // the worker attached, so finish the job without touching the call record:
+  // accepting an accepted session just fails, and attaching is idempotent.
+  if (call.duplicate) {
+    await client.live.sessions.accept(input.sessionId, { session: buildPhoneSessionConfig(snapshot) }).catch(() => undefined);
+    await attach(true).catch(() => undefined);
+    return new NextResponse(null, { status: 200 });
+  }
+  try {
+    await client.live.sessions.accept(input.sessionId, { session: buildPhoneSessionConfig(snapshot) });
+    input.timing.mark("accept");
+  } catch (error) {
+    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" });
+    throw error;
+  }
+  try {
+    await attach();
+    input.timing.mark("attach");
+  } catch (error) {
+    // Without the worker nobody answers delegations, so end the call cleanly.
+    await client.live.sessions.hangup(input.sessionId).catch(() => undefined);
+    await finishLiveCall(domain, { businessId: input.businessId, callId: call.callId, seconds: 0, end: "setup_failed" });
+    throw error;
+  }
+  return new NextResponse(null, { status: 200 });
+}

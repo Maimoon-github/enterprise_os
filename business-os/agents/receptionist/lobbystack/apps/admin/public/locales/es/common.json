@@ -1,0 +1,395 @@
+{
+  "accessibility": {
+    "close": "Cerrar",
+    "toggleSidebar": "Mostrar u ocultar la barra lateral",
+    "skipToContent": "Ir al contenido principal",
+    "clearSearch": "Borrar búsqueda"
+  },
+  "errors": {
+    "unexpected": "Algo salió mal. Inténtelo de nuevo."
+  },
+  "loading": {
+    "title": "Cargando...",
+    "retry": "Reintentar la carga",
+    "failed": "No se pudieron cargar algunas traducciones.",
+    "description": "Sincronizando su espacio de trabajo y la configuración del agente."
+  },
+  "language": {
+    "label": "Idioma",
+    "ariaLabel": "Elegir el idioma del panel",
+    "english": "English",
+    "french": "Français",
+    "spanish": "Español",
+    "serbian": "Srpski"
+  },
+  "callerLanguage": {
+    "en": "Inglés",
+    "fr": "Francés",
+    "es": "Español",
+    "sr": "Serbio",
+    "de": "Alemán",
+    "pt": "Portugués (Brasil)",
+    "it": "Italiano",
+    "nl": "Neerlandés",
+    "pl": "Polaco",
+    "tr": "Turco",
+    "vi": "Vietnamita",
+    "tl": "Tagalo",
+    "sv": "Sueco",
+    "ru": "Ruso",
+    "uk": "Ucraniano"
+  },
+  "phoneCountry": {
+    "search": "Buscar país o prefijo",
+    "noResults": "No se encontró ningún país."
+  },
+  "badges": {
+    "live": "En vivo",
+    "configured": "Configurado",
+    "active": "Activo",
+    "inactive": "Inactivo",
+    "voice": "Voz",
+    "sms": "SMS"
+  },
+  "channels": {
+    "phoneCall": "Teléfono",
+    "webCall": "Llamada web",
+    "sms": "SMS",
+    "webChat": "Sitio web",
+    "dashboard": "Panel",
+    "api": "API",
+    "instagram": "Instagram"
+  },
+  "contactFallback": {
+    "phoneCaller": "Cliente por teléfono",
+    "instagramUser": "Usuario de Instagram",
+    "webCaller": "Cliente por llamada web",
+    "websiteVisitor": "Visitante del sitio web",
+    "unknown": "Contacto desconocido"
+  },
+  "labels": {
+    "customer": "Cliente",
+    "receptionist": "Agente",
+    "prompt": "Instrucción"
+  },
+  "aiPhoneNumber": {
+    "copy": "Copiar el número de teléfono de la IA",
+    "copied": "Número de teléfono de la IA copiado"
+  },
+  "errorBoundary": {
+    "title": "Algo salió mal",
+    "description": "Vuelva a cargar el panel e inténtelo de nuevo. Se ha notificado el error.",
+    "reload": "Volver a cargar"
+  },
+  "feedback": {
+    "trigger": "Comentarios",
+    "title": "Enviar comentarios",
+    "description": "Cuéntenos qué mejoraría este panel.",
+    "label": "Mensaje de comentarios",
+    "placeholder": "¿Tiene una idea para mejorar {{appName}}? Cuéntesela al equipo.",
+    "characterCount": "{{count}} / {{max}} caracteres",
+    "helpText": "¿Necesita ayuda?",
+    "helpCenter": "Centro de ayuda",
+    "contactLink": "Contáctenos",
+    "helpTextSeparator": "o",
+    "docsLink": "consulte la documentación.",
+    "submit": "Enviar",
+    "toast": {
+      "sent": "Comentarios enviados.",
+      "failed": "No pudimos guardar sus comentarios."
+    }
+  },
+  "numberTrial": {
+    "outOfMinutes": "Se acabaron sus minutos. Las llamadas ahora van al {{forwardTo}}.",
+    "stillAvailable": "El {{number}} sigue disponible. Suscríbase ahora para recuperarlo.",
+    "getReceptionistBack": "Recuperar a mi agente",
+    "getNumberBack": "Recuperar mi número",
+    "chip_one": "Prueba gratuita · queda {{count}} d",
+    "chip_other": "Prueba gratuita · quedan {{count}} d",
+    "viewPlans": "Ver planes",
+    "chip_many": "Prueba gratuita · quedan {{count}} d"
+  },
+  "testWindow": {
+    "orCall": "O llame al",
+    "message": "Mensaje",
+    "send": "Enviar",
+    "sendFailed": "Mensaje no enviado. Inténtelo de nuevo.",
+    "typing": "El agente está escribiendo"
+  },
+  "testCall": {
+    "trigger": "Llamada de prueba",
+    "start": "Iniciar llamada",
+    "connecting": "Conectando...",
+    "hangUp": "Colgar",
+    "upgrade": "Cambiar de plan",
+    "status": {
+      "idle": "Listo cuando usted quiera",
+      "requesting_microphone": "Solicitando acceso al micrófono",
+      "connecting": "Conectando con su agente con IA",
+      "connected": "En vivo con su agente con IA",
+      "ending": "Finalizando la llamada",
+      "ended": "Llamada finalizada",
+      "error": "No se pudo iniciar la llamada"
+    },
+    "aria": {
+      "start": "Iniciar llamada de prueba",
+      "connecting": "Conectando la llamada de prueba",
+      "waitingForMicrophone": "Esperando el permiso del micrófono",
+      "end": "Finalizar llamada de prueba",
+      "endMuted": "Finalizar llamada de prueba silenciada",
+      "ending": "Finalizando la llamada de prueba",
+      "retry": "Reintentar llamada de prueba"
+    },
+    "errors": {
+      "microphoneBlocked": "Se bloqueó el acceso al micrófono.",
+      "microphoneNotFound": "No se encontró ningún micrófono en este dispositivo.",
+      "microphoneInUse": "Otra aplicación ya está usando el micrófono.",
+      "gatewayTimeout": "La llamada tardó demasiado en conectarse.",
+      "gatewayUnreachable": "Esta página no puede conectarse con {{appName}} para iniciar la llamada.",
+      "connectionDropped": "Se perdió la conexión de voz.",
+      "browserNoMicrophone": "Este navegador no admite llamadas con micrófono.",
+      "browserNoWebRtc": "Este navegador no admite llamadas de voz en vivo.",
+      "businessNotFound": "No encontramos este espacio de trabajo. Cambie a un espacio de trabajo activo e inténtelo de nuevo.",
+      "rateLimited": "Se han iniciado demasiadas llamadas de prueba. Inténtelo de nuevo en unos minutos.",
+      "voiceLimitReached": "Este espacio de trabajo ya usó los minutos de voz de este mes.",
+      "unavailable": "Su agente con IA no está disponible en este momento.",
+      "generic": "Algo salió mal al iniciar la llamada."
+    }
+  },
+  "appointments": {
+    "title": "Citas",
+    "details": {
+      "employee": "Empleado",
+      "duration": "Duración",
+      "phone": "Teléfono",
+      "email": "Correo electrónico",
+      "channel": "Reservado por",
+      "saveNotes": "Guardar notas",
+      "savingNotes": "Guardando…",
+      "notesSaved": "Notas guardadas.",
+      "notesFailed": "No se pudieron guardar las notas."
+    },
+    "views": {
+      "list": "Lista",
+      "calendar": "Calendario",
+      "label": "Vista"
+    },
+    "when": {
+      "label": "Mostrar",
+      "upcoming": "Próximas",
+      "past": "Pasadas",
+      "pastEmpty": "No hay citas pasadas en el último mes."
+    },
+    "filter": {
+      "label": "Empleado",
+      "all": "Todos los empleados"
+    },
+    "calendarView": {
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "today": "Hoy",
+      "label": "Periodo",
+      "day": "Día",
+      "week": "Semana",
+      "month": "Mes",
+      "count_one": "{{count}} cita",
+      "count_many": "{{count}} citas",
+      "count_other": "{{count}} citas",
+      "more": "+{{count}} más",
+      "allDay": "Todo el día",
+      "newAt": "Nueva cita a las {{time}}",
+      "block": "{{name}}, {{service}}, {{time}}",
+      "blockCancelled": "{{name}}, {{service}}, {{time}}, cancelada"
+    },
+    "timeOff": {
+      "action": "Ausencias",
+      "title": "Añadir ausencia",
+      "editTitle": "Editar ausencia",
+      "type": "Tipo",
+      "business": "Todo el negocio",
+      "employee": "Un empleado",
+      "employeeLabelField": "Empleado",
+      "employeePlaceholder": "Elija un empleado",
+      "noEmployees": "Aún no hay empleados.",
+      "employeeRequired": "Elija un empleado.",
+      "name": "Nombre",
+      "namePlaceholder": "p. ej. Navidad, Viernes por la tarde",
+      "nameRequired": "Introduzca un nombre.",
+      "hours": "Horas",
+      "allDay": "Cerrado todo el día",
+      "partDay": "Parte del día",
+      "startDate": "Fecha de inicio",
+      "endDate": "Fecha de fin",
+      "startTime": "Hora de inicio",
+      "endTime": "Hora de fin",
+      "endBeforeStart": "Elija un fin posterior al inicio.",
+      "datesRequired": "Elija una fecha de inicio y de fin.",
+      "reason": "Motivo (opcional)",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "cancel": "Cancelar",
+      "delete": "Eliminar",
+      "keep": "Conservar",
+      "deleteTitle": "¿Eliminar la ausencia?",
+      "deleteDescription": "{{name}} sale del calendario y esas horas vuelven a estar disponibles.",
+      "saved": "Ausencia guardada.",
+      "deleted": "Ausencia eliminada.",
+      "failed": "No se pudo guardar la ausencia.",
+      "overlap": "Se superpone con otra ausencia.",
+      "invalid": "Revise las fechas. Una ausencia no puede haber terminado ya ni acabar en más de dos años.",
+      "label": "Cerrado: {{name}}, {{time}}",
+      "employeeLabel": "{{employee}} ausente: {{name}}, {{time}}",
+      "employeeTitle": "{{employee}}: {{name}}",
+      "picker": {
+        "hours": "Horas",
+        "minutes": "Minutos",
+        "period": "AM o PM",
+        "hoursTitle": "HH",
+        "minutesTitle": "MM"
+      }
+    },
+    "chooseWorkspace": "Elija un espacio de trabajo para ver las citas.",
+    "time": "Hora",
+    "customer": "Cliente",
+    "service": "Servicio",
+    "staff": "Personal",
+    "status": "Estado",
+    "calendar": "Calendario",
+    "loading": "Cargando citas…",
+    "unavailable": "Las citas no están disponibles.",
+    "empty": "No hay citas próximas.",
+    "statuses": {
+      "confirmed": "Confirmada",
+      "cancelled": "Cancelada",
+      "completed": "Completada",
+      "no_show": "No se presentó",
+      "pending": "Pendiente",
+      "canceled": "Cancelada"
+    },
+    "calendarStates": {
+      "not_required": "No necesario",
+      "pending": "Sincronizando",
+      "synced": "Sincronizado",
+      "failed": "Error de sincronización",
+      "error": "Error de sincronización",
+      "cancelled": "Cancelado"
+    },
+    "actions": "Acciones",
+    "rowActions": "Acciones para {{time}}",
+    "cancel": {
+      "action": "Cancelar",
+      "actionLabel": "Cancelar la cita: {{time}}",
+      "approve": "Aprobar la cancelación",
+      "title": "¿Cancelar esta cita?",
+      "description": "{{appointment}}. La quitaremos de su calendario conectado y no enviaremos su recordatorio.",
+      "requestDescription": "{{appointment}}. La quitaremos de su calendario conectado, no enviaremos su recordatorio y cerraremos la solicitud.",
+      "confirm": "Cancelar",
+      "keep": "Mantener",
+      "done": "Cita cancelada",
+      "failed": "No pudimos cancelar la cita. Inténtelo de nuevo.",
+      "summary": "{{service}} para {{name}} el {{time}}",
+      "summaryNoService": "Cita para {{name}} el {{time}}"
+    },
+    "reschedule": {
+      "approve": "Aprobar cambio de hora",
+      "title": "¿Mover esta cita al {{time}}?",
+      "description": "{{appointment}} se moverá al {{time}}. Actualizaremos tu calendario conectado y su recordatorio, y cerraremos la solicitud.",
+      "confirm": "Mover cita",
+      "keep": "Mantener la hora actual",
+      "done": "Cita movida.",
+      "failed": "No pudimos mover la cita. Inténtalo de nuevo.",
+      "unavailable": "Esa hora ya no está disponible. Elija otra hora.",
+      "notReschedulable": "Esta cita no se puede mover. Puede que se haya cancelado.",
+      "passed": "La hora solicitada ya pasó."
+    },
+    "move": {
+      "action": "Cambiar hora",
+      "otherTime": "Otra hora",
+      "actionLabel": "Cambiar la hora de la cita: {{time}}",
+      "title": "Cambiar la hora de la cita",
+      "description": "{{appointment}}",
+      "requested": "Solicitado: {{time}}",
+      "confirm": "Cambiar la cita",
+      "moving": "Cambiando la cita...",
+      "keep": "Mantener la hora actual",
+      "done": "Cita cambiada",
+      "failed": "No pudimos cambiar la cita. Inténtelo de nuevo.",
+      "taken": "Esa hora ya no está libre. Elija otra."
+    },
+    "openings": {
+      "date": "Día",
+      "times": "Horas libres",
+      "noTimes": "No hay horas libres este día.",
+      "timesFailed": "No pudimos cargar las horas libres. Inténtelo de nuevo.",
+      "chooseService": "Elija primero un servicio."
+    },
+    "create": {
+      "action": "Nueva cita",
+      "title": "Nueva cita",
+      "contact": "Contacto",
+      "contactSearch": "Buscar por nombre o teléfono",
+      "noContacts": "No hay contactos con número de teléfono.",
+      "contactsFailed": "No pudimos cargar los contactos. Inténtelo de nuevo.",
+      "contactRequired": "Elija un contacto.",
+      "newContact": "Nuevo contacto",
+      "chooseContact": "Elegir un contacto",
+      "name": "Nombre",
+      "nameRequired": "Introduzca un nombre.",
+      "phone": "Teléfono",
+      "phoneCountry": "País del número",
+      "phoneRequired": "Introduzca un número de teléfono.",
+      "phoneInvalid": "Introduzca un número de teléfono completo.",
+      "service": "Servicio",
+      "servicePlaceholder": "Elija un servicio",
+      "serviceRequired": "Elija un servicio.",
+      "noServices": "Primero añada un servicio.",
+      "servicesFailed": "No pudimos cargar los servicios. Inténtelo de nuevo.",
+      "staff": "Empleado",
+      "anyone": "El primero disponible",
+      "timeRequired": "Elija una hora.",
+      "cancel": "Cancelar",
+      "confirm": "Reservar cita",
+      "booking": "Reservando...",
+      "done": "Cita reservada",
+      "failed": "No pudimos reservar la cita. Inténtelo de nuevo.",
+      "taken": "Esa hora ya no está libre. Elija otra.",
+      "duration": "Duración (minutos)",
+      "durationInvalid": "Introduzca de {{min}} a {{max}} minutos.",
+      "notes": "Notas",
+      "notesHint": "Visibles para su agente",
+      "internalNotes": "Notas internas",
+      "internalNotesHint": "Solo el equipo",
+      "notOpen": "Este horario no está abierto. Elija otro.",
+      "timeOff": "Este horario no está disponible: {{name}}."
+    }
+  },
+  "abandonIntent": {
+    "title": "Antes de irse",
+    "description": "Dos preguntas rápidas. Con una basta.",
+    "issue": {
+      "label": "¿Tuvo algún problema?",
+      "placeholder": "Describa lo que pasó para que podamos solucionarlo."
+    },
+    "missing": {
+      "label": "¿Echa algo en falta?",
+      "placeholder": "Cuéntenos qué le gustaría ver a continuación."
+    },
+    "notNow": "Ahora no",
+    "submit": "Enviar",
+    "sentTitle": "Gracias",
+    "sentDescription": "Leemos todos los mensajes.",
+    "close": "Cerrar"
+  },
+  "websiteImport": {
+    "runningTitle": "Leyendo {{host}}",
+    "runningHint": "{{imported}} páginas leídas hasta ahora, {{indexed}} listas para responder preguntas.",
+    "doneTitle": "Su agente ha leído {{host}}",
+    "doneHint_one": "{{count}} página está lista para responder preguntas.",
+    "doneHint_many": "{{count}} páginas están listas para responder preguntas.",
+    "doneHint_other": "{{count}} páginas están listas para responder preguntas.",
+    "failedTitle": "No pudimos leer {{host}}",
+    "failedHint": "Añada los datos de su negocio a mano o vuelva a intentar la importación desde su panel.",
+    "inlineRunning": "Leyendo {{host}}. Páginas leídas hasta ahora: {{count}}",
+    "stalledTitle": "No pudimos terminar de leer {{host}}"
+  }
+}

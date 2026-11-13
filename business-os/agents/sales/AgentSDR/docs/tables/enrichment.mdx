@@ -1,0 +1,108 @@
+---
+title: "Enrichment providers"
+description: "Connect data providers such as Apollo, Hunter and Lusha, and add enrichment columns that find emails, phones and company data."
+icon: "zap"
+---
+
+An enrichment column calls a data provider once per row. You map the provider's inputs (for example a LinkedIn URL) to columns in your table, pick which results you want, and each result becomes its own column. AgentSDR supports 15 providers.
+
+## Connect a provider account
+
+Provider accounts belong to your [organization](/workspace/organizations), so everyone in it can pick them. You add them from inside the enrichment setup, not from Settings.
+
+<Steps>
+  <Step title="Open the catalog">
+    In a table, click **Actions**, then **Add enrichment**. Search with **Search providers and enrichments...**. Providers with a connected account show a green dot and a **Connected** label. The rest are greyed out.
+  </Step>
+  <Step title="Choose a provider">
+    Click one. If you haven't connected it yet you see **Connect (provider) to use its actions**.
+  </Step>
+  <Step title="Add the account">
+    Click **Add account**. Enter an account name and the credential fields the provider asks for (usually one API key). AgentSDR makes a live call to the provider to verify the credentials before saving them. If verification fails, nothing is saved.
+  </Step>
+</Steps>
+
+Credentials are encrypted at rest and never sent back to the browser.
+
+### Several accounts per provider
+
+You can add more than one account for the same provider, for example one per client or per plan. When you set up a column, the **Account** dropdown lists every account for that provider, and each enrichment column keeps its own choice. If an account is later disabled, unverified, or its credentials can't be read, runs for that column are refused with a message telling you to reconnect it.
+
+<Note>
+This is a per-column choice, not an automatic rotation. A column uses the account you selected and doesn't fall back to another account or provider. Waterfall columns exist in the menu but are disabled.
+</Note>
+
+## Add an enrichment column
+
+1. In the catalog, pick a provider and then one of its actions.
+2. Choose the **Account**.
+3. Under inputs, map each input to a table column. Required inputs are marked. Only compatible column types are offered, and the run is skipped for a row where a required input is empty.
+4. Under **Run settings**, choose whether the column should **Auto-run**.
+5. Click **Continue to add fields**, then tick the outputs you want as columns. The action runs once per row no matter how many outputs you choose.
+6. Click **Save without running**, or **Save & run 10 rows** to test.
+
+Some actions are searches that take filters (Cleanlist's people and company search, for example). They show a **+ Choose a filter** picker and need a minimum number of filters mapped before they run.
+
+Providers that work asynchronously, such as FullEnrich and RocketReach, show the cell as **Waiting for provider...** until the result arrives. See [Tables](/tables/overview) for statuses and retries.
+
+## The 15 providers
+
+Each provider's setup screen lists the credentials it needs and the actions it offers.
+
+### Email and person lookup
+
+- **Apollo.io** (API key): 15 actions, including Find person by email, Find work email, Enrich person, Enrich company, Find people at company by job title, Find open jobs, and actions on your Apollo workspace such as Find or create contact, Update contact and Add contact to sequence.
+- **Hunter** (API key): Verify email, Find emails by company, Find work email.
+- **Snov.io** (Client ID and Client secret): Domain search, Database search, Check number of available emails, Find emails from name and domain, Find domain from company name, Get LinkedIn profile info from URLs, Enrich person profile from email, Email Verifier.
+- **Findymail** (API key): Validate Email, Find work email from profile URL, Find work email, Find Mobile Phone.
+- **FullEnrich** (API key): Find work email and Find mobile phone, both from a LinkedIn URL. Described as finding results through a provider waterfall on FullEnrich's side.
+- **LeadMagic** (API key): Validate email, Find work email, Find personal email, Find mobile number, Find professional profile, Find active job openings, Enrich company.
+- **ContactOut** (API token): Find professional URL from personal email, Find mobile number from LinkedIn, Find personal email from LinkedIn.
+- **RocketReach** (API key): Find professional email, Find personal email, Find phone number, Enrich person, Enrich company.
+- **Icypeas** (API key): Verify email, Find professional profile, Find people at company, Find emails for domain, Find work email, Find company professional profile, Enrich profile, Enrich company.
+- **Cleanlist** (API key): Search people, Search companies, Enrich person, Enrich company.
+- **Lusha** (API key): Enrich person, Enrich company, Find person signals (promotions and company changes), and company signals for website traffic, IT spend, jobs growth (overall, by location and by department), headcount growth and news.
+
+### Email verification only
+
+- **MillionVerifier** (API key): Verify email, returning result, quality, and role-based or free-provider flags.
+- **ZeroBounce** (API key): Validate Email, returning status, catch-all and MX details, SMTP provider and more.
+
+### Company and traffic data
+
+- **Similarweb** (API key): monthly visits, traffic by geography, pages per visit, bounce rate, average visit duration, global traffic rank and website technologies.
+- **Semrush** (API key): traffic analytics, paid search competitors, traffic sources, top pages, social media engagement and geographic distribution.
+
+### What the typical outputs are
+
+| Action type | Typical inputs | Typical outputs |
+| --- | --- | --- |
+| Find work email | Full name and company domain, or a LinkedIn URL | Work email, plus a status or score where the provider gives one |
+| Find mobile phone | LinkedIn URL | Mobile number, and in some cases all numbers found |
+| Verify email | Email | Status or result, plus flags such as disposable, webmail or catch-all |
+| Enrich person | LinkedIn URL or email | Name, job title, company, location |
+| Enrich company | Company domain | Company name, industry, employee count, LinkedIn page, and in some providers revenue or technologies |
+
+Check each action's output list in the setup screen for the exact fields. Some also return a full raw record as JSON.
+
+## Credits and cost
+
+Providers charge you on your own account with them, and each action lists a credits figure in its definition. AgentSDR doesn't convert these to money and doesn't show a per-run cost for enrichment. It records the provider and result for each cell. Watch your usage in the provider's own dashboard, and test with **Save & run 10 rows** before running a whole table.
+
+<Warning>
+Running a column spends credits on your provider account. Cells with a blank required input are skipped before they reach the provider, but re-running a column re-queries every row you include.
+</Warning>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Tables" icon="table" href="/tables/overview">
+    Run, retry and read cell statuses.
+  </Card>
+  <Card title="AI and HTTP columns" icon="sparkles" href="/tables/ai-columns">
+    Use a model or any API when no provider fits.
+  </Card>
+  <Card title="Enrichment providers" icon="plug" href="/integrations/enrichment-providers">
+    Where to get each provider's API key, and how accounts are stored.
+  </Card>
+</CardGroup>

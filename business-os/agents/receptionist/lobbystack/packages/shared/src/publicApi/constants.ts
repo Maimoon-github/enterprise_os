@@ -1,0 +1,211 @@
+// Public REST API and outbound webhook contract, version 1.
+// Changing a value here changes a published contract: add, never rename or remove.
+
+export const PUBLIC_API_VERSION = "v1" as const;
+export type PublicApiVersion = typeof PUBLIC_API_VERSION;
+
+/** Every API key starts with this prefix, followed by a short id and the secret. */
+export const API_KEY_PREFIX = "lsk_";
+
+/** Platform keys, set in the PLATFORM_API_KEYS environment variable, start with this prefix instead. */
+export const PLATFORM_API_KEY_PREFIX = "lsp_";
+
+/** The request header a platform key uses to name the business it acts on. Per-business keys may omit it. */
+export const BUSINESS_HEADER = "LobbyStack-Business";
+
+export const apiKeyScopes = [
+  "business:read",
+  "business:write",
+  "calls:read",
+  "contacts:read",
+  "contacts:write",
+  "appointments:read",
+  "appointments:write",
+  "messages:read",
+  "knowledge:read",
+  "knowledge:write",
+  "webhooks:manage",
+  "billing:manage",
+  "phone_numbers:manage",
+  "team:manage",
+  "businesses:create",
+  "users:create",
+  "phone_numbers:purchase",
+  "partner:read",
+  "partner.businesses:write",
+  "partner.demos:write",
+  "partner.packages:write",
+  "partner.branding:write",
+  "partner.templates:write",
+  "partner.team:write",
+  "partner.billing:read",
+  "partner.billing:write",
+] as const;
+export type ApiKeyScope = (typeof apiKeyScopes)[number];
+
+/**
+ * Scopes for the Partner endpoints, which act on the partner itself: its
+ * demos, packages, brand, templates, team and billing. Only a key a partner
+ * made in its console can hold them; a host's key has no partner to act on.
+ */
+export const partnerScopes = [
+  "partner:read",
+  "partner.businesses:write",
+  "partner.demos:write",
+  "partner.packages:write",
+  "partner.branding:write",
+  "partner.templates:write",
+  "partner.team:write",
+  "partner.billing:read",
+  "partner.billing:write",
+] as const satisfies readonly ApiKeyScope[];
+export type PartnerScope = (typeof partnerScopes)[number];
+
+/**
+ * Partner scopes that reach the partner's Stripe account and its billing,
+ * which only owners open in the console, so only an owner grants them.
+ */
+export const partnerOwnerScopes = ["partner.billing:read", "partner.billing:write"] as const satisfies readonly PartnerScope[];
+
+// A scope a key holds by holding another. partner.billing:write reads billing
+// too, so a key that starts a tier checkout can read it back.
+const scopesImplying: Partial<Record<ApiKeyScope, readonly ApiKeyScope[]>> = {
+  "partner.billing:read": ["partner.billing:write"],
+};
+
+/** Whether a key's scopes grant `scope`, itself or through a scope that implies it. */
+export function keyHasScope(scopes: readonly string[], scope: ApiKeyScope): boolean {
+  return scopes.includes(scope) || (scopesImplying[scope] ?? []).some((implying) => scopes.includes(implying));
+}
+
+export function isPartnerScope(value: unknown): value is PartnerScope {
+  return typeof value === "string" && (partnerScopes as readonly string[]).includes(value);
+}
+
+/**
+ * What a partner's platform key needs on top of phone_numbers:manage to search
+ * for and buy numbers, which charge the partner. No endpoint takes it alone,
+ * and a key made before keys could buy numbers doesn't hold it.
+ */
+export const PARTNER_NUMBER_PURCHASE_SCOPES = ["phone_numbers:manage", "phone_numbers:purchase"] as const satisfies readonly ApiKeyScope[];
+
+/** Scopes that act outside a single business, so only a platform key can hold them. */
+export const platformOnlyScopes = ["businesses:create", "users:create", "phone_numbers:purchase", ...partnerScopes] as const satisfies readonly ApiKeyScope[];
+export type PlatformOnlyScope = (typeof platformOnlyScopes)[number];
+export type BusinessApiKeyScope = Exclude<ApiKeyScope, PlatformOnlyScope>;
+
+export function isPlatformOnlyScope(value: unknown): value is PlatformOnlyScope {
+  return typeof value === "string" && (platformOnlyScopes as readonly string[]).includes(value);
+}
+
+/** Scopes a per-business key from Settings > API keys can hold. */
+export const businessApiKeyScopes = apiKeyScopes.filter((scope): scope is BusinessApiKeyScope => !isPlatformOnlyScope(scope));
+
+export function isBusinessApiKeyScope(value: unknown): value is BusinessApiKeyScope {
+  return typeof value === "string" && (businessApiKeyScopes as readonly string[]).includes(value);
+}
+
+/** The scopes MCP tools use. */
+const mcpToolScopes = ["business:read", "business:write", "calls:read", "contacts:read", "contacts:write", "appointments:read", "appointments:write", "messages:read", "knowledge:write"] as const satisfies readonly ApiKeyScope[];
+export type OAuthGrantableScope = (typeof mcpToolScopes)[number];
+
+/** Scopes an MCP client can be granted with OAuth. Scopes without MCP tools, such as webhooks:manage, are never offered. */
+export const oauthGrantableScopes = apiKeyScopes.filter((scope): scope is OAuthGrantableScope => (mcpToolScopes as readonly string[]).includes(scope));
+
+/**
+ * Scopes an agency connection can be granted with OAuth on top of the
+ * per-business ones: the partner scopes, and creating businesses. The billing
+ * scopes are offered to owners only, as for a partner's platform keys.
+ */
+export const oauthPartnerGrantableScopes = ["businesses:create", ...partnerScopes] as const satisfies readonly ApiKeyScope[];
+export type OAuthPartnerGrantableScope = (typeof oauthPartnerGrantableScopes)[number];
+
+export function isApiKeyScope(value: unknown): value is ApiKeyScope {
+  return typeof value === "string" && (apiKeyScopes as readonly string[]).includes(value);
+}
+
+export const webhookEventTypes = [
+  "call.completed",
+  "appointment.booked",
+  "appointment.rescheduled",
+  "appointment.cancelled",
+  "message.taken",
+  "contact.created",
+] as const;
+export type WebhookEventType = (typeof webhookEventTypes)[number];
+
+/** Sent only by the "send test event" action, to the one endpoint being tested. */
+export const WEBHOOK_TEST_EVENT_TYPE = "webhook.test" as const;
+
+export function isWebhookEventType(value: unknown): value is WebhookEventType {
+  return typeof value === "string" && (webhookEventTypes as readonly string[]).includes(value);
+}
+
+/** The v1 resource each webhook event carries in `data`. */
+export const webhookEventResource: Record<WebhookEventType, "call" | "appointment" | "message" | "contact"> = {
+  "call.completed": "call",
+  "appointment.booked": "appointment",
+  "appointment.rescheduled": "appointment",
+  "appointment.cancelled": "appointment",
+  "message.taken": "message",
+  "contact.created": "contact",
+};
+
+/** The read scope an API key needs to subscribe to each event, because the event carries that resource. */
+export const webhookEventScope: Record<WebhookEventType, ApiKeyScope> = {
+  "call.completed": "calls:read",
+  "appointment.booked": "appointments:read",
+  "appointment.rescheduled": "appointments:read",
+  "appointment.cancelled": "appointments:read",
+  "message.taken": "messages:read",
+  "contact.created": "contacts:read",
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Every v1 id is a UUID. Check ids before they reach SQL so bad input is a 400, not a database error. */
+export function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+export const PUBLIC_API_DEFAULT_PAGE_SIZE = 25;
+export const PUBLIC_API_MAX_PAGE_SIZE = 100;
+export const PUBLIC_API_DEFAULT_RATE_LIMIT_PER_MINUTE = 120;
+export const PUBLIC_API_IDEMPOTENCY_TTL_HOURS = 24;
+export const PUBLIC_API_AVAILABILITY_MAX_DAYS = 7;
+/** The most contacts one request sets or generates keypad PINs for. Each PIN takes a deliberately slow hash. */
+export const CONTACT_PASSCODES_MAX_PER_REQUEST = 20;
+/**
+ * The most PINs one API key, platform key or OAuth grant may have waiting for
+ * or in a hash at once, across its requests, so it can't fill the hashing
+ * queue other businesses share: one full request's worth.
+ */
+export const CONTACT_PASSCODE_HASHES_PER_CALLER = CONTACT_PASSCODES_MAX_PER_REQUEST;
+/** The largest document a knowledge upload may be, from the API or the dashboard. */
+export const KNOWLEDGE_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+/** Sign-up invitations one platform key can send in a day through POST /users. */
+export const PLATFORM_USER_INVITATIONS_PER_DAY = 50;
+
+/**
+ * The pages a website's first crawl reads: enough of a site to make the agent
+ * recognisable and no more. Most people who start onboarding never finish it,
+ * and every crawled page is billed, so the full read waits until someone asks.
+ */
+export const ONBOARDING_CRAWL_PAGE_LIMIT = 10;
+
+/** The pages the full read takes, the crawler's own default. */
+export const FULL_CRAWL_PAGE_LIMIT = 50;
+
+/**
+ * Seconds to wait before each retry after a failed delivery. The first attempt
+ * is immediate; the schedule spans about 23 hours across 9 attempts.
+ */
+export const WEBHOOK_RETRY_DELAYS_SECONDS = [30, 120, 600, 1_800, 3_600, 10_800, 21_600, 43_200] as const;
+export const WEBHOOK_MAX_ATTEMPTS = WEBHOOK_RETRY_DELAYS_SECONDS.length + 1;
+export const WEBHOOK_TIMEOUT_MS = 10_000;
+export const WEBHOOK_HISTORY_RETENTION_DAYS = 30;
+export const WEBHOOK_MAX_ENDPOINTS_PER_BUSINESS = 20;
+
+export const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+export type Weekday = (typeof weekdays)[number];

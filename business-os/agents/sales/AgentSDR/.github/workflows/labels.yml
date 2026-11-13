@@ -1,0 +1,27 @@
+name: Labels
+
+# Creates and updates the repository's labels from .github/labels.yml, so a
+# new repository has them before the first issue arrives. Labels not in the
+# file are left alone (skip-delete).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+      - .github/workflows/labels.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: crazy-max/ghaction-github-labeler@v6
+        with:
+          yaml-file: .github/labels.yml
+          skip-delete: true

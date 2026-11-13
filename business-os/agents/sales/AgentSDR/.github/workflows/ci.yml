@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The build imports server modules that read these at load time; CI values
+  # are throwaway and never reach a real database or provider.
+  DATABASE_URL: postgres://agentsdr:agentsdr@localhost:5432/agentsdr
+  DATABASE_SSL: disable
+  BETTER_AUTH_SECRET: ci-only-not-a-secret-ci-only-not-a-secret
+  BETTER_AUTH_URL: http://localhost:3000
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  INTEGRATION_CREDENTIALS_KEY: ci-only-not-a-secret-ci-only-not-a-secret
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Call-recorder extension
+        run: bun run build:recorder
+
+  database:
+    name: Fresh install (PostgreSQL ${{ matrix.postgres }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["16", "17", "18"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_USER: agentsdr
+          POSTGRES_PASSWORD: agentsdr
+          POSTGRES_DB: agentsdr
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agentsdr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Create the schema in an empty database
+        run: bun run db:setup
+      - name: A second run refuses a non-empty database
+        run: "! bun run db:setup"
+      - name: Tenancy audit (every table classified, scoped, indexed)
+        run: bun run db:check
+      - name: Sign-up and organization policies (needs the empty database)
+        run: bun --conditions=react-server scripts/e2e/auth-policies.ts
+      - name: Demo data seeds and stays scoped
+        run: |
+          bun --conditions=react-server scripts/db/seed-demo.ts
+          bun run db:check
+
+  compose:
+    name: Docker Compose files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Bundled PostgreSQL (the default)
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          test "$(docker compose config --services | sort | tr '\n' ' ')" = "app db "
+      - name: The file names this release's image (not latest)
+        run: |
+          version="$(jq -r .version package.json)"
+          grep -qF "ghcr.io/kandid-ai/agentsdr:\${AGENTSDR_VERSION:-$version}" docker-compose.yml \
+            || { echo "docker-compose.yml must default to the image tag $version (package.json)"; exit 1; }
+      - name: Your own PostgreSQL (docker-compose.external-db.yml)
+        run: |
+          cp .env.example .env
+          printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.external-db.yml\n' >> .env
+          sed -i 's#^DATABASE_URL=.*#DATABASE_URL=postgres://u:p@db.example.com:5432/agentsdr#' .env
+          docker compose config --quiet
+          test "$(docker compose config --services | sort | tr '\n' ' ')" = "app "
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: gitleaks over the tree (reviewed false positives in .gitleaksignore)
+        # The same scan release:prepare runs. The binary, not gitleaks-action,
+        # which needs a licence key on organization repositories.
+        run: docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 dir . --no-banner --redact
+
+  required:
+    name: required
+    if: always()
+    needs: [typecheck, lint, test, build, database, compose, secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed
+        run: |
+          echo '${{ toJSON(needs) }}' | jq -e 'to_entries | all(.value.result == "success")'

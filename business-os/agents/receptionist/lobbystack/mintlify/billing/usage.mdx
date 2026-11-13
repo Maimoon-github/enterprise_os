@@ -1,0 +1,75 @@
+---
+title: "Track usage and limits"
+description: "Track voice minutes, alert SMS segments, transfer attempts, knowledge storage, and paid-plan overages."
+sidebarTitle: "Usage and limits"
+contentType: "Reference"
+---
+
+The **Settings** > **Usage** page shows hosted usage for the current billing period. Usage resets at the start of each period.
+
+## Usage metrics
+
+| Metric | Meaning |
+| --- | --- |
+| Voice minutes | Time spent on live voice calls. Calls under 10 seconds and calls the agent ends as spam are excluded. |
+| Alert SMS segments | SMS notification segments sent by the system. |
+| Transfer attempts | Outgoing call legs to your team when the agent transfers a live caller, and each ring of your phone with [Staff answers first](/agent/calls-and-booking#staff-answers-first). LobbyStack makes no other outgoing calls. |
+| Knowledge base | Text the receptionist searches, extracted from your documents and website imports. File sizes don't count. |
+
+## Included usage
+
+| Metric | Free | Starter | Pro |
+| --- | --- | --- | --- |
+| Voice minutes | 30 min | 150 min | 500 min |
+| Alert SMS segments | 10 | 50 | 200 |
+| Transfer attempts | 2 attempts | 20 attempts | 100 attempts |
+| Knowledge base | 1 MB | 5 MB | 20 MB |
+
+## How limits work
+
+On Free, browser test calls and calls to a 14-day trial number both count toward the 30 voice minutes. Free hosted workspaces include a set usage pool for each billing period. When an included pool is used up, that usage type pauses until the next period or until the workspace upgrades.
+
+Starter and Pro support billable overages for voice, alert SMS, and transfer attempts. Knowledge base has a fixed plan allowance; remove old content or upgrade before adding more after the allowance is full.
+
+### When voice minutes run out
+
+Your agent stops answering calls when Free's 30 minutes are used up, or when Starter or Pro overages reach your spending cap. LobbyStack then forwards each call to your [default transfer number](/agent/calls-and-booking#default-transfer-number), so callers still reach your team. If you haven't set one, calls go to the mobile number you verified, if you have one. During a free trial that started with a verified mobile, calls forward only to it. Callers hear a busy signal only when you have neither number.
+
+Forwarded calls use no voice minutes or transfer attempts. The agent doesn't answer them, so they don't appear in the **Inbox**. Upgrade, raise your spending cap, or wait for the next period to have your agent answer again.
+
+### When your team answers
+
+With Staff answers first, a call you take uses one transfer attempt and no voice minutes. A call nobody takes uses one transfer attempt, then voice minutes once your agent answers. When your attempts run out and you have no overage, your phone stops ringing first and your agent answers.
+
+These calls don't count toward your plan, but they have their own limit: each one ends after 30 minutes, and after 600 minutes of them in 24 hours your agent answers new calls until that total drops.
+
+## Overage rates
+
+| Usage type | Starter | Pro |
+| --- | --- | --- |
+| Voice | $0.20 per extra minute | $0.18 per extra minute |
+| Alert SMS | $0.02 per extra segment | $0.02 per extra segment |
+| Transfer attempts | $0.02 per extra attempt | $0.02 per extra attempt |
+
+Annual subscriptions keep monthly usage resets. Unused included minutes do not roll over.
+
+## View usage
+
+<Steps>
+  <Step title="Open Settings">
+    Click **Settings** in the dashboard sidebar.
+  </Step>
+  <Step title="Open Usage">
+    Under **Workspace**, select **Usage**.
+  </Step>
+  <Step title="Review included usage">
+    Check current usage, remaining quota, usage status, and reset timing.
+  </Step>
+  <Step title="Review pay-as-you-go usage">
+    On Starter or Pro, review estimated overage counts and cost for the current period.
+  </Step>
+</Steps>
+
+<Note>
+  Displayed overage amounts are estimates for the current period until the final invoice is created.
+</Note>

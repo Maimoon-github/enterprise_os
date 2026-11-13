@@ -1,0 +1,95 @@
+---
+title: "CRM overview"
+description: "How the AI CRM turns replies from email, LinkedIn and WhatsApp into one conversation per lead, with classification, drafts and follow-ups."
+icon: "kanban"
+---
+
+The CRM starts when someone replies. AgentSDR takes the reply from whichever channel it came on, reads it, files the lead under a category and writes a draft answer. You review the draft and send it. The AI proposes and you approve: nothing is sent to a lead without a person pressing send.
+
+## One conversation per lead
+
+Every lead has one CRM record per pipeline, whatever channel they use. If a person replies to your email and later answers on WhatsApp, both land on the same record. The record keeps one conversation per account and channel, a shared timeline of messages, the classification and the next step.
+
+A record is created on the lead's first reply. When it is, AgentSDR also pulls in the cold outreach that came before, so the AI sees your pitch and not only the answer.
+
+## How replies get in
+
+- **Email**: replies to your campaigns from connected mailboxes. See [Inbox](/email/inbox).
+- **LinkedIn**: replies to your messages on a connected account. See [LinkedIn messages](/linkedin/messages).
+- **WhatsApp**: replies from leads AgentSDR knows by phone number, on a linked number. Messages you type on your phone are recorded too and count as answering the lead.
+
+A reply also stops outreach to that person on all channels: pending email and LinkedIn campaign steps and WhatsApp campaign steps. A new reply makes any draft that was waiting out of date, and cancels pending follow-ups, because the conversation has changed. The new reply is classified from scratch.
+
+## What happens to a reply
+
+<Steps>
+  <Step title="Classification">
+    The AI reads the reply and puts the lead in one of four categories: **Interested**, **Customer**, **Not interested** or **Other**, and usually a subcategory such as Meeting Requested. It also gives a confidence. See [Lead categories](/crm/knowledge).
+  </Step>
+  <Step title="Held or applied">
+    A confident, forward-looking classification is applied. Anything else is held as a proposal for a person to accept or reject. Details are on [Pipeline](/crm/pipeline).
+  </Step>
+  <Step title="Draft">
+    The AI writes a draft reply, using your [instructions and knowledge base](/crm/knowledge). If a sequence is attached to the subcategory, the sequence's first step is the brief. Without one, the AI drafts from the conversation itself.
+  </Step>
+  <Step title="Your decision">
+    The record lands in [Action required](/crm/action-required). You send the draft as written, edit it, regenerate it, or discard it.
+  </Step>
+  <Step title="Follow-ups">
+    After you send a step of a [sequence](/crm/sequences), the next one is scheduled. When it comes due, a new draft waits for your approval.
+  </Step>
+</Steps>
+
+If the reply is an explicit request to stop, such as "unsubscribe me" or "do not contact me", or is classified as **Do Not Contact**, the person is marked Do Not Contact and no draft is written. That status blocks every channel.
+
+If you answer a reply yourself before the AI finishes, for example from your phone, the AI keeps its classification and skips the draft.
+
+## Map of the CRM
+
+| Where | What it is |
+| --- | --- |
+| **Action required** in the sidebar | The queue of records that need a person. See [Action required](/crm/action-required). |
+| **CRM → Pipeline** | Every open lead by where it stands, as a board or a list. See [Pipeline](/crm/pipeline). |
+| **CRM → Sequences** | Follow-up flows you build once and attach to subcategories. See [Sequences](/crm/sequences). |
+| **Leads**, then a lead | The record page: conversation, reply composer, stage, activity history. |
+| **Settings → AI → Instructions** | Guidance added to every draft and classification. |
+| **Settings → AI → Knowledge** | Documents the AI draws on. |
+| **Settings → CRM & leads → Lead categories** | Subcategories, what they mean and which sequence each starts. |
+
+Counts and trends for the CRM are in [Analytics](/analytics).
+
+## The record page
+
+Open a lead to see the conversation, the **Reply** composer and the classification. The header shows the workflow state: **Classifying**, **Action required**, **Waiting**, **Paused**, **Idle**, **Error** or **Closed**, plus a **Do not contact** badge when it applies. From the header you can:
+
+- **Call** the lead over WhatsApp. See [Calling](/whatsapp/calling).
+- **Skip step**, which marks the current sequence step done without sending it. The next step waits its usual delay.
+- **Move stage**, to record something that happened outside the conversation.
+- Open **Manage record** for **Pause sequence** or **Resume sequence**, **Snooze a day**, **Mark do not contact** or **Clear do not contact**, and **Close record** or **Reopen record**.
+
+<Frame caption="A record page: composer on the left, the whole conversation on the right.">
+  <img src="/assets/screenshots/app/crm-record.png" alt="A CRM record for a lead showing the Reply composer with a classification, the conversation across email, LinkedIn and WhatsApp, and Call and Move stage buttons" />
+</Frame>
+
+The **Activity history** button opens a full audit trail of decisions, drafts and delivery.
+
+<Note>
+Classification and drafting use your own AI provider key. Set it in [AI provider](/workspace/ai-provider).
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Action required" icon="inbox" href="/crm/action-required">
+    Review and send drafts.
+  </Card>
+  <Card title="Pipeline" icon="kanban" href="/crm/pipeline">
+    Open leads and stage rules.
+  </Card>
+  <Card title="Sequences" icon="list-checks" href="/crm/sequences">
+    Timed follow-ups after a reply.
+  </Card>
+  <Card title="Instructions and knowledge" icon="book-open" href="/crm/knowledge">
+    Steer what the AI writes.
+  </Card>
+</CardGroup>

@@ -1,0 +1,353 @@
+# Use the telemetry event taxonomy
+
+This reference assigns event ownership and defines the properties required for product and operational telemetry.
+
+## Ownership
+
+- `apps/admin` emits operator intent and workflow events
+- `apps/admin` and `apps/worker` emit authoritative business outcome events
+
+Do not duplicate ownership between runtimes unless there is a specific analytics reason.
+
+## Event families
+
+### Web events
+
+- `web.auth.login_succeeded`
+- `web.auth.signup_succeeded`
+- `web.workspace.business_switched`
+- `web.partner.signup_succeeded`: someone signed a company up as a partner at `/partner/signup`. It carries `partnerId`, `invited` (whether they used the host's signup invitation) and `subdomain` (whether signup reserved a subdomain of the partner base domain). The signup page belongs to no partner, so it queues the event. The new partner's console sends it once it reads the partner's telemetry setting, which starts on, and keeps `/partner/signup` as its `pathname`. With the setting off, the console drops it. A partner member with no business of their own counts like anyone else.
+- `web.partner.business_created`: an owner or admin created a business on the console's Businesses page. It carries `partnerId`, `businessId` (the new business) and `accessLevel` (`full` or `activity`). Like every console event, it goes out only while the partner has telemetry on, whatever the person's own business says, and a partner's domain never sends it.
+- `web.partner.business_opened`: someone on a partner's team opened one of its businesses from the console's Businesses page, or a prospect demo's business from its Demos page, just before the browser goes to its dashboard. It carries `partnerId` and `businessId` (the business opened). The business's audit log records the same open as `partner.business_opened`. The same rule applies.
+- `web.partner.business_released`: an owner or admin released one of the partner's businesses to its owner from the console's Businesses page, once the server accepted it. It carries `partnerId` and `businessId` (the business released). The business's audit log records the same release as `partner.business_released`. The same rule applies.
+- `web.partner.business_deleted`: an owner or admin deleted one of the partner's businesses from the console's Businesses page, or a closed demo's business from its Demos page, once the server accepted it. It carries `partnerId` and `businessId` (the business deleted, which no longer exists). The same rule applies.
+- `web.partner.stripe_onboarding_started`: an owner opened Stripe's onboarding from the console's Stripe page, by clicking or because Stripe sent them back with an expired link. It carries `partnerId` and `resumed` (`true` when the partner already had an account and continued its onboarding, `false` when the click connects a new account). The same rule applies.
+- `web.partner.package_created`: an owner or admin created a package on the console's Packages page. It carries `partnerId`, `packageId`, `currency` (the connected account's, which the package is priced in) and `setupFee` (whether it charges one). It never carries the price. The same rule applies.
+- `web.partner.tier_started`: an owner paid for a tier at Polar's checkout, and the console's Billing page saw the partner's tier change to it. It carries `partnerId`, `tier` (`starter`, `growth` or `scale`) and `billingInterval` (`monthly` or `annual`). The same rule applies.
+- `web.partner.template_saved`: an owner or admin saved a business's setup as a template, from the console's Templates page or a business's row on its Businesses page, once the server accepted it. It carries `partnerId`, `templateId` (the new template) and `businessId` (the business it was saved from). The same rule applies.
+- `web.partner.template_deleted`: an owner or admin deleted one of the partner's templates from the console's Templates page, once the server accepted it. It carries `partnerId` and `templateId` (the template deleted). The same rule applies.
+- `web.partner.demo_created`: someone on a partner's team made a prospect demo from the console's Demos page, once the server accepted it. It carries `partnerId`, `prospectDemoId` (the new demo, as the `prospect_demo.*` events name it), `businessId` (the demo's business, one of the partner's) and `accessLevel` (what the business gives its operators once someone claims it, always `full` for a demo a member made). The same rule applies.
+- `web.partner.demo_published`: someone on a partner's team published one of its demos from the Demos page, once the server accepted it. It carries `partnerId`, `prospectDemoId` and `businessId`. The same rule applies.
+- `web.partner.demo_revoked`: someone on a partner's team turned off one of its demos from the Demos page, once the server accepted it. It carries `partnerId`, `prospectDemoId` and `businessId`. The same rule applies.
+- `web.page.home_viewed`
+- `web.page.inbox_viewed`: the Inbox at `/inbox`, which replaced `web.page.calls_viewed`, `web.page.call_detail_viewed` and `web.page.messages_viewed`.
+- `web.page.contacts_viewed`
+- `web.page.analytics_viewed`
+- `web.page.agents_viewed`: the list of agents at `/agents`.
+- `web.page.agent_viewed`: any of one agent's pages, under `/agents/[agentId]`.
+- `web.page.workspace_viewed`: a workspace settings page, under `/workspace`. With `web.page.account_viewed`, it replaced `web.page.settings_viewed`.
+- `web.page.account_viewed`: the person's own settings, under `/account`.
+- `web.page.intro_shown`: a page's first-visit intro card opened, with `pageId`
+- `web.page.intro_dismissed`: the operator closed that card, with `pageId` and `method` set to `get_started`, `guide`, `close`, `escape` or `outside`
+- `web.notifications.bell_opened`: the operator opened the notification bell, with `unreadCount` and `actionCount`
+- `web.notifications.item_clicked`: the operator clicked a notification in it, with its `kind`, its `category` (`action` or `update`) and whether it was `unread`
+- `web.contacts.contact_opened`
+- `web.messages.thread_opened`
+- `web.messages.reply_sent`
+- `web.agent.settings_saved`
+- `web.onboarding.number_claim_started`
+- `web.onboarding.number_claim_completed`
+- `web.onboarding.number_unavailable`: the number step showed the plans instead of the picker, with `code` set to the refusal, such as `trial_already_used` or `trial_ip_limited`
+- `web.onboarding.plan_checkout_completed`
+- `web.onboarding.language_submitted`: an owner with no website picked the language, with `locale`
+- `web.onboarding.meet_completed`: an owner left Meet your agent for the dashboard
+- `web.onboarding.plan_offer_shown`: the plans opened after a completed test, with `surface` set to `meet` or `home`
+- `web.onboarding.plan_offer_dismissed`: the operator closed that offer without picking a plan, with `surface`
+- `web.onboarding.plan_offer_clicked`: the operator picked a plan in that offer, with `surface` and `plan`
+- `web.activation.first_call_completed`
+- `web.activation.upgrade_prompt_shown`
+- `web.activation.upgrade_prompt_clicked`
+- `web.activation.abandon_intent`
+- `web.knowledge.upload_started`
+- `web.knowledge.upload_completed`
+- `web.integration.calendar_connect_started`
+- `web.integration.calendar_connect_completed`
+- `web.integration.calendar_connect_failed`
+- `web.integration.calendar_disconnect_completed`
+- `web.voice.follow_up_completed`
+
+### Voice events
+
+- `voice.call_started`
+- `voice.call_completed`
+- `voice.short_call_waived`: a call ran under 10 seconds, so the business wasn't charged, though the provider may still bill us. Carries the provider's billed seconds, the measured length and, for GPT-Live, the estimated cost.
+- `voice.transfer_state_changed`
+- `voice.transfer_requested`
+- `voice.transfer_completed`
+- `voice.snapshot_loaded`
+- `voice.provider_cost_recorded`
+- `voice.delegation_completed`: the worker answered one GPT-Live delegation with the agent. Carries `agentMs` (agent run time), `totalMs` (from the delegation event to the answer, including the wait for the caller's last words), `tools` (distinct tool names), `toolCount`, `modelSteps` (model calls the agent made), `directAnswer` (true when a tool result went to GPT-Live without a model call to phrase it), `toolMs` (time spent in tools), `modelMs` (`agentMs` minus `toolMs`) and `failed`. The worker also records each delegation's tokens and cost as a `$ai_generation` with the operation `voice.delegation`, and each business summary it writes from the knowledge sources as one with the operation `business.summary`. It never carries the request, the answer or the caller's number.
+- `voice.call_latency_recorded`: one summary per GPT-Live call, sent when the worker stops handling the call. See [GPT-Live call latency](#gpt-live-call-latency).
+
+#### GPT-Live call latency
+
+The worker measures `voice.call_latency_recorded` from the session timeline that the sideband reports, in milliseconds from the start of the OpenAI session. Network delay between OpenAI and the worker doesn't affect these numbers.
+
+GPT-Live sends no speech-started, speech-stopped or input-committed event. The worker takes the end of the caller's turn from the `end_ms` of their last `session.input_transcript.delta`. It takes the start of the agent's speech from the `start_ms` of reflected `session.output_audio.delta` events. If the sideband delivers no reflected audio, it uses `session.output_transcript.delta` instead, and `speechTimingSource` says which one it used.
+
+| Property | Meaning |
+| --- | --- |
+| `firstSpeechMs` | When the agent first spoke, from the start of the session. |
+| `greetingMs` | Same as `firstSpeechMs`, sent only when the agent spoke before the caller. |
+| `greetedFirst` | The agent spoke before the caller. |
+| `speechTimingSource` | `audio`, `transcript` or `none`. |
+| `answerCount` | Caller turns the agent answered. |
+| `answerP50Ms`, `answerP90Ms`, `answerMaxMs` | Silence between the caller's last transcribed word and the agent's answer, as nearest-rank percentiles. |
+| `delegationCount`, `delegationFailedCount` | Delegations answered, and how many of them failed. |
+| `delegationP50TotalMs`, `delegationMaxTotalMs` | `totalMs` of those delegations. |
+| `durationMs` | How long the worker held the call. |
+
+The answer gap skips caller speech that ended while the agent was still talking, such as "mm-hmm" or an interruption, and answers that started before the caller finished. The session timeline starts when OpenAI starts the session, so ringing before a phone call is accepted doesn't count toward `greetingMs`.
+
+### SMS events
+
+- `sms.inbound_received`
+- `sms.delivery_accepted`
+- `sms.delivery_failed`
+- `conversation.first_real_recorded`: a business's first real conversation, once per business, with `channel`. `kpi-spec.md` says what counts.
+- `onboarding.check_in_answered`: an owner confirmed an answer from the founder's check-in email, which LobbyStack no longer sends; links in emails already sent work for 30 days, with `answer` set to `still_testing`, `connect_number`, `test_call_mistakes`, or `not_a_fit`. The server records it once per business and answer.
+- `conversation.automation_paused`
+- `conversation.team_requested`: a website visitor asked for a person and the team was alerted.
+- `conversation.team_joined`: a team member replied or pressed Join while the visitor waited. `waitSeconds` is how long the visitor waited.
+- `conversation.team_request_expired`: nobody joined in time, so the agent took the chat back.
+
+### Appointment events
+
+- `appointment.booked`
+- `appointment.booking_failed`
+- `appointment.rescheduled`
+- `appointment.cancelled`
+- `notification.delivery_failed`
+
+### Prospect demo events
+
+- `prospect_demo.viewed`
+- `prospect_demo.call_started`
+- `prospect_demo.call_completed`
+- `prospect_demo.call_error`
+- `prospect_demo.signup_clicked`
+- `prospect_demo.claim_succeeded`
+- `prospect_demo.claim_failed`
+
+### Knowledge events
+
+- `knowledge.document_indexed`
+- `knowledge.search_executed`
+
+### Integration events
+
+- `integration.calendar_connected`
+- `integration.calendar_sync_failed`
+
+### Workflow and snapshot events
+
+- `business.snapshot_refreshed`
+- `workflow.started`
+- `workflow.failed`
+
+### Billing events
+
+`billing.subscription_started` fires once, when a workspace crosses from free into a live paid plan. Renewals, plan changes between paid tiers, and recovery from `past_due` do not repeat it, so the event counts subscriptions rather than webhooks. The worker records it after the reconciling transaction commits, which means a reporting failure cannot roll back a payment.
+
+`billing.subscription_canceled` fires when an owner or admin cancels the plan from **Settings → Plan** and Polar accepts the request. The admin route records it after Polar schedules the end of the current period, so the plan stays active until then. `reason` holds the answer to the dialog's optional question: `setup`, `quality`, `price`, `missing_feature`, `other`, or `none` when the operator skips it. The event carries `hasComment` but never the comment itself. Polar stores the comment with the subscription.
+
+`billing.package_subscription_started` fires once, when a partner's business starts paying for its package on the partner's Stripe account. The Connect webhook records it in the transaction that writes the live subscription to the business's billing account. Redeliveries and later news of the same live subscription don't repeat it. It carries `partnerId`, `packageId` and `currency`, the package's, and never the price.
+
+`billing.extra_number_bought` fires once, when the worker finishes buying an extra number for one of a business's agents. It carries `countryCode` and `charged`, which is false on a plan with no number limit, and never the price.
+
+- `billing.subscription_started`
+- `billing.subscription_canceled`
+- `billing.package_subscription_started`
+- `billing.extra_number_bought`
+
+### Operations events
+
+Outbox health is reported durably from the worker. A tenant-scoped `outbox.backlogSample` job runs every 60 seconds for each active business, counts that business's publishable outbox rows, and records `ops.outbox.backlog_sample` with `deploymentMode` and `backlogBucket`. A zero backlog is not emitted, so the event tracks real backlog without idle-workspace noise.
+
+`ops.outbox.flush_failed` remains a registered but undelivered contract. The dispatcher runs as `lobbystack_dispatcher`, which has no write grant on `product_events`, and a global poll failure has no tenant to scope an RLS-safe row to. Until a worker-role consumer exists, dispatcher failures are tracked by OpenTelemetry counters (`lobbystack.outbox.dispatch_failures`, `lobbystack.outbox.dead_lettered`, `lobbystack.outbox.poll_failures`).
+
+- `ops.outbox.backlog_sample`
+- `ops.outbox.flush_failed`
+
+## Shared defaults
+
+All meaningful product and business events should include:
+
+- `deploymentMode`
+- `businessId` whenever the event happens within a business workspace or business runtime
+
+Use these identifiers whenever they are available:
+
+- `businessId`
+- `conversationId`
+- `callId`
+- `messageId`
+- `appointmentId`
+- `channel`
+- `provider`
+- `model`
+
+## Required properties by category
+
+### Web workflow events
+
+Always include:
+
+- `businessId`
+- `deploymentMode`
+
+Add route or target identifiers when relevant:
+
+- page views: `pathname`
+- business switching: `previousBusinessId`
+- contacts: `contactId`
+- message thread events: `conversationId`, `channel`
+- settings saves: `setting`
+- onboarding start events: `countryCode`
+- knowledge uploads: `section`, `contentType`
+- calendar disconnects: `provider`, `scope`; add `staffId` only for staff scope
+- voice follow-up: `callId`, `inboxItemId`
+
+### Conversation events
+
+Always include:
+
+- `businessId`
+- `deploymentMode`
+- `conversationId`
+- `channel`
+
+Add message-level context when relevant:
+
+- `messageId`
+- `provider`
+- `providerStatus`
+- `deliveryContext` for SMS delivery outcomes
+
+### Voice events
+
+Always include:
+
+- `businessId`
+- `deploymentMode`
+- `callId`
+- `provider`
+
+Add when available:
+
+- `conversationId`
+- `channel`
+- `reason` for booking failures
+- `model`
+
+### Appointment events
+
+Always include:
+
+- `businessId`
+- `deploymentMode`
+
+Add when relevant:
+
+- `appointmentId`
+- `serviceId`
+- `sourceChannel`
+- `channel`
+
+### Integration events
+
+Always include:
+
+- `businessId`
+- `deploymentMode`
+- `provider`
+- `scope`
+
+Add when staff-scoped:
+
+- `staffId`
+
+### Workflow events
+
+Emit `workflow.started` for event-driven business jobs, including delayed jobs. Do not emit it for envelopes explicitly marked as recurring maintenance or for internal product-event retention continuations; these can run for every business even when they immediately skip. Continue to emit `workflow.failed` when recurring maintenance fails. Do not infer recurrence from the legacy `scheduled` flag because delayed jobs also set it.
+
+Always include:
+
+- `deploymentMode`
+- `workflowName`
+- `scope`
+
+Include `businessId` for business-scoped jobs. Global workflow events require a separate RLS-safe durable path before they can be delivered.
+
+### Service health events
+
+Always include:
+
+- `deploymentMode`
+- `service`
+- `status`
+- `latencyMs`
+
+Add when relevant:
+
+- `httpStatusCode`
+- `errorKind`
+- `targetUrlHost`
+
+### Alertable exceptions
+
+The admin app sends unexpected server errors to PostHog Error Tracking as `$exception` events with:
+
+- `service`
+- `operation`
+- `alertable`
+- `environment`
+- `release`
+- `route` and `method`, when a request failed
+
+See [Configure error tracking alerts](./provider-failure-error-tracking.md) for the matching notification.
+
+## Property guidelines
+
+- Prefer aggregate facts over raw content
+- Keep event properties stable and human-readable
+- Use booleans and counts instead of raw payload dumps
+- Use IDs for correlation, not customer identity
+
+Examples:
+
+- good: `mediaCount: 2`
+- good: `providerStatus: "queued"`
+- good: `sourceChannel: "voice"`
+- avoid: full SMS body
+- avoid: transcript text
+- avoid: prompt text
+- avoid: customer phone number
+- avoid: customer name
+
+## Group analytics
+
+PostHog should be modeled around `business` groups:
+
+- browser events identify operators as `user:{userId}`
+- business outcome events use `system:business:{businessId}`
+- grouped analytics use `business:{businessId}`
+- the partner console's events, and a queued sign-in event the console sends, carry `partnerId` and no business group, and go out only while the partner has telemetry on
+- customers are never PostHog persons
+
+## AI traces
+
+The domain package records AI traces with these PostHog event types:
+
+- `$ai_trace`
+- `$ai_generation`
+- `$ai_span`
+
+Trace properties should stay redacted and focus on:
+
+- trace ID
+- model
+- provider
+- latency
+- tool invocation
+- error state

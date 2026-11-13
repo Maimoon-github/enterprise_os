@@ -1,0 +1,392 @@
+{
+  "accessibility": {
+    "close": "Close",
+    "toggleSidebar": "Toggle sidebar",
+    "skipToContent": "Skip to main content",
+    "clearSearch": "Clear search"
+  },
+  "errors": {
+    "unexpected": "Something went wrong. Please try again."
+  },
+  "loading": {
+    "title": "Loading...",
+    "retry": "Retry loading",
+    "failed": "Some translations could not be loaded.",
+    "description": "Syncing your workspace and agent settings."
+  },
+  "language": {
+    "label": "Language",
+    "ariaLabel": "Select dashboard language",
+    "english": "English",
+    "french": "Français",
+    "spanish": "Español",
+    "serbian": "Srpski"
+  },
+  "callerLanguage": {
+    "en": "English",
+    "fr": "French",
+    "es": "Spanish",
+    "sr": "Serbian",
+    "de": "German",
+    "pt": "Portuguese (Brazil)",
+    "it": "Italian",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "tr": "Turkish",
+    "vi": "Vietnamese",
+    "tl": "Tagalog",
+    "sv": "Swedish",
+    "ru": "Russian",
+    "uk": "Ukrainian"
+  },
+  "phoneCountry": {
+    "search": "Search countries or codes",
+    "noResults": "No country found."
+  },
+  "badges": {
+    "live": "Live",
+    "configured": "Configured",
+    "active": "Active",
+    "inactive": "Inactive",
+    "voice": "Voice",
+    "sms": "SMS"
+  },
+  "channels": {
+    "phoneCall": "Phone",
+    "webCall": "Web call",
+    "sms": "SMS",
+    "webChat": "Website",
+    "dashboard": "Dashboard",
+    "api": "API",
+    "instagram": "Instagram"
+  },
+  "contactFallback": {
+    "phoneCaller": "Phone caller",
+    "instagramUser": "Instagram user",
+    "webCaller": "Web caller",
+    "websiteVisitor": "Website visitor",
+    "unknown": "Unknown contact"
+  },
+  "labels": {
+    "customer": "Customer",
+    "receptionist": "Agent",
+    "prompt": "Prompt"
+  },
+  "aiPhoneNumber": {
+    "copy": "Copy AI phone number",
+    "copied": "AI phone number copied"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "Reload the dashboard and try again. The error has been reported.",
+    "reload": "Reload"
+  },
+  "feedback": {
+    "trigger": "Feedback",
+    "title": "Send feedback",
+    "description": "Tell us what would make this dashboard better.",
+    "label": "Feedback message",
+    "placeholder": "Have an idea to improve {{appName}}? Tell the team.",
+    "characterCount": "{{count}} / {{max}} characters",
+    "helpText": "Need help?",
+    "helpCenter": "Help Center",
+    "contactLink": "Contact us",
+    "helpTextSeparator": "or",
+    "docsLink": "see docs.",
+    "submit": "Send",
+    "toast": {
+      "sent": "Feedback sent.",
+      "failed": "We could not save that feedback."
+    }
+  },
+  "numberTrial": {
+    "outOfMinutes": "You're out of minutes. Calls now go to {{forwardTo}}.",
+    "stillAvailable": "{{number}} is still available. Subscribe now to get it back.",
+    "getReceptionistBack": "Get my agent back",
+    "getNumberBack": "Get my number back",
+    "chip_one": "Free trial · {{count}}d left",
+    "chip_other": "Free trial · {{count}}d left",
+    "viewPlans": "View plans"
+  },
+  "testWindow": {
+    "orCall": "Or call",
+    "message": "Message",
+    "send": "Send",
+    "sendFailed": "Message not sent. Try again.",
+    "typing": "Agent is typing"
+  },
+  "testCall": {
+    "trigger": "Test Call",
+    "start": "Start call",
+    "connecting": "Connecting...",
+    "hangUp": "Hang up",
+    "upgrade": "Upgrade plan",
+    "status": {
+      "idle": "Ready when you are",
+      "requesting_microphone": "Asking for microphone access",
+      "connecting": "Connecting to your AI agent",
+      "connected": "Live with your AI agent",
+      "ending": "Ending the call",
+      "ended": "Call ended",
+      "error": "Could not start the call"
+    },
+    "aria": {
+      "start": "Start test call",
+      "connecting": "Connecting test call",
+      "waitingForMicrophone": "Waiting for microphone permission",
+      "end": "End test call",
+      "endMuted": "End muted test call",
+      "ending": "Ending test call",
+      "retry": "Retry test call"
+    },
+    "errors": {
+      "microphoneBlocked": "Microphone access was blocked.",
+      "microphoneNotFound": "No microphone was found on this device.",
+      "microphoneInUse": "The microphone is already in use by another app.",
+      "gatewayTimeout": "The call took too long to connect.",
+      "gatewayUnreachable": "This page can't reach {{appName}} to start the call.",
+      "connectionDropped": "The voice connection dropped.",
+      "browserNoMicrophone": "This browser does not support microphone calls.",
+      "browserNoWebRtc": "This browser does not support live voice calls.",
+      "businessNotFound": "We couldn't find this workspace. Switch to an active workspace and try again.",
+      "rateLimited": "Too many test calls have been started. Please try again shortly.",
+      "voiceLimitReached": "This workspace has used this month's voice minutes.",
+      "unavailable": "Your AI agent is unavailable right now.",
+      "generic": "Something went wrong while starting the call."
+    }
+  },
+  "appointments": {
+    "title": "Appointments",
+    "details": {
+      "employee": "Employee",
+      "duration": "Duration",
+      "phone": "Phone",
+      "email": "Email",
+      "channel": "Booked via",
+      "saveNotes": "Save notes",
+      "savingNotes": "Saving…",
+      "notesSaved": "Notes saved.",
+      "notesFailed": "Couldn't save the notes."
+    },
+    "views": {
+      "list": "List",
+      "calendar": "Calendar",
+      "label": "View"
+    },
+    "when": {
+      "label": "Show",
+      "upcoming": "Upcoming",
+      "past": "Past",
+      "pastEmpty": "No past appointments in the last month."
+    },
+    "filter": {
+      "label": "Employee",
+      "all": "All employees"
+    },
+    "calendarView": {
+      "previous": "Previous",
+      "next": "Next",
+      "today": "Today",
+      "label": "Range",
+      "day": "Day",
+      "week": "Week",
+      "month": "Month",
+      "count_one": "{{count}} appointment",
+      "count_other": "{{count}} appointments",
+      "more": "+{{count}} more",
+      "allDay": "All day",
+      "newAt": "New appointment at {{time}}",
+      "block": "{{name}}, {{service}}, {{time}}",
+      "blockCancelled": "{{name}}, {{service}}, {{time}}, cancelled"
+    },
+    "timeOff": {
+      "action": "Time off",
+      "title": "Add time off",
+      "editTitle": "Edit time off",
+      "type": "Type",
+      "business": "Whole business",
+      "employee": "One employee",
+      "employeeLabelField": "Employee",
+      "employeePlaceholder": "Choose an employee",
+      "noEmployees": "No employees yet.",
+      "employeeRequired": "Choose an employee.",
+      "name": "Name",
+      "namePlaceholder": "e.g. Christmas Day, Half day Friday",
+      "nameRequired": "Enter a name.",
+      "hours": "Hours",
+      "allDay": "Closed all day",
+      "partDay": "Part of the day",
+      "startDate": "Start date",
+      "endDate": "End date",
+      "startTime": "Start time",
+      "endTime": "End time",
+      "endBeforeStart": "Pick an end after the start.",
+      "datesRequired": "Pick a start and end date.",
+      "reason": "Reason (optional)",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "keep": "Keep",
+      "deleteTitle": "Delete time off?",
+      "deleteDescription": "{{name}} comes off the calendar, and those times open for booking.",
+      "saved": "Time off saved.",
+      "deleted": "Time off deleted.",
+      "failed": "Couldn't save the time off.",
+      "overlap": "This overlaps other time off.",
+      "invalid": "Check the dates. Time off can't be over already or end more than two years out.",
+      "label": "Closed: {{name}}, {{time}}",
+      "employeeLabel": "{{employee}} off: {{name}}, {{time}}",
+      "employeeTitle": "{{employee}}: {{name}}",
+      "picker": {
+        "hours": "Hours",
+        "minutes": "Minutes",
+        "period": "AM or PM",
+        "hoursTitle": "HH",
+        "minutesTitle": "MM"
+      }
+    },
+    "chooseWorkspace": "Choose a workspace to view appointments.",
+    "time": "Time",
+    "customer": "Customer",
+    "service": "Service",
+    "staff": "Staff",
+    "status": "Status",
+    "calendar": "Calendar",
+    "loading": "Loading appointments…",
+    "unavailable": "Appointments are unavailable.",
+    "empty": "No upcoming appointments.",
+    "statuses": {
+      "confirmed": "Confirmed",
+      "cancelled": "Cancelled",
+      "completed": "Completed",
+      "no_show": "No-show",
+      "pending": "Pending",
+      "canceled": "Cancelled"
+    },
+    "calendarStates": {
+      "not_required": "Not required",
+      "pending": "Syncing",
+      "synced": "Synced",
+      "failed": "Sync failed",
+      "error": "Sync failed",
+      "cancelled": "Cancelled"
+    },
+    "actions": "Actions",
+    "rowActions": "Actions for {{time}}",
+    "cancel": {
+      "action": "Cancel",
+      "actionLabel": "Cancel appointment: {{time}}",
+      "approve": "Approve cancellation",
+      "title": "Cancel this appointment?",
+      "description": "{{appointment}}. We'll remove it from your connected calendar and skip its reminder.",
+      "requestDescription": "{{appointment}}. We'll remove it from your connected calendar, skip its reminder and close the request.",
+      "confirm": "Cancel",
+      "keep": "Keep",
+      "done": "Appointment cancelled",
+      "failed": "We couldn't cancel the appointment. Try again.",
+      "summary": "{{service}} for {{name}} on {{time}}",
+      "summaryNoService": "Appointment for {{name}} on {{time}}"
+    },
+    "reschedule": {
+      "approve": "Approve reschedule",
+      "title": "Move this appointment to {{time}}?",
+      "description": "{{appointment}} will move to {{time}}. We'll update your connected calendar and its reminder, and close the request.",
+      "confirm": "Move appointment",
+      "keep": "Keep current time",
+      "done": "Appointment moved.",
+      "failed": "We couldn't move the appointment. Try again.",
+      "unavailable": "That time isn't available any more. Pick another time.",
+      "notReschedulable": "This appointment can't be moved. It may have been cancelled.",
+      "passed": "The requested time has passed."
+    },
+    "move": {
+      "action": "Reschedule",
+      "otherTime": "Other time",
+      "actionLabel": "Reschedule appointment: {{time}}",
+      "title": "Reschedule appointment",
+      "description": "{{appointment}}",
+      "requested": "Requested: {{time}}",
+      "confirm": "Move appointment",
+      "moving": "Moving appointment...",
+      "keep": "Keep current time",
+      "done": "Appointment moved",
+      "failed": "We couldn't move the appointment. Try again.",
+      "taken": "That time is no longer open. Pick another."
+    },
+    "openings": {
+      "date": "Day",
+      "times": "Open times",
+      "noTimes": "No open times on this day.",
+      "timesFailed": "We couldn't load open times. Try again.",
+      "chooseService": "Choose a service first."
+    },
+    "create": {
+      "action": "New appointment",
+      "title": "New appointment",
+      "contact": "Contact",
+      "contactSearch": "Search by name or phone",
+      "noContacts": "No contacts with a phone number found.",
+      "contactsFailed": "We couldn't load contacts. Try again.",
+      "contactRequired": "Choose a contact.",
+      "newContact": "New contact",
+      "chooseContact": "Choose a contact",
+      "name": "Name",
+      "nameRequired": "Enter a name.",
+      "phone": "Phone",
+      "phoneCountry": "Phone country",
+      "phoneRequired": "Enter a phone number.",
+      "phoneInvalid": "Enter a full phone number.",
+      "service": "Service",
+      "servicePlaceholder": "Choose a service",
+      "serviceRequired": "Choose a service.",
+      "noServices": "Add a service first.",
+      "servicesFailed": "We couldn't load services. Try again.",
+      "staff": "Employee",
+      "anyone": "Anyone available",
+      "timeRequired": "Pick a time.",
+      "cancel": "Cancel",
+      "confirm": "Book appointment",
+      "booking": "Booking...",
+      "done": "Appointment booked",
+      "failed": "We couldn't book the appointment. Try again.",
+      "taken": "That time is no longer open. Pick another.",
+      "duration": "Duration (minutes)",
+      "durationInvalid": "Enter {{min}} to {{max}} minutes.",
+      "notes": "Notes",
+      "notesHint": "Visible to your agent",
+      "internalNotes": "Internal notes",
+      "internalNotesHint": "Staff only",
+      "notOpen": "This time isn't open. Pick another.",
+      "timeOff": "This time is unavailable: {{name}}."
+    }
+  },
+  "abandonIntent": {
+    "title": "Before you go",
+    "description": "Two quick questions. Either one helps.",
+    "issue": {
+      "label": "Ran into an issue?",
+      "placeholder": "Describe what happened so we can fix it."
+    },
+    "missing": {
+      "label": "Missing something?",
+      "placeholder": "Tell us what you'd like to see next."
+    },
+    "notNow": "Not now",
+    "submit": "Send",
+    "sentTitle": "Thank you",
+    "sentDescription": "We read every one of these.",
+    "close": "Close"
+  },
+  "websiteImport": {
+    "runningTitle": "Reading {{host}}",
+    "runningHint": "{{imported}} pages read so far, {{indexed}} ready for questions.",
+    "doneTitle": "Your agent has read {{host}}",
+    "doneHint_one": "{{count}} page is ready for questions.",
+    "doneHint_other": "{{count}} pages are ready for questions.",
+    "failedTitle": "We couldn't read {{host}}",
+    "failedHint": "Add your business details by hand, or try the import again from your dashboard.",
+    "inlineRunning": "Reading {{host}}. Pages read so far: {{count}}",
+    "stalledTitle": "We couldn't finish reading {{host}}"
+  }
+}

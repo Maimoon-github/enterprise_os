@@ -1,0 +1,224 @@
+"use client";
+
+import { Check } from "lucide-react";
+import type { TFunction } from "i18next";
+
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { planCards, type PlanCard } from "@lobbystack/shared";
+import type {
+  BillingInterval,
+  BillingPlanSlug,
+  HostedCheckoutPlanIntervals,
+} from "@lobbystack/shared";
+
+export type HostedUpgradePlan = "starter" | "pro";
+
+type BillingTranslation = TFunction<"settings">;
+
+function isHostedUpgradePlan(slug: PlanCard["slug"]): slug is HostedUpgradePlan {
+  return slug === "starter" || slug === "pro";
+}
+
+export function UpgradePlanDialog({
+  availableCheckoutPlans,
+  availableCheckoutIntervals,
+  billingInterval,
+  checkoutUnavailable,
+  currentPlan,
+  loading,
+  locale,
+  loadingPlan,
+  onBillingIntervalChange,
+  onContactEnterprise,
+  onDismissCheckout,
+  onOpenChange,
+  onStartCheckout,
+  open,
+  selectedPlan,
+  slowCheckout,
+  t,
+}: {
+  availableCheckoutPlans: Array<"starter" | "pro">;
+  availableCheckoutIntervals: HostedCheckoutPlanIntervals;
+  billingInterval: BillingInterval;
+  /** Whether the checkout waited long enough that the dialog stops polling and says payments are unavailable. */
+  checkoutUnavailable: boolean;
+  currentPlan: BillingPlanSlug;
+  loading: "checkout" | "portal" | null;
+  locale: string;
+  loadingPlan: HostedUpgradePlan | null;
+  onBillingIntervalChange: (billingInterval: BillingInterval) => void;
+  onContactEnterprise: () => void;
+  /** Stops polling the checkout and closes the dialog. */
+  onDismissCheckout: () => void;
+  onOpenChange: (open: boolean) => void;
+  onStartCheckout: (target: HostedUpgradePlan, billingInterval: BillingInterval) => void;
+  open: boolean;
+  /** The plan the dialog opens on, shown as the primary choice. */
+  selectedPlan: HostedUpgradePlan;
+  /** Whether the checkout has waited on the payment provider long enough to say so. */
+  slowCheckout: boolean;
+  t: BillingTranslation;
+}) {
+  const availableBillingIntervals = (["monthly", "annual"] as const).filter(
+    (interval) =>
+      availableCheckoutPlans.some((plan) =>
+        availableCheckoutIntervals[plan].includes(interval),
+      ),
+  );
+  const switcherIntervals =
+    availableBillingIntervals.length > 0
+      ? availableBillingIntervals
+      : (["monthly", "annual"] as const);
+  const fallbackBillingInterval: BillingInterval = switcherIntervals[0] ?? "monthly";
+  const selectedBillingInterval = switcherIntervals.includes(billingInterval)
+    ? billingInterval
+    : fallbackBillingInterval;
+
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-x-hidden overflow-y-auto sm:max-w-[72rem]">
+        <DialogHeader>
+          <DialogTitle>
+            {t("billing.upgradeDialog.title")}
+          </DialogTitle>
+          {checkoutUnavailable ? null : (
+            <DialogDescription>
+              {t("billing.upgradeDialog.description")}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {checkoutUnavailable ? (
+          <div className="flex flex-col items-start gap-4 rounded-xl border border-border/70 bg-muted/20 p-6" role="alert">
+            <p className="type-body-muted">
+              {t("billing.toast.paymentsUnavailable")}
+            </p>
+            <Button className="rounded-full" onClick={onDismissCheckout} type="button" variant="outline">
+              {t("billing.upgradeDialog.close")}
+            </Button>
+          </div>
+        ) : null}
+
+        {!checkoutUnavailable && slowCheckout ? (
+          <p className="type-body-muted" role="status">
+            {t("billing.upgradeDialog.providerSlow")}
+          </p>
+        ) : null}
+
+        {!checkoutUnavailable ? <div className="flex justify-center">
+          <Tabs onValueChange={(value) => onBillingIntervalChange(value as typeof selectedBillingInterval)} value={selectedBillingInterval}>
+            <TabsList aria-label={t("billing.upgradeDialog.billingIntervalLabel")}>
+              {switcherIntervals.map((interval) => (
+                <TabsTrigger key={interval} value={interval}>
+                  {t(`billing.upgradeDialog.billingIntervals.${interval}`)}
+                  {interval === "annual" ? (
+                    <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 type-label text-emerald-700">
+                      {t("billing.upgradeDialog.annualDiscount")}
+                    </span>
+                  ) : null}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div> : null}
+
+        {!checkoutUnavailable ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {planCards(locale).map((card) => {
+            const isCurrentPlan = currentPlan === card.slug;
+            const checkoutPlan = isHostedUpgradePlan(card.slug) ? card.slug : null;
+            const isEnterprisePlan = card.slug === "enterprise";
+            const isSelected = card.slug === selectedPlan;
+            const isSelectedIntervalAvailable =
+              checkoutPlan === null ||
+              availableCheckoutIntervals[checkoutPlan].includes(selectedBillingInterval);
+            const isAvailable =
+              isEnterprisePlan ||
+              (checkoutPlan !== null &&
+                availableCheckoutPlans.includes(checkoutPlan) &&
+                isSelectedIntervalAvailable);
+            const actionLabel = isCurrentPlan
+              ? t("billing.upgradeDialog.actions.currentPlan")
+              : card.cta;
+
+            return (
+              <section
+                className={cn(
+                  "flex min-h-[29rem] flex-col rounded-xl border bg-background p-5",
+                  isSelected
+                    ? "border-foreground/30 bg-muted/20"
+                    : "border-border/70",
+                )}
+                data-selected={isSelected || undefined}
+                key={card.slug}
+              >
+                <div className="mb-5">
+                  <h3 className="type-heading-xxs">
+                    {card.name}
+                  </h3>
+                  <div className="mt-4 flex items-baseline gap-1">
+                    <span className="type-metric">
+                      {card.price[selectedBillingInterval]}
+                    </span>
+                    {card.period ? (
+                      <span className="type-body-muted">
+                        {card.period}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-3 type-body-muted">
+                    {card.description[selectedBillingInterval]}
+                  </p>
+                </div>
+
+                <div className="flex-1 border-t border-border/60 pt-4">
+                  <ul className="flex flex-col gap-3">
+                    {card.lines.map((line) => (
+                      <li className="flex items-start gap-2.5 type-body" key={line.label}>
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                        <span className="whitespace-pre-line">
+                          {line.sublabel ? `${line.label}\n${line.sublabel}` : line.label}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <Button
+                  className="mt-6 w-full rounded-full"
+                  disabled={loading === "checkout" || isCurrentPlan || !isAvailable}
+                  loading={
+                    loading === "checkout" &&
+                    checkoutPlan !== null &&
+                    checkoutPlan === loadingPlan
+                  }
+                  loadingLabel={t("billing.actions.openingCheckout")}
+                  onClick={() => {
+                    if (checkoutPlan !== null) {
+                      onStartCheckout(checkoutPlan, selectedBillingInterval);
+                    } else if (isEnterprisePlan) {
+                      onContactEnterprise();
+                    }
+                  }}
+                  type="button"
+                  variant={isSelected ? "default" : "outline"}
+                >
+                  {actionLabel}
+                </Button>
+              </section>
+            );
+          })}
+        </div> : null}
+      </DialogContent>
+    </Dialog>
+  );
+}

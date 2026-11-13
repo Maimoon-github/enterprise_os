@@ -1,0 +1,1 @@
+{"name": "OpenAI", "domain": "openai.com", "industry": "AI / LLM", "tier": 1, "tracked_urls": [{"url": "https://openai.com/news", "source_type": "dynamic", "signal_hint": "product_launch"}], "id": "openai", "tracked_url_count": 1, "signal_count": 8, "high_significance_count": 3, "last_signal_at": "2026-06-06T15:58:22.461986+01:00"}

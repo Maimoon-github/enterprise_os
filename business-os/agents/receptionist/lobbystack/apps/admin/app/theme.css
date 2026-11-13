@@ -1,0 +1,619 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@source "../../../packages/web-voice/src";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Polar's radius scale (github.com/polarsource/polar, clients/apps/web/src/styles/globals.css): sm, md and lg follow --radius; xl, 2xl and 3xl keep Tailwind's defaults. */
+  --radius: 0.6rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  /* Polar's DataTable header row (clients/packages/orbit/src/components/datatable/DataTable.tsx): bg-gray-50. */
+  --table-header: oklch(0.985 0.002 247.839);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* Polar's Status colors (clients/packages/orbit/src/components/Status.tsx): gray-200/500, emerald-100/500, yellow-100/500, red-100/500 and indigo-100/500. */
+  --status-neutral: oklch(0.928 0.006 264.531);
+  --status-neutral-foreground: oklch(0.551 0.027 264.364);
+  --status-success: oklch(0.95 0.052 163.051);
+  --status-success-foreground: oklch(0.696 0.17 162.48);
+  --status-warning: oklch(0.973 0.071 103.193);
+  --status-warning-foreground: oklch(0.795 0.184 86.047);
+  --status-danger: oklch(0.936 0.032 17.717);
+  --status-danger-foreground: oklch(0.637 0.237 25.331);
+  --status-info: oklch(0.93 0.034 272.788);
+  --status-info-foreground: oklch(0.585 0.233 277.117);
+  /* Polar's gray Pill (clients/packages/orbit/src/components/Pill.tsx): gray-100 and gray-600. */
+  --pill: oklch(0.967 0.003 264.542);
+  --pill-foreground: oklch(0.446 0.03 256.802);
+  /* The appointments calendar's service colors: a soft fill, dark text on it (over 7:1) and a stronger edge, at eight hues. */
+  --calendar-1: oklch(0.94 0.045 250);
+  --calendar-1-foreground: oklch(0.33 0.09 250);
+  --calendar-1-accent: oklch(0.66 0.14 250);
+  --calendar-2: oklch(0.94 0.045 155);
+  --calendar-2-foreground: oklch(0.33 0.09 155);
+  --calendar-2-accent: oklch(0.66 0.14 155);
+  --calendar-3: oklch(0.94 0.045 80);
+  --calendar-3-foreground: oklch(0.33 0.09 80);
+  --calendar-3-accent: oklch(0.66 0.14 80);
+  --calendar-4: oklch(0.94 0.045 15);
+  --calendar-4-foreground: oklch(0.33 0.09 15);
+  --calendar-4-accent: oklch(0.66 0.14 15);
+  --calendar-5: oklch(0.94 0.045 295);
+  --calendar-5-foreground: oklch(0.33 0.09 295);
+  --calendar-5-accent: oklch(0.66 0.14 295);
+  --calendar-6: oklch(0.94 0.045 195);
+  --calendar-6-foreground: oklch(0.33 0.09 195);
+  --calendar-6-accent: oklch(0.66 0.14 195);
+  --calendar-7: oklch(0.94 0.045 50);
+  --calendar-7-foreground: oklch(0.33 0.09 50);
+  --calendar-7-accent: oklch(0.66 0.14 50);
+  --calendar-8: oklch(0.94 0.045 345);
+  --calendar-8-foreground: oklch(0.33 0.09 345);
+  --calendar-8-accent: oklch(0.66 0.14 345);
+  /* Hatching for closed hours and time off on the calendar. */
+  --calendar-closed: oklch(0.145 0 0 / 4%);
+  --calendar-time-off: oklch(0.145 0 0 / 9%);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: var(--background);
+  --card-foreground: oklch(0.985 0 0);
+  --table-header: oklch(0.205 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.809 0.105 251.813);
+  --chart-2: oklch(0.623 0.214 259.815);
+  --chart-3: oklch(0.546 0.245 262.881);
+  --chart-4: oklch(0.488 0.243 264.376);
+  --chart-5: oklch(0.424 0.199 265.638);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  /* Polar's dark Status colors: polar-700/500, then the 950 shade behind the 500 text. */
+  --status-neutral: hsl(0 0% 13%);
+  --status-neutral-foreground: hsl(0 0% 46%);
+  --status-success: oklch(0.262 0.051 172.552);
+  --status-success-foreground: oklch(0.696 0.17 162.48);
+  --status-warning: oklch(0.286 0.066 53.813);
+  --status-warning-foreground: oklch(0.795 0.184 86.047);
+  --status-danger: oklch(0.258 0.092 26.042);
+  --status-danger-foreground: oklch(0.637 0.237 25.331);
+  --status-info: oklch(0.257 0.09 281.288);
+  --status-info-foreground: oklch(0.585 0.233 277.117);
+  /* Polar's dark gray Pill: polar-700 and polar-300. */
+  --pill: hsl(0 0% 13%);
+  --pill-foreground: hsl(0 0% 62%);
+  /* Dark service colors: a deep fill with light text (over 7:1) and a brighter edge. */
+  --calendar-1: oklch(0.31 0.06 250);
+  --calendar-1-foreground: oklch(0.93 0.04 250);
+  --calendar-1-accent: oklch(0.72 0.13 250);
+  --calendar-2: oklch(0.31 0.06 155);
+  --calendar-2-foreground: oklch(0.93 0.04 155);
+  --calendar-2-accent: oklch(0.72 0.13 155);
+  --calendar-3: oklch(0.31 0.06 80);
+  --calendar-3-foreground: oklch(0.93 0.04 80);
+  --calendar-3-accent: oklch(0.72 0.13 80);
+  --calendar-4: oklch(0.31 0.06 15);
+  --calendar-4-foreground: oklch(0.93 0.04 15);
+  --calendar-4-accent: oklch(0.72 0.13 15);
+  --calendar-5: oklch(0.31 0.06 295);
+  --calendar-5-foreground: oklch(0.93 0.04 295);
+  --calendar-5-accent: oklch(0.72 0.13 295);
+  --calendar-6: oklch(0.31 0.06 195);
+  --calendar-6-foreground: oklch(0.93 0.04 195);
+  --calendar-6-accent: oklch(0.72 0.13 195);
+  --calendar-7: oklch(0.31 0.06 50);
+  --calendar-7-foreground: oklch(0.93 0.04 50);
+  --calendar-7-accent: oklch(0.72 0.13 50);
+  --calendar-8: oklch(0.31 0.06 345);
+  --calendar-8-foreground: oklch(0.93 0.04 345);
+  --calendar-8-accent: oklch(0.72 0.13 345);
+  --calendar-closed: oklch(1 0 0 / 4%);
+  --calendar-time-off: oklch(1 0 0 / 10%);
+}
+
+@theme inline {
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-table-header: var(--table-header);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-foreground: var(--status-neutral-foreground);
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-foreground: var(--status-danger-foreground);
+  --color-status-info: var(--status-info);
+  --color-status-info-foreground: var(--status-info-foreground);
+  --color-pill: var(--pill);
+  --color-pill-foreground: var(--pill-foreground);
+  --color-calendar-1: var(--calendar-1);
+  --color-calendar-1-foreground: var(--calendar-1-foreground);
+  --color-calendar-1-accent: var(--calendar-1-accent);
+  --color-calendar-2: var(--calendar-2);
+  --color-calendar-2-foreground: var(--calendar-2-foreground);
+  --color-calendar-2-accent: var(--calendar-2-accent);
+  --color-calendar-3: var(--calendar-3);
+  --color-calendar-3-foreground: var(--calendar-3-foreground);
+  --color-calendar-3-accent: var(--calendar-3-accent);
+  --color-calendar-4: var(--calendar-4);
+  --color-calendar-4-foreground: var(--calendar-4-foreground);
+  --color-calendar-4-accent: var(--calendar-4-accent);
+  --color-calendar-5: var(--calendar-5);
+  --color-calendar-5-foreground: var(--calendar-5-foreground);
+  --color-calendar-5-accent: var(--calendar-5-accent);
+  --color-calendar-6: var(--calendar-6);
+  --color-calendar-6-foreground: var(--calendar-6-foreground);
+  --color-calendar-6-accent: var(--calendar-6-accent);
+  --color-calendar-7: var(--calendar-7);
+  --color-calendar-7-foreground: var(--calendar-7-foreground);
+  --color-calendar-7-accent: var(--calendar-7-accent);
+  --color-calendar-8: var(--calendar-8);
+  --color-calendar-8-foreground: var(--calendar-8-foreground);
+  --color-calendar-8-accent: var(--calendar-8-accent);
+  --color-calendar-closed: var(--calendar-closed);
+  --color-calendar-time-off: var(--calendar-time-off);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 2rem;
+  /* Polar's shadow scale (Orbit's shadows tokens, as clients/apps/web/src/styles/globals.css sets them): xs and sm keep Tailwind's "0 1px 2px" (Orbit's s); md, lg and xl are Orbit's m, l and xl. */
+  --shadow-md: 0 0px 15px rgba(0 0 0 / 0.04), 0 0px 2px rgba(0 0 0 / 0.06);
+  --shadow-lg: 0 0px 20px rgba(0 0 0 / 0.04), 0 0px 5px rgba(0 0 0 / 0.06);
+  --shadow-xl: 0 0px 30px rgba(0 0 0 / 0.04), 0 0px 10px rgba(0 0 0 / 0.06);
+  --shadow-3xl: 0 0 50px rgba(0 0 0 / 0.02), 0 0 50px rgba(0 0 0 / 0.04);
+  --font-heading: var(--font-sans);
+  /* Polar's body weight (book, between Orbit's regular and medium), so font-normal matches the text around it. */
+  --font-weight-normal: 450;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  html {
+    @apply overflow-x-hidden font-sans;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply min-h-svh w-full antialiased bg-background text-foreground;
+    /* iOS Safari positions the drawer overlay absolutely; it needs a positioned body to cover the scrolled viewport. */
+    position: relative;
+  }
+
+  /* Polar's body text (clients/apps/web/src/styles/globals.css), which Geist Variable can draw. The website widget keeps its own. */
+  body:not([data-widget]) {
+    text-rendering: optimizeLegibility;
+    font-weight: 450;
+    letter-spacing: 0.015em;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+
+  body[data-scroll-locked] {
+    overflow: unset !important;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  @media screen and (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/* Diagonal lines over closed hours and time off on the appointments calendar. */
+@utility calendar-hatch-closed {
+  background-image: repeating-linear-gradient(135deg, var(--calendar-closed) 0 1px, transparent 1px 8px);
+}
+
+@utility calendar-hatch-time-off {
+  background-color: var(--calendar-closed);
+  background-image: repeating-linear-gradient(135deg, var(--calendar-time-off) 0 2px, transparent 2px 8px);
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+}
+
+/*
+ * Polar's type scale: Orbit's text roles (clients/packages/orbit/src/tokens/semantics.stylex.ts) on its
+ * font sizes, line heights and weights (value.stylex.ts). Geist Sans stands in for PP Neue Montreal, so the
+ * headings take the medium weight Polar's dashboard titles use, and drop the body's tracking.
+ * Role utilities leave color to the context; the named ones below them set it.
+ */
+@utility type-heading-xs {
+  @apply font-heading text-xl leading-snug font-medium tracking-normal md:text-2xl;
+}
+
+@utility type-heading-xxs {
+  @apply font-heading text-lg leading-snug font-medium tracking-normal md:text-xl;
+}
+
+@utility type-body-lg {
+  @apply text-base leading-normal;
+}
+
+@utility type-title {
+  @apply text-sm leading-normal font-medium;
+}
+
+@utility type-body {
+  @apply text-sm leading-normal;
+}
+
+@utility type-label {
+  @apply text-xs leading-snug font-medium;
+}
+
+@utility type-caption {
+  @apply text-xs leading-snug;
+}
+
+/* Polar's Orbit Button label (clients/packages/orbit/src/components/Button.tsx), for buttons and their placeholders. */
+@utility type-button {
+  @apply text-sm tracking-[0.01em];
+  font-weight: 550;
+}
+
+@utility type-button-sm {
+  @apply text-xs tracking-[0.01em];
+  font-weight: 550;
+}
+
+@utility type-page-title {
+  @apply type-heading-xs text-foreground;
+}
+
+@utility type-section-title {
+  @apply type-heading-xxs text-foreground;
+}
+
+@utility type-section-description {
+  @apply type-body text-muted-foreground;
+}
+
+/* Polar's compact metric chart title: Orbit's body size at the title weight. */
+@utility type-card-title {
+  @apply text-base leading-normal font-medium;
+}
+
+@utility type-item-title {
+  @apply type-title text-foreground;
+}
+
+@utility type-body-muted {
+  @apply type-body text-muted-foreground;
+}
+
+@utility type-technical-value {
+  @apply type-body font-mono tracking-normal;
+}
+
+@utility type-meta {
+  @apply type-label text-muted-foreground;
+}
+
+@utility type-table-head {
+  @apply type-title text-muted-foreground;
+}
+
+/* Polar's metric chart number (MetricChartBox): Orbit's heading-l at the book weight, with figures that line up. */
+@utility type-metric {
+  @apply text-4xl leading-tight tracking-normal text-foreground tabular-nums md:text-5xl;
+  font-weight: 350;
+}
+
+/* Polar's metric tile number (MiniMetricChartBox): 24px at the body weight. */
+@utility type-metric-sm {
+  @apply text-2xl leading-tight font-normal tracking-normal text-foreground tabular-nums;
+}
+
+@utility type-empty-title {
+  @apply type-title text-foreground;
+}
+
+@utility type-empty-description {
+  @apply type-body text-muted-foreground;
+}
+
+@utility no-scrollbar {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/*
+ * A row of tabs, chips or menu items that scrolls sideways when it doesn't
+ * fit. The row never grows past its container, so items are cut off at the
+ * content edge on both sides, which shows there's more to swipe. The native
+ * scrollbar is left alone: overlay scrollbars show only while scrolling. A
+ * row without padding of its own takes `scroll-row-bleed`, so focus rings
+ * aren't clipped.
+ */
+@utility scroll-row {
+  display: flex;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+
+  & > * {
+    flex-shrink: 0;
+  }
+}
+
+/* Room above and below a scroll row's items for focus rings, given back with a negative margin so the layout doesn't move. */
+@utility scroll-row-bleed {
+  padding-block: 4px;
+  margin-block: -4px;
+}
+
+@utility faded-bottom {
+  @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,transparent_10%,var(--background)_70%)] md:after:block;
+}
+
+.AccordionContent,
+.CollapsibleContent {
+  overflow: hidden;
+}
+
+.AccordionContent[data-open],
+.CollapsibleContent[data-open] {
+  animation: slideDown 300ms ease-out;
+}
+
+.AccordionContent[data-closed],
+.CollapsibleContent[data-closed] {
+  animation: slideUp 300ms ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+  }
+
+  to {
+    height: var(--accordion-panel-height, var(--collapsible-panel-height, auto));
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--accordion-panel-height, var(--collapsible-panel-height, auto));
+  }
+
+  to {
+    height: 0;
+  }
+}
+
+/* Draws the payment confirmation check from its short stroke up. */
+.billing-success-check path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: -24;
+  animation: drawCheck 400ms cubic-bezier(0.23, 1, 0.32, 1) 150ms forwards;
+}
+
+@keyframes drawCheck {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Uncovers part of an onboarding wait scene from its start. */
+@keyframes sceneWipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .billing-success-check path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes ringRotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.voice-aura-outer-ring {
+  width: 72%;
+  height: 72%;
+  border: 1px solid oklch(0.55 0.07 62 / 12%);
+}
+
+.voice-aura-outer-ring-active {
+  animation: ringRotate 12s linear infinite;
+}
+
+.voice-aura-button {
+  background: radial-gradient(
+    circle at 35% 35%,
+    oklch(0.34 0 0) 0%,
+    oklch(0.19 0 0) 50%,
+    oklch(0.12 0 0) 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 8%),
+    0 20px 64px oklch(0.35 0.04 60 / 25%),
+    0 6px 20px oklch(0.35 0.04 60 / 15%);
+}
+
+.voice-aura-button-highlight {
+  background: linear-gradient(
+    180deg,
+    oklch(1 0 0 / 10%) 0%,
+    oklch(1 0 0 / 0%) 40%
+  );
+}
+
+/*
+ * The soft gradient behind a page intro card's picture: two pastel glows over the muted surface, one pair per tone.
+ * Dark mode keeps the hues and drops the lightness, so the picture's page stands out the same way on both.
+ */
+:root {
+  --page-intro-blue-a: oklch(0.9 0.06 255);
+  --page-intro-blue-b: oklch(0.93 0.06 195);
+  --page-intro-green-a: oklch(0.92 0.07 160);
+  --page-intro-green-b: oklch(0.94 0.06 115);
+  --page-intro-amber-a: oklch(0.93 0.07 80);
+  --page-intro-amber-b: oklch(0.91 0.06 35);
+  --page-intro-rose-a: oklch(0.91 0.06 350);
+  --page-intro-rose-b: oklch(0.9 0.06 290);
+}
+
+.dark {
+  --page-intro-blue-a: oklch(0.32 0.08 255);
+  --page-intro-blue-b: oklch(0.3 0.06 195);
+  --page-intro-green-a: oklch(0.31 0.07 160);
+  --page-intro-green-b: oklch(0.3 0.06 115);
+  --page-intro-amber-a: oklch(0.32 0.07 80);
+  --page-intro-amber-b: oklch(0.3 0.07 35);
+  --page-intro-rose-a: oklch(0.31 0.07 350);
+  --page-intro-rose-b: oklch(0.3 0.07 290);
+}
+
+.page-intro-scene {
+  background-color: var(--muted);
+  background-image:
+    radial-gradient(90% 140% at 0% 0%, var(--page-intro-a) 0%, transparent 70%),
+    radial-gradient(90% 140% at 100% 100%, var(--page-intro-b) 0%, transparent 70%);
+}
+
+.page-intro-scene[data-tone="blue"] {
+  --page-intro-a: var(--page-intro-blue-a);
+  --page-intro-b: var(--page-intro-blue-b);
+}
+
+.page-intro-scene[data-tone="green"] {
+  --page-intro-a: var(--page-intro-green-a);
+  --page-intro-b: var(--page-intro-green-b);
+}
+
+.page-intro-scene[data-tone="amber"] {
+  --page-intro-a: var(--page-intro-amber-a);
+  --page-intro-b: var(--page-intro-amber-b);
+}
+
+.page-intro-scene[data-tone="rose"] {
+  --page-intro-a: var(--page-intro-rose-a);
+  --page-intro-b: var(--page-intro-rose-b);
+}

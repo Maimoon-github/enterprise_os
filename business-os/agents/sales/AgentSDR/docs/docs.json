@@ -1,0 +1,246 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "AgentSDR",
+  "description": "The open-source AI SDR: find leads, reach them on email, LinkedIn and WhatsApp, and let AI work every reply, from one workspace you run yourself.",
+  "colors": {
+    "primary": "#335cff",
+    "light": "#5b7bff",
+    "dark": "#1f3bad"
+  },
+  "icons": {
+    "library": "lucide"
+  },
+  "favicon": "/assets/logo.svg",
+  "logo": {
+    "light": "/assets/logo-light.svg",
+    "dark": "/assets/logo-dark.svg",
+    "href": "https://agentsdr.ai"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Get help",
+        "href": "/help"
+      },
+      {
+        "label": "Website",
+        "href": "https://agentsdr.ai"
+      }
+    ],
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Kandid-ai/AgentSDR"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "index",
+              "quickstart",
+              "concepts",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "Leads",
+            "pages": [
+              "leads/overview",
+              "leads/import",
+              "leads/custom-fields"
+            ]
+          },
+          {
+            "group": "Tables",
+            "pages": [
+              "tables/overview",
+              "tables/enrichment",
+              "tables/ai-columns"
+            ]
+          },
+          {
+            "group": "Email",
+            "pages": [
+              "email/connect",
+              "email/campaigns",
+              "email/inbox"
+            ]
+          },
+          {
+            "group": "LinkedIn",
+            "pages": [
+              "linkedin/accounts",
+              "linkedin/campaigns",
+              "linkedin/messages"
+            ]
+          },
+          {
+            "group": "WhatsApp",
+            "pages": [
+              "whatsapp/accounts",
+              "whatsapp/campaigns",
+              "whatsapp/calling"
+            ]
+          },
+          {
+            "group": "AI CRM",
+            "pages": [
+              "crm/overview",
+              "crm/action-required",
+              "crm/pipeline",
+              "crm/sequences",
+              "crm/knowledge"
+            ]
+          },
+          {
+            "group": "Analytics",
+            "pages": [
+              "analytics"
+            ]
+          },
+          {
+            "group": "Workspace",
+            "pages": [
+              "workspace/organizations",
+              "workspace/ai-provider",
+              "workspace/sending-rules"
+            ]
+          },
+          {
+            "group": "Help",
+            "pages": [
+              "help"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Self-hosting",
+        "groups": [
+          {
+            "group": "Self-hosting",
+            "pages": [
+              "self-hosting",
+              "self-hosting/docker-compose",
+              "self-hosting/from-source",
+              "self-hosting/dokploy",
+              "self-hosting/production",
+              "self-hosting/demo",
+              "self-hosting/troubleshooting"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations",
+              "integrations/google-workspace",
+              "integrations/gmail-reply-sync",
+              "integrations/unipile",
+              "integrations/cloudflare-r2",
+              "integrations/openrouter",
+              "integrations/langfuse",
+              "integrations/enrichment-providers",
+              "integrations/resend",
+              "integrations/google-sign-in"
+            ]
+          },
+          {
+            "group": "Policies",
+            "pages": [
+              "responsible-use"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developers",
+        "groups": [
+          {
+            "group": "Contributing",
+            "pages": [
+              "development",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "api",
+              "database",
+              "multi-tenancy/conventions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Kandid-ai/AgentSDR",
+      "website": "https://agentsdr.ai"
+    },
+    "links": [
+      {
+        "header": "Community",
+        "items": [
+          {
+            "label": "Ask a question",
+            "href": "https://github.com/Kandid-ai/AgentSDR/discussions"
+          },
+          {
+            "label": "Report a bug",
+            "href": "https://github.com/Kandid-ai/AgentSDR/issues/new?template=bug_report.yml"
+          },
+          {
+            "label": "Request a feature",
+            "href": "https://github.com/Kandid-ai/AgentSDR/issues/new?template=feature_request.yml"
+          },
+          {
+            "label": "Report a security issue",
+            "href": "https://github.com/Kandid-ai/AgentSDR/security/advisories/new"
+          }
+        ]
+      },
+      {
+        "header": "Project",
+        "items": [
+          {
+            "label": "GitHub",
+            "href": "https://github.com/Kandid-ai/AgentSDR"
+          },
+          {
+            "label": "Changelog",
+            "href": "https://github.com/Kandid-ai/AgentSDR/blob/main/CHANGELOG.md"
+          },
+          {
+            "label": "Contributing",
+            "href": "https://github.com/Kandid-ai/AgentSDR/blob/main/CONTRIBUTING.md"
+          },
+          {
+            "label": "License (MIT)",
+            "href": "https://github.com/Kandid-ai/AgentSDR/blob/main/LICENSE"
+          }
+        ]
+      }
+    ]
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude"
+    ]
+  }
+}

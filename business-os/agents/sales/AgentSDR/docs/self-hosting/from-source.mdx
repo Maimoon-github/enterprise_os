@@ -1,0 +1,138 @@
+---
+title: "From source"
+description: "Run AgentSDR directly with Bun and your own PostgreSQL: install, configure, create the schema, build, start and keep it running."
+icon: "terminal"
+---
+
+Use this path for development, or when you manage the runtime and the database yourself. If you just want a working server, [Docker Compose](/self-hosting/docker-compose) is simpler.
+
+<Info>
+**What you need**
+
+- [Bun](https://bun.sh) 1.2+ (the repository's tooling uses Bun) and Node.js 20.9+.
+- PostgreSQL 16 or newer, and an **empty** database for AgentSDR. `db:setup` refuses older servers. The schema is tested on 16, 17 and 18.
+- `git` and `openssl`. About 20 minutes.
+- A reverse proxy and a supervisor for production (below).
+</Info>
+
+## Overview
+
+You run one process (`next start`) against one database. Background workers and the [scheduled jobs](/self-hosting/production#scheduled-jobs) start inside it, so no cron is needed. If you would rather drive the jobs from your host's cron, see [Scheduled jobs from outside](#scheduled-jobs-from-outside).
+
+<Steps>
+  <Step title="Clone and install">
+    ```sh
+    git clone https://github.com/Kandid-ai/AgentSDR.git
+    cd AgentSDR
+    bun install
+    ```
+  </Step>
+  <Step title="Create an empty database">
+    ```sh
+    createdb agentsdr
+    ```
+    Or create it with your hosting provider's console.
+  </Step>
+  <Step title="Create .env.local">
+    ```sh
+    cp .env.example .env.local
+    ```
+    Next.js and Bun both read `.env.local`. Set at least these (generate each secret with `openssl rand -hex 32`):
+
+    ```sh
+    DATABASE_URL=postgres://agentsdr:your-password@localhost:5432/agentsdr
+    DATABASE_SSL=disable          # for a local database without TLS; remove for a hosted one
+    BETTER_AUTH_URL=http://localhost:3000
+    BETTER_AUTH_SECRET=PASTE
+    INTEGRATION_CREDENTIALS_KEY=PASTE
+    UNSUBSCRIBE_SECRET=PASTE
+    ```
+
+    `CRON_SECRET` and `OUTREACH_TICK_SECRET` are optional: set them only to call the job endpoints from outside (see below).
+
+    `POSTGRES_PASSWORD` and `PORT` in `.env.example` are for Docker Compose only. See [Docker Compose](/self-hosting/docker-compose) (the "Set your secrets" step) for what each secret does and the warning about `INTEGRATION_CREDENTIALS_KEY`. Every variable: [configuration reference](/configuration).
+  </Step>
+  <Step title="Create the schema">
+    ```sh
+    bun run db:setup
+    ```
+    `db:setup` reads `DATABASE_URL` (and `DATABASE_SSL`) from the environment; Bun loads `.env.local` automatically for it. It applies `db/schema.sql` and `db/seed.sql` in one transaction, so a failure leaves the database untouched. It refuses to run if the database already contains tables. See [Database](/database).
+
+    Optional, for local development only: `bun run db:seed:demo` creates a fictional demo organization. Sign in as `demo@example.com` / `demo-password-123` (override the password with `DEMO_PASSWORD`). It refuses to run with `NODE_ENV=production` or a `DATABASE_URL` that is not on localhost or 127.0.0.1 (unless you pass `--allow-remote`), because the data is fictional and must never land in a real database.
+  </Step>
+  <Step title="Build and start">
+    ```sh
+    bun run build
+    bun run start        # serves on http://localhost:3000
+    ```
+    For development use `bun run dev` instead of build and start. `next start` reads `.env.local` as well. The in-process outreach and WhatsApp campaign senders and the scheduled jobs run only when `NODE_ENV=production`, which `next start` sets; they do not run under `bun run dev`.
+  </Step>
+  <Step title="Sign up">
+    Open `/sign-up`, create the first account and your organization. See [first sign-up](/self-hosting/production#who-may-sign-up).
+  </Step>
+</Steps>
+
+## Run it under a process manager
+
+Put the process behind a reverse proxy (Caddy, nginx, a load balancer) that terminates TLS and forwards to port 3000. Run it under a supervisor (systemd, Docker, PM2) so it restarts on failure. A systemd unit, for example:
+
+```ini
+[Unit]
+Description=AgentSDR
+After=network.target postgresql.service
+
+[Service]
+WorkingDirectory=/opt/AgentSDR
+ExecStart=/usr/local/bin/bun run start
+Restart=always
+User=agentsdr
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Run one instance only. The outreach sender loop has no distributed lock; two instances would each send.
+
+## Scheduled jobs from outside
+
+Under `bun run start` the app runs its own scheduled jobs (daily rollover, LinkedIn outreach, webhook replay, pruning). To drive them from the host's cron instead, set `INTERNAL_SCHEDULER=false` and set the secrets you need in `.env.local`. Every request is `POST`. Replace `$APP` with your public origin. The meaning of each job, and how the endpoints avoid repeating the scheduler's work (`?force=1` to skip that), is in the [jobs section](/self-hosting/production#scheduled-jobs).
+
+- `OUTREACH_TICK_SECRET` endpoints take the secret as `?secret=...` or the `x-tick-secret` header. The endpoint answers 401 when the variable is unset.
+- `CRON_SECRET` endpoints take `Authorization: Bearer $CRON_SECRET`. With the secret the call serves every organization; a signed-in member calling the same route only runs their own organization.
+
+Example crontab (UTC). Cron does not read your `.env.local`, so define the variables at the top of the crontab (`crontab -e`):
+
+```cron
+APP=https://sdr.example.com
+OUTREACH_TICK_SECRET=paste-the-value
+CRON_SECRET=paste-the-value
+
+0 5 * * *    curl -fsS -X POST -H "x-tick-secret: $OUTREACH_TICK_SECRET" "$APP/api/outreach/build-queue"
+15 5 * * *   curl -fsS -X POST -H "x-tick-secret: $OUTREACH_TICK_SECRET" "$APP/api/outreach/mailboxes/watch"
+*/30 * * * * curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP/api/linkedin/jobs/run-outreach"
+*/10 * * * * curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP/api/linkedin/jobs/replay-webhooks"
+0 0 * * *    curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$APP/api/linkedin/jobs/reset-daily-limits"
+```
+
+The LinkedIn search queue (`/api/linkedin/jobs/run-search-queue`) is not part of the schedule; it runs when someone clicks Run, and can be called the same way if you want it on a timer. If you do not use LinkedIn, the `CRON_SECRET` jobs are not needed. If you do not use email outreach, the `OUTREACH_TICK_SECRET` jobs are not needed.
+
+Do not schedule `/api/outreach/tick`: the in-process scheduler already does it, and scheduling it as well double-ticks.
+
+## Check that it works
+
+<Check>
+`/sign-in` loads, and the app log shows `[scheduler] ...` lines as jobs run (the first LinkedIn outreach run comes at the next :00 or :30 UTC).
+</Check>
+
+If the log shows `[scheduler] Table scheduled_job_runs is missing`, see [Troubleshooting](/self-hosting/troubleshooting).
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Going to production" icon="rocket" href="/self-hosting/production">
+    HTTPS, backups, upgrades and the jobs table.
+  </Card>
+  <Card title="Troubleshooting" icon="life-buoy" href="/self-hosting/troubleshooting">
+    db:setup refusals, pool errors, silent email.
+  </Card>
+</CardGroup>

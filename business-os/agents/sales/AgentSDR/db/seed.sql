@@ -1,0 +1,33 @@
+-- Reference data every AgentSDR database needs, whatever organizations it
+-- holds. Applied by `bun run db:setup` after db/schema.sql; safe to re-run.
+--
+-- Per-organization defaults (the CRM pipeline and its response taxonomy, the
+-- core lead columns) are NOT here: each organization gets its own on first
+-- use (ensureCrmDefaults, ensureCoreColumns).
+
+-- The four fixed top-level reply categories (CHECK-constrained by name).
+INSERT INTO public.crm_categories (key, label, sort_order, is_system) VALUES
+  ('customer', 'Customer', 0, true),
+  ('interested', 'Interested', 1, true),
+  ('not_interested', 'Not Interested', 2, true),
+  ('other', 'Other', 3, true)
+ON CONFLICT (key) DO NOTHING;
+
+-- Legacy Master Inbox lead statuses, referenced by crm_leads.current_status_key.
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('already_using_tool', 'Already Using a Tool', 'not_interested', 'Comparison', '[{"unit": "days", "wait": 3, "count": 3}]', 'feature_updates', false, 2, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('case_study', 'Case Study', 'interested', 'Share info', '[{"unit": "days", "wait": 3, "count": 3}]', 'feature_updates', false, 4, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('customer', 'Customer', 'interested', 'Send bills', '[{"unit": "days", "wait": 30, "count": null}]', NULL, false, 11, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('demo_request', 'Demo Request', 'interested', 'Send demo', '[{"unit": "days", "wait": 1, "count": 5}]', 'feature_updates', false, 8, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('do_not_contact', 'DNC', 'not_interested', 'No action', '[]', 'no_action', true, 0, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('information_requested', 'Information Requested', 'interested', 'Share info', '[{"unit": "days", "wait": 3, "count": 3}]', 'feature_updates', false, 3, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('meeting_done', 'Meeting Done', 'interested', 'Minutes of meeting', '[{"unit": "days", "wait": 1, "count": 1}, {"unit": "days", "wait": 3, "count": 3}]', 'feature_updates', false, 7, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('meeting_no_show', 'Meeting No Show', 'interested', 'Reschedule', '[{"unit": "minutes", "wait": 0, "count": 1}, {"unit": "hours", "wait": 12, "count": 1}, {"unit": "days", "wait": 3, "count": 3}]', 'feature_updates', false, 6, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('meeting_requested', 'Meeting Requested', 'interested', 'Calendar/time', '[{"unit": "hours", "wait": 12, "count": 2}, {"unit": "days", "wait": 3, "count": 3}]', 'feature_updates', false, 5, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('not_interested_closed', 'Not Interested', 'not_interested', 'Feature updates', '[]', NULL, true, 16, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('not_required_now', 'Not Right Now', 'not_interested', 'Reachout mail', '[{"unit": "days", "wait": 60, "count": null}]', 'feature_updates', false, 1, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('other', 'Other', 'other', 'Manual triage', '[]', NULL, false, 14, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('out_of_office', 'Out of Office', 'other', 'Reachout mail', '[{"unit": "days", "wait": 3, "count": 1}]', NULL, false, 15, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('trial_requested', 'Trial Requested', 'interested', 'Onboarding emails', '[{"unit": "days", "wait": 1, "count": 5}]', NULL, false, 9, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('trial_user', 'Trial User', 'interested', 'Kandid integration', '[{"unit": "days", "wait": 30, "count": 1}, {"unit": "days", "wait": 1, "count": 4}]', NULL, false, 10, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('wrong_poc_connected', 'POC Connected', 'wrong_poc', 'X person shared email', '[{"unit": "days", "wait": 1, "count": 1}, {"unit": "days", "wait": 7, "count": 3}]', NULL, false, 13, true) ON CONFLICT (status_key) DO NOTHING;
+INSERT INTO public.crm_status_config (status_key, label, status_group, pending_action, followup_plan, closing_action, is_terminal, sort_order, active) VALUES ('wrong_poc_no_connect', 'No POC Connected', 'wrong_poc', 'Mail for right POC', '[{"unit": "days", "wait": 2, "count": 2}]', NULL, false, 12, true) ON CONFLICT (status_key) DO NOTHING;

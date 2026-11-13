@@ -1,0 +1,139 @@
+import { readFile } from "node:fs/promises";
+import { expect } from "@playwright/test";
+import { capturePlaywrightCheckpoint } from "../playwright-evidence";
+import { test } from "../playwright-test";
+import { conversationWithSubject, openMail } from "./mail-test-helpers";
+
+test("downloads opened attachment previews over the network", async ({
+  page,
+}, testInfo) => {
+  const { conversations, emailAccountId } = await openMail(page);
+  await conversationWithSubject(
+    page,
+    conversations,
+    "Reader Visual Message",
+  ).click();
+  const downloadButton = page.getByRole("button", {
+    name: "Download reader-preview.png",
+  });
+  await page
+    .getByRole("button", { name: "Preview reader-preview.png" })
+    .hover();
+  await expect(downloadButton).toBeVisible();
+  const downloadRequest = page.waitForRequest(
+    (request) =>
+      request.method() === "GET" &&
+      request.url().includes("/attachment-content"),
+  );
+  const download = page.waitForEvent("download");
+  await downloadButton.click();
+  const savedFile = await download;
+  expect(savedFile.suggestedFilename()).toBe("reader-preview.png");
+  expect(await savedFile.failure()).toBeNull();
+  const contentRequest = await downloadRequest;
+  expect(contentRequest.method()).toBe("GET");
+  expect(new URL(contentRequest.url()).pathname).toBe(
+    `/api/mail/v1/accounts/${emailAccountId}/attachment-content`,
+  );
+  expect(contentRequest.headers()["x-email-account-id"]).toBe(emailAccountId);
+  const savedPath = await savedFile.path();
+  expect(savedPath).not.toBeNull();
+  const savedBytes = await readFile(savedPath!);
+  expect(savedBytes.subarray(0, 8)).toEqual(
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-network-attachment-preview",
+  );
+});
+
+test("opens an attachment preview from its card", async ({
+  page,
+}, testInfo) => {
+  const { conversations } = await openMail(page);
+  await conversationWithSubject(
+    page,
+    conversations,
+    "Reader Visual Message",
+  ).click();
+  await page
+    .getByRole("button", { name: "Preview reader-preview.png" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "reader-preview.png" });
+  await expect(
+    dialog.getByRole("img", { name: "reader-preview.png" }),
+  ).toBeVisible();
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Download" }).click();
+  expect((await download).suggestedFilename()).toBe("reader-preview.png");
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-attachment-preview-dialog",
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
+test("keeps the preview open when its source message unmounts", async ({
+  page,
+}, testInfo) => {
+  const { conversations } = await openMail(page);
+  await conversationWithSubject(
+    page,
+    conversations,
+    "Reader Visual Message",
+  ).click();
+  const previewButton = page.getByRole("button", {
+    name: "Preview reader-preview.png",
+    includeHidden: true,
+  });
+  const message = previewButton.locator(
+    "xpath=ancestor::li[@data-thread-message-id]",
+  );
+  await previewButton.click();
+  const dialog = page.getByRole("dialog", { name: "reader-preview.png" });
+  await expect(
+    dialog.getByRole("img", { name: "reader-preview.png" }),
+  ).toBeVisible();
+
+  // Force the attachment subtree to unmount while the modal owns interaction;
+  // a real pointer cannot reach the message header behind it.
+  await message.locator(':scope > [role="button"]').evaluate((header) => {
+    (header as HTMLElement).click();
+  });
+  await expect(previewButton).toHaveCount(0);
+  await expect(
+    dialog.getByRole("img", { name: "reader-preview.png" }),
+  ).toBeVisible();
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-preview-after-source-unmount",
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});
+
+test("marks conversations with attachments in the thread list", async ({
+  page,
+}, testInfo) => {
+  const { conversations } = await openMail(page);
+  const row = conversationWithSubject(
+    page,
+    conversations,
+    "Reader Visual Message",
+  );
+  await row.scrollIntoViewIfNeeded();
+  await expect(row.getByText("Has attachment")).toBeAttached();
+  await expect(
+    conversationWithSubject(page, conversations, "Read Command Message"),
+  ).not.toContainText("Has attachment");
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-thread-list-attachment-indicator",
+  );
+});

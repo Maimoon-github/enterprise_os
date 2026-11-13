@@ -1,0 +1,11 @@
+# Maintainers are requested for review on every pull request.
+# Create the GitHub team below (Settings → Teams), give it write access,
+# then enable "Require review from Code Owners" in branch protection.
+* @Kandid-ai/agentsdr-maintainers
+
+# Areas where a mistake is a security or data-isolation problem.
+/src/lib/auth/      @Kandid-ai/agentsdr-maintainers
+/src/lib/tenancy/   @Kandid-ai/agentsdr-maintainers
+/src/proxy.ts       @Kandid-ai/agentsdr-maintainers
+/db/                @Kandid-ai/agentsdr-maintainers
+/.github/           @Kandid-ai/agentsdr-maintainers

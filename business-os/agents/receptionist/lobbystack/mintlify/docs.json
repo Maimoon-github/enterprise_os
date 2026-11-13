@@ -1,0 +1,686 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "almond",
+  "name": "LobbyStack",
+  "description": "Help Center and developer documentation for LobbyStack.",
+  "colors": {
+    "primary": "#0B0B0D",
+    "light": "#FFFFFF",
+    "dark": "#0B0B0D"
+  },
+  "favicon": "/favicon.svg",
+  "fonts": {
+    "family": "Geist"
+  },
+  "logo": {
+    "light": "/logo.svg",
+    "dark": "/logo-dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Lobbystack.com",
+        "href": "https://lobbystack.com"
+      },
+      {
+        "label": "",
+        "icon": "github",
+        "href": "https://github.com/lobbystack/lobbystack"
+      },
+      {
+        "label": "Log in",
+        "href": "https://app.lobbystack.com/login"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Try for free",
+      "name": "Try for free",
+      "href": "https://app.lobbystack.com/signup"
+    }
+  },
+  "redirects": [
+    {
+      "source": "/agent/instructions",
+      "destination": "/agent/rules"
+    },
+    {
+      "source": "/fr/agent/instructions",
+      "destination": "/fr/agent/rules"
+    },
+    {
+      "source": "/es/agent/instructions",
+      "destination": "/es/agent/rules"
+    },
+    {
+      "source": "/dashboard/calls",
+      "destination": "/dashboard/inbox"
+    },
+    {
+      "source": "/dashboard/messages",
+      "destination": "/dashboard/inbox"
+    },
+    {
+      "source": "/settings/phone-number",
+      "destination": "/agent/phone-number"
+    },
+    {
+      "source": "/settings/widget",
+      "destination": "/agent/widget"
+    },
+    {
+      "source": "/agent/ai-settings",
+      "destination": "/agent/greeting-and-voice"
+    },
+    {
+      "source": "/agent/ai-settings/",
+      "destination": "/agent/greeting-and-voice"
+    },
+    {
+      "source": "/agent/ai-settings/overview",
+      "destination": "/agent/greeting-and-voice"
+    },
+    {
+      "source": "/agent/ai-settings/appointment-changes",
+      "destination": "/agent/appointment-changes"
+    },
+    {
+      "source": "/agent/knowledge",
+      "destination": "/settings/knowledge"
+    },
+    {
+      "source": "/agent/services",
+      "destination": "/settings/services"
+    },
+    {
+      "source": "/agent/employees",
+      "destination": "/settings/employees"
+    },
+    {
+      "source": "/fr/dashboard/calls",
+      "destination": "/fr/dashboard/inbox"
+    },
+    {
+      "source": "/fr/dashboard/messages",
+      "destination": "/fr/dashboard/inbox"
+    },
+    {
+      "source": "/fr/settings/phone-number",
+      "destination": "/fr/agent/phone-number"
+    },
+    {
+      "source": "/fr/settings/widget",
+      "destination": "/fr/agent/widget"
+    },
+    {
+      "source": "/fr/agent/ai-settings",
+      "destination": "/fr/agent/greeting-and-voice"
+    },
+    {
+      "source": "/fr/agent/ai-settings/",
+      "destination": "/fr/agent/greeting-and-voice"
+    },
+    {
+      "source": "/fr/agent/ai-settings/overview",
+      "destination": "/fr/agent/greeting-and-voice"
+    },
+    {
+      "source": "/fr/agent/ai-settings/appointment-changes",
+      "destination": "/fr/agent/appointment-changes"
+    },
+    {
+      "source": "/fr/agent/knowledge",
+      "destination": "/fr/settings/knowledge"
+    },
+    {
+      "source": "/fr/agent/services",
+      "destination": "/fr/settings/services"
+    },
+    {
+      "source": "/fr/agent/employees",
+      "destination": "/fr/settings/employees"
+    },
+    {
+      "source": "/es/dashboard/calls",
+      "destination": "/es/dashboard/inbox"
+    },
+    {
+      "source": "/es/dashboard/messages",
+      "destination": "/es/dashboard/inbox"
+    },
+    {
+      "source": "/es/settings/phone-number",
+      "destination": "/es/agent/phone-number"
+    },
+    {
+      "source": "/es/settings/widget",
+      "destination": "/es/agent/widget"
+    },
+    {
+      "source": "/es/agent/ai-settings",
+      "destination": "/es/agent/greeting-and-voice"
+    },
+    {
+      "source": "/es/agent/ai-settings/",
+      "destination": "/es/agent/greeting-and-voice"
+    },
+    {
+      "source": "/es/agent/ai-settings/overview",
+      "destination": "/es/agent/greeting-and-voice"
+    },
+    {
+      "source": "/es/agent/ai-settings/appointment-changes",
+      "destination": "/es/agent/appointment-changes"
+    },
+    {
+      "source": "/es/agent/knowledge",
+      "destination": "/es/settings/knowledge"
+    },
+    {
+      "source": "/es/agent/services",
+      "destination": "/es/settings/services"
+    },
+    {
+      "source": "/es/agent/employees",
+      "destination": "/es/settings/employees"
+    }
+  ],
+  "navigation": {
+    "languages": [
+      {
+        "language": "en",
+        "default": true,
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "getting-started/account-setup",
+              "getting-started/claim-your-number",
+              "getting-started/forward-calls",
+              "getting-started/number-countries"
+            ]
+          },
+          {
+            "group": "General",
+            "pages": [
+              "dashboard/home",
+              "dashboard/inbox",
+              "dashboard/appointments",
+              "dashboard/notifications",
+              "dashboard/contacts",
+              "dashboard/analytics"
+            ]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "agent/overview",
+              "agent/manage-agents",
+              "agent/greeting-and-voice",
+              "agent/rules",
+              {
+                "group": "Calls and booking",
+                "pages": [
+                  "agent/calls-and-booking",
+                  "agent/appointment-changes"
+                ]
+              },
+              {
+                "group": "Channels",
+                "pages": [
+                  "agent/channels",
+                  "agent/phone-number",
+                  "agent/widget",
+                  "integrations/instagram"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Settings",
+            "pages": [
+              "settings/overview",
+              {
+                "group": "Workspace",
+                "pages": [
+                  "settings/business-details",
+                  "settings/knowledge",
+                  "settings/services",
+                  "settings/employees",
+                  "settings/team"
+                ]
+              },
+              {
+                "group": "Billing",
+                "pages": [
+                  "billing/plans",
+                  "billing/usage",
+                  "billing/affiliate-program"
+                ]
+              },
+              {
+                "group": "Connections",
+                "pages": [
+                  "integrations/overview",
+                  "integrations/google-calendar",
+                  "integrations/calcom",
+                  "integrations/calendly",
+                  "integrations/webhooks"
+                ]
+              },
+              {
+                "group": "Your account",
+                "pages": [
+                  "settings/account",
+                  "settings/notifications",
+                  "integrations/sms"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "White label",
+            "pages": [
+              "white-label/overview",
+              "white-label/sign-up",
+              "white-label/branding",
+              "white-label/team",
+              "white-label/businesses",
+              "white-label/templates",
+              "white-label/demos",
+              "white-label/packages",
+              "white-label/tiers",
+              "white-label/api-keys",
+              "white-label/mcp-for-agencies",
+              "white-label/settings",
+              "white-label/business-owners"
+            ]
+          },
+          {
+            "group": "API",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/requests",
+              "api/webhooks",
+              "api/cli"
+            ]
+          },
+          {
+            "group": "AI assistants",
+            "pages": [
+              "ai/setup-prompts",
+              "ai/mcp",
+              "ai/connect-claude",
+              "ai/connect-chatgpt",
+              "ai/connect-other-clients",
+              "ai/lobbystack-skill"
+            ]
+          },
+          {
+            "group": "API reference",
+            "openapi": "api-reference/openapi.json"
+          },
+          {
+            "group": "Self-hosting",
+            "pages": [
+              "self-hosting/overview",
+              "self-hosting/docker-compose",
+              "self-hosting/environment-variables",
+              "self-hosting/providers",
+              "self-hosting/white-label"
+            ]
+          }
+        ]
+      },
+      {
+        "language": "fr",
+        "navbar": {
+          "links": [
+            {
+              "label": "Lobbystack.com",
+              "href": "https://lobbystack.com/fr/"
+            },
+            {
+              "label": "",
+              "icon": "github",
+              "href": "https://github.com/lobbystack/lobbystack"
+            },
+            {
+              "label": "Se connecter",
+              "href": "https://app.lobbystack.com/fr/login"
+            }
+          ],
+          "primary": {
+            "type": "button",
+            "label": "Essayer gratuitement",
+            "name": "Essayer gratuitement",
+            "href": "https://app.lobbystack.com/fr/signup"
+          }
+        },
+        "groups": [
+          {
+            "group": "Premiers pas",
+            "pages": [
+              "fr/introduction",
+              "fr/quickstart",
+              "fr/getting-started/account-setup",
+              "fr/getting-started/claim-your-number",
+              "fr/getting-started/forward-calls",
+              "fr/getting-started/number-countries"
+            ]
+          },
+          {
+            "group": "Général",
+            "pages": [
+              "fr/dashboard/home",
+              "fr/dashboard/inbox",
+              "fr/dashboard/appointments",
+              "fr/dashboard/notifications",
+              "fr/dashboard/contacts",
+              "fr/dashboard/analytics"
+            ]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "fr/agent/overview",
+              "fr/agent/manage-agents",
+              "fr/agent/greeting-and-voice",
+              "fr/agent/rules",
+              {
+                "group": "Appels et rendez-vous",
+                "pages": [
+                  "fr/agent/calls-and-booking",
+                  "fr/agent/appointment-changes"
+                ]
+              },
+              {
+                "group": "Canaux",
+                "pages": [
+                  "fr/agent/channels",
+                  "fr/agent/phone-number",
+                  "fr/agent/widget",
+                  "fr/integrations/instagram"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Réglages",
+            "pages": [
+              "fr/settings/overview",
+              {
+                "group": "Espace de travail",
+                "pages": [
+                  "fr/settings/business-details",
+                  "fr/settings/knowledge",
+                  "fr/settings/services",
+                  "fr/settings/employees",
+                  "fr/settings/team"
+                ]
+              },
+              {
+                "group": "Facturation",
+                "pages": [
+                  "fr/billing/plans",
+                  "fr/billing/usage",
+                  "fr/billing/affiliate-program"
+                ]
+              },
+              {
+                "group": "Connexions",
+                "pages": [
+                  "fr/integrations/overview",
+                  "fr/integrations/google-calendar",
+                  "fr/integrations/calcom",
+                  "fr/integrations/calendly",
+                  "fr/integrations/webhooks"
+                ]
+              },
+              {
+                "group": "Votre compte",
+                "pages": [
+                  "fr/settings/account",
+                  "fr/settings/notifications",
+                  "fr/integrations/sms"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Marque blanche",
+            "pages": [
+              "fr/white-label/overview",
+              "fr/white-label/sign-up",
+              "fr/white-label/branding",
+              "fr/white-label/team",
+              "fr/white-label/businesses",
+              "fr/white-label/templates",
+              "fr/white-label/demos",
+              "fr/white-label/packages",
+              "fr/white-label/tiers",
+              "fr/white-label/api-keys",
+              "fr/white-label/mcp-for-agencies",
+              "fr/white-label/settings",
+              "fr/white-label/business-owners"
+            ]
+          },
+          {
+            "group": "API",
+            "pages": [
+              "fr/api/overview",
+              "fr/api/authentication",
+              "fr/api/requests",
+              "fr/api/webhooks",
+              "fr/api/cli"
+            ]
+          },
+          {
+            "group": "Assistants IA",
+            "pages": [
+              "fr/ai/setup-prompts",
+              "fr/ai/mcp",
+              "fr/ai/connect-claude",
+              "fr/ai/connect-chatgpt",
+              "fr/ai/connect-other-clients",
+              "ai/lobbystack-skill"
+            ]
+          },
+          {
+            "group": "Référence de l'API",
+            "openapi": {
+              "source": "api-reference/openapi.json",
+              "directory": "fr/api-reference"
+            }
+          },
+          {
+            "group": "Auto-hébergement",
+            "pages": [
+              "fr/self-hosting/overview",
+              "fr/self-hosting/docker-compose",
+              "fr/self-hosting/environment-variables",
+              "fr/self-hosting/providers",
+              "fr/self-hosting/white-label"
+            ]
+          }
+        ]
+      },
+      {
+        "language": "es",
+        "navbar": {
+          "links": [
+            {
+              "label": "Lobbystack.com",
+              "href": "https://lobbystack.com/es/"
+            },
+            {
+              "label": "",
+              "icon": "github",
+              "href": "https://github.com/lobbystack/lobbystack"
+            },
+            {
+              "label": "Iniciar sesión",
+              "href": "https://app.lobbystack.com/es/login"
+            }
+          ],
+          "primary": {
+            "type": "button",
+            "label": "Pruébelo gratis",
+            "name": "Pruébelo gratis",
+            "href": "https://app.lobbystack.com/es/signup"
+          }
+        },
+        "groups": [
+          {
+            "group": "Primeros pasos",
+            "pages": [
+              "es/introduction",
+              "es/quickstart",
+              "es/getting-started/account-setup",
+              "es/getting-started/claim-your-number",
+              "es/getting-started/forward-calls",
+              "es/getting-started/number-countries"
+            ]
+          },
+          {
+            "group": "General",
+            "pages": [
+              "es/dashboard/home",
+              "es/dashboard/inbox",
+              "es/dashboard/appointments",
+              "es/dashboard/notifications",
+              "es/dashboard/contacts",
+              "es/dashboard/analytics"
+            ]
+          },
+          {
+            "group": "Agentes",
+            "pages": [
+              "es/agent/overview",
+              "es/agent/manage-agents",
+              "es/agent/greeting-and-voice",
+              "es/agent/rules",
+              {
+                "group": "Llamadas y citas",
+                "pages": [
+                  "es/agent/calls-and-booking",
+                  "es/agent/appointment-changes"
+                ]
+              },
+              {
+                "group": "Canales",
+                "pages": [
+                  "es/agent/channels",
+                  "es/agent/phone-number",
+                  "es/agent/widget",
+                  "es/integrations/instagram"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Configuración",
+            "pages": [
+              "es/settings/overview",
+              {
+                "group": "Espacio de trabajo",
+                "pages": [
+                  "es/settings/business-details",
+                  "es/settings/knowledge",
+                  "es/settings/services",
+                  "es/settings/employees",
+                  "es/settings/team"
+                ]
+              },
+              {
+                "group": "Facturación",
+                "pages": [
+                  "es/billing/plans",
+                  "es/billing/usage",
+                  "es/billing/affiliate-program"
+                ]
+              },
+              {
+                "group": "Conexiones",
+                "pages": [
+                  "es/integrations/overview",
+                  "es/integrations/google-calendar",
+                  "es/integrations/calcom",
+                  "es/integrations/calendly",
+                  "es/integrations/webhooks"
+                ]
+              },
+              {
+                "group": "Tu cuenta",
+                "pages": [
+                  "es/settings/account",
+                  "es/settings/notifications",
+                  "es/integrations/sms"
+                ]
+              }
+            ]
+          },
+          {
+            "group": "Marca blanca",
+            "pages": [
+              "es/white-label/overview",
+              "es/white-label/sign-up",
+              "es/white-label/branding",
+              "es/white-label/team",
+              "es/white-label/businesses",
+              "es/white-label/templates",
+              "es/white-label/demos",
+              "es/white-label/packages",
+              "es/white-label/tiers",
+              "es/white-label/api-keys",
+              "es/white-label/mcp-for-agencies",
+              "es/white-label/settings",
+              "es/white-label/business-owners"
+            ]
+          },
+          {
+            "group": "API",
+            "pages": [
+              "es/api/overview",
+              "es/api/authentication",
+              "es/api/requests",
+              "es/api/webhooks",
+              "es/api/cli"
+            ]
+          },
+          {
+            "group": "Asistentes de IA",
+            "pages": [
+              "es/ai/setup-prompts",
+              "es/ai/mcp",
+              "es/ai/connect-claude",
+              "es/ai/connect-chatgpt",
+              "es/ai/connect-other-clients",
+              "ai/lobbystack-skill"
+            ]
+          },
+          {
+            "group": "Referencia de la API",
+            "openapi": {
+              "source": "api-reference/openapi.json",
+              "directory": "es/api-reference"
+            }
+          },
+          {
+            "group": "Autoalojamiento",
+            "pages": [
+              "es/self-hosting/overview",
+              "es/self-hosting/docker-compose",
+              "es/self-hosting/environment-variables",
+              "es/self-hosting/providers",
+              "es/self-hosting/white-label"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,167 @@
+---
+title: "Deploy with Docker Compose"
+description: "Run LobbyStack on one server with Docker Compose. You'll configure PostgreSQL, Redis, file storage, and HTTPS, then verify the deployment before going live."
+sidebarTitle: "Docker Compose"
+contentType: "Tutorial"
+---
+
+## Prerequisites
+
+- Docker Engine 24 or later with Compose v2
+- Node.js 22 or later, to generate secrets
+- at least 2 vCPU, 4 GB of RAM, and durable disk storage
+- a public DNS name for the dashboard
+- Twilio and OpenAI accounts for live calls, and a Twilio Elastic SIP trunk for phone calls
+
+## Configure the environment
+
+```bash
+git clone https://github.com/lobbystack/lobbystack.git
+cd lobbystack
+node scripts/generate-env.mjs
+```
+
+The script copies `.env.example` to `.env` and fills every PostgreSQL role password and internal secret with a random 64-character value. It won't overwrite an existing `.env` unless you pass `--force`, which also replaces every secret in it.
+
+Then open `.env` and set `APP_BASE_URL`, `OPENAI_API_KEY`, and your Twilio credentials. Services build their database connection strings from the role passwords, so you don't need to write any database URLs.
+
+Compose sets `STORAGE_PROVIDER=local` by default. The admin and worker mount the same persistent `storage_data` volume at `/var/lib/lobbystack/storage`.
+
+<Warning>
+  Do not expose a stack that still uses the example passwords or `change-me` secrets.
+</Warning>
+
+## Start LobbyStack
+
+```bash
+docker compose --env-file .env up -d --build
+docker compose ps
+```
+
+The migrator applies PostgreSQL migrations before the admin and worker services start. Health checks hold dependent services until their prerequisites are ready.
+
+The admin readiness response includes PostgreSQL, Redis, and storage checks. The worker readiness response includes PostgreSQL, Redis, and storage status.
+
+LobbyStack does not run monitoring containers. Application logs remain available through `docker compose logs`, and the health endpoints continue to work.
+
+## Serve HTTPS from Caddy
+
+Compose's Caddy serves plain HTTP for `APP_HOSTNAME` by default and publishes no port 443, for local use or behind your own HTTPS proxy. On a public server, Caddy can serve HTTPS itself: `docker-compose.tls.yml` switches it to `docker/caddy/Caddyfile.tls` and publishes port 443. Set these values in `.env`:
+
+```dotenv
+COMPOSE_FILE=docker-compose.yml:docker-compose.tls.yml
+HTTP_BIND_ADDRESS=0.0.0.0
+CADDY_ON_DEMAND_TLS=true
+```
+
+`COMPOSE_FILE` makes every `docker compose` command use both files. Point the dashboard's DNS name at the server, open ports 80 and 443, and restart the stack. Caddy gets a certificate for a hostname the first time someone visits it. Before it does, it asks the admin at `/api/tls/ask`, which approves these hostnames only:
+
+- the hostname in `APP_BASE_URL`, the origins in `AUTH_TRUSTED_ORIGINS`, and the hosts in `MARKETING_HOSTS`
+- your partners' subdomains of `PARTNER_BASE_DOMAIN`
+- the domains your partners connected, once the worker found their DNS pointing at your server and their TXT record in place
+
+A domain someone else points at your server gets no certificate. The admin answers Caddy during maintenance too, so new partner domains and renewals keep working.
+
+With `CADDY_ON_DEMAND_TLS=true`, partners connect a subdomain of their own website on the console's **Branding & domain** page. While you sell partner tiers through the `POLAR_PARTNER_*` products, a partner needs a paid tier for it; otherwise any partner can. The page shows two records to add: a CNAME pointing at [`PARTNER_DOMAIN_CNAME_TARGET`](/self-hosting/environment-variables#partners), and a TXT record that proves the partner controls the domain. Leave `CADDY_ON_DEMAND_TLS` at `false` while your Caddy still serves plain HTTP, because partners' domains would get no certificate.
+
+## Connect partners' domains through Cloudflare for SaaS
+
+If the DNS of `PARTNER_BASE_DOMAIN` is on Cloudflare, your partners' own domains can go through Cloudflare for SaaS instead of Caddy's on-demand TLS. Cloudflare then issues each domain's certificate, and the worker registers and checks each domain through Cloudflare's API. Set it up once:
+
+1. In the Cloudflare zone of `PARTNER_BASE_DOMAIN`, open **SSL/TLS** > **Custom Hostnames** and enable Cloudflare for SaaS.
+2. Add a proxied DNS record that points at your server, such as `host.partners.example.com`, and add it with **Add Fallback Origin** on the **Custom Hostnames** page.
+3. Create an API token with the **Zone** > **SSL and Certificates** > **Edit** permission for that zone.
+4. In `.env`, set the token as `CLOUDFLARE_SAAS_API_TOKEN` and the zone's ID as `CLOUDFLARE_SAAS_ZONE_ID`, then restart the stack.
+5. Set the zone's SSL/TLS encryption mode to **Full**. Cloudflare connects to your server with each partner's own domain, which your origin certificate doesn't cover.
+
+Your server must answer HTTPS on port 443 for any hostname, and pass each request to the admin with its `Host` header. Partners then point a CNAME record at the fallback origin, or at [`PARTNER_DOMAIN_CNAME_TARGET`](/self-hosting/environment-variables#partners) when you set it, and add the TXT record their console shows. With both Cloudflare for SaaS and `CADDY_ON_DEMAND_TLS` set, the deployment uses Cloudflare for SaaS.
+
+## Choose a storage backend
+
+The default local provider supports a single Docker host. Back up the `storage_data` volume with PostgreSQL and restore both from the same recovery point.
+
+Use S3 when the admin and worker run on different hosts. Set these values in `.env`:
+
+```dotenv
+STORAGE_PROVIDER=s3
+S3_BUCKET=lobbystack
+S3_REGION=us-east-1
+S3_ENDPOINT=
+S3_ACCESS_KEY_ID=replace-with-access-key
+S3_SECRET_ACCESS_KEY=replace-with-secret-key
+S3_FORCE_PATH_STYLE=false
+```
+
+AWS workloads may omit the access-key variables when the container can use an AWS credential role.
+
+MinIO remains available through a Compose profile. Configure the S3 variables for MinIO, then start the stack with the profile:
+
+```dotenv
+STORAGE_PROVIDER=s3
+S3_ENDPOINT=http://minio:9000
+S3_BUCKET=lobbystack
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=replace-with-a-long-minio-password
+S3_FORCE_PATH_STYLE=true
+```
+
+```bash
+docker compose --env-file .env --profile minio up -d --build
+```
+
+For local email inspection, start Mailpit:
+
+```bash
+docker compose --env-file .env --profile development up -d mailpit
+```
+
+## Export OpenTelemetry data
+
+OpenTelemetry export is disabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is empty. To send traces, metrics, and OpenTelemetry logs to PostHog, add these values to `.env`:
+
+```dotenv
+OTEL_EXPORTER_OTLP_ENDPOINT=https://us.i.posthog.com/i
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer your_posthog_project_token_here
+```
+
+Use your regional PostHog host and project token. LobbyStack appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` to the base URL. You can use the same variables with another OTLP-compatible backend.
+
+Restart the application containers after changing the values:
+
+```bash
+docker compose --env-file .env up -d
+```
+
+Direct product analytics and error reporting use their own PostHog configuration.
+
+## Verify the deployment
+
+```bash
+curl -fsS http://127.0.0.1:3000/api/health/ready
+curl -fsS http://127.0.0.1:3002/health/ready
+docker compose logs --since=10m admin worker
+```
+
+The default service ports bind to localhost. Put public traffic through Caddy or another trusted reverse proxy.
+
+## Production checklist
+
+- replace all development credentials and limit `.env` permissions
+- use a production HTTPS value for `APP_BASE_URL`
+- set `OPENAI_WEBHOOK_SECRET` and `TWILIO_SIP_TRUNK_SID` to answer phone calls. The worker won't provision a phone number without `TWILIO_SIP_TRUNK_SID`. The [voice calls variables](/self-hosting/environment-variables#voice-calls) list what each one does
+- set `WEB_CALL_ALLOWED_ORIGINS` to the exact sites that host your public demo call, if you run one
+- configure off-host PostgreSQL and file-storage backups
+- run a restore drill before accepting production traffic
+- restrict PostgreSQL, Redis, and optional MinIO ports to private networks
+- monitor admin, worker, queue, database, and object-storage health
+- pin image versions before planned upgrades
+
+## Upgrades
+
+```bash
+git pull --ff-only
+docker compose --env-file .env build
+docker compose --env-file .env up -d
+```
+
+Back up PostgreSQL and the configured storage backend before upgrading. Review new migrations and environment variables before restarting services.

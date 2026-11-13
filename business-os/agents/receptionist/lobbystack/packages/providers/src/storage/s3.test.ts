@@ -1,0 +1,147 @@
+import { Readable } from "node:stream";
+
+import { GetBucketCorsCommand, GetObjectCommand, HeadObjectCommand, PutBucketCorsCommand, PutObjectCommand, S3Client, type CORSRule } from "@aws-sdk/client-s3";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { createStorageProvider } from "./provider";
+import { InvalidByteRangeError } from "./range";
+import { S3StorageProvider } from "./s3";
+
+afterEach(() => { vi.restoreAllMocks(); });
+
+const origin = "https://app.example.com";
+
+function storage(): S3StorageProvider {
+  return new S3StorageProvider({ bucket: "uploads", region: "us-east-1", accessKeyId: "test", secretAccessKey: "test", corsOrigins: [origin] });
+}
+
+/** Answers GetBucketCors with `rules`, fails PutBucketCors with `putError`, and records every command. */
+function stubSend(rules?: CORSRule[], putError?: Error) {
+  return vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+    if (command instanceof GetBucketCorsCommand) return (rules ? { CORSRules: rules } : {}) as never;
+    if (command instanceof PutBucketCorsCommand && putError) throw putError;
+    return {} as never;
+  });
+}
+
+function putRules(send: ReturnType<typeof stubSend>): CORSRule[][] {
+  return send.mock.calls.map(([command]) => command).filter((command) => command instanceof PutBucketCorsCommand).map((command) => (command as PutBucketCorsCommand).input.CORSConfiguration?.CORSRules ?? []);
+}
+
+const upload = { key: "business/knowledge/object/file.pdf", contentType: "application/pdf", length: 4 };
+
+describe("S3StorageProvider browser uploads", () => {
+  it("allows the app origin before handing out an upload URL", async () => {
+    const send = stubSend();
+
+    await storage().createUpload(upload);
+
+    expect(putRules(send)).toEqual([[expect.objectContaining({ AllowedOrigins: [origin], AllowedMethods: ["PUT"], AllowedHeaders: ["*"] })]]);
+  });
+
+  it("says when the signed upload URL stops working", async () => {
+    stubSend([{ AllowedOrigins: [origin], AllowedMethods: ["PUT"] }]);
+
+    const signed = await storage().createUpload(upload);
+
+    expect(new URL(signed.url).searchParams.get("X-Amz-Expires")).toBe("900");
+    expect(Math.abs(signed.expiresAt.getTime() - (Date.now() + 900_000))).toBeLessThan(2_000);
+  });
+
+  it("keeps the bucket's other CORS rules", async () => {
+    const existing = { AllowedOrigins: ["https://other.example.com"], AllowedMethods: ["GET"] };
+    const send = stubSend([{ ...existing, ID: "" }]);
+
+    await storage().createUpload(upload);
+
+    expect(putRules(send)).toEqual([[existing, expect.objectContaining({ AllowedOrigins: [origin] })]]);
+  });
+
+  it("leaves the configuration alone when the origin can already upload", async () => {
+    const send = stubSend([{ AllowedOrigins: [origin], AllowedMethods: ["GET", "PUT"] }]);
+
+    await storage().createUpload(upload);
+
+    expect(putRules(send)).toEqual([]);
+  });
+
+  it("retries after a transient failure", async () => {
+    const send = stubSend(undefined, Object.assign(new Error("Slow down"), { name: "SlowDown" }));
+    const provider = storage();
+
+    await provider.createUpload(upload);
+    await provider.createUpload(upload);
+
+    expect(putRules(send)).toHaveLength(2);
+  });
+
+  it("stops trying when the bucket has no CORS API", async () => {
+    const send = stubSend(undefined, Object.assign(new Error("Not implemented"), { name: "NotImplemented" }));
+    const provider = storage();
+
+    await expect(provider.createUpload(upload)).resolves.toMatchObject({ url: expect.any(String) });
+    await provider.createUpload(upload);
+
+    expect(putRules(send)).toHaveLength(1);
+  });
+
+  it("leaves CORS alone for services that do not upload from the browser", async () => {
+    const send = stubSend();
+
+    await (createStorageProvider({ STORAGE_PROVIDER: "s3", S3_BUCKET: "uploads", APP_BASE_URL: origin, S3_ACCESS_KEY_ID: "test", S3_SECRET_ACCESS_KEY: "test" }) as S3StorageProvider).createUpload(upload);
+
+    expect(send.mock.calls.some(([command]) => command instanceof GetBucketCorsCommand || command instanceof PutBucketCorsCommand)).toBe(false);
+  });
+});
+
+describe("S3StorageProvider headObject", () => {
+  it("asks for the stored checksum, which S3 and MinIO only return on request", async () => {
+    vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof HeadObjectCommand) return (command.input.ChecksumMode === "ENABLED" ? { ContentLength: 4, ContentType: "application/pdf", ChecksumSHA256: "abc=" } : { ContentLength: 4, ContentType: "application/pdf" }) as never;
+      return {} as never;
+    });
+
+    await expect(storage().headObject({ key: upload.key })).resolves.toEqual({ length: 4, contentType: "application/pdf", checksum: "abc=" });
+  });
+});
+
+describe("S3StorageProvider putObject", () => {
+  it("sends the checksum it's given, so headObject returns it and an upload completed from the copy checks out", async () => {
+    const send = stubSend();
+    const body = new Uint8Array([1, 2, 3, 4]);
+
+    await storage().putObject({ key: upload.key, body, contentType: "application/pdf", checksum: "abc=" });
+    await storage().putObject({ key: upload.key, body, contentType: "application/pdf" });
+
+    const puts = send.mock.calls.map(([command]) => command).filter((command) => command instanceof PutObjectCommand).map((command) => (command as PutObjectCommand).input);
+    expect(puts.map((input) => input.ChecksumSHA256)).toEqual(["abc=", undefined]);
+  });
+});
+
+describe("S3StorageProvider.openObject", () => {
+  function stubGet(answer: (command: GetObjectCommand) => unknown) {
+    return vi.spyOn(S3Client.prototype, "send").mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) return answer(command) as never;
+      return {} as never;
+    });
+  }
+
+  it("streams the slice a Range header asks for, with its place in the object", async () => {
+    const send = stubGet(() => ({ Body: Readable.from([Buffer.from("abcd")]), ContentLength: 4, ContentRange: "bytes 10-13/100" }));
+    const opened = await storage().openObject({ key: "recording.wav", range: "bytes=10-13" });
+    expect(send.mock.calls.map(([command]) => command).find((command) => command instanceof GetObjectCommand)?.input).toEqual({ Bucket: "uploads", Key: "recording.wav", Range: "bytes=10-13" });
+    expect({ length: opened.length, totalLength: opened.totalLength, start: opened.start, end: opened.end }).toEqual({ length: 4, totalLength: 100, start: 10, end: 13 });
+    expect(Buffer.concat(await opened.body.toArray()).toString()).toBe("abcd");
+  });
+
+  it("streams the whole object without a range", async () => {
+    stubGet(() => ({ Body: Readable.from([Buffer.from("abcdef")]), ContentLength: 6 }));
+    const opened = await storage().openObject({ key: "recording.wav" });
+    expect({ length: opened.length, totalLength: opened.totalLength, start: opened.start }).toEqual({ length: 6, totalLength: 6, start: undefined });
+  });
+
+  it("turns S3's InvalidRange into the range error routes answer with 416", async () => {
+    stubGet(() => { throw Object.assign(new Error("The requested range is not satisfiable"), { name: "InvalidRange" }); });
+    await expect(storage().openObject({ key: "recording.wav", range: "bytes=500-" })).rejects.toBeInstanceOf(InvalidByteRangeError);
+  });
+});

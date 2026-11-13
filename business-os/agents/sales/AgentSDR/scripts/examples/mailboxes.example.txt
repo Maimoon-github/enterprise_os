@@ -1,0 +1,6 @@
+# One mailbox address per line; lines starting with # are ignored.
+# Each must belong to a domain your Google Workspace service account can impersonate.
+alex@example.com
+sam@example.com
+alex@example.org
+sam@example.org

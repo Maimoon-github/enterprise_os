@@ -1,0 +1,440 @@
+"use client";
+
+import { useReducer, useRef, useState } from "react";
+import { PauseIcon, PlayIcon, SquareIcon } from "lucide-react";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { Button } from "@/components/ui/button";
+import { SectionDescription } from "@/components/Typography";
+import { LoadingContent } from "@/components/LoadingContent";
+import { pauseAiQueue, resumeAiQueue } from "@/utils/queue/ai-queue";
+import { toastError } from "@/components/Toast";
+import { PremiumAlertWithData } from "@/components/PremiumAlert";
+import { usePremium } from "@/hooks/usePremium";
+import { SetDateDropdown } from "@/app/(app)/[emailAccountId]/assistant/SetDateDropdown";
+import { useBeforeUnload } from "@/hooks/useBeforeUnload";
+import { useAiQueueState } from "@/store/ai-queue";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { Switch } from "@/components/ui/switch";
+import {
+  Item,
+  ItemActions,
+  ItemCard,
+  ItemContent,
+  ItemDescription,
+  ItemSeparator,
+  ItemTitle,
+} from "@/components/ui/item";
+import { hasTierAccess } from "@/utils/premium";
+import { RERUN_MINIMUM_TIER } from "@/utils/premium/rerun";
+import { usePremiumModal } from "@/app/(app)/premium/PremiumModal";
+import { BulkProcessActivityLog } from "@/app/(app)/[emailAccountId]/assistant/BulkProcessActivityLog";
+import {
+  bulkRunReducer,
+  getProgressMessage,
+  initialBulkRunState,
+} from "@/app/(app)/[emailAccountId]/assistant/bulk-run-rules-reducer";
+import { EndTrialButton } from "@/components/EndTrialButton";
+import { onRun } from "@/app/(app)/[emailAccountId]/assistant/bulk-run";
+import { useAiAutomationStatus } from "@/hooks/useAiAutomationStatus";
+
+const TRIAL_BULK_PROCESS_EMAIL_LIMIT = 2000;
+
+export function BulkRunRules() {
+  const { t, i18n } = useLingui();
+  const { emailAccountId } = useAccount();
+
+  const [isOpen, setIsOpen] = useState(false);
+  const { PremiumModal, openModal: openPremiumModal } = usePremiumModal();
+  const [state, dispatch] = useReducer(bulkRunReducer, initialBulkRunState);
+
+  const queue = useAiQueueState();
+
+  const {
+    hasAiAccess,
+    isLoading: isLoadingPremium,
+    premium,
+    tier,
+  } = usePremium();
+  const { data: aiAutomationStatus } = useAiAutomationStatus();
+
+  const isBusinessPlusTier = hasTierAccess({
+    tier: tier || null,
+    minimumTier: "PROFESSIONAL_MONTHLY",
+  });
+  const hasRerunAccess = hasTierAccess({
+    tier: tier || null,
+    minimumTier: RERUN_MINIMUM_TIER,
+  });
+  const isTrial = premium?.stripeSubscriptionStatus === "trialing";
+  const trialAiLimitMessage =
+    aiAutomationStatus?.status === "trial_ai_limit_reached"
+      ? aiAutomationStatus.message
+      : null;
+
+  const [startDate, setStartDate] = useState<Date | undefined>();
+  const [endDate, setEndDate] = useState<Date | undefined>();
+  const [includeRead, setIncludeRead] = useState(false);
+  const [rerun, setRerun] = useState(false);
+  const [generateDraftReplies, setGenerateDraftReplies] = useState(false);
+
+  const abortRef = useRef<() => void>(undefined);
+  const runIdRef = useRef(0);
+
+  // Derived state
+  const remaining = new Set(
+    [...state.processedThreadIds].filter((id) => queue.has(id)),
+  ).size;
+  const completed = state.processedThreadIds.size - remaining;
+  const isProcessing = queue.size > 0;
+  const isPaused = state.status === "paused";
+  const isBusy = isProcessing || state.status === "processing";
+  // A run can be waiting out a rate limit with nothing queued, so inputs that
+  // reset the run stay locked until it actually ends.
+  const isRunActive = isBusy || isPaused;
+  // Access can drop while a toggle is still on (the tier is revalidated in
+  // the background), so everything reads the gated values rather than the raw
+  // toggle state.
+  const isIncludeReadEnabled = includeRead && isBusinessPlusTier;
+  const isRerunEnabled = rerun && hasRerunAccess;
+
+  // Warn user before leaving page during processing (includes initial fetch)
+  useBeforeUnload(isBusy);
+
+  const handleStart = async () => {
+    const runId = ++runIdRef.current;
+    dispatch({ type: "START" });
+
+    if (!startDate) {
+      toastError({ description: t`Please select a start date` });
+      dispatch({ type: "RESET" });
+      return;
+    }
+    if (!emailAccountId) {
+      toastError({
+        description: t`Email account ID is missing. Please refresh the page.`,
+      });
+      dispatch({ type: "RESET" });
+      return;
+    }
+
+    // Ensure queue is not paused from a previous run
+    resumeAiQueue();
+
+    try {
+      abortRef.current = await onRun(
+        emailAccountId,
+        {
+          startDate,
+          endDate,
+          includeRead: isIncludeReadEnabled,
+          generateDraftReplies,
+          rerun: isRerunEnabled,
+          maxEmails: isTrial ? TRIAL_BULK_PROCESS_EMAIL_LIMIT : undefined,
+          i18n,
+        },
+        // A stopped run's queue can still report after a new run starts.
+        (threads) => {
+          if (runIdRef.current !== runId) return;
+          dispatch({ type: "THREADS_QUEUED", threads });
+        },
+        (completionStatus, count) => {
+          if (runIdRef.current !== runId) return;
+          if (completionStatus !== "success") {
+            dispatch({ type: "STOP", completedCount: count });
+            return;
+          }
+
+          dispatch({ type: "COMPLETE", count });
+        },
+        (resumeAt) => {
+          if (runIdRef.current !== runId) return;
+          dispatch({ type: "RATE_LIMIT_WAIT", resumeAt });
+        },
+      );
+    } catch (error) {
+      console.error("Failed to start bulk processing:", error);
+      toastError({
+        title: t`Failed to start`,
+        description: t`An error occurred. Please try again.`,
+      });
+      dispatch({ type: "RESET" });
+    }
+  };
+
+  const handlePauseResume = () => {
+    if (isPaused) {
+      resumeAiQueue();
+      dispatch({ type: "RESUME" });
+    } else {
+      pauseAiQueue();
+      dispatch({ type: "PAUSE" });
+    }
+  };
+
+  const handleStop = () => {
+    dispatch({ type: "STOP", completedCount: completed });
+    abortRef.current?.();
+  };
+
+  const progressMessage = getProgressMessage(state, remaining, i18n);
+
+  return (
+    <div>
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogTrigger asChild>
+          <Button type="button" variant="outline" size="sm">
+            <Trans>Process Past Emails</Trans>
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Bulk Process Emails</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>Run your rules on emails already in your inbox.</Trans>
+            </DialogDescription>
+          </DialogHeader>
+          {progressMessage && (
+            <div className="rounded-md border border-green-200 bg-green-50 px-2 py-1.5 dark:border-green-800 dark:bg-green-950">
+              <SectionDescription className="mt-0">
+                {progressMessage}
+              </SectionDescription>
+            </div>
+          )}
+          {state.rateLimitResumeAt && (
+            <div
+              role="status"
+              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
+            >
+              <Trans>
+                Your email provider is limiting requests, so processing is
+                paused. It will continue automatically around{" "}
+                {state.rateLimitResumeAt.toLocaleTimeString(i18n.locale)}.
+              </Trans>
+            </div>
+          )}
+          <LoadingContent loading={isLoadingPremium}>
+            <div className="flex min-w-0 flex-col space-y-4 overflow-hidden">
+              <PremiumAlertWithData className="mr-auto" />
+
+              <div className="grid grid-cols-2 gap-2">
+                <SetDateDropdown
+                  onChange={(date) => {
+                    setStartDate(date);
+                    dispatch({ type: "RESET" });
+                  }}
+                  value={startDate}
+                  placeholder={t`Set start date`}
+                  disabled={isRunActive}
+                />
+                <SetDateDropdown
+                  onChange={(date) => {
+                    setEndDate(date);
+                    dispatch({ type: "RESET" });
+                  }}
+                  value={endDate}
+                  placeholder={t`Set end date (optional)`}
+                  disabled={isRunActive}
+                />
+              </div>
+
+              <ItemCard>
+                <ToggleRow
+                  title={t`Include read emails`}
+                  upgradeLabel={t`Upgrade to use include read emails`}
+                  checked={isIncludeReadEnabled}
+                  onCheckedChange={setIncludeRead}
+                  disabled={isRunActive}
+                  onUpgrade={isBusinessPlusTier ? undefined : openPremiumModal}
+                />
+                <ItemSeparator />
+                <ToggleRow
+                  title={t`Rerun rules on already processed emails`}
+                  upgradeLabel={t`Upgrade to use rerun rules on already processed emails`}
+                  checked={isRerunEnabled}
+                  onCheckedChange={setRerun}
+                  disabled={isRunActive}
+                  onUpgrade={hasRerunAccess ? undefined : openPremiumModal}
+                />
+                <ItemSeparator />
+                <ToggleRow
+                  title={t`Generate draft replies`}
+                  checked={generateDraftReplies}
+                  onCheckedChange={setGenerateDraftReplies}
+                  disabled={isBusy}
+                />
+              </ItemCard>
+
+              {isTrial && (
+                <div className="flex flex-col gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200 sm:flex-row sm:items-center sm:justify-between">
+                  <span>
+                    {trialAiLimitMessage ??
+                      t`Trials can process up to ${TRIAL_BULK_PROCESS_EMAIL_LIMIT.toLocaleString()} past emails at a time.`}
+                  </span>
+                  <EndTrialButton
+                    size="sm"
+                    variant="outline"
+                    className="self-start border-blue-300 bg-white text-blue-900 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-100 dark:hover:bg-blue-900 sm:self-auto"
+                  />
+                </div>
+              )}
+
+              {(state.status !== "idle" ||
+                state.processedThreadIds.size > 0) && (
+                <BulkProcessActivityLog
+                  threads={Array.from(state.fetchedThreads.values())}
+                  processedThreadIds={state.processedThreadIds}
+                  aiQueue={queue}
+                  paused={isPaused}
+                  loading={
+                    state.status === "processing" &&
+                    state.processedThreadIds.size === 0
+                  }
+                />
+              )}
+
+              {(state.status === "idle" || state.status === "stopped") &&
+                !isRunActive && (
+                  <Button
+                    type="button"
+                    disabled={
+                      !startDate ||
+                      !emailAccountId ||
+                      !hasAiAccess ||
+                      trialAiLimitMessage !== null
+                    }
+                    onClick={handleStart}
+                  >
+                    <Trans>Process Emails</Trans>
+                  </Button>
+                )}
+              {isRunActive && (
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" onClick={handlePauseResume}>
+                    {isPaused ? (
+                      <>
+                        <PlayIcon className="mr-1.5 h-3.5 w-3.5" />
+                        <Trans>Resume</Trans>
+                      </>
+                    ) : (
+                      <>
+                        <PauseIcon className="mr-1.5 h-3.5 w-3.5" />
+                        <Trans>Pause</Trans>
+                      </>
+                    )}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleStop}>
+                    <SquareIcon className="mr-1.5 h-3.5 w-3.5" />
+                    <Trans>Stop</Trans>
+                  </Button>
+                </div>
+              )}
+
+              {state.runResult && state.runResult.count === 0 && (
+                <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                  <NoTargetedEmailsMessage
+                    includeRead={isIncludeReadEnabled}
+                    rerun={isRerunEnabled}
+                  />
+                </div>
+              )}
+            </div>
+          </LoadingContent>
+          <PremiumModal />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ToggleRow({
+  title,
+  checked,
+  onCheckedChange,
+  disabled,
+  onUpgrade,
+  upgradeLabel,
+}: {
+  title: string;
+  upgradeLabel?: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled: boolean;
+  onUpgrade?: () => void;
+}) {
+  return (
+    <Item size="sm">
+      <ItemContent>
+        <ItemTitle>{title}</ItemTitle>
+        {onUpgrade && (
+          <ItemDescription>
+            <Trans>Available on the Professional plan.</Trans>
+          </ItemDescription>
+        )}
+      </ItemContent>
+      <ItemActions>
+        {onUpgrade ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            aria-label={upgradeLabel}
+            onClick={onUpgrade}
+          >
+            <Trans>Upgrade</Trans>
+          </Button>
+        ) : (
+          <Switch
+            aria-label={title}
+            checked={checked}
+            onCheckedChange={onCheckedChange}
+            disabled={disabled}
+          />
+        )}
+      </ItemActions>
+    </Item>
+  );
+}
+
+function NoTargetedEmailsMessage({
+  includeRead,
+  rerun,
+}: {
+  includeRead: boolean;
+  rerun: boolean;
+}) {
+  if (includeRead && rerun) {
+    return (
+      <Trans>No emails found in your inbox in the selected date range.</Trans>
+    );
+  }
+  if (includeRead) {
+    return (
+      <Trans>
+        No unprocessed emails found in your inbox in the selected date range.
+      </Trans>
+    );
+  }
+  if (rerun) {
+    return (
+      <Trans>
+        No unread emails found in your inbox in the selected date range.
+      </Trans>
+    );
+  }
+  return (
+    <Trans>
+      No unread, unprocessed emails found in your inbox in the selected date
+      range.
+    </Trans>
+  );
+}

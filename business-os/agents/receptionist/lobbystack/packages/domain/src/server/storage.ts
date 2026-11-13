@@ -1,0 +1,449 @@
+import { randomUUID } from "node:crypto";
+
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, type SQL } from "drizzle-orm";
+
+import { businesses, calls, enqueueOutbox, knowledgeDocuments, storageObjects, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+import { getKnowledgeStorageLimitBytes, KNOWLEDGE_UPLOAD_MAX_BYTES } from "@lobbystack/shared";
+import { getKnowledgeStorageUsageBytes, KnowledgeStorageLimitError } from "./knowledge";
+import { requireActiveAgentInTransaction } from "./agents";
+import { isAllowedUploadContentType } from "@lobbystack/contracts";
+
+import { requireBusinessAdmin, requireBusinessMembership } from "../authz";
+import type { DomainContext } from "./context";
+import { contentExpiryForPlan, isContentRetentionEnabled, resolveBusinessBillingPlan } from "./contentRetentionPolicy";
+
+export type StorageProvider = {
+  createUpload(input: { key: string; contentType: string; length: number; checksum?: string }): Promise<{ url: string; headers?: Record<string, string>; expiresAt?: Date }>;
+  headObject(input: { key: string }): Promise<{ length: number; contentType: string; checksum?: string } | null>;
+  deleteObject(input: { key: string }): Promise<void>;
+  createDownloadUrl(input: { key: string; expiresInSeconds: number; range?: string }): Promise<string>;
+};
+
+export type BinaryStorageProvider = StorageProvider & {
+  /** A checksum, the SHA-256 in base64, is kept with the object, so headObject returns it. */
+  putObject(input: { key: string; body: Uint8Array; contentType: string; checksum?: string }): Promise<void>;
+};
+
+export async function createUpload(
+  context: DomainContext,
+  input: { userId: string; businessId: string; purpose: string; fileName: string; contentType: string; length: number; checksum?: string | undefined },
+  storage: StorageProvider,
+): Promise<{ objectId: string; key: string; url: string; headers?: Record<string, string> }> {
+  const planned = planUpload(input);
+  await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    if (input.purpose === "knowledge") await requireBusinessAdmin(tx, input);
+    else await requireBusinessMembership(tx, input);
+    await insertPendingUploadInTransaction(tx, { ...input, ...planned });
+  });
+  const upload = await storage.createUpload({ key: planned.key, contentType: input.contentType, length: input.length, ...(input.checksum !== undefined ? { checksum: input.checksum } : {}) });
+  return { objectId: planned.objectId, key: planned.key, url: upload.url, ...(upload.headers ? { headers: upload.headers } : {}) };
+}
+
+/** Checks an upload request and names the object it will be stored as. */
+export function planUpload(input: { businessId: string; purpose: string; fileName: string; contentType: string; length: number; checksum?: string | undefined }): { objectId: string; key: string } {
+  if (!isAllowedUploadContentType(input.purpose, input.contentType)) throw new Error(`Content type is not allowed for ${input.purpose} uploads.`);
+  if (input.purpose === "knowledge" && !input.checksum) throw new Error("Knowledge uploads require a SHA-256 checksum.");
+  if (input.purpose === "knowledge" && input.length > KNOWLEDGE_UPLOAD_MAX_BYTES) throw new Error("Documents must be 10 MB or smaller.");
+  const objectId = randomUUID();
+  return { objectId, key: uploadObjectKey(input.businessId, input.purpose, objectId, input.fileName) };
+}
+
+/** Where an upload's bytes are stored: under the business and purpose, in a folder of the object's own, with the file's name made safe for a path. */
+export function uploadObjectKey(businessId: string, purpose: string, objectId: string, fileName: string): string {
+  return `${businessId}/${purpose}/${objectId}/${storageFileName(fileName)}`;
+}
+
+/** A file's name as a storage key's last step: letters, digits, dots, hyphens and underscores. */
+export function storageFileName(fileName: string): string {
+  const name = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  // A name of only dots, such as "..", would be read as a path step rather than a file.
+  return /^\.*$/.test(name) ? "file" : name;
+}
+
+/** Records an upload that waits for its bytes. Unfinished uploads expire after a day. */
+export async function insertPendingUploadInTransaction(tx: DatabaseTransaction, input: { objectId: string; key: string; businessId: string; purpose: string; fileName: string; contentType: string; length: number; checksum?: string | undefined }): Promise<void> {
+  await tx.insert(storageObjects).values({ id: input.objectId, businessId: input.businessId, objectKey: input.key, purpose: input.purpose, fileName: input.fileName, contentType: input.contentType, contentLength: input.length, checksum: input.checksum, status: "pending", expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) });
+}
+
+/**
+ * The pending upload a route sends a browser's file on to storage for, when
+ * the browser can't reach storage itself: a partner's host can't, since the
+ * bucket accepts browser uploads from the host's origins only. It takes the
+ * access creating the upload took, and returns null when the upload isn't
+ * pending or has expired.
+ */
+export async function pendingUploadTarget(
+  context: DomainContext,
+  input: { userId: string; businessId: string; objectId: string },
+): Promise<{ key: string; contentType: string; length: number; checksum?: string } | null> {
+  return await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, input);
+    const row = (await tx.select().from(storageObjects).where(and(
+      eq(storageObjects.id, input.objectId),
+      eq(storageObjects.businessId, input.businessId),
+      eq(storageObjects.status, "pending"),
+      or(isNull(storageObjects.expiresAt), gte(storageObjects.expiresAt, new Date())),
+    )).limit(1))[0];
+    if (!row || row.contentLength === null) return null;
+    if (row.purpose === "knowledge") await requireBusinessAdmin(tx, input);
+    return { key: row.objectKey, contentType: row.contentType, length: row.contentLength, ...(row.checksum ? { checksum: row.checksum } : {}) };
+  });
+}
+
+export async function finalizeUpload(
+  context: DomainContext,
+  input: { userId: string; businessId: string; objectId: string; length: number; contentType: string; title?: string | undefined; tags?: string[] | undefined; checksum?: string | undefined; agentId?: string | undefined },
+  storage: StorageProvider,
+): Promise<void> {
+  const object = await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, input);
+    const row = (await tx.select().from(storageObjects).where(and(eq(storageObjects.id, input.objectId), eq(storageObjects.businessId, input.businessId), eq(storageObjects.status, "pending"))).limit(1))[0];
+    if (!row) {
+      throw new Error("Upload is missing or already finalized.");
+    }
+    return row;
+  });
+  const metadata = await storage.headObject({ key: object.objectKey });
+  if (!isAllowedUploadContentType(object.purpose, input.contentType)) throw new Error(`Content type is not allowed for ${object.purpose} uploads.`);
+  if (object.purpose === "knowledge" && (!input.checksum || !object.checksum)) throw new Error("Knowledge uploads require a SHA-256 checksum.");
+  if (!metadata || metadata.length !== input.length || metadata.length !== object.contentLength || metadata.contentType !== input.contentType || metadata.contentType !== object.contentType || (object.checksum && input.checksum !== object.checksum) || (input.checksum && metadata.checksum !== input.checksum)) {
+    throw new Error("Uploaded object metadata does not match the requested upload.");
+  }
+  await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessAdmin(tx, input);
+    if (input.agentId && object.purpose === "knowledge") await requireActiveAgentInTransaction(tx, input.businessId, input.agentId);
+    await completeUploadInTransaction(tx, { businessId: input.businessId, objectId: input.objectId, purpose: object.purpose, fileName: object.fileName, metadata, title: input.title, tags: input.tags, ...(object.purpose === "knowledge" && input.agentId ? { agentId: input.agentId } : {}) });
+  });
+}
+
+/**
+ * Marks an uploaded object ready once its bytes are checked. A knowledge
+ * upload becomes a knowledge document queued for extraction, and its id is
+ * returned; other uploads tell the dashboard they're ready. The caller has
+ * already checked who may do this. A business whose plan's knowledge storage
+ * is full is refused before anything changes.
+ */
+export async function completeUploadInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; objectId: string; purpose: string; fileName: string; metadata: { length: number; contentType: string; checksum?: string | undefined }; title?: string | undefined; tags?: string[] | undefined; agentId?: string | undefined },
+): Promise<string | null> {
+  const { metadata } = input;
+  if (input.purpose === "knowledge") {
+    // Locks the business so concurrent uploads check the limit one at a time.
+    await tx.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, input.businessId)).for("update");
+    const limit = getKnowledgeStorageLimitBytes(await resolveBusinessBillingPlan(tx, input.businessId));
+    // The limit counts indexed text, which indexing checks once it's extracted.
+    // Refuse here only when the plan is already full.
+    if (limit !== null && await getKnowledgeStorageUsageBytes(tx, input.businessId) >= limit) throw new KnowledgeStorageLimitError(limit);
+  }
+  const finalized = await tx.update(storageObjects).set({ status: "ready", contentLength: metadata.length, contentType: metadata.contentType, ...(metadata.checksum ? { checksum: metadata.checksum } : {}), updatedAt: new Date() }).where(and(eq(storageObjects.id, input.objectId), eq(storageObjects.businessId, input.businessId), eq(storageObjects.status, "pending"))).returning({ id: storageObjects.id });
+  if (!finalized.length) throw new Error("Upload is missing or already finalized.");
+  if (input.purpose === "knowledge") {
+    const [document] = await tx.insert(knowledgeDocuments).values({
+      businessId: input.businessId,
+      sourceType: "upload",
+      title: input.title?.trim() || input.fileName,
+      tags: input.tags ?? [],
+      storageObjectId: input.objectId,
+      mimeType: metadata.contentType,
+      status: "pending",
+      processingProgress: 0,
+      agentId: input.agentId ?? null,
+    }).returning({ id: knowledgeDocuments.id });
+    if (!document) {
+      throw new Error("Knowledge document could not be created for the uploaded object.");
+    }
+    await enqueueOutbox(tx, {
+      topic: "knowledge.extractDocument",
+      businessId: input.businessId,
+      aggregateType: "knowledge_document",
+      aggregateId: document.id,
+      dedupeKey: `knowledge:${document.id}:extract`,
+      payload: { documentId: document.id },
+    });
+    return document.id;
+  }
+
+  await enqueueOutbox(tx, {
+    topic: "realtime.publish",
+    businessId: input.businessId,
+    aggregateType: "storage_object",
+    aggregateId: input.objectId,
+    dedupeKey: `storage:${input.objectId}:ready`,
+    payload: { type: "document.progressed", entityId: input.objectId },
+  });
+  return null;
+}
+
+/** A ready, unexpired object of the business, for a member to download. Null when there is none. */
+export async function findDownloadableObject(
+  context: DomainContext,
+  input: { userId: string; businessId: string; objectId: string },
+): Promise<{ objectKey: string; fileName: string; contentType: string; contentLength: number | null } | null> {
+  return await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessMembership(tx, input);
+    return (await tx.select({
+      objectKey: storageObjects.objectKey,
+      fileName: storageObjects.fileName,
+      contentType: storageObjects.contentType,
+      contentLength: storageObjects.contentLength,
+    }).from(storageObjects).where(and(
+      eq(storageObjects.id, input.objectId),
+      eq(storageObjects.businessId, input.businessId),
+      eq(storageObjects.status, "ready"),
+      or(isNull(storageObjects.retentionUntil), gte(storageObjects.retentionUntil, new Date())),
+    )).limit(1))[0] ?? null;
+  });
+}
+
+export async function createObjectDownload(
+  context: DomainContext,
+  input: { userId: string; businessId: string; objectId: string; range?: string | undefined },
+  storage: StorageProvider,
+): Promise<{ url: string; fileName: string; contentType: string; length: number | null; headers?: Record<string, string> }> {
+  const object = await findDownloadableObject(context, input);
+  if (!object) {
+    throw new Error("Object not found.");
+  }
+  const url = await storage.createDownloadUrl({
+    key: object.objectKey,
+    expiresInSeconds: 300,
+    ...(input.range ? { range: input.range } : {}),
+  });
+  return {
+    url,
+    fileName: object.fileName,
+    contentType: object.contentType,
+    length: object.contentLength,
+    ...(input.range ? { headers: { range: input.range } } : {}),
+  };
+}
+
+// Durable, retryable deletion states. `status` is an unconstrained varchar(32)
+// and `finalizeUpload` only promotes `pending`, so a claimed row cannot be
+// resurrected while its provider object is being deleted.
+export const EXPIRED_UPLOAD_STATUS = "deleting_expired_upload";
+export const RETAINED_DELETE_STATUS = "deleting_retained";
+export const STORAGE_DELETE_BATCH = 500;
+
+type ClaimedExpiredObject = { id: string; objectKey: string; kind: "expired_upload" | "retained" };
+type StorageTimestampColumn = typeof storageObjects.expiresAt | typeof storageObjects.retentionUntil;
+type StorageStatusPredicate = ReturnType<typeof inArray> | ReturnType<typeof notInArray>;
+
+// Claims rows into their deleting state inside the caller's transaction,
+// rechecking the original expiry/retention predicate so a concurrent extension
+// is never swept. Rows already in a deleting state are re-claimed for retry.
+async function claimExpiredObjectsForDeletion(
+  tx: DatabaseTransaction,
+  businessId: string,
+  now: Date,
+): Promise<ClaimedExpiredObject[]> {
+  const claim = async (input: {
+    kind: ClaimedExpiredObject["kind"];
+    statusPredicate: StorageStatusPredicate;
+    deletingStatus: string;
+    expiryColumn: StorageTimestampColumn;
+    extra?: SQL | undefined;
+  }): Promise<ClaimedExpiredObject[]> => {
+    const predicate = and(
+      eq(storageObjects.businessId, businessId),
+      input.statusPredicate,
+      isNotNull(input.expiryColumn),
+      lt(input.expiryColumn, now),
+      input.extra,
+    );
+    const candidates = await tx.select({ id: storageObjects.id })
+      .from(storageObjects)
+      .where(predicate)
+      .orderBy(asc(input.expiryColumn), asc(storageObjects.id))
+      .limit(STORAGE_DELETE_BATCH)
+      .for("update", { skipLocked: true });
+    if (!candidates.length) return [];
+    const rows = await tx.update(storageObjects)
+      .set({ status: input.deletingStatus, updatedAt: now })
+      .where(and(
+        eq(storageObjects.businessId, businessId),
+        inArray(storageObjects.id, candidates.map((row) => row.id)),
+        input.statusPredicate,
+        isNotNull(input.expiryColumn),
+        lt(input.expiryColumn, now),
+        input.extra,
+      ))
+      .returning({ id: storageObjects.id, objectKey: storageObjects.objectKey });
+    return rows.map((row) => ({ ...row, kind: input.kind }));
+  };
+
+  // Expired uploads are claimed first so a row that carries both an expiry and
+  // a retention timestamp is never handled by both branches.
+  const uploads = await claim({
+    kind: "expired_upload",
+    statusPredicate: inArray(storageObjects.status, ["pending", EXPIRED_UPLOAD_STATUS]),
+    deletingStatus: EXPIRED_UPLOAD_STATUS,
+    expiryColumn: storageObjects.expiresAt,
+  });
+  const retained = await claim({
+    kind: "retained",
+    statusPredicate: notInArray(storageObjects.status, ["deleted", EXPIRED_UPLOAD_STATUS]),
+    deletingStatus: RETAINED_DELETE_STATUS,
+    expiryColumn: storageObjects.retentionUntil,
+    extra: ne(storageObjects.purpose, "recording"),
+  });
+  return [...uploads, ...retained];
+}
+
+/**
+ * Deletes stored files by key, such as the files of a business that was
+ * deleted, whose rows went with it. A key that's already gone counts as
+ * deleted, so running again is safe. It tries every key and then throws the
+ * first failure, so the job runs again for the keys left. Returns how many
+ * it deleted.
+ */
+export async function deleteStoredObjects(storage: StorageProvider, objectKeys: readonly string[]): Promise<number> {
+  const failures: unknown[] = [];
+  let deleted = 0;
+  for (const key of objectKeys) {
+    try {
+      await storage.deleteObject({ key });
+      if (await storage.headObject({ key })) throw new Error(`Storage object is still present after deletion: ${key}`);
+      deleted += 1;
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length) throw failures[0];
+  return deleted;
+}
+
+export async function deleteExpiredObjectsForBusiness(
+  context: DomainContext,
+  input: { businessId: string },
+  storage: StorageProvider,
+): Promise<number> {
+  const now = new Date();
+  // Claim rows before any external I/O so a concurrent finalize cannot turn a
+  // claimed `pending` upload into a live `ready` row while its object is gone.
+  const claimed = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) =>
+    await claimExpiredObjectsForDeletion(tx, input.businessId, now),
+  );
+  if (!claimed.length) return 0;
+
+  // Provider deletion and verification are external I/O and stay outside any
+  // database transaction. A row stays in its deleting state until its object is
+  // confirmed absent, so a provider error or a lingering object is retried by a
+  // later sweep instead of being finalized.
+  const succeededUploadIds: string[] = [];
+  const succeededRetainedIds: string[] = [];
+  const failures: unknown[] = [];
+  for (const object of claimed) {
+    try {
+      await storage.deleteObject({ key: object.objectKey });
+      if (await storage.headObject({ key: object.objectKey })) throw new Error(`Storage object is still present after deletion: ${object.objectKey}`);
+      (object.kind === "expired_upload" ? succeededUploadIds : succeededRetainedIds).push(object.id);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+
+  const deleted = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    let count = 0;
+    if (succeededUploadIds.length) {
+      const rows = await tx.delete(storageObjects)
+        .where(and(eq(storageObjects.businessId, input.businessId), inArray(storageObjects.id, succeededUploadIds), eq(storageObjects.status, EXPIRED_UPLOAD_STATUS)))
+        .returning({ id: storageObjects.id });
+      count += rows.length;
+    }
+    if (succeededRetainedIds.length) {
+      const rows = await tx.update(storageObjects)
+        .set({ status: "deleted", updatedAt: new Date() })
+        .where(and(eq(storageObjects.businessId, input.businessId), inArray(storageObjects.id, succeededRetainedIds), eq(storageObjects.status, RETAINED_DELETE_STATUS)))
+        .returning({ id: storageObjects.id });
+      count += rows.length;
+    }
+    return count;
+  });
+
+  // Succeeded rows are finalized first; the remaining failures stay retryable.
+  if (failures.length) throw failures[0];
+  return deleted;
+}
+
+export async function persistCallRecording(
+  context: DomainContext,
+  input: { businessId: string; callId: string; contentType: string; body: Uint8Array },
+  storage: BinaryStorageProvider,
+): Promise<string | null> {
+  const objectId = randomUUID();
+  const key = `${input.businessId}/recording/${input.callId}/${objectId}.wav`;
+  await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const call = (await tx.select({ id: calls.id }).from(calls).where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId))).limit(1))[0];
+    if (!call) {
+      throw new Error("Call not found.");
+    }
+    const retentionPlan = isContentRetentionEnabled() ? await resolveBusinessBillingPlan(tx, input.businessId) : null;
+    // The upload expiry lets the expired-upload sweep delete this copy if it is never linked to the call.
+    await tx.insert(storageObjects).values({ id: objectId, businessId: input.businessId, objectKey: key, purpose: "recording", fileName: `${input.callId}.wav`, contentType: input.contentType, contentLength: input.body.byteLength, status: "pending", retentionUntil: retentionPlan ? contentExpiryForPlan(retentionPlan, "recordings") : null, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) });
+  });
+  await storage.putObject({ key, body: input.body, contentType: input.contentType });
+  const linked = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    // A retry after a lost commit, or a concurrent job, may have linked another copy already; this one stays pending and expires.
+    const [call] = await tx.update(calls).set({ recordingObjectId: objectId, updatedAt: new Date() }).where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId), isNull(calls.recordingObjectId))).returning({ id: calls.id });
+    if (!call) return false;
+    await tx.update(storageObjects).set({ status: "ready", expiresAt: null, updatedAt: new Date() }).where(and(eq(storageObjects.id, objectId), eq(storageObjects.businessId, input.businessId)));
+    await enqueueOutbox(tx, { topic: "realtime.publish", businessId: input.businessId, aggregateType: "recording", aggregateId: input.callId, dedupeKey: `recording:${input.callId}:${objectId}:ready`, payload: { type: "recording.available", entityId: input.callId } });
+    return true;
+  });
+  return linked ? objectId : null;
+}
+
+export async function deleteCallRecording(
+  context: DomainContext,
+  input: { businessId: string; callId: string; objectId?: string },
+  storage: StorageProvider,
+): Promise<boolean> {
+  const object = await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    const row = (await tx.select({ objectId: storageObjects.id, objectKey: storageObjects.objectKey, status: storageObjects.status })
+      .from(calls)
+      .innerJoin(storageObjects, eq(storageObjects.id, calls.recordingObjectId))
+      .where(and(
+        eq(calls.id, input.callId),
+        eq(calls.businessId, input.businessId),
+        ...(input.objectId ? [eq(storageObjects.id, input.objectId)] : []),
+      ))
+      .limit(1))[0];
+    return row ?? null;
+  });
+  if (!object || object.status === "deleted") {
+    return false;
+  }
+
+  await storage.deleteObject({ key: object.objectKey });
+  if (await storage.headObject({ key: object.objectKey })) {
+    throw new Error("Recording object still exists after deletion.");
+  }
+  await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    await tx.update(storageObjects)
+      .set({ status: "deleted", updatedAt: new Date() })
+      .where(and(eq(storageObjects.id, object.objectId), ne(storageObjects.status, "deleted")));
+    await tx.update(calls)
+      .set({ recordingObjectId: null, updatedAt: new Date() })
+      .where(and(eq(calls.id, input.callId), eq(calls.businessId, input.businessId), eq(calls.recordingObjectId, object.objectId)));
+    await enqueueOutbox(tx, {
+      topic: "realtime.publish",
+      businessId: input.businessId,
+      aggregateType: "call",
+      aggregateId: input.callId,
+      dedupeKey: `recording:${input.callId}:${object.objectId}:deleted`,
+      payload: { type: "recording.available", entityId: input.callId, deleted: true },
+    });
+  });
+  return true;
+}
+
+export async function deleteCallRecordingForRetention(
+  context: DomainContext,
+  input: { businessId: string; callId: string; objectId?: string },
+  storage: StorageProvider,
+): Promise<boolean> {
+  if (!isContentRetentionEnabled()) return false;
+  return await deleteCallRecording(context, input, storage);
+}

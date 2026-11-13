@@ -1,0 +1,97 @@
+---
+title: "AI provider"
+description: "Connect your own OpenRouter keys, choose the providers and models AgentSDR may use, and set the default and transcription models."
+icon: "sparkles"
+---
+
+Every AI feature in AgentSDR runs through OpenRouter, using your organization's own keys. You choose which providers and models are allowed, and AgentSDR sends requests only to those, on your keys. You set this up once per organization, in **Settings**, **AI provider**.
+
+<Info>
+Only owners and admins can change AI provider settings. Members can use the AI features once an owner or admin has set this up. Connect your own keys at [OpenRouter](https://openrouter.ai).
+</Info>
+
+## What uses AI
+
+- **Reply classification and drafts.** The CRM classifies each inbound reply and drafts an answer, using the default model. See [Action required](/crm/action-required).
+- **AI columns in Tables.** Each AI column picks one of your allowed models, and a new column selects the default model automatically. See [AI columns](/tables/ai-columns).
+- **Call transcription.** Recordings of WhatsApp calls are transcribed with the transcription model. See [Calling](/whatsapp/calling).
+- **Other internal tasks**, such as the formula generator in Tables, use the default model too.
+
+If no model is configured, these features cannot run.
+
+## Set it up
+
+The page is four steps. Each shows a check mark when it is done, and the footer counts how many of the four are complete.
+
+<Frame caption="The AI provider page before a connection: the numbered sections run top to bottom.">
+  <img src="/assets/screenshots/app/ai-provider.png" alt="Settings, AI provider page with numbered sections for the OpenRouter account, providers and models, and the default model, and a Connect OpenRouter button" />
+</Frame>
+
+<Steps>
+  <Step title="Connect your OpenRouter account">
+    Choose **Connect OpenRouter** and enter:
+
+    - **Account name** (optional). Defaults to "OpenRouter account".
+    - **Inference API key**, which starts with `sk-or-v1-`.
+    - **Management API key**, which starts with `sk-or-mgmt-`.
+
+    The links on the step open the key pages in your OpenRouter dashboard. Choose **Verify & connect**. The keys are checked before they are saved and are stored encrypted.
+
+    The inference key runs requests. The management key only lets AgentSDR read which provider keys you have added to OpenRouter, so it can list them here. It cannot run completions. You can connect more than one account with **Connect another account** and pick the active one.
+  </Step>
+  <Step title="Pick providers and models">
+    The page lists the providers for which you have added a key in OpenRouter's BYOK settings. Switch a provider on, then open its model list, search it and tick the models you allow. Only models you tick are available in AgentSDR. Choose **Refresh providers** after you add a key in OpenRouter.
+
+    A provider appears greyed out when it has no key in OpenRouter's prioritized BYOK section (keys in the fallback section are not usable), or when OpenRouter returned no models for it.
+  </Step>
+  <Step title="Choose the default model">
+    Under **Default model**, pick a **Provider and model**. Only models you ticked that are text models supporting structured output are listed. Every internal AI task uses this model, and new compatible AI columns select it automatically.
+  </Step>
+  <Step title="Confirm shared capacity is off">
+    OpenRouter does not expose its shared capacity fallback through its API, so you confirm it yourself. In each enabled provider's OpenRouter BYOK settings, set the shared capacity fallback to **Never use shared capacity on this provider**, then tick **Never use shared capacity** in AgentSDR. Until you confirm it, AgentSDR will not send requests.
+  </Step>
+</Steps>
+
+Choose **Save AI settings**. Saving needs a connected account, at least one provider and model, a default model and the confirmation.
+
+<Warning>
+Switching to a different OpenRouter account clears your providers, models, default model, transcription model and the shared capacity confirmation. Set them up again for the new account.
+</Warning>
+
+## Provider pinning
+
+For text requests, AgentSDR tells OpenRouter to use only the provider of the model you selected, with fallbacks turned off, and to require that the provider supports every parameter in the request. Image requests use the same single-provider pin with fallbacks off. If that provider fails, the request fails instead of silently moving to another provider or to OpenRouter's shared capacity. This keeps your data on the providers you approved and your spend on your own keys.
+
+## Transcription model
+
+Under **Call transcription model**, pick the model that transcribes WhatsApp call recordings. Choose a model that accepts audio, for example a Gemini model. The list contains the models you ticked in step 2.
+
+The default is **Off**. While it is off, recordings are not transcribed, and a transcription attempt fails with a message pointing you back to this page. If you remove the chosen model or provider from the allowed list, the transcription model resets to **Off**.
+
+## When something is missing
+
+If a feature cannot find what it needs, the message names the gap, for example:
+
+- "Connect OpenRouter in AI Settings"
+- "Choose a default OpenRouter model in AI Settings"
+- "OpenRouter BYOK-only routing is not confirmed in AI Settings"
+- "Model ... is not enabled for ... in AI Settings"
+
+Each points back to one of the four steps above.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="AI columns" icon="table" href="/tables/ai-columns">
+    Use your models to research or write per row.
+  </Card>
+  <Card title="Action required" icon="inbox" href="/crm/action-required">
+    Where classifications and drafts show up.
+  </Card>
+  <Card title="Calling" icon="phone" href="/whatsapp/calling">
+    Recorded WhatsApp calls and their transcripts.
+  </Card>
+  <Card title="OpenRouter setup" icon="plug" href="/integrations/openrouter">
+    Create a key, add credits and connect it, step by step.
+  </Card>
+</CardGroup>

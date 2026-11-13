@@ -1,0 +1,39 @@
+{
+  "name": "@lobbystack/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json --noEmit && tsup --config tsup.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@lobbystack/agent-core": "workspace:*",
+    "@lobbystack/contracts": "workspace:*",
+    "@lobbystack/db": "workspace:*",
+    "@lobbystack/domain": "workspace:*",
+    "@lobbystack/jobs": "workspace:*",
+    "@lobbystack/providers": "workspace:*",
+    "@lobbystack/shared": "workspace:*",
+    "@lobbystack/telemetry": "workspace:*",
+    "bullmq": "^6.3.11",
+    "drizzle-orm": "^0.45.4",
+    "ioredis": "^6.0.0",
+    "mammoth": "^1.13.0",
+    "openai": "^7.28.0",
+    "pdf-parse": "2.4.5",
+    "tesseract.js": "^7.0.0",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@opentelemetry/api-logs": "^0.222.0",
+    "@types/node": "^26.6.6",
+    "posthog-node": "5.55.0",
+    "tsup": "8.5.1",
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.5"
+  }
+}

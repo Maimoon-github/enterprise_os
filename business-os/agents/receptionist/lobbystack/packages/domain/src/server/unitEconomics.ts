@@ -1,0 +1,126 @@
+import { and, asc, eq, sql } from "drizzle-orm";
+
+import { businessMemberships, businesses, enqueueOutbox, unitEconomicsEvents, unitEconomicsRollups, withBusinessTransaction, type DatabaseTransaction } from "@lobbystack/db";
+
+import type { DomainContext } from "./context";
+
+export type UnitEconomicsEventInput = {
+  businessId: string;
+  eventKey: string;
+  eventKind: string;
+  channel: string;
+  costUsd?: number | null | undefined;
+  occurredAt?: Date;
+  quantity?: number | undefined;
+  quantityUnit?: string | undefined;
+  provider?: string | undefined;
+  model?: string | undefined;
+  operation?: string | undefined;
+  pricingVersion?: string | undefined;
+  pricingSource?: string | undefined;
+  pricingEffectiveDate?: string | undefined;
+  pricingRates?: Record<string, number> | undefined;
+  tokenUsage?: Record<string, number> | undefined;
+  callId?: string | undefined;
+  conversationId?: string | undefined;
+  messageId?: string | undefined;
+  notificationId?: string | undefined;
+  operatorNotificationDeliveryId?: string | undefined;
+};
+
+// Every AI reply, call and SMS records a cost event, and each refresh re-reads
+// the whole month. Events recorded in the same five minutes share one refresh,
+// run 30 seconds after the window closes.
+const REFRESH_WINDOW_MS = 5 * 60_000;
+const REFRESH_DELAY_MS = 30_000;
+
+function monthKey(value: Date): string {
+  return value.toISOString().slice(0, 7);
+}
+
+function safeCost(value: number | null | undefined): number | null {
+  return value !== undefined && value !== null && Number.isFinite(value) && value >= 0 ? Math.round(value * 1_000_000) / 1_000_000 : null;
+}
+
+function roundUsd(value: number): number {
+  return Math.round(Math.max(0, value) * 1_000_000) / 1_000_000;
+}
+
+function roundUnitCost(total: number, denominator: number): number {
+  return denominator > 0 ? roundUsd(total / denominator) : 0;
+}
+
+export async function recordUnitEconomicsEventInTransaction(tx: DatabaseTransaction, input: UnitEconomicsEventInput): Promise<string> {
+  const occurredAt = input.occurredAt ?? new Date();
+  // Fields a conflicting retry may refresh; drizzle skips undefined values.
+  const details = {
+    quantity: input.quantity,
+    quantityUnit: input.quantityUnit,
+    provider: input.provider,
+    model: input.model,
+    operation: input.operation,
+    pricingVersion: input.pricingVersion,
+    pricingSource: input.pricingSource,
+    pricingEffectiveDate: input.pricingEffectiveDate,
+    pricingRates: input.pricingRates,
+    tokenUsage: input.tokenUsage,
+    callId: input.callId,
+    conversationId: input.conversationId,
+    messageId: input.messageId,
+  };
+  const values = {
+    businessId: input.businessId,
+    monthKey: monthKey(occurredAt),
+    occurredAt,
+    eventKey: input.eventKey,
+    eventKind: input.eventKind,
+    channel: input.channel,
+    costUsd: safeCost(input.costUsd),
+    ...details,
+    notificationId: input.notificationId,
+    operatorNotificationDeliveryId: input.operatorNotificationDeliveryId,
+    updatedAt: new Date(),
+  };
+  const [event] = await tx.insert(unitEconomicsEvents).values(values).onConflictDoUpdate({ target: [unitEconomicsEvents.businessId, unitEconomicsEvents.eventKey], set: { monthKey: values.monthKey, occurredAt, eventKind: input.eventKind, channel: input.channel, costUsd: values.costUsd, ...details, updatedAt: new Date() } }).returning({ id: unitEconomicsEvents.id });
+  if (!event) throw new Error("Unit economics event could not be recorded.");
+  const window = Math.floor(Date.now() / REFRESH_WINDOW_MS);
+  await enqueueOutbox(tx, { topic: "billing.refreshUnitEconomics", businessId: input.businessId, aggregateType: "business", aggregateId: input.businessId, dedupeKey: `unit-economics:${input.businessId}:${values.monthKey}:${window}`, availableAt: new Date((window + 1) * REFRESH_WINDOW_MS + REFRESH_DELAY_MS), payload: { monthKey: values.monthKey } });
+  return event.id;
+}
+
+export async function recordUnitEconomicsEvent(context: DomainContext, input: UnitEconomicsEventInput): Promise<string> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => await recordUnitEconomicsEventInTransaction(tx, input));
+}
+
+export async function refreshUnitEconomicsMonth(context: DomainContext, input: { businessId: string; monthKey?: string }): Promise<string | null> {
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx) => {
+    // A refresh queued before its business was deleted has nothing to write,
+    // and its insert would fail the business_id foreign key. Share-lock the
+    // row so a delete waits for this transaction instead of racing it.
+    const business = (await tx.select({ id: businesses.id }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1).for("no key update"))[0];
+    if (!business) return null;
+    const targetMonth = input.monthKey ?? monthKey(new Date());
+    const events = await tx.select().from(unitEconomicsEvents).where(and(eq(unitEconomicsEvents.businessId, input.businessId), eq(unitEconomicsEvents.monthKey, targetMonth))).orderBy(asc(unitEconomicsEvents.occurredAt));
+    const providerCostUsd = roundUsd(events.filter((event) => event.eventKind === "voice_provider" || event.eventKind === "sms_provider" || event.eventKind === "notification_provider" || event.eventKind === "operator_notification_provider").reduce((sum, event) => sum + (event.costUsd ?? 0), 0));
+    const aiCostUsd = roundUsd(events.filter((event) => event.eventKind === "voice_ai" || event.eventKind === "dashboard_ai").reduce((sum, event) => sum + (event.costUsd ?? 0), 0));
+    const voiceEvents = events.filter((event) => event.channel === "voice");
+    const alertSmsEvents = events.filter((event) => event.eventKind === "notification_provider" || event.eventKind === "operator_notification_provider");
+    const smsEvents = events.filter((event) => event.channel === "sms");
+    const voiceCallCount = new Set(voiceEvents.filter((event) => event.callId !== null).map((event) => event.callId)).size;
+    const outboundSmsCount = new Set(smsEvents.filter((event) => event.messageId !== null).map((event) => event.messageId)).size;
+    const smsThreadCount = new Set(smsEvents.filter((event) => event.conversationId !== null).map((event) => event.conversationId)).size;
+    const voiceMinutes = roundUsd(voiceEvents.reduce((sum, event) => sum + (event.quantityUnit === "second" ? (event.quantity ?? 0) / 60 : event.quantityUnit === "minute" ? event.quantity ?? 0 : 0), 0));
+    const voiceCostUsd = roundUsd(voiceEvents.reduce((sum, event) => sum + (event.costUsd ?? 0), 0));
+    const smsCostUsd = roundUsd(smsEvents.reduce((sum, event) => sum + (event.costUsd ?? 0), 0));
+    const alertSmsCostUsd = roundUsd(alertSmsEvents.reduce((sum, event) => sum + (event.costUsd ?? 0), 0));
+    const activeUsers = await tx.select({ count: sql<string>`count(distinct ${businessMemberships.userId})` }).from(businessMemberships).where(and(eq(businessMemberships.businessId, input.businessId), eq(businessMemberships.status, "active")));
+    const activeUserCount = Number(activeUsers[0]?.count ?? 0);
+    // No infrastructure share: this business-scoped transaction cannot count the other businesses to split it across.
+    const infraCostUsd = 0;
+    const totalCostUsd = roundUsd(providerCostUsd + aiCostUsd);
+    const rollupValues = { businessId: input.businessId, monthKey: targetMonth, totalCostUsd, providerCostUsd, aiCostUsd, infraCostUsd, voiceCostUsd, smsCostUsd, alertSmsCostUsd, voiceCallCount, voiceMinutes, outboundSmsCount, smsThreadCount, activeUserCount, costPerVoiceCallUsd: roundUnitCost(totalCostUsd, voiceCallCount), costPerVoiceMinuteUsd: roundUnitCost(totalCostUsd, voiceMinutes), costPerOutboundSmsUsd: roundUnitCost(totalCostUsd, outboundSmsCount), costPerSmsThreadUsd: roundUnitCost(totalCostUsd, smsThreadCount), costPerActiveUserUsd: roundUnitCost(totalCostUsd, activeUserCount), costPerBusinessUsd: totalCostUsd, recomputedAt: new Date(), updatedAt: new Date() };
+    const [rollup] = await tx.insert(unitEconomicsRollups).values(rollupValues).onConflictDoUpdate({ target: [unitEconomicsRollups.businessId, unitEconomicsRollups.monthKey], set: rollupValues }).returning({ id: unitEconomicsRollups.id });
+    if (!rollup) throw new Error("Unit economics rollup could not be refreshed.");
+    return rollup.id;
+  });
+}

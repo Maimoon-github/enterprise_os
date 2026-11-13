@@ -1,0 +1,330 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  bucketOutboxBacklog,
+  buildPostHogAiGenerationProperties,
+  buildPostHogAiTraceProperties,
+  getTelemetryRequiredProperties,
+  getPostHogBusinessGroupKey,
+  getPostHogDistinctIdForBusinessSystem,
+  getPostHogDistinctIdForUser,
+  percentileMs,
+  redactTelemetryProperties,
+  redactOtelAttributes,
+  validateTelemetryEvent,
+} from "./index";
+
+describe("telemetry redaction", () => {
+  it("redacts bodies, transcripts, tokens, and masks phone numbers", () => {
+    const properties = redactTelemetryProperties({
+      customerPhone: "+14165550000",
+      body: "My name is Jane Doe",
+      transcript: "Full transcript",
+      internalToken: "secret",
+      harmless: "ok",
+    });
+
+    expect(properties.customerPhone).toBe("***0000");
+    expect(properties.body).toBe("[redacted]");
+    expect(properties.transcript).toBe("[redacted]");
+    expect(properties.internalToken).toBe("[redacted]");
+    expect(properties.harmless).toBe("ok");
+  });
+
+  it("redacts nested AI trace content while leaving aggregate counters intact", () => {
+    const properties = redactTelemetryProperties({
+      provider: "openai",
+      model: "gpt-realtime",
+      $ai_input: "do not leak me",
+      $ai_output_choices: "still private",
+      prompt: "do not leak me",
+      toolArguments: {
+        customerName: "Jane Doe",
+        requestedTime: "tomorrow morning",
+      },
+      tokenCount: 42,
+      tools: ["checkAvailability", "bookAppointment"],
+    });
+
+    expect(properties.provider).toBe("openai");
+    expect(properties.model).toBe("gpt-realtime");
+    expect(properties.$ai_input).toBe("[redacted]");
+    expect(properties.$ai_output_choices).toBe("[redacted]");
+    expect(properties.prompt).toBe("[redacted]");
+    expect(properties.toolArguments).toBe("[redacted]");
+    expect(properties.tokenCount).toBe(42);
+    expect(properties.tools).toEqual(["checkAvailability", "bookAppointment"]);
+  });
+
+  it("keeps token usage metrics while redacting credential-like token fields", () => {
+    const properties = redactTelemetryProperties({
+      access_token: "secret-access-token",
+      refreshToken: "secret-refresh-token",
+      totalTokens: 120,
+      inputTokens: 55,
+    });
+
+    expect(properties.access_token).toBe("[redacted]");
+    expect(properties.refreshToken).toBe("[redacted]");
+    expect(properties.totalTokens).toBe(120);
+    expect(properties.inputTokens).toBe(55);
+  });
+
+  it("preserves workflowName while still redacting sensitive name fields", () => {
+    const properties = redactTelemetryProperties({
+      workflowName: "appointmentCalendarSyncWorkflow",
+      customerName: "Jane Doe",
+    });
+
+    expect(properties.workflowName).toBe("appointmentCalendarSyncWorkflow");
+    expect(properties.customerName).toBe("[redacted]");
+  });
+
+  it("redacts bearer tokens embedded in telemetry URL values", () => {
+    const redacted = redactTelemetryProperties({
+      originUrl: "https://app.lobbystack.com/demo/acme-secret-token?source=campaign",
+      fragmentUrl:
+        "https://app.lobbystack.com/demo#prospect_demo_token=acme-secret-token",
+      confirmationUrl:
+        "https://app.lobbystack.com/confirm-email-change?token=secret&email=person%40example.com",
+      signupUrl:
+        "https://app.lobbystack.com/signup?returnTo=%2Fclaim-demo%3Ftoken%3Dacme-secret-token",
+      errorDetail:
+        "Request failed while loading https://app.lobbystack.com/demo/acme-secret-token",
+      statusDetail: "Invalid token",
+    });
+
+    expect(redacted.originUrl).toBe(
+      "https://app.lobbystack.com/demo/[redacted]?source=campaign",
+    );
+    expect(redacted.fragmentUrl).toBe("https://app.lobbystack.com/demo");
+    expect(redacted.confirmationUrl).toBe(
+      "https://app.lobbystack.com/confirm-email-change",
+    );
+    expect(redacted.signupUrl).toBe(
+      "https://app.lobbystack.com/signup?returnTo=%2Fclaim-demo",
+    );
+    expect(redacted.errorDetail).toBe(
+      "Request failed while loading https://app.lobbystack.com/demo/[redacted]",
+    );
+    expect(redacted.statusDetail).toBe("Invalid token");
+  });
+
+  it("redacts signed storage URLs, object keys, and customer filenames", () => {
+    const marker = "private-customer-file.pdf";
+    const signedUrl = `https://storage.example.test/business/uploads/${marker}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=credential-marker&X-Amz-Signature=signature-marker`;
+    const redacted = redactTelemetryProperties({ fileName: marker, objectKey: `business/uploads/${marker}`, storageKey: marker, uploadUrl: signedUrl, errorDetail: `Upload failed for ${signedUrl}` });
+
+    expect(redacted.fileName).toBe("[redacted]");
+    expect(redacted.objectKey).toBe("[redacted]");
+    expect(redacted.storageKey).toBe("[redacted]");
+    expect(redacted.uploadUrl).toBe("[redacted-signed-url]");
+    expect(redacted.errorDetail).toBe("Upload failed for [redacted-signed-url]");
+    expect(JSON.stringify(redacted)).not.toContain(marker);
+    expect(JSON.stringify(redacted)).not.toContain("credential-marker");
+    expect(JSON.stringify(redacted)).not.toContain("signature-marker");
+  });
+
+  it("builds metadata-only AI generation properties without message content", () => {
+    const properties = buildPostHogAiGenerationProperties({
+      traceId: "trace-1",
+      sessionId: "session-1",
+      model: "gpt-realtime",
+      provider: "openai",
+      callId: "call-1",
+      conversationId: "conv-1",
+      messageId: "message-1",
+      inputTokens: 12,
+      outputTokens: 34,
+      totalTokens: 46,
+      textInputTokens: 7,
+      audioInputTokens: 5,
+      cachedInputTokens: 5,
+      cachedTextInputTokens: 4,
+      cachedAudioInputTokens: 1,
+      textOutputTokens: 14,
+      audioOutputTokens: 20,
+      reasoningTokens: 3,
+      totalCostUsd: 0.12,
+      latencyMs: 1_500,
+      ttftMs: 250,
+      isStreaming: true,
+      properties: {
+        $ai_input: "private",
+        $ai_output_choices: "private",
+        prompt: "private",
+        safeOutcome: "booked",
+      },
+    });
+
+    expect(properties.$ai_trace_id).toBe("trace-1");
+    expect(properties.$ai_session_id).toBe("session-1");
+    expect(properties.traceId).toBe("trace-1");
+    expect(properties.sessionId).toBe("session-1");
+    expect(properties.messageId).toBe("[redacted]");
+    expect(properties.messageLinkKey).toBe("message-1");
+    expect(properties.model).toBe("gpt-realtime");
+    expect(properties.provider).toBe("openai");
+    expect(properties.$ai_model).toBe("gpt-realtime");
+    expect(properties.$ai_provider).toBe("openai");
+    expect(properties.inputTokens).toBe(12);
+    expect(properties.outputTokens).toBe(34);
+    expect(properties.totalTokens).toBe(46);
+    expect(properties.$ai_input_tokens).toBe(12);
+    expect(properties.$ai_output_tokens).toBe(34);
+    expect(properties.$ai_total_tokens).toBe(46);
+    expect(properties.textInputTokens).toBe(7);
+    expect(properties.audioInputTokens).toBe(5);
+    expect(properties.cachedInputTokens).toBe(5);
+    expect(properties.cachedTextInputTokens).toBe(4);
+    expect(properties.cachedAudioInputTokens).toBe(1);
+    expect(properties.textOutputTokens).toBe(14);
+    expect(properties.audioOutputTokens).toBe(20);
+    expect(properties.reasoningTokens).toBe(3);
+    expect(properties.totalCostUsd).toBe(0.12);
+    expect(properties.$ai_total_cost_usd).toBe(0.12);
+    expect(properties.latencyMs).toBe(1_500);
+    expect(properties.$ai_latency).toBe(1.5);
+    expect(properties.ttftMs).toBe(250);
+    expect(properties.$ai_time_to_first_token).toBe(0.25);
+    expect(properties.isStreaming).toBe(true);
+    expect(properties.$ai_stream).toBe(true);
+    expect(properties.$ai_input).toBe("[redacted]");
+    expect(properties.$ai_output_choices).toBe("[redacted]");
+    expect(properties.prompt).toBe("[redacted]");
+    expect(properties.safeOutcome).toBe("booked");
+  });
+
+  it("builds metadata-only AI trace properties", () => {
+    const traceProperties = buildPostHogAiTraceProperties({
+      traceId: "trace-2",
+      sessionId: "session-2",
+      model: "test-chat-model",
+      provider: "google",
+      conversationId: "conv-2",
+    });
+
+    expect(traceProperties.$ai_trace_id).toBe("trace-2");
+    expect(traceProperties.$ai_session_id).toBe("session-2");
+    expect(traceProperties.traceId).toBe("trace-2");
+    expect(traceProperties.sessionId).toBe("session-2");
+    expect(traceProperties.model).toBe("test-chat-model");
+    expect(traceProperties.provider).toBe("google");
+    expect(traceProperties.conversationId).toBe("conv-2");
+  });
+
+  it("redacts OTEL attributes that might contain customer data", () => {
+    const attributes = redactOtelAttributes({
+      "lobbystack.customer_phone": "+14165550000",
+      "lobbystack.customer_name": "Jane Doe",
+      "lobbystack.tool_name": "bookAppointment",
+      "storage.object_key": "business/private-file.pdf",
+      "storage.file_name": "private-file.pdf",
+      "url.full": "https://storage.example.test/private-file.pdf?X-Amz-Signature=secret",
+      "http.status_code": 200,
+    });
+
+    expect(attributes["lobbystack.customer_phone"]).toBe("***0000");
+    expect(attributes["lobbystack.customer_name"]).toBe("[redacted]");
+    expect(attributes["lobbystack.tool_name"]).toBe("bookAppointment");
+    expect(attributes["storage.object_key"]).toBe("[redacted]");
+    expect(attributes["storage.file_name"]).toBe("[redacted]");
+    expect(attributes["url.full"]).toBe("[redacted-signed-url]");
+    expect(attributes["http.status_code"]).toBe(200);
+  });
+
+  it("builds stable PostHog identity keys", () => {
+    expect(getPostHogDistinctIdForBusinessSystem("biz_123")).toBe(
+      "system:business:biz_123",
+    );
+    expect(getPostHogDistinctIdForUser("user_123")).toBe("user:user_123");
+    expect(getPostHogBusinessGroupKey("biz_123")).toBe("business:biz_123");
+  });
+
+  it("documents required properties for meaningful product events", () => {
+    expect(getTelemetryRequiredProperties("web.messages.reply_sent")).toEqual([
+      "businessId",
+      "deploymentMode",
+      "conversationId",
+      "channel",
+    ]);
+    expect(getTelemetryRequiredProperties("appointment.booked")).toEqual([
+      "businessId",
+      "deploymentMode",
+      "appointmentId",
+      "channel",
+      "serviceId",
+      "sourceChannel",
+    ]);
+    expect(getTelemetryRequiredProperties("ops.billing.usage_sync_failed")).toEqual([
+      "businessId",
+      "deploymentMode",
+      "provider",
+    ]);
+    expect(
+      getTelemetryRequiredProperties("ops.billing.unit_economics_rollup_recorded"),
+    ).toEqual(["businessId", "deploymentMode", "monthKey"]);
+    expect(getTelemetryRequiredProperties("voice.provider_cost_recorded")).toEqual([
+      "businessId",
+      "deploymentMode",
+      "callId",
+      "channel",
+      "provider",
+    ]);
+  });
+
+  it("validates required telemetry properties across top-level context and event props", () => {
+    const valid = validateTelemetryEvent({
+      name: "appointment.booked",
+      deploymentMode: "cloud",
+      businessId: "biz-1",
+      appointmentId: "apt-1",
+      channel: "sms",
+      properties: {
+        serviceId: "svc-1",
+        sourceChannel: "sms",
+      },
+    });
+
+    const invalid = validateTelemetryEvent({
+      name: "web.messages.thread_opened",
+      deploymentMode: "cloud",
+      properties: {
+        businessId: "biz-1",
+      },
+    });
+
+    expect(valid).toEqual({ ok: true, missing: [] });
+    expect(invalid.ok).toBe(false);
+    expect(invalid.missing).toEqual(["conversationId", "channel"]);
+  });
+
+  it("takes nearest-rank latency percentiles", () => {
+    const values = [900, 400.4, 2_500, 700];
+    expect(percentileMs(values, 50)).toBe(700);
+    expect(percentileMs(values, 90)).toBe(2_500);
+    expect(percentileMs(values, 100)).toBe(2_500);
+    expect(percentileMs([1_234.6], 50)).toBe(1_235);
+    expect(percentileMs([], 50)).toBeUndefined();
+    expect(values).toEqual([900, 400.4, 2_500, 700]);
+  });
+
+  it("requires call identifiers and counts on live call latency events", () => {
+    const base = { businessId: "biz_1", deploymentMode: "cloud", properties: { callId: "call_1", channel: "voice", provider: "openai_live" } };
+    expect(validateTelemetryEvent({ ...base, name: "voice.delegation_completed", properties: { ...base.properties, agentMs: 1_800, totalMs: 1_812, failed: false } }).ok).toBe(true);
+    expect(validateTelemetryEvent({ ...base, name: "voice.call_latency_recorded", properties: { ...base.properties, answerCount: 0, delegationCount: 0 } }).ok).toBe(true);
+    expect(validateTelemetryEvent({ ...base, name: "voice.call_latency_recorded" }).missing).toEqual(["answerCount", "delegationCount"]);
+  });
+
+  it("buckets outbox backlog into stable aggregate ranges", () => {
+    expect(bucketOutboxBacklog(0)).toBe("0");
+    expect(bucketOutboxBacklog(-1)).toBe("0");
+    expect(bucketOutboxBacklog(1)).toBe("1_9");
+    expect(bucketOutboxBacklog(9)).toBe("1_9");
+    expect(bucketOutboxBacklog(10)).toBe("10_99");
+    expect(bucketOutboxBacklog(99)).toBe("10_99");
+    expect(bucketOutboxBacklog(100)).toBe("100_499");
+    expect(bucketOutboxBacklog(499)).toBe("100_499");
+    expect(bucketOutboxBacklog(500)).toBe("500_plus");
+  });
+});

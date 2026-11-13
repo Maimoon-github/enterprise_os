@@ -1,0 +1,276 @@
+
+import { and, eq, isNull } from "drizzle-orm";
+
+import { agents, businesses, enqueueOutbox, phoneNumbers, type DatabaseTransaction } from "@lobbystack/db";
+import {
+  appointmentChangeVerificationModes,
+  bookingModes,
+  defaultAppointmentChangePolicy,
+  DEFAULT_AGENT_VOICE,
+  DEFAULT_STAFF_FIRST_RING_SECONDS,
+  defaultAgentName,
+  defaultGreeting,
+  isCurrencyCode,
+  isAgentVoice,
+  isRuntimeLocale,
+  AGENT_INSTRUCTIONS_MAX_LENGTH,
+  AGENT_TEXT_MAX_LENGTH,
+  STAFF_FIRST_MESSAGE_MAX_LENGTH,
+  staffFirstModes,
+  staffFirstRingSeconds,
+  transferModes,
+  type AppointmentChangePolicy,
+  type BookingMode,
+  type AgentVoice,
+  type RuntimeLocale,
+  type StaffFirstMode,
+  type TransferPolicy,
+} from "@lobbystack/shared";
+
+import { enqueueAgentSnapshotRefresh } from "./agentSnapshot";
+import { withBusinessSummary, type BusinessSummary } from "./businessSummary";
+import { saveLegacyInstructionsInTransaction, withLegacyInstructions } from "./channelRules";
+import { assertTransferNumberAllowed, enqueueRefusedCallForwardRefresh } from "./numberTrials";
+import { assertStaffFirstChange, enqueueStaffFirstRouting } from "./staffFirst";
+
+// Agent settings. The dashboard and the v1 API check and save them
+// here, so both follow one set of rules.
+
+/** Whether the business has this agent and it isn't archived. Run it under the operator's own access. */
+export async function activeAgentExistsInTransaction(tx: DatabaseTransaction, input: { businessId: string; agentId: string }): Promise<boolean> {
+  const rows = await tx.select({ id: agents.id }).from(agents).where(and(eq(agents.id, input.agentId), eq(agents.businessId, input.businessId), isNull(agents.archivedAt))).limit(1);
+  return rows.length > 0;
+}
+
+export type TestWindowAgent = { agentId: string; agentName: string; businessName: string; phoneNumber: string | null };
+
+/**
+ * What the test window shows: the agent, its workspace, and the active number
+ * that reaches this agent. Null when the business has no such active agent.
+ * Without an agentId it reads the default agent. Run it under the operator's own access.
+ */
+export async function loadTestWindowAgentInTransaction(tx: DatabaseTransaction, input: { businessId: string; agentId?: string | undefined }): Promise<TestWindowAgent | null> {
+  const row = (await tx.select({ agentId: agents.id, agentName: agents.name, businessName: businesses.name })
+    .from(agents)
+    .innerJoin(businesses, eq(businesses.id, agents.businessId))
+    .where(and(eq(agents.businessId, input.businessId), isNull(agents.archivedAt), input.agentId ? eq(agents.id, input.agentId) : eq(agents.isDefault, true)))
+    .limit(1))[0];
+  if (!row) return null;
+  const number = (await tx.select({ e164: phoneNumbers.e164 }).from(phoneNumbers).where(and(eq(phoneNumbers.businessId, input.businessId), eq(phoneNumbers.agentId, row.agentId), eq(phoneNumbers.status, "active"))).limit(1))[0];
+  return { ...row, phoneNumber: number?.e164 ?? null };
+}
+
+/** Fields a change can set. A missing field stays as it is; null clears an optional one. */
+export type AgentSettingsPatch = {
+  greeting?: string;
+  tone?: string;
+  summary?: string;
+  bookingPolicy?: string;
+  voiceInstructions?: string | null;
+  smsInstructions?: string | null;
+  chatInstructions?: string | null;
+  transferMode?: TransferPolicy["mode"];
+  transferNumber?: string | null;
+  appointmentChangePolicy?: AppointmentChangePolicy;
+  bookingMode?: BookingMode;
+  voice?: AgentVoice;
+  staffFirstMode?: StaffFirstMode;
+  staffFirstNumber?: string | null;
+  staffFirstRingSeconds?: number;
+  staffFirstMessage?: string | null;
+  staffFirstHandoverMessage?: string | null;
+};
+
+export type AgentSettingsChange = {
+  /** The agent's name, which operators see and callers don't. */
+  name?: string;
+  patch: AgentSettingsPatch;
+  locale?: RuntimeLocale;
+  /** The language the team reads the agent's notes in. Null goes back to following `locale`. */
+  teamLocale?: RuntimeLocale | null;
+  timezone?: string;
+  currency?: string;
+  /** Hands the summary back to AI, which rewrites it from the knowledge sources. */
+  regenerateSummary: boolean;
+};
+
+const AGENT_NAME_MAX_LENGTH = 80;
+
+const profileFields = ["greeting", "tone", "summary", "bookingPolicy", "voiceInstructions", "smsInstructions", "chatInstructions", "transferMode", "transferNumber", "staffFirstMode", "staffFirstNumber", "staffFirstMessage", "staffFirstHandoverMessage"] as const;
+type ProfileField = (typeof profileFields)[number];
+const instructionFields: readonly ProfileField[] = ["voiceInstructions", "smsInstructions", "chatInstructions"];
+const staffFirstMessageFields: readonly ProfileField[] = ["staffFirstMessage", "staffFirstHandoverMessage"];
+const clearableFields: readonly ProfileField[] = [...instructionFields, ...staffFirstMessageFields, "transferNumber", "staffFirstNumber"];
+
+function invalid(message: string): Error {
+  return Object.assign(new Error(message), { status: 400 });
+}
+
+function optionalText(value: unknown, field: string, maxLength: number): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") throw invalid(`${field} must be a string.`);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength) throw invalid(`${field} is invalid.`);
+  return normalized;
+}
+
+function appointmentPolicy(value: unknown): AppointmentChangePolicy | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid("appointmentChangePolicy is invalid.");
+  const policy = value as Record<string, unknown>;
+  if (typeof policy.enabled !== "boolean" || typeof policy.allowCancel !== "boolean" || typeof policy.allowReschedule !== "boolean" || !(appointmentChangeVerificationModes as readonly string[]).includes(String(policy.verificationMode))) throw invalid("appointmentChangePolicy is invalid.");
+  return { enabled: policy.enabled, allowCancel: policy.allowCancel, allowReschedule: policy.allowReschedule, verificationMode: policy.verificationMode as AppointmentChangePolicy["verificationMode"] };
+}
+
+/**
+ * Reads the dashboard's agent settings body: profile fields in
+ * camelCase plus locale, timezone, currency and regenerateSummary. Throws a
+ * 400 error that names the first field that is wrong.
+ */
+export function readAgentSettingsChange(body: unknown): AgentSettingsChange {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw invalid("A profile object is required.");
+  const input = body as Record<string, unknown>;
+  const fields: Partial<Record<ProfileField, string | null>> = {};
+  for (const field of profileFields) {
+    if (!(field in input)) continue;
+    const maxLength = staffFirstMessageFields.includes(field) ? STAFF_FIRST_MESSAGE_MAX_LENGTH : instructionFields.includes(field) ? AGENT_INSTRUCTIONS_MAX_LENGTH : AGENT_TEXT_MAX_LENGTH;
+    const value = optionalText(input[field], field, maxLength);
+    if (value === null && !clearableFields.includes(field)) throw invalid(`${field} cannot be empty.`);
+    if (value !== undefined) fields[field] = value;
+  }
+  if (fields.transferMode !== undefined && !(transferModes as readonly string[]).includes(fields.transferMode ?? "")) throw invalid("transferMode is invalid.");
+  if (fields.staffFirstMode !== undefined && !(staffFirstModes as readonly string[]).includes(fields.staffFirstMode ?? "")) throw invalid("staffFirstMode is invalid.");
+  const ringSeconds = input.staffFirstRingSeconds;
+  if (ringSeconds !== undefined && !(staffFirstRingSeconds as readonly unknown[]).includes(ringSeconds)) throw invalid("staffFirstRingSeconds is invalid.");
+  const policy = appointmentPolicy(input.appointmentChangePolicy);
+  const bookingMode = input.bookingMode;
+  if (bookingMode !== undefined && !(bookingModes as readonly unknown[]).includes(bookingMode)) throw invalid("bookingMode is invalid.");
+  const voice = input.voice;
+  if (voice !== undefined && !isAgentVoice(voice)) throw invalid("voice is invalid.");
+  const patch = { ...fields, ...(policy !== undefined ? { appointmentChangePolicy: policy } : {}), ...(bookingMode !== undefined ? { bookingMode } : {}), ...(voice !== undefined ? { voice } : {}), ...(ringSeconds !== undefined ? { staffFirstRingSeconds: ringSeconds } : {}) } as AgentSettingsPatch;
+
+  const { locale, teamLocale, timezone, currency, regenerateSummary } = input;
+  const name = optionalText(input.name, "name", AGENT_NAME_MAX_LENGTH);
+  if (name === null) throw invalid("name cannot be empty.");
+  if (locale !== undefined && !isRuntimeLocale(locale)) throw invalid("locale is invalid.");
+  if (teamLocale !== undefined && teamLocale !== null && !isRuntimeLocale(teamLocale)) throw invalid("teamLocale is invalid.");
+  if (timezone !== undefined && typeof timezone !== "string") throw invalid("timezone must be a string.");
+  if (currency !== undefined && !isCurrencyCode(currency)) throw invalid("currency is invalid.");
+  if (regenerateSummary !== undefined && regenerateSummary !== true) throw invalid("regenerateSummary must be true.");
+  if (regenerateSummary && patch.summary !== undefined) throw invalid("Send summary or regenerateSummary, not both.");
+  if (Object.keys(patch).length === 0 && name === undefined && locale === undefined && teamLocale === undefined && timezone === undefined && currency === undefined && !regenerateSummary) throw invalid("At least one profile field is required.");
+  return { patch, ...(name !== undefined ? { name } : {}), ...(locale !== undefined ? { locale } : {}), ...(teamLocale !== undefined ? { teamLocale } : {}), ...(timezone !== undefined ? { timezone } : {}), ...(currency !== undefined ? { currency } : {}), regenerateSummary: regenerateSummary === true };
+}
+
+/** The settings an agent has before anyone edits them. */
+export function defaultAgentSettings(businessName: string, locale: RuntimeLocale = "en") {
+  return {
+    name: defaultAgentName(locale),
+    greeting: defaultGreeting(businessName, locale),
+    tone: "professional",
+    bookingPolicy: "Confirm availability before booking.",
+    voiceInstructions: null,
+    smsInstructions: null,
+    chatInstructions: null,
+    transferMode: "on_request" as const,
+    transferNumber: null,
+    appointmentChangePolicy: defaultAppointmentChangePolicy,
+    bookingMode: "instant" as const,
+    voice: DEFAULT_AGENT_VOICE,
+    staffFirstMode: "never" as const,
+    staffFirstNumber: null,
+    staffFirstRingSeconds: DEFAULT_STAFF_FIRST_RING_SECONDS,
+    staffFirstMessage: null,
+    staffFirstHandoverMessage: null,
+  };
+}
+
+/**
+ * Saves the fields given, creating the profile from the defaults (greeting in
+ * locale) when the business has none, and refreshes the snapshot calls read
+ * the agent from. A transfer number must pass the same country and
+ * free-trial checks as the dashboard's. A summary someone writes is never
+ * replaced by AI; regenerateSummary hands it back to AI and queues the
+ * rewrite. Voice, SMS and chat instructions go to the agent's rules for those
+ * channels (see channelRules.ts), and the row returned reads them from there.
+ * Callers authorize and check the fields first. Null when nothing was saved.
+ */
+export async function saveAgentSettingsInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; agentId?: string | undefined; businessName: string; locale?: RuntimeLocale | undefined; name?: string | undefined; patch: AgentSettingsPatch; regenerateSummary?: boolean | undefined },
+): Promise<(typeof agents.$inferSelect & BusinessSummary) | null> {
+  const { businessId, patch } = input;
+  // Without an agentId the change goes to the default agent, as /v1/receptionist and the old dashboard body expect.
+  const target = input.agentId ? eq(agents.id, input.agentId) : eq(agents.isDefault, true);
+  const existing = (await tx.select({ id: agents.id }).from(agents).where(and(eq(agents.businessId, businessId), target, isNull(agents.archivedAt))).limit(1))[0];
+  if (!existing && input.agentId) throw Object.assign(new Error("Agent not found."), { status: 404, code: "agent_not_found" });
+  const agentId = existing?.id;
+  // An E.164 number in a country Twilio can call and, during a free trial, only the mobile its claimer verified. Employees' numbers follow the same rules.
+  if (patch.transferNumber) await assertTransferNumberAllowed(tx, { businessId, phone: patch.transferNumber });
+  const changesStaffFirst = patch.staffFirstMode !== undefined || patch.staffFirstNumber !== undefined;
+  if (changesStaffFirst) await assertStaffFirstChange(tx, { businessId, agentId, mode: patch.staffFirstMode, number: patch.staffFirstNumber });
+  // The old per-channel instructions are rules kept to their channel now, and their columns stay unwritten.
+  // The summary is the business's, which every agent shares.
+  const { voiceInstructions, smsInstructions, chatInstructions, summary, ...columns } = patch;
+  const instructions = { ...(voiceInstructions !== undefined ? { voiceInstructions } : {}), ...(smsInstructions !== undefined ? { smsInstructions } : {}), ...(chatInstructions !== undefined ? { chatInstructions } : {}) };
+  const summaryChange = { ...(summary !== undefined ? { summary, summarySource: "operator" as const, summaryRegenerateStatus: null } : {}), ...(input.regenerateSummary ? { summarySource: "generated" as const, summaryRegenerateStatus: "pending" as const } : {}) };
+  if (Object.keys(summaryChange).length) await tx.update(businesses).set({ ...summaryChange, updatedAt: new Date() }).where(eq(businesses.id, businessId));
+  const changes = { ...columns, ...(input.name !== undefined ? { name: input.name } : {}), updatedAt: new Date() };
+  // Updates by id, so nothing depends on the one-agent-per-business index that
+  // release 5b drops. A business without a default agent gets one from the defaults.
+  const profile = agentId
+    ? (await tx.update(agents).set(changes).where(and(eq(agents.id, agentId), eq(agents.businessId, businessId))).returning())[0]
+    : await insertDefaultAgentInTransaction(tx, input, changes);
+  if (!profile) return null;
+  await saveLegacyInstructionsInTransaction(tx, { businessId, agentId: profile.id, patch: instructions });
+  // Some carriers forward a call the agent refuses to a number stored on the carrier, so they learn the new transfer number.
+  if (patch.transferNumber !== undefined) await enqueueRefusedCallForwardRefresh(tx, businessId, profile.id);
+  if (patch.staffFirstMode !== undefined) await enqueueStaffFirstRouting(tx, businessId, profile.id);
+  await enqueueAgentSnapshotRefresh(tx, { businessId, agentId: profile.id, change: "agent_updated", dedupeKey: `snapshot:${businessId}:profile:${profile.updatedAt.toISOString()}` });
+  if (input.regenerateSummary) {
+    await enqueueOutbox(tx, {
+      topic: "business.generateSummary",
+      businessId,
+      aggregateType: "business",
+      aggregateId: businessId,
+      dedupeKey: `business-summary:${businessId}:regenerate:${Date.now()}`,
+      payload: { businessId, reason: "operator_regenerate", force: true },
+    });
+  }
+  // Callers show the instructions as the rules now hold them, and the business's summary.
+  return await withBusinessSummary(tx, await withLegacyInstructions(tx, profile));
+}
+
+/**
+ * Creates the business's default agent from the defaults and the patch. A
+ * default agent created at the same moment wins, and the patch goes to it.
+ */
+async function insertDefaultAgentInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; businessName: string; locale?: RuntimeLocale | undefined; name?: string | undefined; patch: AgentSettingsPatch },
+  changes: Partial<typeof agents.$inferInsert>,
+): Promise<typeof agents.$inferSelect | undefined> {
+  const { businessId, patch } = input;
+  const defaults = defaultAgentSettings(input.businessName, input.locale);
+  const [created] = await tx.insert(agents).values({
+    businessId,
+    isDefault: true,
+    name: input.name ?? defaults.name,
+    greeting: patch.greeting ?? defaults.greeting,
+    tone: patch.tone ?? defaults.tone,
+    bookingPolicy: patch.bookingPolicy ?? defaults.bookingPolicy,
+    transferMode: patch.transferMode ?? defaults.transferMode,
+    ...(patch.transferNumber !== undefined ? { transferNumber: patch.transferNumber } : {}),
+    appointmentChangePolicy: patch.appointmentChangePolicy ?? defaults.appointmentChangePolicy,
+    ...(patch.bookingMode !== undefined ? { bookingMode: patch.bookingMode } : {}),
+    ...(patch.voice !== undefined ? { voice: patch.voice } : {}),
+    ...(patch.staffFirstMode !== undefined ? { staffFirstMode: patch.staffFirstMode } : {}),
+    ...(patch.staffFirstNumber !== undefined ? { staffFirstNumber: patch.staffFirstNumber } : {}),
+    ...(patch.staffFirstRingSeconds !== undefined ? { staffFirstRingSeconds: patch.staffFirstRingSeconds } : {}),
+    ...(patch.staffFirstMessage !== undefined ? { staffFirstMessage: patch.staffFirstMessage } : {}),
+    ...(patch.staffFirstHandoverMessage !== undefined ? { staffFirstHandoverMessage: patch.staffFirstHandoverMessage } : {}),
+  }).onConflictDoNothing().returning();
+  if (created) return created;
+  return (await tx.update(agents).set(changes).where(and(eq(agents.businessId, businessId), eq(agents.isDefault, true), isNull(agents.archivedAt))).returning())[0];
+}

@@ -1,0 +1,192 @@
+---
+title: "S'authentifier avec des clés API"
+description: "Créez des clés API, choisissez leurs portées, envoyez la clé avec chaque requête et respectez les limites de débit."
+sidebarTitle: "Authentification"
+contentType: "How-to"
+---
+
+Chaque requête nécessite une clé. Une clé API du tableau de bord agit sur une seule entreprise, et une [clé de plateforme](#clés-de-plateforme) sur plusieurs. Les propriétaires et les administrateurs créent et révoquent les clés API dans le tableau de bord. Les clés API, mais pas les clés de plateforme, connectent aussi les assistants IA par le [serveur MCP](/fr/ai/mcp).
+
+## Créer une clé
+
+<Steps>
+  <Step title="Ouvrir Clés API">
+    Allez dans **Réglages** > **Clés API**. Seuls les propriétaires et les administrateurs voient cette page.
+  </Step>
+  <Step title="Nommer la clé et choisir son accès">
+    Utilisez un nom que vous reconnaîtrez plus tard, comme `Zapier`. Sélectionnez seulement les portées dont l'outil a besoin.
+  </Step>
+  <Step title="Copier la clé">
+    LobbyStack affiche la clé complète une seule fois. Conservez-la dans votre outil ou dans un gestionnaire de mots de passe. LobbyStack ne garde qu'un hachage, donc personne ne peut afficher la clé de nouveau.
+  </Step>
+</Steps>
+
+Les clés ressemblent à `lsk_1a2b3c4d_` suivi de 32 caractères aléatoires. Le tableau de bord liste chaque clé par son nom, avec la personne qui l'a créée et la date de sa dernière utilisation.
+
+## Envoyer la clé
+
+Placez la clé dans l'en-tête `Authorization` :
+
+```bash
+curl https://app.lobbystack.com/api/v1/calls \
+  -H "Authorization: Bearer $LOBBYSTACK_API_KEY"
+```
+
+Une clé manquante, inconnue ou révoquée renvoie `401` avec le code `unauthorized`.
+
+## Tester une clé
+
+`GET /me` fonctionne avec toute clé valide, quelles que soient ses portées. Il renvoie la clé et son entreprise, pour qu'une intégration puisse vérifier une connexion avant d'avoir besoin d'une portée précise :
+
+```json
+{
+  "data": {
+    "api_key": {
+      "id": "0b7c1d2e-3f40-4a51-8b62-7c83d94ea5b6",
+      "name": "Zapier",
+      "prefix": "lsk_1a2b3c4d",
+      "scopes": ["appointments:read", "appointments:write"],
+      "created_at": "2026-09-27T16:58:00.000Z"
+    },
+    "business": { "id": "75795511-9ee2-4cb2-a89d-f173ec1dd82d", "name": "Maple Salon" }
+  }
+}
+```
+
+## Portées
+
+Chaque point de terminaison, sauf `GET /me`, exige une portée. Une clé qui ne l'a pas reçoit `403` avec le code `insufficient_scope`, et le message nomme la portée manquante.
+
+| Portée | Autorise |
+| --- | --- |
+| `business:read` | `GET /business`, `GET /services`, `GET /staff`, `GET /receptionist`, `GET /rules`, `GET /onboarding`, `GET /widget-keys`, `GET /calendars`, `GET /calendars/{connection_id}/calendars`, `GET /notification-preferences` |
+| `business:write` | `PATCH /business`, `PATCH /receptionist`, `POST /services`, `PATCH` et `DELETE` sur `/services/{service_id}`, `POST /rules`, `PATCH` et `DELETE` sur `/rules/{rule_id}`, `POST /rules/reorder`, `PATCH /onboarding`, `POST /onboarding/complete`, `POST /widget-keys`, `PATCH /widget-keys/{widget_key_id}`, `POST /calendars/google/connect`, `POST /calendars/calcom/connect`, `POST /calendars/calendly/connect`, `PATCH` et `DELETE` sur `/calendars/{connection_id}`, `PATCH /notification-preferences` |
+| `calls:read` | `GET /calls`, `GET /calls/{call_id}` |
+| `contacts:read` | `GET /contacts`, `GET /contacts/{contact_id}` |
+| `contacts:write` | `POST /contacts`, `PATCH /contacts/{contact_id}`, `POST /contacts/passcodes`, `POST /contacts/passcodes/generate` |
+| `appointments:read` | `GET /appointments`, `GET /appointments/{appointment_id}`, `GET /availability` |
+| `appointments:write` | `POST /appointments`, `POST /appointments/{appointment_id}/cancel`, `POST /appointments/{appointment_id}/reschedule` |
+| `messages:read` | `GET /messages` |
+| `knowledge:read` | `GET /knowledge`, `GET /knowledge/{entry_id}`, `GET /knowledge/sources`, `GET /knowledge/sources/{source_id}` |
+| `knowledge:write` | `POST /knowledge`, `PATCH` et `DELETE` sur `/knowledge/{entry_id}`, `POST /knowledge/sources`, `PATCH` et `DELETE` sur `/knowledge/sources/{source_id}`, `POST /knowledge/sources/{source_id}/expand`, `/retry` et `/cancel`, `POST /knowledge/uploads` et `POST /knowledge/uploads/{upload_id}/complete` |
+| `billing:manage` | `GET` et `PATCH /billing`, `POST /billing/checkout`, `GET /billing/checkout/{checkout_id}`, `POST /billing/extra-numbers/checkout`, `GET /billing/extra-numbers/checkout/{checkout_id}` et, avec une clé de plateforme qui a accès à toutes les entreprises, `POST` et `DELETE /billing/managed-plan` |
+| `phone_numbers:manage` | `GET /phone-numbers`, `POST /phone-numbers/search`, `POST /phone-numbers/claims`, `POST /phone-numbers/extra/search`, `POST /phone-numbers/extra/claims`, `GET /phone-numbers/claims/{claim_id}`, `DELETE /phone-numbers/{phone_number_id}` et `POST /phone-numbers/{phone_number_id}/replace` |
+| `phone_numbers:purchase` | Seulement pour la clé de plateforme d'un partenaire, avec `phone_numbers:manage` : `POST /phone-numbers/search`, `POST /phone-numbers/claims`, `POST /phone-numbers/{phone_number_id}/replace` |
+| `team:manage` | `GET /team`, `POST /team/invitations`, `DELETE /team/invitations/{invitation_id}`, `PATCH` et `DELETE` sur `/team/members/{membership_id}`, `POST /team/claim-link` |
+| `webhooks:manage` | `GET`, `POST`, `PATCH` et `DELETE` sur `/webhooks`, et `POST /webhooks/{webhook_id}/test` |
+
+Pour abonner un point de terminaison à un événement ou changer son URL, votre clé a aussi besoin de la portée de lecture de cet événement. Par exemple, `call.completed` exige `calls:read`, et le tableau des événements de la page [Webhooks](/fr/api/webhooks) donne les autres.
+
+## Clés de plateforme
+
+Une clé de plateforme (`lsp_...`) intègre et gère de nombreuses entreprises, alors qu'une clé API agit sur une seule. Vous pouvez vous en servir pour configurer les entreprises dont vous vous occupez, par exemple avec [`lobbystack onboard`](/fr/api/cli). Un partenaire crée ses propres clés de plateforme dans sa console partenaire. L'hôte, c'est-à-dire la personne qui gère le déploiement, définit les autres dans `PLATFORM_API_KEYS`.
+
+### Créer la clé de plateforme d'un partenaire
+
+<Steps>
+  <Step title="Ouvrir Clés API">
+    Dans la [console partenaire](/fr/white-label/overview), allez dans **Clés API**. Seuls les propriétaires et les administrateurs du partenaire créent et révoquent des clés.
+  </Step>
+  <Step title="Nommer la clé et choisir son accès">
+    Sélectionnez seulement les portées dont l'outil a besoin. `POST /businesses` nécessite `businesses:create`, et `POST /users` nécessite `users:create`.
+  </Step>
+  <Step title="Copier la clé">
+    La console affiche la clé complète une seule fois. LobbyStack n'en garde qu'un hachage, donc personne ne peut la réafficher.
+  </Step>
+</Steps>
+
+La clé de plateforme d'un partenaire agit au nom du partenaire : elle continue de fonctionner quand la personne qui l'a créée quitte l'équipe. Ses portées de facturation font exception : voyez [Points de terminaison partenaire](#points-de-terminaison-partenaire). Elle atteint les entreprises actives du partenaire, y compris celles créées depuis la console, et aucune autre. Avec les portées partenaire, elle gère aussi le partenaire lui-même par les [points de terminaison partenaire](#points-de-terminaison-partenaire). Elle ne peut pas lancer de paiement Polar pour une entreprise, définir un forfait géré ni créer de lien de réclamation. Elle ne peut pas non plus consulter ou modifier les préférences d'alertes, parce que ces actions se font au nom d'une personne.
+
+Avec la clé de plateforme d'un partenaire, `POST /businesses` crée une entreprise du partenaire, encore sans propriétaire. Indiquez le propriétaire dans `owner_email` : le partenaire lui envoie par courriel une invitation à se connecter sur son tableau de bord. `access_level` définit ce que l'équipe de l'entreprise peut utiliser : `full`, la valeur par défaut, ou `activity`. `template_id` part d'un des modèles du partenaire et demande aussi `partner:read`. `package_id` vend à l'entreprise une des formules du partenaire et demande aussi `partner.businesses:write`. Sans cette portée, la requête renvoie `403` avec le code `insufficient_scope`. Les clés de plateforme d'un partenaire peuvent créer 30 entreprises par heure au total. Les invitations qu'elle envoie par `POST /team/invitations` et `POST /users` viennent du partenaire et mènent à son tableau de bord.
+
+Laissez `owner_email` de côté pour une entreprise que le partenaire gère lui-même. Personne ne reçoit d'invitation, et une clé ne peut pas inviter de propriétaire plus tard : l'entreprise ne peut donc pas être remise. `package_id` renvoie alors `400`, parce que le paiement s'ouvre depuis l'invitation du propriétaire.
+
+Avec `phone_numbers:manage` et `phone_numbers:purchase`, la clé d'un partenaire recherche, réserve et remplace des numéros en son propre nom. Sur un déploiement qui facture les paliers, il faut un palier payant, et Free renvoie `409`. Une clé ne peut réserver qu'une offre qu'elle a elle-même recherchée, et elle ne reçoit jamais d'offre d'essai. Les clés du partenaire partagent 20 recherches par tranche de 10 minutes.
+
+Les liens que l'API renvoie pour l'entreprise d'un partenaire, comme la balise de script d'un widget ou un lien de connexion d'agenda, mènent eux aussi au tableau de bord du partenaire.
+
+### Points de terminaison partenaire
+
+Les points de terminaison sous `/partner` font ce que fait la console partenaire. Ils lisent le partenaire, gèrent ses démos, ses formules, son image de marque, son domaine, ses modèles et son équipe, ainsi que son compte Stripe et son palier. Seule la clé d'un partenaire peut les appeler, sans en-tête `LobbyStack-Business`. Une clé API ou une clé de l'hôte reçoit `403` avec le code `forbidden`.
+
+Une clé agit avec les droits d'un administrateur, elle ne touche donc jamais à un propriétaire. Inviter un propriétaire, changer le rôle d'un propriétaire ou en retirer un renvoie `403` : faites-le dans la console. Seuls les propriétaires peuvent accorder `partner.billing:read` et `partner.billing:write`, qui donnent accès à ce que seuls les propriétaires voient dans la console. `partner.billing:write` comprend ce que permet `partner.billing:read`. Les portées de facturation fonctionnent tant que le propriétaire qui les a accordées est encore propriétaire : celui qui a créé la clé avec elles, ou celui qui l'a modifiée en dernier avec elles. Dès que cette personne devient administrateur ou quitte l'équipe, les requêtes de facturation de la clé renvoient `409` avec le code `key_owner_inactive`, et ses autres portées continuent de fonctionner. `POST /partner/billing/checkout` établit le paiement du palier au nom de ce propriétaire.
+
+| Portée | Permet |
+| --- | --- |
+| `partner:read` | `GET /partner`, `GET /partner/brand`, `GET /partner/domain`, `GET /partner/demos`, `GET /partner/demos/{demo_id}`, `GET /partner/packages`, `GET /partner/templates`, `GET /partner/team`, `GET /partner/businesses/{business_id}/billing` |
+| `partner.businesses:write` | `POST /partner/businesses/{business_id}/release`, `DELETE /partner/businesses/{business_id}`, `PATCH /partner/businesses/{business_id}/billing` |
+| `partner.demos:write` | `POST /partner/demos`, `POST /partner/demos/{demo_id}/publish`, `/rotate` et `/revoke`, `DELETE /partner/demos/{demo_id}` |
+| `partner.packages:write` | `POST /partner/packages`, `PATCH` et `DELETE` sur `/partner/packages/{package_id}` |
+| `partner.branding:write` | `PATCH /partner/brand`, `POST` et `DELETE` sur `/partner/domain` |
+| `partner.templates:write` | `POST /partner/templates`, `DELETE /partner/templates/{template_id}` |
+| `partner.team:write` | `POST /partner/team/invitations`, `DELETE /partner/team/invitations/{invitation_id}`, `PATCH` et `DELETE` sur `/partner/team/members/{member_id}` |
+| `partner.billing:read` | `GET /partner/stripe`, `GET /partner/billing`, `GET /partner/billing/checkout/{checkout_id}`, et `pool` dans `GET /partner`. `partner.billing:write` les permet aussi. |
+| `partner.billing:write` | `POST /partner/stripe/onboarding-link`, `PATCH /partner/billing/overage`, `POST /partner/billing/checkout` |
+
+`POST /partner/team/invitations` exige un `Idempotency-Key`, et `POST /partner/packages`, `POST /partner/templates` et `POST /partner/billing/checkout` en acceptent un. `POST /partner/demos` et `POST /partner/demos/{demo_id}/rotate` l'ignorent : LobbyStack ne garde ainsi aucune copie du lien d'une démo. Après une erreur réseau, consultez `GET /partner/demos` avant de réessayer. `PATCH /partner/brand` accepte un logo ou un favicon en base64, comme la console les téléverse.
+
+### Créer une clé de l'hôte
+
+Le tableau de bord n'a pas de page pour les clés de l'hôte. Sur un déploiement auto-hébergé, `pnpm platform-key:create` écrit une nouvelle clé dans `.platform-keys/<prefix>.json` et affiche son entrée pour [`PLATFORM_API_KEYS`](/fr/self-hosting/environment-variables). Chaque entrée définit :
+
+- Le groupe auquel appartient la clé (`group` ; passez `--group`). Les clés d'un même groupe atteignent les mêmes entreprises.
+- Le compte LobbyStack vérifié au nom duquel la clé agit (`owner_email`), qui possède les entreprises qu'elle crée.
+- Si la clé atteint toutes les entreprises (`"access": "all"` ; passez `--access all`) ou, par défaut, seulement celles que les clés de son groupe ont intégrées (`"access": "group"`).
+- Ses portées. Sauf si vous en nommez certaines, une nouvelle clé reçoit les portées qu'une clé API peut détenir. `POST /businesses` nécessite `businesses:create` et `POST /users` nécessite `users:create`. Seules les clés de plateforme peuvent détenir ces deux portées, et une nouvelle clé les reçoit seulement si vous passez `--create-businesses` ou `--create-users`. `GET /businesses` nécessite `business:read`. La commande refuse les portées partenaire, car une clé de l'hôte n'a pas de partenaire au nom duquel agir.
+
+Les entrées plus anciennes appellent le groupe `partner` et peuvent indiquer `"access": "partner"`. Les deux fonctionnent toujours, et la clé atteint les mêmes entreprises. Pour en mettre une à jour, remplacez `partner` par `group` et `"access": "partner"` par `"access": "group"`. Mettez d'abord l'admin à jour : les versions précédentes refusent `group`. L'admin refuse une entrée qui définit à la fois `partner` et `group`, et avec elle toutes les clés de `PLATFORM_API_KEYS`.
+
+<Warning>
+Une clé avec `"access": "all"` agit au nom du compte de son `owner_email` sur toutes les entreprises du déploiement, sans faire partie d'aucune équipe, et peut toutes les lire et les modifier. Cette clé, et ce compte avec son mot de passe, ses sessions et sa boîte de réception, sont des identifiants racine. Confiez-les au moins de personnes possible, protégez le mot de passe du compte comme celui de la base de données, et retirez l'entrée de la clé de `PLATFORM_API_KEYS` si l'un des deux fuit. `pnpm platform-key:create --access all` affiche le même avertissement.
+</Warning>
+
+Une fois que l'admin redémarre sans l'entrée d'une clé dans `PLATFORM_API_KEYS`, les requêtes avec cette clé échouent, et LobbyStack désactive les points de terminaison webhook que la clé a créés. Pour en garder un, réactivez-le avec une autre de vos clés de plateforme.
+
+### Utiliser une clé de plateforme
+
+`POST /businesses` crée une entreprise. `GET /businesses` liste celles que le groupe de la clé a intégrées ou, pour la clé de plateforme d'un partenaire, toutes les entreprises du partenaire. Toutes les autres requêtes nomment leur entreprise dans l'en-tête `LobbyStack-Business` :
+
+```bash
+curl https://app.lobbystack.com/api/v1/services \
+  -H "Authorization: Bearer $LOBBYSTACK_PLATFORM_KEY" \
+  -H "LobbyStack-Business: 75795511-9ee2-4cb2-a89d-f173ec1dd82d"
+```
+
+Sans cet en-tête, la requête renvoie `400` avec le code `business_required`. Une entreprise que la clé ne peut pas atteindre renvoie `404`. `GET /me` fonctionne sans l'en-tête et affiche le groupe et la portée de la clé dans `platform`. `platform.reach` vaut `group` pour une clé avec un accès de groupe et `all` pour une clé qui atteint toutes les entreprises. L'API v1 garde aussi les anciens noms : `platform.partner` répète `platform.group`, et `platform.access` répète `platform.reach`, mais vaut `partner` pour un accès de groupe. Pour la clé de plateforme d'un partenaire, `platform.partner_id` nomme le partenaire, qui est aussi le groupe de la clé. Il vaut `null` pour les clés de l'hôte.
+
+`POST /team/claim-link` remet une entreprise à son propriétaire. Une fois qu'il l'accepte, une clé avec un accès de groupe n'atteint plus l'entreprise, alors qu'une clé qui a accès à toutes les entreprises l'atteint toujours. Dans les deux cas, `GET /businesses` ne la liste plus. LobbyStack désactive aussi les points de terminaison webhook de l'entreprise créés par une clé de plateforme, par le compte qui a envoyé le lien ou par les clés API de ce compte. L'entreprise d'un partenaire reste chez ce partenaire : `POST /team/claim-link` renvoie donc `409` pour elle. Seul le partenaire peut la céder à son propriétaire.
+
+Seul un compte LobbyStack vérifié peut accepter un lien de réclamation, et la page du lien permet à un propriétaire sans compte de s'inscrire d'abord. Pour l'inviter avant, `POST /users` envoie à l'adresse un lien d'inscription, ou un lien de connexion si l'adresse a déjà un compte. Il ne crée jamais de compte : le propriétaire s'inscrit avec son propre mot de passe ou avec Google. La réponse est la même dans les deux cas, donc vous ne pouvez pas savoir qui a un compte. Une clé de plateforme peut inviter 50 adresses par jour.
+
+## Modifier une clé
+
+Dans **Réglages** > **Clés API**, cliquez sur **Modifier** à côté de la clé pour changer son nom ou ses portées, puis sur **Enregistrer**. La clé reste la même, et les requêtes qui l'utilisent obtiennent les nouvelles portées immédiatement. Vous ne pouvez pas modifier une clé révoquée. Sur la page **Clés API** de la console partenaire, seuls les propriétaires peuvent modifier une clé de plateforme qui a accès à la facturation.
+
+## Révoquer une clé
+
+Dans **Réglages** > **Clés API**, cliquez sur **Révoquer** à côté de la clé. Les requêtes qui l'utilisent échouent immédiatement, et vous ne pouvez pas annuler cette action. Créez une nouvelle clé si vous avez encore besoin d'accès.
+
+LobbyStack désactive aussi les points de terminaison webhook que la clé a créés. Pour en garder un, réactivez-le dans **Réglages** > **Webhooks**.
+
+Pour révoquer une clé de plateforme d'un partenaire, cliquez sur **Révoquer** à côté d'elle dans la page **Clés API** de la console partenaire. Les requêtes qui l'utilisent échouent immédiatement. LobbyStack désactive les points de terminaison webhook qu'elle a créés sur toutes les entreprises, et révoque les invitations qu'elle a envoyées, à l'équipe d'une entreprise ou à celle du partenaire, et que personne n'a encore acceptées. Les propriétaires qu'elle a invités en créant leur entreprise peuvent toujours accepter.
+
+## Limites de débit
+
+Chaque clé peut faire 120 requêtes par minute. Les déploiements auto-hébergés peuvent modifier cette valeur avec `PUBLIC_API_RATE_LIMIT_PER_MINUTE`. La fenêtre se réinitialise au début de chaque minute.
+
+Chaque réponse contient ces en-têtes :
+
+| En-tête | Signification |
+| --- | --- |
+| `X-RateLimit-Limit` | Requêtes autorisées par minute. |
+| `X-RateLimit-Remaining` | Requêtes restantes dans la minute en cours. |
+| `X-RateLimit-Reset` | Heure Unix, en secondes, à laquelle la fenêtre se réinitialise. |
+
+Au-delà de la limite, l'API renvoie `429` avec le code `rate_limited` et un en-tête `Retry-After` qui indique le nombre de secondes à attendre.
+
+## Protéger vos clés
+
+- Utilisez une clé par outil, pour pouvoir en révoquer une sans briser les autres.
+- Donnez à chaque clé seulement les portées dont elle a besoin.
+- Ne placez jamais une clé dans du code exécuté dans le navigateur ou dans une application mobile. Appelez l'API depuis un serveur.
+- LobbyStack journalise chaque requête avec l'identifiant de la clé, jamais la clé elle-même, et consigne les changements faits avec une clé dans le journal d'audit de l'entreprise.

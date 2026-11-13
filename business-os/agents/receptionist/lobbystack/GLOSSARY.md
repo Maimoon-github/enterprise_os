@@ -1,0 +1,89 @@
+# LobbyStack
+
+LobbyStack answers businesses' calls and messages with AI agents. Some businesses buy from LobbyStack directly, and others buy from a partner that resells LobbyStack under its own brand.
+
+## Language
+
+### Who
+
+**Business**:
+An organization whose calls and messages LobbyStack answers. It belongs to the host directly or to a partner.
+_Avoid_: Client, tenant, customer
+
+**Workspace**:
+The name operators see for a business in the dashboard's navigation and settings. It's the same thing as a business, not a level above or below one.
+_Avoid_: Organization, account
+
+**Partner**:
+A company that resells LobbyStack to businesses under its own brand, domain, and bills. It keeps the businesses it sets up.
+_Avoid_: Agency, reseller, white-label partner
+
+**Partner member**:
+A person on a partner's team, as its owner, an admin, or a member.
+_Avoid_: Partner staff, agency user
+
+**Host**:
+The company that runs a LobbyStack deployment: LobbyStack on its cloud, or a self-hoster on its own. The host's brand appears on its main domain and is the verified sender of its texts.
+_Avoid_: Operator, platform, deployment owner
+
+**Operator**:
+A person on a business's team who uses its dashboard.
+_Avoid_: User, staff, host
+
+**Affiliate**:
+A person who refers businesses to LobbyStack for a commission. An affiliate never manages the businesses it refers.
+_Avoid_: Partner, referrer
+
+### What answers
+
+**Agent**:
+The AI that answers a business's channels, with its own name, voice, instructions, and rules. A business can have several. The marketing site can still call its job an AI receptionist.
+_Avoid_: Receptionist, chatbot, AI worker
+
+**Channel**:
+A connected place where customers reach an agent, such as a phone number, a website widget, or an Instagram account. A channel belongs to one agent.
+_Avoid_: Line, integration
+
+**Employee**:
+A person at a business whom an agent books appointments with or transfers calls to.
+_Avoid_: Staff, human agent
+
+**Real conversation**:
+A customer's conversation with an agent or the team on any channel. Test calls and calls from a team's verified phones don't count.
+_Avoid_: Real call, live call
+
+### What gets sold
+
+**Plan**:
+What the host sells to a business directly, such as LobbyStack's Starter or Pro.
+_Avoid_: Tier, package
+
+**Tier**:
+What a partner buys from the host: a monthly fee and a pool.
+_Avoid_: Plan, partner plan
+
+**Pool**:
+The minutes and chats a partner's tier includes each month, shared by all the partner's businesses. On a deployment that bills no tiers, the host sets the pool, or leaves it with no limit.
+_Avoid_: Credits, allowance
+
+**Package**:
+What a partner sells to one of its businesses: a price and an allowance.
+_Avoid_: Plan, partner plan
+
+**Allowance**:
+The minutes and chats a business's plan or package includes each month.
+_Avoid_: Pool, credits, quota
+
+### Moving businesses
+
+**Platform key**:
+An API key that can create businesses and then manage them. A partner makes its own, and the host holds the rest.
+_Avoid_: Partner key
+
+**Claim**:
+A business's owner taking over a business someone set up for them with a platform key, through a claim link. The owner then pays the host directly.
+_Avoid_: Handoff, transfer
+
+**Release**:
+A partner giving one of its businesses to that business's owner, who then pays the host directly.
+_Avoid_: Transfer, offboarding

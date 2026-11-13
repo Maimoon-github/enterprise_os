@@ -1,0 +1,106 @@
+import { defineConfig, devices } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { fullStackEnvironment } from "./e2e/fixtures/full-stack-environment";
+import { roleDatabaseUrl } from "./playwright-database-url";
+import { playwrightTestSecrets } from "./playwright-test-secrets";
+
+function replacementEnvironment(): Record<string, string> {
+  if (process.env.CI) return {};
+  const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
+  const localPath = resolve(root, ".env");
+  const path = existsSync(localPath) ? localPath : resolve(root, ".env.example");
+  return Object.fromEntries(readFileSync(path, "utf8").split(/\r?\n/).flatMap((line) => {
+    const separator = line.indexOf("=");
+    return separator > 0 && !line.startsWith("#") ? [[line.slice(0, separator), line.slice(separator + 1)]] : [];
+  }));
+}
+
+const replacement = replacementEnvironment();
+const testSecrets = playwrightTestSecrets(process.env);
+// Specs sign links as the worker does, such as an email's unsubscribe link, so
+// they need the server's key. Test workers inherit this process's environment.
+process.env.ENCRYPTION_KEY = testSecrets.ENCRYPTION_KEY;
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:13000";
+const localDatabaseUrl = Object.keys(replacement).length > 0
+  ? `postgres://postgres:${process.env.POSTGRES_PASSWORD ?? replacement.POSTGRES_PASSWORD ?? "postgres"}@127.0.0.1:${process.env.POSTGRES_PORT ?? replacement.POSTGRES_PORT ?? "15433"}/lobbystack`
+  : undefined;
+const baseDatabaseUrl = new URL(localDatabaseUrl ?? process.env.DATABASE_URL ?? "postgres://postgres:postgres@127.0.0.1:5432/lobbystack");
+process.env.REPLACEMENT_E2E_DATABASE_URL = baseDatabaseUrl.toString();
+
+// The specs in e2e/full-stack run against the fakes in e2e/fixtures with a real
+// worker, on one Playwright worker so their fixed ports and queues stay theirs.
+const fullStack = process.env.FULL_STACK_E2E === "1";
+const workerPort = process.env.E2E_WORKER_PORT ?? "13002";
+const carrierRedirect = fileURLToPath(new URL("./e2e/fixtures/carrier-redirect.mjs", import.meta.url));
+const fullStackEnv = fullStack ? fullStackEnvironment(baseURL, carrierRedirect) : {};
+
+const adminEnv = {
+  PORT: new URL(baseURL).port || "13000",
+  APP_BASE_URL: baseURL,
+  AUTH_TRUSTED_ORIGINS: baseURL,
+  ...testSecrets,
+  BETTER_AUTH_USE_SECURE_COOKIES: "false",
+  REQUIRE_EMAIL_VERIFICATION: "true",
+  // The isolated test server is reachable only on localhost, and each spec
+  // mints a unique `x-real-ip` per user so auth rate limits stay per-test
+  // instead of collapsing into one shared bucket. Never copy this to a
+  // deployment whose ingress does not overwrite the header.
+  TRUSTED_CLIENT_IP_HEADER: "x-real-ip",
+  // The trial journey sends Cloudflare's country next to its test header.
+  TRUSTED_CLIENT_COUNTRY_HEADER: "cf-ipcountry",
+  // The setup prompts journey opens the marketing site, which this hostname serves.
+  MARKETING_HOSTS: "lobbystack.localhost",
+  // The widget settings journey creates a widget key, which stays off unless an operator opts in.
+  WIDGET_KEY_ISSUANCE_ENABLED: "true",
+  // The first-visit intro cards open only for a browser with the opt-in
+  // cookie (e2e/fixtures/page-intros.ts), so other specs never wait behind one.
+  PAGE_INTROS_E2E_OPT_IN: "true",
+  DATABASE_URL: roleDatabaseUrl(baseDatabaseUrl, "lobbystack_app", process.env.LOBBYSTACK_APP_PASSWORD ?? replacement.LOBBYSTACK_APP_PASSWORD ?? "app", process.env.LOBBYSTACK_APP_DATABASE_URL),
+  LOBBYSTACK_APP_DATABASE_URL: roleDatabaseUrl(baseDatabaseUrl, "lobbystack_app", process.env.LOBBYSTACK_APP_PASSWORD ?? replacement.LOBBYSTACK_APP_PASSWORD ?? "app", process.env.LOBBYSTACK_APP_DATABASE_URL),
+  LOBBYSTACK_AUTH_DATABASE_URL: roleDatabaseUrl(baseDatabaseUrl, "lobbystack_auth", process.env.LOBBYSTACK_AUTH_PASSWORD ?? replacement.LOBBYSTACK_AUTH_PASSWORD ?? "auth", process.env.LOBBYSTACK_AUTH_DATABASE_URL),
+  LOBBYSTACK_WORKER_DATABASE_URL: roleDatabaseUrl(baseDatabaseUrl, "lobbystack_worker", process.env.LOBBYSTACK_WORKER_PASSWORD ?? replacement.LOBBYSTACK_WORKER_PASSWORD ?? "worker", process.env.LOBBYSTACK_WORKER_DATABASE_URL),
+  LOBBYSTACK_DISPATCHER_DATABASE_URL: roleDatabaseUrl(baseDatabaseUrl, "lobbystack_dispatcher", process.env.LOBBYSTACK_DISPATCHER_PASSWORD ?? replacement.LOBBYSTACK_DISPATCHER_PASSWORD ?? "dispatcher", process.env.LOBBYSTACK_DISPATCHER_DATABASE_URL),
+  ...(process.env.REDIS_URL || replacement.REDIS_PORT ? { REDIS_URL: process.env.REDIS_URL ?? `redis://127.0.0.1:${replacement.REDIS_PORT}` } : {}),
+  ...(process.env.AI_CHAT_API_KEY && process.env.AI_CHAT_BASE_URL && process.env.AI_CHAT_MODEL ? {
+    AI_CHAT_API_KEY: process.env.AI_CHAT_API_KEY,
+    AI_CHAT_BASE_URL: process.env.AI_CHAT_BASE_URL,
+    AI_CHAT_MODEL: process.env.AI_CHAT_MODEL,
+  } : {}),
+  ...fullStackEnv,
+  NODE_ENV: "production",
+};
+
+export default defineConfig({
+  testDir: "./e2e",
+  testMatch: "**/*.e2e.ts",
+  testIgnore: ["**/visual-parity.e2e.ts", "**/new-operator-visual.e2e.ts", "**/loading-parity.e2e.ts", "**/invitation-parity.e2e.ts", ...(fullStack ? [] : ["**/full-stack/**"])],
+  fullyParallel: false,
+  // Operator fixtures share persisted active-workspace state across spec files.
+  ...(process.env.PARITY_OPERATOR_USER_ID || fullStack ? { workers: 1 } : {}),
+  retries: process.env.CI ? 2 : 0,
+  reporter: process.env.CI ? "github" : "list",
+  use: {
+    baseURL,
+    trace: "retain-on-failure",
+  },
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  webServer: [
+    {
+      command: "pnpm exec tsx --tsconfig ../../scripts/tsconfig.json ../../scripts/prepare-admin-standalone.ts && node .next/standalone/apps/admin/server.js",
+      url: `${baseURL}/login`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: adminEnv,
+    },
+    ...(fullStack ? [{
+      command: "pnpm -w e2e:worker",
+      url: `http://127.0.0.1:${workerPort}/health/ready`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      env: { ...adminEnv, PORT: workerPort },
+    }] : []),
+  ],
+});

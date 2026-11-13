@@ -1,0 +1,561 @@
+import { MAX_MAIL_SPLITS } from "@/utils/split-inbox/split-constants";
+import { INITIAL_MAIL_SPLITS } from "@/utils/split-inbox/initial-splits";
+import { expect } from "@playwright/test";
+import { capturePlaywrightCheckpoint } from "../playwright-evidence";
+import { test } from "../playwright-test";
+import { playwrightMailProvider } from "../mail-provider";
+import { getEmailAccountId } from "../account-test-helpers";
+import {
+  cleanupDefaultSplitRule,
+  conversationWithSubject,
+  openMail,
+  seedDefaultSplitRule,
+  withClient,
+  toggleMailLayout,
+} from "./mail-test-helpers";
+
+const isMicrosoft = playwrightMailProvider === "microsoft";
+
+let defaultSplitEmailAccountId: string | undefined;
+
+test.beforeEach(async ({ page }) => {
+  const emailAccountId = await getEmailAccountId(page);
+  await withClient(async (client) => {
+    await client.query('DELETE FROM "MailSplit" WHERE "emailAccountId" = $1', [
+      emailAccountId,
+    ]);
+    for (const [order, split] of INITIAL_MAIL_SPLITS.entries()) {
+      const { rows } = await client.query(
+        `INSERT INTO "MailSplit" (id, "updatedAt", "emailAccountId", name, "matchAll", "order")
+         VALUES (gen_random_uuid()::text, NOW(), $1, $2, true, $3) RETURNING id`,
+        [emailAccountId, split.name, order],
+      );
+      const splitId = rows.at(0)?.id;
+      if (!splitId) throw new Error("Could not initialize split fixture");
+      for (const filter of split.filters.create) {
+        await client.query(
+          `INSERT INTO "MailSplitFilter" (id, "mailSplitId", kind, value, "order") VALUES (gen_random_uuid()::text, $1, $2, $3, $4)`,
+          [splitId, filter.kind, filter.value, filter.order],
+        );
+      }
+    }
+  });
+});
+
+test.afterEach(async () => {
+  if (!defaultSplitEmailAccountId) return;
+  await cleanupDefaultSplitRule(defaultSplitEmailAccountId);
+  defaultSplitEmailAccountId = undefined;
+});
+
+/** Next's dev indicator otherwise lands in every product screenshot. */
+async function hideDevIndicator(page: Parameters<typeof openMail>[0]) {
+  await page.locator("nextjs-portal").evaluateAll((portals) => {
+    for (const portal of portals) portal.remove();
+  });
+}
+
+test("restores a deleted All tab and protects it from removal", async ({
+  page,
+}, testInfo) => {
+  const emailAccountId = await getEmailAccountId(page);
+  await withClient((client) =>
+    client.query(
+      'DELETE FROM "MailSplit" WHERE "emailAccountId" = $1 AND name = $2',
+      [emailAccountId, "All"],
+    ),
+  );
+  await withClient(async (client) => {
+    for (let index = 1; index < MAX_MAIL_SPLITS; index++) {
+      await client.query(
+        `WITH split AS (
+          INSERT INTO "MailSplit" (id, "updatedAt", "emailAccountId", name, "matchAll", "order")
+          VALUES (gen_random_uuid()::text, NOW(), $1, $2, true, $3) RETURNING id
+        )
+        INSERT INTO "MailSplitFilter" (id, "mailSplitId", kind, "order")
+        SELECT gen_random_uuid()::text, id, 'UNREAD', 0 FROM split`,
+        [emailAccountId, `Split ${index}`, index + 1],
+      );
+    }
+  });
+  await openMail(page);
+  const allTab = page.locator("button[data-split-tab]").filter({
+    has: page.locator("[data-split-name]", { hasText: /^All$/ }),
+  });
+  await expect(allTab).toBeVisible();
+  await allTab.click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "Turn off split" }),
+  ).toBeHidden();
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-protected-all-split");
+  await page.getByRole("button", { name: "New split", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Move All down", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Move Unread up", exact: true }),
+  ).toBeDisabled();
+  await expect(page.locator('[data-drag-split="all"]')).toHaveAttribute(
+    "draggable",
+    "false",
+  );
+  const tabs = page.locator("[data-split-name]");
+  const original = await tabs.allTextContents();
+  expect(original).toHaveLength(MAX_MAIL_SPLITS + (isMicrosoft ? 1 : 2));
+  await page
+    .getByRole("button", { name: "Move Unread down", exact: true })
+    .click();
+  const expected = [
+    original[0],
+    original[2],
+    original[1],
+    ...original.slice(3),
+  ];
+  await expect(tabs).toHaveText(expected);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.reload();
+  await expect(tabs).toHaveText(expected);
+});
+
+test("keeps many split tabs in one scrolling row", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The underline slides with motion, which screenshots don't pause.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const emailAccountId = await getEmailAccountId(page);
+  const extraNames = [
+    "Newsletters",
+    "Receipts and invoices",
+    "Team updates",
+    "Travel plans",
+    "Calendar invites",
+    "Customer support",
+    "Product feedback",
+    "Waiting on reply",
+  ];
+  await withClient(async (client) => {
+    // Other specs on this shared account can leave it in split layout, and the
+    // layout toggles below assume they start from list.
+    await client.query(
+      `UPDATE "EmailAccount" SET "mailLayout" = 'LIST' WHERE id = $1`,
+      [emailAccountId],
+    );
+    for (const [index, name] of extraNames.entries()) {
+      await client.query(
+        `WITH split AS (
+          INSERT INTO "MailSplit" (id, "updatedAt", "emailAccountId", name, "matchAll", "order")
+          VALUES (gen_random_uuid()::text, NOW(), $1, $2, true, $3) RETURNING id
+        )
+        INSERT INTO "MailSplitFilter" (id, "mailSplitId", kind, "order")
+        SELECT gen_random_uuid()::text, id, 'UNREAD', 0 FROM split`,
+        [emailAccountId, name, INITIAL_MAIL_SPLITS.length + index],
+      );
+    }
+  });
+  await openMail(page);
+  await hideDevIndicator(page);
+
+  const tabs = page.locator("button[data-split-tab]");
+  const lastTab = tabs.filter({
+    has: page.locator("[data-split-name]", { hasText: /^Waiting on reply$/ }),
+  });
+  await expect(lastTab).toBeAttached();
+  const strip = tabs.first().locator("xpath=../../..");
+  const newSplit = page.getByRole("button", { name: "New split", exact: true });
+  const emptyReader = page.getByText("Nothing selected", { exact: true });
+
+  const tabTops = await tabs.evaluateAll((buttons) =>
+    buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+  );
+  expect(new Set(tabTops).size).toBe(1);
+  await expect(newSplit).toBeInViewport();
+  await capturePlaywrightCheckpoint(strip, testInfo, "mail-split-tabs-start");
+
+  await toggleMailLayout(page);
+  await expect(emptyReader).toBeVisible();
+  await expect(newSplit).toBeInViewport();
+  const splitLayoutTops = await tabs.evaluateAll((buttons) =>
+    buttons.map((button) => Math.round(button.getBoundingClientRect().top)),
+  );
+  expect(new Set(splitLayoutTops).size).toBe(1);
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-split-tabs-split-layout",
+  );
+
+  // A DOM click, so Playwright doesn't scroll the off-screen tab in itself.
+  await lastTab.evaluate((button: HTMLElement) => button.click());
+  await expect(lastTab).toHaveAttribute("aria-current", "true");
+  await expect(lastTab).toBeInViewport({ ratio: 1 });
+  await expect(newSplit).toBeInViewport();
+  await capturePlaywrightCheckpoint(strip, testInfo, "mail-split-tabs-end");
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-split-tabs-split-layout-end",
+  );
+
+  await toggleMailLayout(page);
+  await expect(emptyReader).toBeHidden();
+  await expect(lastTab).toBeInViewport({ ratio: 1 });
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-split-tabs-list-end");
+
+  // Tab cycling moves on from the active split and keeps the new one in view.
+  await lastTab.click();
+  await page.keyboard.press("Tab");
+  const activeTab = page.locator('button[data-split-tab][aria-current="true"]');
+  await expect(lastTab).not.toHaveAttribute("aria-current", "true");
+  await expect(activeTab).toBeInViewport({ ratio: 1 });
+
+  // A plain vertical wheel over the strip reaches tabs hidden at the end.
+  await tabs.first().evaluate((button: HTMLElement) => button.click());
+  await expect(lastTab).not.toBeInViewport({ ratio: 1 });
+  await tabs.first().hover();
+  await page.mouse.wheel(0, 2000);
+  await expect(lastTab).toBeInViewport({ ratio: 1 });
+
+  // Select-all sits before the scrolling tabs, so it stays put while they scroll.
+  await lastTab.evaluate((button: HTMLElement) => button.click());
+  const conversations = page.getByRole("listbox", { name: "Conversations" });
+  await conversations.getByRole("option").first().hover();
+  await conversations.getByRole("option").first().getByRole("checkbox").click();
+  const selectAll = page.getByRole("checkbox", {
+    name: "Select all conversations",
+  });
+  await expect(selectAll).toBeInViewport({ ratio: 1 });
+  await expect(lastTab).toBeInViewport({ ratio: 1 });
+});
+
+test("moves focus with the active split when cycling by keyboard", async ({
+  page,
+}, testInfo) => {
+  await openMail(page);
+
+  const activeSplit = page.locator('button[aria-current="true"]');
+  await expect(activeSplit).toBeVisible();
+  await activeSplit.click();
+
+  await page.keyboard.press("Tab");
+
+  await expect(activeSplit).toBeFocused();
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-split-keyboard-focus",
+  );
+});
+
+test("cycles splits backward with Shift-Tab, wrapping to the last", async ({
+  page,
+}, testInfo) => {
+  await openMail(page);
+
+  const activeSplit = page.locator('button[aria-current="true"]');
+  const splitTabs = page.locator("button[data-split-tab]");
+  await expect(activeSplit).toBeVisible();
+  await splitTabs.first().click();
+  await expect(activeSplit).toHaveAttribute(
+    "data-split-tab",
+    String(await splitTabs.first().getAttribute("data-split-tab")),
+  );
+  const lastId = await splitTabs.last().getAttribute("data-split-tab");
+
+  await page.keyboard.press("Shift+Tab");
+
+  await expect(activeSplit).toHaveAttribute("data-split-tab", String(lastId));
+  await expect(activeSplit).toBeFocused();
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-split-keyboard-previous",
+  );
+});
+
+test("leaves Tab to focus navigation outside the mail list", async ({
+  page,
+}) => {
+  await openMail(page);
+
+  const activeSplit = page.locator('button[aria-current="true"]');
+  await expect(activeSplit).toBeVisible();
+  const initial = String(await activeSplit.getAttribute("data-split-tab"));
+  const compose = page.getByRole("button", { name: /^Compose/ });
+  await compose.focus();
+
+  await page.keyboard.press("Tab");
+
+  await expect(compose).not.toBeFocused();
+  await expect(activeSplit).toHaveAttribute("data-split-tab", initial);
+});
+
+test("creates and edits a domain sender condition", async ({
+  page,
+}, testInfo) => {
+  await openMail(page);
+  await page.getByRole("button", { name: "New split" }).click();
+  await page.getByRole("button", { name: "Build your own" }).click();
+  await page.getByLabel("Condition field").first().selectOption("FROM");
+  await page.getByLabel("Sender", { exact: true }).fill("@example.com");
+  await page.getByLabel("Split name").fill("Example domain");
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-domain-split-builder",
+  );
+  await page.getByRole("button", { name: "Add split", exact: true }).click();
+  const tab = page.getByRole("button", { name: "Example domain", exact: true });
+  await expect(tab).toBeVisible();
+  await tab.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit filters and name" }).click();
+  await expect(page.getByLabel("Sender", { exact: true })).toHaveValue(
+    "@example.com",
+  );
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-domain-split-edit");
+});
+
+test("builds a split from conditions and shows only matching mail", async ({
+  page,
+}, testInfo) => {
+  const { conversations } = await openMail(page);
+
+  await page.getByRole("button", { name: "New split" }).click();
+  await expect(page.getByText("New split inbox")).toBeVisible();
+  await expect(page.getByText(/Compiling/)).toBeHidden();
+  await hideDevIndicator(page);
+
+  await page.getByRole("button", { name: "Build your own" }).click();
+  await expect(page.getByText("Show mail matching")).toBeVisible();
+
+  await page
+    .getByLabel("Condition field")
+    .first()
+    .selectOption(isMicrosoft ? "LABEL" : "CATEGORY");
+  await page.getByLabel("Condition value").first().selectOption({
+    label: "Promotions",
+  });
+  await page.getByLabel("Split name").fill("Promos");
+
+  await page.getByRole("button", { name: "Add split" }).click();
+
+  const promosSplit = page.getByRole("button", { name: "Promos", exact: true });
+  await expect(promosSplit).toBeVisible();
+  await expect(promosSplit).toHaveAttribute("aria-current", "true");
+  await expect(
+    conversationWithSubject(page, conversations, "Promotion Category Message"),
+  ).toBeVisible();
+  await expect(conversations.getByRole("option")).toHaveCount(1);
+  await hideDevIndicator(page);
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-new-split-created");
+
+  // The tab's own menu edits the split rather than sending you back to the list.
+  await promosSplit.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit filters and name" }).click();
+  await expect(page.getByText("Edit split")).toBeVisible();
+  await expect(page.getByLabel("Condition value").first()).toHaveValue(
+    isMicrosoft ? "Label_promotions" : "CATEGORY_PROMOTIONS",
+  );
+  await hideDevIndicator(page);
+
+  await page.getByRole("button", { name: "Add condition" }).click();
+  await expect(page.getByLabel("Condition field")).toHaveCount(2);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(promosSplit).toBeVisible();
+
+  await promosSplit.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Turn off split" }).click();
+  await expect(promosSplit).toHaveCount(0);
+});
+
+test("turns a prepared split on from the library", async ({
+  page,
+}, testInfo) => {
+  const emailAccountId = await getEmailAccountId(page);
+  await seedDefaultSplitRule(emailAccountId);
+  defaultSplitEmailAccountId = emailAccountId;
+  await openMail(page);
+
+  await page.getByRole("button", { name: "New split" }).click();
+  await page.getByRole("button", { name: "General", exact: true }).click();
+
+  const templateName = isMicrosoft ? "GitHub" : "Starred";
+  // OTP is opt-in: offer it even when the account does not already have the label.
+  await expect(
+    page.getByRole("button", { name: "Turn on the OTP split" }),
+  ).toBeVisible();
+  if (isMicrosoft) {
+    await page.getByRole("button", { name: "Apps", exact: true }).click();
+  }
+  const templateTile = page.getByRole("button", {
+    name: `Turn on the ${templateName} split`,
+  });
+  await expect(templateTile).toBeVisible();
+  await hideDevIndicator(page);
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-split-library");
+
+  await templateTile.click();
+  await expect(
+    page.getByRole("button", { name: `Turn off the ${templateName} split` }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Close" }).click();
+  const templateSplit = page.getByRole("button", {
+    name: templateName,
+    exact: true,
+  });
+  await expect(templateSplit).toBeVisible();
+  await hideDevIndicator(page);
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-rule-label-splits-added",
+  );
+
+  await templateSplit.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Turn off split" }).click();
+  await expect(templateSplit).toHaveCount(0);
+});
+
+test("reorders splits with arrows and dragging and persists tab order", async ({
+  page,
+}, testInfo) => {
+  await openMail(page);
+  const tabs = page.locator("[data-split-name]");
+  const original = await tabs.allTextContents();
+  expect(original.length).toBeGreaterThan(1);
+  await page.getByRole("button", { name: "New split", exact: true }).click();
+  const list = page.getByRole("list", { name: "Split order" });
+  await page
+    .getByRole("button", { name: `Move ${original[0]} down`, exact: true })
+    .click();
+  await expect(list).toHaveAttribute("aria-busy", "false");
+  const expected = [original[1], original[0], ...original.slice(2)];
+  await expect(tabs).toHaveText(expected);
+  await expect(
+    page.getByRole("button", { name: "Turn off the All split", exact: true }),
+  ).toBeDisabled();
+  await hideDevIndicator(page);
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-sortable-splits");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.reload();
+  await expect(tabs).toHaveText(expected);
+  await page.getByRole("button", { name: "New split", exact: true }).click();
+  const rows = list.getByRole("listitem");
+  await rows.nth(0).locator("[data-drag-split]").dragTo(rows.nth(1));
+  await expect(tabs).toHaveText(original);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.reload();
+  await expect(tabs).toHaveText(original);
+});
+
+test("reorders split tabs by dragging a tab", async ({ page }, testInfo) => {
+  await openMail(page);
+  const tabs = page.locator("[data-split-name]");
+  const original = await tabs.allTextContents();
+  expect(original.length).toBeGreaterThan(1);
+  const tabButtons = page.locator("button[data-split-tab]");
+  const activeBefore = await page
+    .locator('button[aria-current="true"]')
+    .getAttribute("data-split-tab");
+
+  await tabButtons.nth(1).hover();
+  await page.mouse.down();
+  const target = await tabButtons.nth(0).boundingBox();
+  if (!target) throw new Error("Split tab is not visible");
+  await page.mouse.move(target.x + target.width / 3, target.y + 4, {
+    steps: 5,
+  });
+  const expected = [original[1], original[0], ...original.slice(2)];
+  await expect(tabs).toHaveText(expected);
+  await hideDevIndicator(page);
+  await capturePlaywrightCheckpoint(page, testInfo, "mail-split-tab-dragging");
+  await page.mouse.up();
+
+  await expect(tabs).toHaveText(expected);
+  // Dropping a tab moves it without switching to it.
+  await expect(page.locator('button[aria-current="true"]')).toHaveAttribute(
+    "data-split-tab",
+    activeBefore ?? "",
+  );
+  await page.reload();
+  await expect(tabs).toHaveText(expected);
+});
+
+test("Other excludes enabled splits and restores mail when a split is disabled", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    isMicrosoft,
+    "The synthetic Other split is available only for Gmail; Outlook Other is an inbox classification.",
+  );
+  const { conversations } = await openMail(page);
+  // Remove Unread so category membership alone determines this partition.
+  await page
+    .getByRole("button", { name: "Unread", exact: true })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Turn off split" }).click();
+  await page.getByRole("button", { name: "Other", exact: true }).click();
+  const promotion = conversationWithSubject(
+    page,
+    conversations,
+    "Promotion Category Message",
+  );
+  await expect(promotion).toBeVisible();
+
+  await page.getByRole("button", { name: "New split" }).click();
+  await page.getByRole("button", { name: "General", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Turn on the Important split", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Turn off the Important split",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).click();
+  await expect(
+    page.getByRole("button", { name: "Important", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "New split" }).click();
+  await page.getByRole("button", { name: "Build your own" }).click();
+  await page.getByLabel("Condition field").first().selectOption("CATEGORY");
+  await page
+    .getByLabel("Condition value")
+    .first()
+    .selectOption({ label: "Promotions" });
+  await page.getByLabel("Split name").fill("Promos");
+  await page.getByRole("button", { name: "Add split" }).click();
+  await expect(promotion).toBeVisible();
+  await page.getByRole("button", { name: "Other", exact: true }).click();
+  await expect(promotion).toHaveCount(0);
+  await capturePlaywrightCheckpoint(
+    page,
+    testInfo,
+    "mail-other-excludes-enabled-splits",
+  );
+
+  await page
+    .getByRole("button", { name: "Promos", exact: true })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Turn off split" }).click();
+  await page.getByRole("button", { name: "Other", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Other", exact: true }),
+  ).toHaveAttribute("aria-current", "true");
+  await expect(promotion).toBeVisible();
+
+  await page.getByRole("button", { name: "New split" }).click();
+  await page.getByRole("button", { name: "Build your own" }).click();
+  await page.getByLabel("Condition field").first().selectOption("STARRED");
+  await page.getByLabel("Split name").fill("Other");
+  await page.getByRole("button", { name: "Add split" }).click();
+  await expect(
+    page.getByRole("button", { name: "Other (custom)", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Other", exact: true }),
+  ).toBeVisible();
+});

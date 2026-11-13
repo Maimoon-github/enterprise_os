@@ -1,0 +1,117 @@
+---
+title: "Message campaigns"
+description: "Send a first WhatsApp message and timed follow-ups from your numbers, and know exactly when AgentSDR sends, waits or stops."
+icon: "message-square"
+---
+
+A WhatsApp message campaign sends a short sequence to a list of leads: a first message, then follow-ups after a delay you choose. It sends from the numbers you pick, within the guards on [WhatsApp numbers](/whatsapp/accounts). A reply on any channel stops the sequence for that lead.
+
+You find campaigns under **WhatsApp → Message campaigns** in the sidebar.
+
+## Create a campaign
+
+Click **New campaign** and the wizard walks through four steps. The campaign is saved paused, and nothing sends until you launch it.
+
+<Steps>
+  <Step title="Details & numbers">
+    Enter a **Campaign name**, an optional description, and choose the **WhatsApp numbers** that may send. You need at least one connected number to launch.
+  </Step>
+  <Step title="Add leads">
+    Choose **Import CSV or Excel** or **Add from People**.
+
+    With an import you map the phone column before anything is imported. **Phone number** is the only required field. You can also map first name, last name, full name, email, job title, company name, company website and LinkedIn URL. An import takes up to 5,000 rows. Columns you do not map are kept on the lead as merge fields.
+
+    With **Add from People** you select people already in your lead database who have a phone number. People already in the campaign, or without a phone number, are skipped, and the page tells you how many.
+  </Step>
+  <Step title="Write messages">
+    Write the first message and up to five follow-ups. See below.
+  </Step>
+  <Step title="Review & launch">
+    Check the summary. If something blocks launch, the page says what. Click **Launch campaign**, or **Save paused** to finish later.
+  </Step>
+</Steps>
+
+## Write the sequence
+
+A sequence has at most six messages: one first message and five follow-ups. For each follow-up you set **Wait**, the time after the previous message. The wait is from 1 hour to 30 days, set in hours or days, and a new follow-up defaults to 48 hours. Each message can be up to 4,096 characters.
+
+Personalize with merge fields. The editor offers **First name**, **Last name** and **Company**, written as `{{firstName}}`, `{{lastName}}` and `{{companyName}}`. Any column you imported but did not map also works. AgentSDR turns its header into camel case, so a column named "Job Title" becomes `{{jobTitle}}`. Field names are not case sensitive. A field the lead has no value for becomes empty text, so check the preview.
+
+Use **Preview as** to render a message for a real lead. The preview lists any merge fields it could not fill. A list that holds only a full name still fills the first and last name from it.
+
+<Tip>
+Open each follow-up in the preview with a lead that has missing data. A message that reads "Hi ," is better caught here than after it sends.
+</Tip>
+
+## Launch, pause and resume
+
+On a campaign's page the main button reads **Launch** the first time, **Pause** while it runs, and **Resume** after that. Launching needs a connected number, at least one lead and a non-empty first message. A paused campaign sends nothing, and its leads keep their place.
+
+The page has three tabs: **Overview** (funnel, where leads stand, messages by step), **Leads** and **Sequence**. You can edit the sequence after leads have joined.
+
+## How sending works
+
+Sending is a loop that runs about every 30 seconds.
+
+- **One message per number per round.** Each connected number assigned to an active campaign sends at most one message in a round. This keeps the gap between messages natural and under your sending rules.
+- **Follow-ups first.** If a number has both follow-ups and first messages due, it sends a follow-up.
+- **A lead stays on one number.** Later steps go from the number that sent the first message.
+- **Sending hours.** If you set **Sending hours for campaigns** under **Settings → WhatsApp → Sending rules**, nothing sends outside them. With none set, campaigns send at any time.
+- **Same guards as everything else.** Warm-up, new chats per day, the gap between sends and Do Not Contact all apply.
+
+When a guard refuses a message, AgentSDR reacts to the reason:
+
+| What happened | What AgentSDR does |
+| --- | --- |
+| Gap between sends, or WhatsApp rate limit | Waits and tries again next round. |
+| Warm-up or new-chat limit reached | Holds first messages on that number and keeps sending its follow-ups. |
+| Number not connected | Skips that number. |
+| Lead is Do Not Contact | Marks the lead **Stopped**. |
+| WhatsApp rejects the number or message | Marks the lead **Failed** and shows the error. |
+| Unipile cannot be reached | Retries after 10 minutes. After 3 failed attempts the lead is **Failed**. |
+
+<Note>
+Self-hosters can pause all WhatsApp campaign sending with the `PAUSE_WHATSAPP_OUTBOUND` environment switch. Campaign sending only runs in production deployments.
+</Note>
+
+## Never twice
+
+Before a message goes out, AgentSDR records a claim for that lead and step. A step cannot be sent twice, even after a crash or a deploy.
+
+If a claim was left half done, AgentSDR cannot know whether the message reached WhatsApp. It does not resend. It marks the lead **Failed** with the message "Delivery of message N is uncertain — check Messages before resuming". Open the chat, see whether the message is there, then use **Resume sequence** if it is not.
+
+## Lead statuses
+
+| Status | Meaning |
+| --- | --- |
+| **Queued** | Enrolled, first message not sent yet. |
+| **In sequence** | At least one message sent, more to come. |
+| **Completed, no reply** | Every step sent, no reply. |
+| **Replied** | The lead answered, on any channel. The sequence stopped. |
+| **Stopped** | A person stopped it, or the lead is Do Not Contact. |
+| **Failed** | WhatsApp refused the number or message. The error shows on the row. |
+
+On the **Leads** tab, the menu on each row offers **Stop sequence** (for queued or in-sequence leads), **Resume sequence** (for stopped or failed leads), **Open chat** and **Remove from campaign**.
+
+## Replies stop the sequence
+
+When a lead replies by email, LinkedIn or WhatsApp, their email and LinkedIn campaign enrollments and their WhatsApp campaign enrollment all stop, and the reply goes to **Action required** in the [CRM](/crm/action-required). AgentSDR also checks the chat just before each send. If the lead has written since they joined, the lead becomes **Replied** instead of receiving another message.
+
+Messages in a conversation carry an origin: **lead**, **agentsdr** (sent through Unipile) or **phone** (typed on your phone or in WhatsApp Web). If you answer from your phone, the CRM treats the lead as answered.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="WhatsApp numbers" icon="message-circle" href="/whatsapp/accounts">
+    Linking, warm-up and the guards.
+  </Card>
+  <Card title="Action required" icon="inbox" href="/crm/action-required">
+    Where replies land.
+  </Card>
+  <Card title="Sending rules" icon="settings" href="/workspace/sending-rules">
+    Change limits and hours.
+  </Card>
+  <Card title="Responsible use" icon="shield-check" href="/responsible-use">
+    Consent and compliance.
+  </Card>
+</CardGroup>

@@ -1,0 +1,102 @@
+---
+title: "Action required"
+description: "Work the queue of replies, AI drafts, classifications and follow-ups that need your decision before anything is sent."
+icon: "inbox"
+---
+
+Action required is your inbox for the CRM. Every record that needs a person appears here: a new reply with a draft to approve, a classification the AI was not sure about, a follow-up that has come due, or a failure. Open it from **Action required** in the sidebar. The sidebar shows a count of what is waiting.
+
+<Frame caption="The queue: each row is a lead waiting on you, with the AI's classification.">
+  <img src="/assets/screenshots/app/crm-action-required.png" alt="The Action required queue with counts for the queue, drafts to review, follow-ups due and errors, and a table of contacts with classification, latest reply and draft" />
+</Frame>
+
+## What the queue holds
+
+At the top, four numbers summarize it:
+
+- **In the queue**: every record waiting on a person, with how many are awaiting a decision.
+- **Drafts to review**: AI-written replies nobody has sent, edited or discarded yet.
+- **Follow-ups due**: follow-ups waiting on a person, either drafts to approve or scheduled steps past their time with nothing drafted yet.
+- **Errors**: records whose classification, drafting or sending failed. Select it to show only these.
+
+Records the AI is still working on, or that wait for a follow-up in the future, are not in the queue yet. They are in the [Pipeline](/crm/pipeline).
+
+Each row names what it needs. Filter by the five groups in **Action type**:
+
+| Group | Meaning |
+| --- | --- |
+| **Immediate reply** | A lead replied and a draft is ready, or needs writing. |
+| **Follow-up due** | A follow-up draft is waiting, or a scheduled step is past its time. |
+| **Confirm classification** | The AI proposed a change that needs your decision. |
+| **Needs a next step** | A record with nothing scheduled, for example no sequence is assigned to its category. |
+| **Error or failed** | Processing failed, or delivery needs confirming. |
+
+Other filters: **Category**, **Channel**, **Due time** (**Overdue**, **Due today**, **Upcoming**) and, under more filters, **Subcategory**, **AI classification** (**Needs review** or **Reviewed**), **Sequence** and **Errors only**. More rows load as you scroll.
+
+## Classification categories and reasons
+
+The AI puts each reply in one of four categories: **Interested**, **Customer**, **Not interested** and **Other**. Inside a category it picks a subcategory, and it records a confidence and a short reason. Hover the confidence on the record page to read the reason.
+
+The AI applies a classification on its own only when it is confident (the default threshold is 85%) and it is a normal forward move. It holds the classification as a proposal when:
+
+- the confidence is below the threshold;
+- the proposal is **Customer**, which needs review by default;
+- the proposal is **Other**, which is reviewed by default;
+- the lead is already on a funnel stage and the proposal would move them backward, or to an outcome with no stage number. Do Not Contact is exempt, so a suppression never waits in a queue;
+- the lead is already a **Customer** and the AI proposes another category. A Customer is protected from AI changes.
+
+A held proposal shows as **AI suggests: ...** with two buttons: **Accept**, or keep what the record already has. You can also change the classification yourself at any time with the classification picker, titled "Fix classification — the AI misread this reply". See [Pipeline](/crm/pipeline) for stage rules.
+
+## Review and send a draft
+
+Open a row's draft inline, or open the record page. The composer is headed **Reply**.
+
+<Steps>
+  <Step title="Read the message being answered">
+    The lead's latest message is quoted next to your draft. A badge on the draft says **Ready to send**, **Out of date** or **Draft failed**.
+  </Step>
+  <Step title="Choose the account">
+    The sender picker shows the account the reply goes out through, such as your mailbox, LinkedIn account or WhatsApp number. If the lead has conversations on several channels, switch here. Email replies have a **Subject** line. Switching channel creates a separate draft and keeps the old one.
+  </Step>
+  <Step title="Send as written, or edit">
+    Click **Approve & send** to send the draft exactly as it is. If you changed the text, the button reads **Save & send** in the inline editor. **Save** keeps your edits without sending.
+  </Step>
+  <Step title="Or change course">
+    **Regenerate** asks the AI to write it again. You can say **What should change**, for example "Too long and too salesy. Answer pricing first." **Discard** removes the draft.
+  </Step>
+</Steps>
+
+If the AI cannot produce a draft, the card says **The draft could not be written**. Regenerate it, or write the reply yourself and click **Create draft**.
+
+The AI may quote your knowledge base. Under the draft, **Knowledge used** lists the excerpts it relied on.
+
+<Warning>
+Sending is blocked for a lead marked Do Not Contact. Clear that status on the record first. A draft is also marked **Out of date** when a newer reply arrives. Regenerate or review it carefully before sending.
+</Warning>
+
+## What happens after you send
+
+- The message goes out through the chosen account and is added to the conversation.
+- If the draft belonged to a [sequence](/crm/sequences) and another step remains, the record moves to **Waiting** and the next step is scheduled after its delay. When it comes due, a follow-up draft appears here under **Follow-up due**.
+- If it was the last step, or there was no sequence, the record becomes **Idle**.
+- A reply you write by hand takes over the current sequence step when there is one, so the sequence carries on.
+- Any new reply from the lead cancels pending follow-ups and starts the cycle again.
+
+If the provider cannot confirm a send, the record shows **Delivery needs confirmation**. Check the provider, add a note, then click **Confirm delivered** or **Not delivered**. The note is required, and AgentSDR never resends on its own.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Pipeline" icon="kanban" href="/crm/pipeline">
+    All open leads, not only the ones due now.
+  </Card>
+  <Card title="Sequences" icon="list-checks" href="/crm/sequences">
+    How follow-up drafts are scheduled.
+  </Card>
+  <Card title="Instructions and knowledge" icon="book-open" href="/crm/knowledge">
+    Make drafts sound like you.
+  </Card>
+  <Card title="CRM overview" icon="sparkles" href="/crm/overview">
+    How replies get here.
+  </Card>
+</CardGroup>

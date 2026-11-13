@@ -1,0 +1,73 @@
+---
+title: "Public demo"
+description: "Run a read-only AgentSDR anyone can open without signing in, filled with a fictional company's three months of outbound."
+icon: "presentation"
+---
+
+A demo deployment lets people explore AgentSDR before installing it. Visitors open the address and are already inside the app as Alex Morgan, Head of Sales at **Northwind**, a fictional company. Every page has data: campaigns on all three channels, replies with AI drafts waiting for review, the CRM pipeline, call transcripts, Tables and Analytics. Nothing a visitor does is saved.
+
+<Warning>
+A demo is its **own deployment with its own database**. Never set `DEMO_MODE` on an instance that holds real data: every visitor is signed in with no password. The app refuses to move the demo's clock if any organization in the database is not a seeded demo one, but sign-in has no such check.
+</Warning>
+
+## What `DEMO_MODE=true` changes
+
+| | |
+|---|---|
+| **Sign-in** | Anyone without a session is signed in as the demo user at `/demo` and sent where they were going. Each visitor gets a session of their own. The sign-in, sign-up and onboarding screens lead to `/demo` too. |
+| **Read-only** | Every write is refused with `403 DEMO_READ_ONLY`, and the page shows a short "read-only demo" notice. A few writes the UI makes on its own when something opens (marking a thread or chat read) answer success without doing anything, so nothing looks broken. |
+| **No background work** | The send loops, the enrichment worker and the CRM's AI worker do not start. Requests that would call a model or restart a job (`/api/qualify`, `/api/campaigns/:id/stream`, the OpenRouter model list) are refused. The scheduled jobs do not run either, and no cron is needed. |
+| **Banner** | A strip across the top says the people and conversations are made up and links to GitHub and these docs. Sign out and Create organization are hidden. |
+| **Clock** | Once at boot and every hour, the demo moves every date in the database forward by the whole days since it was seeded, so "replied 2 days ago" stays true and the last-30-days charts stay full. |
+
+The LinkedIn, WhatsApp, email and R2 integrations are stored with placeholder credentials so their pages open. Nothing ever uses them. Playing a call recording does not work, because there is no audio behind it; transcripts and summaries show as normal.
+
+## Set it up
+
+<Steps>
+  <Step title="Create the deployment and its database">
+    Follow [Dokploy](/self-hosting/dokploy) or [Docker Compose](/self-hosting/docker-compose) as for any install, with a **new, empty** PostgreSQL. The database user must be a superuser (the default for the `postgres` image): the clock rewrites the CRM's history tables, which are append-only for everyone else.
+  </Step>
+  <Step title="Set the environment">
+    Next to the usual required variables:
+
+    ```sh
+    DEMO_MODE=true
+    AUTH_SIGNUP=invite-only
+    ```
+
+    Leave every integration and AI key unset. Do not set up an external cron or Dokploy schedule jobs for this deployment.
+  </Step>
+  <Step title="Create the schema and seed it">
+    The seed is not in the Docker image, so it runs from a checkout of the repository on your machine. Give the demo database a temporary **External Port** (on Dokploy: the database's page), then, with the deployment's own values:
+
+    ```sh
+    export DATABASE_URL=postgres://USER:PASSWORD@SERVER_IP:EXTERNAL_PORT/DATABASE
+    export DATABASE_SSL=disable
+    export INTEGRATION_CREDENTIALS_KEY=SAME_AS_THE_DEPLOYMENT
+    export BETTER_AUTH_SECRET=SAME_AS_THE_DEPLOYMENT
+    bun run db:setup
+    DEMO_MODE=true bun run db:seed:demo
+    ```
+
+    If the deployment has already started, it created the schema itself; then `bun run db:setup` refuses (the database has tables) and you can skip it. Variables you export win over the repository's `.env.local`. The key must match the deployment's, because the seed encrypts the placeholder integrations with it. `DEMO_MODE=true` lets the seed write to a database that is not on localhost; it prints the host it writes to, and refuses a database that already holds a real organization. The seed takes a few seconds. Remove the external port afterwards.
+  </Step>
+  <Step title="Open it">
+    Open the deployment's address. You land on Analytics, signed in, with the banner at the top.
+  </Step>
+</Steps>
+
+To start over, drop and recreate the database, then run both commands again. Deploys of new code keep the data; the seed only needs re-running when you want a fresh one.
+
+## Try it locally
+
+```sh
+bun run db:setup && bun run db:seed:demo   # into an empty local database
+DEMO_MODE=true bun run dev
+```
+
+Without `DEMO_MODE`, the same seed is an ordinary organization you can sign in to as `demo@example.com` / `demo-password-123` and change freely.
+
+## What the seed creates
+
+`scripts/db/seed-demo.ts` runs the modules in `scripts/db/demo/` against one fictional world (`content.ts`). Northwind, its team and every person are invented; the companies they prospect are real, well-known ones, so lead lists show real logos, but nobody there said anything shown. Phone numbers are in ranges reserved for fiction. Re-running it on a seeded database does nothing.

@@ -1,0 +1,91 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.next-demo/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# scraped prospect / enrichment data — never commit, this is lead data and
+# pushing it to a shared repo is not undone by deleting the file later
+apollo-*.csv
+apollo-*.txt
+domains.json
+
+# Migration audits may contain production row/provider identifiers. Keep them
+# local even when message bodies are redacted.
+/reports/migration/
+
+# prisma client is generated at install/build time (postinstall + build
+# both run `prisma generate`), and includes a platform-specific query
+# engine binary — regenerate it, don't commit it.
+/prisma/generated
+
+# Local scratch output — browser console logs, playwright/import-check runs,
+# and live integration test results. The integration reports hold provider
+# responses and lead data, so they stay local like the migration audits above.
+/.playwright-cli/
+/output/
+/reports/integrations/
+
+# built browser extensions
+/extensions/*/dist
+/extensions/*/release
+
+# Local agent / workspace state
+.claude/settings.local.json
+.conductor/
+
+# Generated reports of any kind (integration runs, audits) — may hold provider
+# responses and lead data
+/reports/
+
+# Database dumps, keys and credentials — never commit
+*.dump
+*.key
+*.p12
+*credentials*.json
+service-account*.json
+
+# Spreadsheets and root-level CSVs are usually lead data
+*.xlsx
+/*.csv
+
+# Real copies of scripts/examples/* (mailboxes, sender knowledge, test person)
+/scripts/local/

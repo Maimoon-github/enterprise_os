@@ -1,0 +1,126 @@
+---
+title: "Tables"
+description: "Use workbooks and tables to import a list, enrich it with data providers and AI, then turn selected rows into a campaign."
+icon: "table"
+---
+
+**Tables** is a spreadsheet-style workspace for building a prospect list before you send anything. You import or paste rows, add columns that fetch data (enrichment providers, AI prompts, HTTP calls, formulas), and when the list looks right you create a campaign from the rows you pick.
+
+<Frame caption="A table is a spreadsheet grid. Import and Actions sit at the top right.">
+  <img src="/assets/screenshots/app/table-grid.png" alt="A table named Target accounts with 21 rows and columns for Company, Website, Industry, Contact and Email, plus Import and Actions buttons in the toolbar" />
+</Frame>
+
+## Workbooks, tables and folders
+
+- A **workbook** is a file. It holds one or more **tables**, shown as tabs along the workbook (the code also calls them sheets).
+- Workbooks live in **folders**. Open the **New** menu on the Tables page to create a **Folder** or a **Workbook**. Drag a row onto a folder or a breadcrumb to file it, or use **Move to folder**.
+- Search the list with **Search files...**. Columns are **Name**, **Created** and **Last updated**.
+- Everything belongs to your [organization](/workspace/organizations).
+
+<Frame caption="The Tables page lists workbooks. Use New to add a folder or a workbook.">
+  <img src="/assets/screenshots/app/tables-list.png" alt="The Tables page listing one workbook, Demo prospects, with its table and row count, and a New button at the top right" />
+</Frame>
+
+### Create a workbook
+
+Click **New**, then **Workbook**. In **Create a workbook** choose:
+
+- **Blank workbook** to start with an empty custom table.
+- **CSV or Excel** to create a workbook from a spreadsheet (`.csv`, `.tsv`, `.txt`, `.xlsx`, `.xls`).
+
+If you're inside a folder, the workbook is created there.
+
+### Workbook and table menus
+
+The workbook menu has **Rename workbook**, **Edit workbook settings** and **Delete workbook**. **Duplicate**, **Add to favorites**, **Move workbook** and **View credit usage** are shown but disabled.
+
+Each table tab has a menu with **Rename**, **Edit table settings**, **Move left**, **Move right**, **Move to workbook...**, **Duplicate table** and **Delete**. You can also drag tabs to reorder them.
+
+## Add data
+
+- **Import:** in a table, click **Import** (or **Actions**, then **Import CSV or Excel**). Choose a file, then use the mapping screen to decide, for each file column, how to import it or choose **Skip this column**. The importer guesses a type for each column, such as email, URL, checkbox, number or date, and falls back to text when the values disagree. One import is limited to 50,000 rows.
+- **Paste:** paste straight into the grid. A paste is limited to 1,000 rows and 100 new columns. For anything larger use Import.
+- **Type:** edit cells directly.
+
+## Column types
+
+**Actions**, then **Add column**, offers the four you will use most: **Add enrichment**, **Use AI**, **HTTP API** and **Formula**. **More column types...** lists the rest.
+
+- **Run columns:** Add enrichment ([providers](/tables/enrichment)), Use AI and HTTP API ([AI and HTTP columns](/tables/ai-columns)), Formula.
+- **Data columns:** Text, Number, Currency, Date, URL, Email, Image from URL, Checkbox, Select, Multi-select, JSON.
+
+<Note>
+**Functions**, **Message**, **Waterfall** and **Merge columns** appear in the menu but are disabled. They can't be created yet, so there is no waterfall or fallback between providers today.
+</Note>
+
+A **Formula** column evaluates one expression per row using `{{columnKey}}` tokens. It supports JavaScript, FormulaJS, lodash and moment, and `LOOKUP("Table", {{value}}, "Match column", "Return column")` to read from another table. You can ask AI to generate the formula.
+
+## Running columns
+
+Column cells are filled by a background worker, so you can keep working while they run.
+
+### Start a run
+
+Click the play button in a column header. The menu offers:
+
+- **Run N selected rows** (when rows are selected),
+- **Run first 10 rows on this page**,
+- **Run all rows**.
+
+Hovering a cell in an enrichment column also shows a play button to **Run this row**. When you add an enrichment or AI column, **Save and run 10 rows** is the quick way to test it before you run the whole table.
+
+Rows that are missing a required input for an enrichment aren't queued and cost nothing.
+
+### Auto-run
+
+Each run column has an **Auto-run** option, on by default. A column set to auto-run is queued for a row automatically once all the columns it reads have a value. This is how a chain works: an enrichment finds an email, then a second column that reads the email starts by itself. The toolbar has an **Auto-run** toggle for the table and a counter showing how many cells are queued or running.
+
+### Cell status
+
+Each cell shows one of these states:
+
+| Status | Meaning |
+| --- | --- |
+| **Not run** | It has never run. |
+| **Queued...** | Waiting for a worker. |
+| **Running...** | In progress. |
+| **Waiting for provider...** | The provider accepted the request and AgentSDR is polling for the result. |
+| Completed (green) | It finished and wrote a value. |
+| Error (red) with message | It failed. Hover to read the full message. |
+
+Click a cell in an enrichment or AI column to open **Cell details**: the provider, outcome, latency, when it ran, and the error if it failed.
+
+### Retries
+
+A failed run is retried automatically up to 3 attempts in total, waiting 2 seconds, then 8 seconds, between attempts. Only the final failure shows on the cell.
+
+Some errors are not retried because they would fail the same way again: a bad URL, an HTTP 4xx response (other than 429), a missing environment variable, or a misconfigured account. Fix the cause, then run the cell again from the play button.
+
+## Turn rows into a campaign
+
+Select rows, open **Actions**, and choose **Create campaign**. In **Create campaign from selected rows**:
+
+1. Choose the **Channel** (Email or LinkedIn) and a **Campaign name**.
+2. Map campaign fields to your table's columns. Email needs an **Email** column. LinkedIn needs a **LinkedIn URL** column and can also take message columns for the invitation, acceptance and follow-ups.
+3. Click create.
+
+People are created only after you confirm the mapping, and only the selected rows are enrolled, up to 5,000. Unmapped columns are kept on the person and become merge fields. On email campaigns, suppressed addresses are skipped and reported.
+
+You can also **Export selected rows as CSV** or delete them from the same menu.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Enrichment providers" icon="zap" href="/tables/enrichment">
+    The 15 providers and what each can return.
+  </Card>
+  <Card title="AI and HTTP columns" icon="sparkles" href="/tables/ai-columns">
+    Prompt a model or call any API per row.
+  </Card>
+  <Card title="Leads" icon="users" href="/leads/overview">
+    Where the people from a campaign end up.
+  </Card>
+  <Card title="Email campaigns" icon="mail" href="/email/campaigns">
+    Send to the list you built.
+  </Card>
+</CardGroup>

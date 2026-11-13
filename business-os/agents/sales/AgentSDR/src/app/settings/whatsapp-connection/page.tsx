@@ -1,0 +1,22 @@
+import { ConnectionSettingsPage } from "@/components/settings/ChannelSettingsPages";
+import { RecorderExtensionCard } from "@/components/settings/RecorderExtensionCard";
+
+export const metadata = { title: "WhatsApp integrations" };
+export const dynamic = "force-dynamic";
+
+export default function Page() {
+  return (
+    <ConnectionSettingsPage
+      platforms={[
+        { platform: "unipile", note: "The same Unipile connection also powers LinkedIn; changing it here changes it there too." },
+        { platform: "r2" },
+        { platform: "gologin", note: "Only needed for cloud calling numbers (Settings → WhatsApp → Calling numbers)." },
+        { platform: "calcom", note: "Only needed for AI calling campaigns that book meetings: tells them when a lead books.", webhookUrl: true },
+      ]}
+      title="WhatsApp integrations"
+      description="Unipile connects your WhatsApp numbers for messaging and calling. Calls placed from AgentSDR are recorded by the Call Recorder extension and stored in your Cloudflare R2 bucket, along with contact photos. Transcription uses the model chosen in AI provider."
+    >
+      <RecorderExtensionCard />
+    </ConnectionSettingsPage>
+  );
+}

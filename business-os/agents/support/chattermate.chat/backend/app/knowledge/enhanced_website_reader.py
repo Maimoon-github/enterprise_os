@@ -1,0 +1,1415 @@
+"""
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+import re
+import socket
+import threading
+import time
+from copy import deepcopy
+from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Optional, Callable
+from urllib.parse import urljoin, urlparse, urldefrag, urlunparse
+from app.knowledge.crawler_identity import CRAWLER_USER_AGENT
+from app.knowledge.url_safety import BlockedHostError
+from app.knowledge.deadline import Deadline
+from app.knowledge.page_fetch import NotAPage, fetch_page
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from bs4 import BeautifulSoup, Tag
+import httpx
+
+from agno.document.base import Document
+from agno.document.reader.website_reader import WebsiteReader
+from app.core.logger import get_logger
+from app.knowledge.chunking import chunk_page
+from app.knowledge.crawl4ai_fallback import get_crawl4ai_fallback
+from app.knowledge.content_summarizer import get_content_summarizer
+from app.knowledge.crawl_scope import (
+    DEFAULT_CRAWL_SCOPE,
+    CrawlScope,
+    is_crawlable_url,
+    url_scheme,
+)
+from app.knowledge.domains import registrable_domain
+from app.knowledge.failure_advice import FailureCause, SourceUnreadable
+from app.knowledge.login_wall import is_auth_path, looks_like_login_wall
+from app.knowledge.main_content import select_main_node
+
+# Initialize logger for this module
+logger = get_logger(__name__)
+
+
+class BotProtectionError(SourceUnreadable):
+    """Raised when a crawl produced no content because the site's bot protection
+    (Cloudflare / WordPress.com "Checking your browser…" interstitial) blocked the
+    automated browser. Signals the user should add the content manually."""
+
+
+class EmptyCrawlError(SourceUnreadable):
+    """Raised when a crawl stored no pages for a reason other than bot protection.
+
+    A run that indexes nothing is a failure, not a success: without this the queue
+    item completes and the source appears in the dashboard as a healthy source with
+    zero pages, so nobody learns the agent has no content to answer from."""
+
+
+def _is_name_resolution_error(error: Exception) -> bool:
+    """True when a connection failed because the name has no address.
+
+    Walks the cause chain for socket.gaierror rather than matching on the
+    message, which would also catch any other error whose text happens to
+    mention a "name" and wrongly skip the browser fallback for it.
+    """
+    seen = set()
+    current = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, socket.gaierror):
+            return True
+        current = current.__cause__ or current.__context__
+
+    text = str(error).lower()
+    return 'nodename' in text or 'name or service not known' in text or 'name resolution' in text
+
+
+@dataclass
+class EnhancedWebsiteReader(WebsiteReader):
+    """Enhanced Reader for Websites with more robust content extraction"""
+    debug_on = True
+    # Additional configuration options
+    min_content_length: int = 100  # Minimum length of text to be considered meaningful content
+    # Only blacklist truly problematic tags - keep structural elements that may have useful content
+    blacklist_tags: List[str] = field(default_factory=lambda: [
+        'script', 'style', 'noscript', 'iframe', 'head'
+    ])
+    user_agent: str = CRAWLER_USER_AGENT
+    headers: Dict[str, str] = field(default_factory=lambda: {
+        'User-Agent': CRAWLER_USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'DNT': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0'
+    })
+    timeout: int = 30  # Request timeout in seconds
+    max_retries: int = 3  # Maximum number of retries for failed requests
+    respect_robots_txt: bool = True  # Whether to respect robots.txt
+    max_workers: int = 10  # Maximum number of parallel workers for crawling
+    # How far the crawl may wander from its seed URL: 'host' (default), 'path'
+    # (seed host + seed path prefix) or 'domain' (every host on the registrable
+    # domain). See app/knowledge/crawl_scope.py.
+    crawl_scope: str = DEFAULT_CRAWL_SCOPE
+    verify_ssl: bool = True  # Whether to verify SSL certificates (set to False for self-signed certs)
+    
+    # Track crawling statistics
+    _crawled_pages_count: int = 0
+    _successful_crawls: int = 0
+    _failed_crawls: int = 0
+    _challenge_blocked: int = 0  # Pages skipped because a bot-check couldn't be cleared
+    # Why pages failed, as {FailureCause: count}. One string covering "empty,
+    # JavaScript, or unreachable" told the user nothing and told us nothing;
+    # _process_url already knows which of those it hit, so keep it.
+    _failure_causes: Dict[str, int] = field(default_factory=dict)
+    # Pages are crawled on up to max_workers threads, and "read, add one, write
+    # back" loses increments when two of them fail at once.
+    _failure_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    # Each page's title and description, read before cleaning strips <head>,
+    # for the widget's link cards. Keyed by URL: pages are read on many threads.
+    _page_meta: Dict[str, Dict[str, str]] = field(default_factory=dict, repr=False)
+    # Set by the knowledge base for the source being read: no new pages are
+    # fetched once it passes (see app/knowledge/deadline.py).
+    deadline: Optional[Deadline] = None
+    
+    @staticmethod
+    def _classify_transport_error(error: Exception) -> Tuple[str, bool, bool]:
+        """Map a transport failure to (cause, retry_is_useful, browser_may_help).
+
+        Retrying only pays when the failure could plausibly differ next time.
+        A domain with no address and a host that drops the SYN both fail the
+        same way every attempt, so the old ladder of three tries with backoff
+        plus a headless browser spent 130 seconds on mateusoliveira.com and
+        ~10 on each dead domain, holding one of only two queue slots the whole
+        time. The browser shares our DNS and TCP stack, so it cannot reach what
+        we could not connect to — it is worth a turn only when the connection
+        itself was refused, which can be a TLS quirk rather than a dead host.
+        """
+        if isinstance(error, httpx.ConnectTimeout):
+            # No SYN-ACK. Waiting longer only waits longer.
+            return FailureCause.TIMEOUT, False, False
+
+        if isinstance(error, httpx.ConnectError):
+            if _is_name_resolution_error(error):
+                # Chromium reports ERR_NAME_NOT_RESOLVED for exactly these.
+                return FailureCause.DNS, False, False
+            return FailureCause.CONNECTION, False, True
+
+        if isinstance(error, httpx.PoolTimeout):
+            # Our own connection pool was saturated; the site never heard from
+            # us. Retry, but do not report it as the site being slow.
+            return FailureCause.UNKNOWN, True, True
+
+        if isinstance(error, httpx.TimeoutException):
+            # Connected, then went quiet: a slow page really may load next time.
+            return FailureCause.TIMEOUT, True, True
+
+        if isinstance(error, httpx.RequestError):
+            return FailureCause.CONNECTION, True, True
+
+        # Not a transport failure: a bug in our own parsing, most likely. Retry
+        # and let the browser try, but do not tell the user their site is down.
+        return FailureCause.UNKNOWN, True, True
+
+    @property
+    def out_of_time(self) -> bool:
+        return self.deadline is not None and self.deadline.expired
+
+    def _record_failure(self, cause: str) -> None:
+        """Remember why a page failed so the queue item can be specific."""
+        with self._failure_lock:
+            self._failure_causes[cause] = self._failure_causes.get(cause, 0) + 1
+
+    def dominant_failure_cause(self) -> Optional[str]:
+        """The cause that accounts for the most failed pages, if any."""
+        if not self._failure_causes:
+            return None
+        return max(self._failure_causes.items(), key=lambda item: item[1])[0]
+
+    def _normalize_url(self, url: str) -> str:
+        """
+        Normalize URL by ensuring it has a proper protocol (http:// or https://).
+        If no protocol is present, https:// is added by default.
+
+        A URL that already carries a scheme is returned untouched — including a
+        non-HTTP one such as ``mailto:``. Prefixing those produced
+        ``https://mailto:a@example.com``, which parses as host ``example.com``
+        with ``mailto:a`` as userinfo and so was crawled as a real page.
+
+        :param url: The URL to normalize.
+        :return: The normalized URL with protocol.
+        """
+        if not url:
+            return url
+
+        url = url.strip()
+
+        # Check if URL already has a protocol
+        if url_scheme(url):
+            return url
+
+        # Add https:// by default if no protocol is present
+        logger.debug(f"URL '{url}' is missing protocol, adding 'https://'")
+        return f"https://{url}"
+
+    @staticmethod
+    def _host_resolves(host: str) -> bool:
+        """Whether a hostname has an address. False for any failure to find one.
+
+        Strict on purpose: the two callers want opposite defaults from a lookup
+        that errors oddly (a malformed IDN host, say), and treating "could not
+        tell" as success would let the apex check pass a host it never verified.
+        Failing closed means an unverifiable pair is simply left alone.
+        """
+        try:
+            socket.getaddrinfo(host, None)
+            return True
+        except Exception:
+            return False
+
+    def _seed_with_resolvable_host(self, url: str) -> str:
+        """Swap a dead ``www`` seed for its apex when only the apex resolves.
+
+        utsabzone.store serves its site on the apex but has a broken CNAME on
+        ``www``, so a customer who pasted the ``www`` address was told the domain
+        does not resolve — true of the name they gave us, useless as advice, and
+        the site was up the whole time.
+
+        Only the seed is rewritten. CrawlScope already treats ``www.x`` and ``x``
+        as one host, so the crawl stays inside the same boundary, and the fetch
+        still runs the SSRF guard on whichever host we end up asking for.
+        """
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if not host.startswith("www."):
+            return url
+
+        # Only pay for a lookup once we know there is an alternative to try.
+        if self._host_resolves(host):
+            return url
+
+        apex = host[4:]
+        if not apex or not self._host_resolves(apex):
+            return url
+
+        netloc = parsed.netloc
+        if "@" in netloc or not netloc.lower().startswith(host):
+            # Credentials or an unexpected shape: do not rewrite it.
+            return url
+
+        swapped = parsed._replace(netloc=apex + netloc[len(host):]).geturl()
+        logger.warning(
+            f"{host} has no address; crawling {apex} instead (the apex resolves)"
+        )
+        return swapped
+
+    def _canonical_url(self, url: str) -> str:
+        """Canonicalize a URL so variants of the same page collapse to one id.
+
+        Drops the ``#fragment`` and any query string, and strips a trailing
+        slash (the root path stays as-is). Without this the same page linked as
+        ``/``, ``/#features`` and ``/#pricing`` would be crawled and stored three
+        times under distinct ids, producing duplicate sub-pages.
+        """
+        if not url:
+            return url
+        url = urldefrag(url).url  # remove #fragment
+        parsed = urlparse(url)
+        path = parsed.path.rstrip('/') or ('/' if not parsed.netloc else '')
+        return urlunparse((parsed.scheme, parsed.netloc, path, '', '', ''))
+
+    # Unambiguous bot-challenge / interstitial signatures.
+    _STRONG_CHALLENGE_MARKERS = (
+        "secured by wp.com",
+        "cf-browser-verification",
+        "cf_chl_",
+        "ddos protection by cloudflare",
+        "verifying you are human",
+        "attention required! | cloudflare",
+    )
+    # Weaker signatures — only treated as a challenge on a short page, since these
+    # phrases can legitimately appear inside real content.
+    _WEAK_CHALLENGE_MARKERS = (
+        "checking your browser",
+        "just a moment",
+        "please enable javascript",
+        "please turn javascript on",
+        "enable cookies and reload",
+        "please stand by, while we are checking",
+    )
+
+    @staticmethod
+    def _link_base(
+        page_url: str,
+        soup: Optional[BeautifulSoup],
+        scope: CrawlScope,
+        requested_url: str,
+    ) -> str:
+        """What a page's relative links resolve against, as a browser does it:
+        its ``<base href>`` if it has one, else ``page_url``.
+
+        ``page_url`` must be where the page was served from, not the canonical
+        id: a directory's trailing slash matters here. On /docs/ the link
+        "guide.html" is /docs/guide.html; on /docs it would be /guide.html.
+
+        A base outside the crawl's scope (the page redirected to another host,
+        or ``<base>`` names a CDN) would put every link out of scope, so the
+        links resolve against ``requested_url`` instead, as they always did.
+        """
+        base = page_url
+        tag = soup.find("base", href=True) if soup is not None else None
+        if isinstance(tag, Tag):
+            resolved = urljoin(page_url, str(tag["href"]).strip())
+            if urlparse(resolved).scheme in ("http", "https"):
+                base = resolved
+        return base if scope.allows(base) else requested_url
+
+    def _looks_like_bot_challenge(self, text: str) -> bool:
+        """True if the extracted text is a bot-check/interstitial, not real content.
+
+        Sites behind Cloudflare / WordPress.com serve a short "Checking your
+        browser…" page to non-browser clients. Its text is just long enough to
+        pass the min-length check, so without this it would be stored as the
+        page's content.
+        """
+        if not text:
+            return False
+        lowered = text.lower()
+        if any(marker in lowered for marker in self._STRONG_CHALLENGE_MARKERS):
+            return True
+        if len(text) < 500 and any(marker in lowered for marker in self._WEAK_CHALLENGE_MARKERS):
+            return True
+        return False
+
+    def _get_primary_domain(self, url: str) -> str:
+        """
+        Extract primary domain from the given URL.
+        Overrides the parent method to handle domains more effectively.
+
+        :param url: The URL to extract the primary domain from.
+        :return: The primary domain.
+        """
+        # Delegate to the shared registrable-domain helper (ccTLD-aware,
+        # port/userinfo stripped via hostname) so every same-domain check in
+        # the codebase agrees.
+        parsed_url = urlparse(self._normalize_url(url))
+        return registrable_domain(parsed_url.hostname or parsed_url.netloc or "")
+    
+    @staticmethod
+    def _page_title(soup: BeautifulSoup) -> str:
+        """The page's own title, <h1> first and <title> second.
+
+        Must run BEFORE _clean_soup, which strips <head> and takes <title> with
+        it — a page with no <h1> would otherwise have no title to fall back to.
+        """
+        heading = soup.find('h1')
+        if heading:
+            title = heading.get_text(" ", strip=True)
+            if title:
+                return title
+
+        tag = soup.find('title')
+        return tag.get_text(strip=True) if tag else ""
+
+    @staticmethod
+    def _prepend_title(title: str, content: str) -> str:
+        """Keep the title when selection left it outside the content container.
+
+        Mintlify and similar docs themes put the <h1> in a page <header>, which
+        selection correctly treats as chrome — but the title is the strongest
+        retrieval signal a page has, so dropping it makes the page harder for an
+        agent to find rather than merely shorter.
+        """
+        if title and title not in content:
+            return f"{title}\n\n{content}"
+        return content
+
+    @staticmethod
+    def _page_description(soup: BeautifulSoup) -> str:
+        """The page's own summary: <meta name=description>, else og:description."""
+        for attrs in ({'name': 'description'}, {'property': 'og:description'}):
+            tag = soup.find('meta', attrs=attrs)
+            content = tag.get('content') if tag else None
+            if isinstance(content, str) and content.strip():
+                return " ".join(content.split())
+        return ""
+
+    def _remember_page_meta(self, page_url: Optional[str], title: str, soup: BeautifulSoup) -> None:
+        if not page_url:
+            return
+        meta = {k: v for k, v in (('title', title), ('description', self._page_description(soup))) if v}
+        if meta:
+            self._page_meta[page_url] = meta
+
+    def _extract_main_content(self, soup: BeautifulSoup, base_url: Optional[str] = None,
+                              page_url: Optional[str] = None) -> str:
+        """
+        Extracts the main content from a BeautifulSoup object.
+
+        Selection is shared with the help-center importer (see main_content.py):
+        the deepest container that still holds essentially the whole page. If it
+        yields too little text the page is thin or JavaScript-rendered, and the
+        progressively looser fallbacks below get a turn — falling through here is
+        also what routes such a page to the browser fallback in _process_url.
+
+        :param soup: The BeautifulSoup object to extract the main content from.
+        :param base_url: What the page's relative links resolve against. Passed
+            in, not kept on the reader: pages are read on several threads.
+        :param page_url: The page read, whose title and description are kept for
+            the widget's link cards.
+        :return: The main content as a string.
+        """
+        # Read the title before cleaning: _clean_soup strips <head>.
+        page_title = self._page_title(soup)
+        self._remember_page_meta(page_url, page_title, soup)
+
+        # Remove undesirable elements first
+        self._clean_soup(soup)
+
+        main_node = select_main_node(soup, min_chars=self.min_content_length)
+        if main_node is None:
+            # Nothing but navigation chrome. The looser fallbacks below would
+            # happily return that chrome as the page's content — which is how
+            # www.solcontrol.ca came to store "Welcome, Guest - Login" and, worse,
+            # cleared the floor and so never reached the browser fallback that can
+            # actually render it. Report empty and let _process_url try Crawl4AI.
+            logger.warning("No readable content on the page (navigation chrome only)")
+            return ""
+
+        content = self._get_clean_text(main_node, include_links=True, base_url=base_url)
+        if len(content) >= self.min_content_length:
+            content = self._prepend_title(page_title, content)
+            logger.info(f"✓ Content extracted from <{main_node.name}> ({len(content)} chars)")
+            return content
+        logger.debug(f"  Main content node too short: {len(content)} chars")
+
+        # Fallback 1: Density-based content extraction
+        logger.debug(f"Trying fallback: text density")
+        density_content = self._extract_by_text_density(soup, base_url)
+        if density_content and len(density_content) >= self.min_content_length:
+            logger.info(f"✓ Content extracted using density strategy ({len(density_content)} chars)")
+            return density_content
+
+        # Fallback 2: Collect all meaningful text elements (headings, paragraphs, lists, etc.)
+        logger.debug(f"Trying fallback: all meaningful content (tables, headings, paragraphs, lists)")
+        meaningful_content = self._extract_all_meaningful_content(soup)
+        if meaningful_content and len(meaningful_content) >= self.min_content_length:
+            logger.debug(f"✓ Content extracted using meaningful content strategy ({len(meaningful_content)} chars)")
+            return meaningful_content
+        else:
+            logger.debug(f"  Meaningful content too short: {len(meaningful_content) if meaningful_content else 0} chars")
+
+        # Fallback 3: Entire body content with minimal cleaning
+        logger.debug(f"Trying fallback: body")
+        body = soup.find('body')
+        if body:
+            content = self._get_clean_text(body, include_links=True, base_url=base_url)
+            if content:
+                logger.info(f"✓ Content extracted using body fallback strategy (length: {len(content)})")
+                return content
+            else:
+                logger.warning(f"Body element found but no text extracted")
+        else:
+            logger.warning(f"No body element found in HTML")
+
+        # Last resort: just get all text from the document
+        logger.debug(f"Trying last resort: all text from document")
+        content = soup.get_text(strip=True, separator=" ")
+        if content:
+            logger.info(f"✓ Content extracted using last resort strategy (length: {len(content)})")
+        else:
+            logger.error(f"Failed to extract any text from HTML document")
+        return content
+
+    def _clean_soup(self, soup: BeautifulSoup) -> None:
+        """
+        Removes undesirable elements from the soup.
+        IMPORTANT: Only remove elements that are truly undesirable (scripts, styles, etc.)
+        Keep structural elements like nav, footer, header, aside as they may contain useful content.
+        
+        :param soup: The BeautifulSoup object to clean.
+        """
+        removed_count = 0
+        
+        # Remove comments
+        for comment in soup.find_all(string=lambda text: isinstance(text, str) and text.strip().startswith('<!--')):
+            comment.extract()
+            removed_count += 1
+            
+        # Only remove truly problematic tags (scripts, styles, iframes)
+        # DO NOT remove structural tags like nav, footer, header, aside
+        minimal_blacklist = ['script', 'style', 'noscript', 'iframe', 'head']
+        for tag in minimal_blacklist:
+            elements = soup.find_all(tag)
+            removed_count += len(elements)
+            for element in elements:
+                element.extract()
+                
+        # Remove hidden elements with style attribute (but be careful)
+        hidden_elements = soup.find_all(style=re.compile(r'display:\s*none|visibility:\s*hidden'))
+        removed_count += len(hidden_elements)
+        for element in hidden_elements:
+            element.extract()
+            
+        # Remove elements with hidden or screen-reader-text class
+        for class_name in ['hidden', 'screen-reader-text']:
+            hidden_class_elements = soup.find_all(class_=class_name)
+            removed_count += len(hidden_class_elements)
+            for element in hidden_class_elements:
+                element.extract()
+            
+        # Only remove obvious ad/tracking elements
+        for class_name in ['ads', 'advertisement', 'cookie']:
+            elements = soup.find_all(class_=re.compile(class_name, re.IGNORECASE))
+            removed_count += len(elements)
+            for element in elements:
+                element.extract()
+        
+        # Remove comment sections - these often contain user comments that aren't main content
+        # Look for common comment container patterns
+        comment_selectors = [
+            {'id': re.compile(r'comment', re.IGNORECASE)},
+            {'class_': re.compile(r'comment', re.IGNORECASE)},
+            {'id': 'respond'},
+            {'class_': 'comment-respond'},
+            {'class_': 'comment-form'},
+            {'class_': 'comment-list'},
+            {'class_': 'comment-body'},
+            {'class_': 'comments-area'},
+        ]
+        
+        for selector in comment_selectors:
+            comment_elements = soup.find_all(**selector)
+            if comment_elements:
+                logger.debug(f"  Removing {len(comment_elements)} comment elements matching {selector}")
+                removed_count += len(comment_elements)
+                for element in comment_elements:
+                    element.extract()
+        
+        # Remove navigation menus - these are not main content
+        nav_selectors = [
+            'nav',
+            {'role': 'navigation'},
+            {'class_': re.compile(r'navigation|menu|nav-', re.IGNORECASE)},
+            {'id': re.compile(r'navigation|menu|nav-', re.IGNORECASE)},
+        ]
+        
+        for selector in nav_selectors:
+            if isinstance(selector, str):
+                nav_elements = soup.find_all(selector)
+            else:
+                nav_elements = soup.find_all(**selector)
+            if nav_elements:
+                logger.debug(f"  Removing {len(nav_elements)} navigation elements matching {selector}")
+                removed_count += len(nav_elements)
+                for element in nav_elements:
+                    element.extract()
+        
+        # Remove sidebars and widgets - often contain non-essential content
+        sidebar_selectors = [
+            {'id': re.compile(r'sidebar|widget', re.IGNORECASE)},
+            {'class_': re.compile(r'sidebar|widget', re.IGNORECASE)},
+        ]
+        
+        for selector in sidebar_selectors:
+            sidebar_elements = soup.find_all(**selector)
+            if sidebar_elements:
+                logger.debug(f"  Removing {len(sidebar_elements)} sidebar/widget elements matching {selector}")
+                removed_count += len(sidebar_elements)
+                for element in sidebar_elements:
+                    element.extract()
+        
+        logger.debug(f"Cleaned soup: removed {removed_count} elements (minimal cleaning mode)")
+
+    def _get_clean_text(self, element: Tag, include_links: bool = True, base_url: str = None) -> str:
+        """
+        Gets clean text from a BeautifulSoup element, optionally including URLs.
+        
+        :param element: The BeautifulSoup element to get text from.
+        :param include_links: If True, appends URLs after link text in format [text](url)
+        :param base_url: Base URL for converting relative URLs to absolute URLs
+        :return: The clean text.
+        """
+        if not element:
+            return ""
+        
+        if include_links:
+            # Create a deep copy to avoid modifying the original
+            element_copy = deepcopy(element)
+            
+            # Find all links and append their URLs to the text
+            for link in element_copy.find_all('a', href=True):
+                href = link.get('href', '')
+                # Skip anchor links and javascript links
+                if href and not href.startswith('#') and not href.startswith('javascript:'):
+                    # Convert relative URLs to absolute URLs if base_url is provided
+                    if base_url and not href.startswith(('http://', 'https://', 'mailto:')):
+                        href = urljoin(base_url, href)
+                    
+                    # Get the link text
+                    link_text = link.get_text(strip=True)
+                    if link_text:  # Only add URL if there's text
+                        # Create a new text node with the URL appended
+                        # Format: "text (URL: https://...)"
+                        new_text = f"{link_text} (URL: {href})"
+                        link.string = new_text
+            
+            # Get text with preserved whitespace
+            text = element_copy.get_text(separator=" ", strip=True)
+        else:
+            # Get text with preserved whitespace
+            text = element.get_text(separator=" ", strip=True)
+        
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        # Remove excessive newlines
+        text = re.sub(r'\n{2,}', '\n', text)
+        
+        return text.strip()
+        
+    def _extract_all_meaningful_content(self, soup: BeautifulSoup) -> str:
+        """
+        Extracts all meaningful content from the page (headings, paragraphs, lists, tables, etc.).
+        This is useful for pages that don't have clear content containers.
+        
+        :param soup: The BeautifulSoup object to extract content from.
+        :return: The extracted meaningful content.
+        """
+        # Focus on block-level content elements to avoid duplication from nested inline elements
+        meaningful_tags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'td', 'th', 'blockquote', 'pre']
+        content_parts = []
+        tag_counts = {}
+        
+        for tag in meaningful_tags:
+            elements = soup.find_all(tag)
+            count = 0
+            for element in elements:
+                text = element.get_text(strip=True)
+                # Only include text that's substantial (more than 10 characters)
+                if len(text) > 10:
+                    content_parts.append(text)
+                    count += 1
+            if count > 0:
+                tag_counts[tag] = count
+        
+        logger.debug(f"  Meaningful elements found: {tag_counts}")
+        logger.debug(f"  Total text parts collected: {len(content_parts)}")
+        
+        if not content_parts:
+            return ""
+        
+        # Join all parts with space and clean up
+        full_content = " ".join(content_parts)
+        full_content = re.sub(r'\s+', ' ', full_content)
+        
+        return full_content.strip()
+    
+    def _extract_by_text_density(self, soup: BeautifulSoup, base_url: Optional[str] = None) -> str:
+        """
+        Extracts content based on text density (paragraphs with substantial text).
+        
+        :param soup: The BeautifulSoup object to extract content from.
+        :param base_url: What the page's relative links resolve against.
+        :return: The extracted content.
+        """
+        paragraphs = soup.find_all('p')
+        if not paragraphs:
+            return ""
+            
+        # Find paragraphs with substantial text
+        good_paragraphs = []
+        for p in paragraphs:
+            text = p.get_text(strip=True)
+            # Consider paragraphs with more than 20 characters
+            if len(text) > 20:
+                good_paragraphs.append(p)
+                
+        if not good_paragraphs:
+            return ""
+            
+        # Find the most common parent that contains a good number of paragraphs
+        parent_counts = {}
+        for p in good_paragraphs:
+            for parent in p.parents:
+                if parent.name not in ['html', 'body']:
+                    parent_counts[parent] = parent_counts.get(parent, 0) + 1
+                    
+        # Get the parent with the most children
+        if parent_counts:
+            best_parent = max(parent_counts.items(), key=lambda x: x[1])[0]
+            return self._get_clean_text(best_parent, include_links=True, base_url=base_url)
+            
+        # If no good parent found, just concatenate the good paragraphs
+        return " ".join([self._get_clean_text(p, include_links=True, base_url=base_url) for p in good_paragraphs])
+
+    def _process_url(self, url_info: Tuple[str, int], scope: CrawlScope) -> Optional[Tuple[str, str, List[str]]]:
+        """
+        Process a single URL - fetch content and extract links.
+        This is used for parallel processing of URLs.
+
+        :param url_info: Tuple of (URL, depth)
+        :param scope: Crawl boundary the URL must fall inside
+        :return: Tuple of (URL, content, new_links) or None if failed
+        """
+        current_url, current_depth = url_info
+
+        # Normalize URL to ensure it has a protocol
+        current_url = self._normalize_url(current_url)
+
+        # Skip if URL meets any skip conditions
+        if current_url in self._visited:
+            return None
+
+        # In-scope http(s) URLs only — the per-URL guard that also protects
+        # sitemap-seeded crawls and anything left over in an older queue.
+        if not scope.allows(current_url):
+            logger.debug(f"Skipping out-of-scope URL {current_url} ({scope.describe()})")
+            return None
+
+        if current_depth > self.max_depth:
+            return None
+
+        # A sign-in or admin page is never worth a request
+        if is_auth_path(current_url):
+            self._record_failure(FailureCause.LOGIN_REQUIRED)
+            return None
+        
+        # Mark as visited before processing
+        self._visited.add(current_url)
+        
+        self.delay()
+        
+        # Increment crawled pages counter
+        self._crawled_pages_count += 1
+        page_start_time = time.time()
+        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Crawling page {self._crawled_pages_count}: {current_url} (depth: {current_depth})")
+
+        # Try to get content from URL with retries
+        content = None
+        new_links = []
+        retry_count = 0
+        last_error = None
+        last_cause = None
+        browser_can_help = True
+        is_javascript_heavy = False
+        soup = None
+        # What this page's relative links resolve against: where it was really
+        # served from, once that is known
+        link_base = current_url
+        
+        while retry_count < self.max_retries and content is None:
+            try:
+                logger.info(f"Attempt {retry_count + 1}/{self.max_retries} to fetch {current_url}")
+                
+                # Warn if SSL verification is disabled
+                if not self.verify_ssl and retry_count == 0:
+                    logger.warning(f"⚠️  SSL verification is disabled for {current_url} - This may pose security risks")
+                
+                # Make the request
+                with httpx.Client(
+                    timeout=self.timeout, 
+                    follow_redirects=True, 
+                    headers=self.headers,
+                    verify=self.verify_ssl
+                ) as client:
+                    logger.debug(f"Making HTTP GET request to {current_url}")
+                    # Follows redirects manually, re-validating each hop's host
+                    # (SSRF), and reads the body only if it is a page.
+                    page = fetch_page(client, current_url)
+                html = page.text
+
+                # Parse HTML with BeautifulSoup
+                soup = BeautifulSoup(html, 'html.parser')
+                served_soup = soup
+                link_base = self._link_base(page.url, soup, scope, current_url)
+
+                logger.info(f"HTML length: {len(html)} characters")
+                
+                # Check if the page is JavaScript-heavy
+                # Modern sites use many external scripts, so count both inline and external
+                script_tags = soup.find_all('script')
+                inline_script_length = sum(len(str(script)) for script in script_tags)
+                external_scripts = [script for script in script_tags if script.get('src')]
+
+                logger.info(f"Found {len(script_tags)} script tags ({len(external_scripts)} external, {len(script_tags) - len(external_scripts)} inline), inline content: {inline_script_length} characters")
+
+                # Log page structure for debugging
+                body = soup.find('body')
+                if body:
+                    body_children = list(body.children)
+                    logger.info(f"Body found with {len(body_children)} direct children")
+                    # Log child element types
+                    child_types = {}
+                    for child in body_children:
+                        if hasattr(child, 'name') and child.name:
+                            child_types[child.name] = child_types.get(child.name, 0) + 1
+                    logger.info(f"Body children types: {child_types}")
+                else:
+                    logger.warning(f"No body tag found in HTML for {current_url}")
+
+                # Detect JavaScript-heavy pages using multiple criteria:
+                # 1. High ratio of inline script content (>30% of HTML)
+                # 2. Many external script files (>15 scripts typically indicates a JS framework)
+                # 3. High script tag density (>10 scripts per 10KB of HTML)
+                script_content_ratio = inline_script_length / len(html) if html else 0
+                html_size_kb = len(html) / 10000  # Convert to 10KB units
+                script_density = len(script_tags) / max(html_size_kb, 1)  # Scripts per 10KB
+
+                is_javascript_heavy = (
+                    script_content_ratio > 0.3 or  # >30% inline scripts
+                    len(external_scripts) >= 15 or  # Many external scripts (React/Vue apps)
+                    script_density > 10  # High density of scripts
+                )
+
+                if is_javascript_heavy:
+                    detection_reason = []
+                    if script_content_ratio > 0.3:
+                        detection_reason.append(f"high inline script ratio ({script_content_ratio*100:.1f}%)")
+                    if len(external_scripts) >= 15:
+                        detection_reason.append(f"many external scripts ({len(external_scripts)})")
+                    if script_density > 10:
+                        detection_reason.append(f"high script density ({script_density:.1f} per 10KB)")
+                    logger.warning(f"⚠️  JavaScript-heavy website detected: {', '.join(detection_reason)}")
+                
+                content = self._extract_main_content(soup, link_base, current_url)
+
+                # Log extracted content length for debugging
+                logger.info(f"Extracted content length: {len(content) if content else 0} characters from {current_url}")
+
+                # A bot-challenge interstitial (wp.com / Cloudflare "Checking your
+                # browser…") is short enough to pass the length check, so detect it
+                # explicitly and route it through the JS browser, which can clear it.
+                is_challenge = self._looks_like_bot_challenge(content)
+                if is_challenge:
+                    logger.warning(f"🛡️  Bot-challenge interstitial detected for {current_url} - routing through Crawl4AI")
+
+                # For JavaScript-heavy sites (or a detected challenge), try Crawl4AI
+                # for real content. Even static extraction may just be interstitials.
+                if is_javascript_heavy or is_challenge:
+                    logger.info(f"🔄 Attempting Crawl4AI for better content extraction: {current_url}")
+                    crawl4ai = get_crawl4ai_fallback(timeout=self.timeout, verify_ssl=self.verify_ssl)
+
+                    if crawl4ai.is_available:
+                        logger.info(f"🔄 Using Crawl4AI for JavaScript rendering: {current_url}")
+                        # Note: fetch_with_browser returns (content, soup, screenshot)
+                        crawl4ai_content, crawl4ai_soup, _ = crawl4ai.fetch_with_browser(current_url, take_screenshot=False)
+
+                        if crawl4ai_content and len(crawl4ai_content) >= self.min_content_length:
+                            logger.info(f"✓ Crawl4AI extracted {len(crawl4ai_content)} chars (vs {len(content) if content else 0} from BeautifulSoup)")
+                            content = crawl4ai_content
+                            soup = crawl4ai_soup if crawl4ai_soup else soup
+                        elif crawl4ai_soup:
+                            # Try to extract from crawl4ai soup
+                            crawl4ai_extracted = self._extract_main_content(crawl4ai_soup, link_base, current_url)
+                            if crawl4ai_extracted and len(crawl4ai_extracted) >= self.min_content_length:
+                                logger.info(f"✓ Extracted {len(crawl4ai_extracted)} chars from Crawl4AI HTML")
+                                content = crawl4ai_extracted
+                                soup = crawl4ai_soup
+                            else:
+                                logger.warning(f"Crawl4AI didn't improve content extraction, keeping BeautifulSoup result")
+                        else:
+                            logger.warning(f"Crawl4AI extraction failed, keeping BeautifulSoup result")
+                    else:
+                        logger.warning(f"⚠️  Crawl4AI not available for JS-heavy site. Install with: pip install crawl4ai>=0.9")
+                        logger.warning(f"   Falling back to BeautifulSoup (may have incomplete content)")
+
+                # If the content is still a bot-challenge interstitial (the browser
+                # fallback couldn't clear it or wasn't available), skip the page
+                # rather than storing the "Checking your browser…" text as content.
+                if self._looks_like_bot_challenge(content):
+                    logger.warning(f"⚠️  Skipping {current_url}: bot-challenge interstitial could not be cleared")
+                    self._failed_crawls += 1
+                    self._challenge_blocked += 1
+                    self._record_failure(FailureCause.BOT_BLOCKED)
+                    return None
+
+                # Judged on the text as finally rendered (a JS page's static HTML
+                # is short by nature), against both the page as served and as
+                # rendered: the browser's copy comes back without its forms
+                if looks_like_login_wall(current_url, content, served_soup, soup):
+                    logger.warning(f"Skipping {current_url}: it asks for a password (sign-in, admin, or a store not open yet)")
+                    self._failed_crawls += 1
+                    self._record_failure(FailureCause.LOGIN_REQUIRED)
+                    return None
+
+                # Check content quality
+                if not content or len(content) < self.min_content_length:
+                    logger.warning(f"Content too short or empty ({len(content) if content else 0} chars) for {current_url}. Min required: {self.min_content_length}")
+                    if content:
+                        logger.warning(f"Content preview: {content[:200]}...")
+                    else:
+                        logger.warning(f"Content is None or empty. HTML preview: {html[:500]}...")
+                    
+                    # Try to extract any text as last resort
+                    fallback_content = soup.get_text(strip=True, separator=" ")
+                    if fallback_content and len(fallback_content) >= self.min_content_length:
+                        logger.info(f"Using fallback extraction: {len(fallback_content)} characters")
+                        content = fallback_content
+                    else:
+                        logger.warning(f"Standard extraction failed. Fallback content: {len(fallback_content) if fallback_content else 0} chars")
+                        
+                        # Try Crawl4AI fallback whenever content extraction fails
+                        # (regardless of whether page is JavaScript-heavy or not)
+                        crawl4ai = get_crawl4ai_fallback(timeout=self.timeout, verify_ssl=self.verify_ssl)
+                        
+                        if crawl4ai.is_available:
+                            # Log reason for using Crawl4AI
+                            if is_javascript_heavy:
+                                logger.info(f"🔄 Attempting Crawl4AI fallback - JavaScript-heavy page detected: {current_url}")
+                            else:
+                                logger.info(f"🔄 Attempting Crawl4AI fallback - Standard extraction failed: {current_url}")
+                            
+                            # Note: fetch_with_browser returns (content, soup, screenshot)
+                            # We don't need screenshot for backend crawling, so ignore it
+                            crawl4ai_content, crawl4ai_soup, _ = crawl4ai.fetch_with_browser(current_url, take_screenshot=False)
+                            
+                            if crawl4ai_content and len(crawl4ai_content) >= self.min_content_length:
+                                logger.info(f"✓ Crawl4AI successfully extracted {len(crawl4ai_content)} chars")
+                                content = crawl4ai_content
+                                soup = crawl4ai_soup if crawl4ai_soup else soup
+                            elif crawl4ai_soup:
+                                # Try to extract from crawl4ai soup
+                                content = self._extract_main_content(crawl4ai_soup, link_base, current_url)
+                                if content and len(content) >= self.min_content_length:
+                                    logger.info(f"✓ Extracted {len(content)} chars from Crawl4AI HTML")
+                                    soup = crawl4ai_soup
+                                else:
+                                    logger.error(f"Crawl4AI extraction also failed for {current_url}")
+                            else:
+                                logger.error(f"Crawl4AI fallback failed for {current_url}")
+                        else:
+                            logger.warning(f"⚠️  Crawl4AI not available. Install with: pip install crawl4ai>=0.9")
+                        
+                        # Final check
+                        if not content or len(content) < self.min_content_length:
+                            logger.error(f"All extraction strategies failed for {current_url}. Final content: {len(content) if content else 0} chars")
+                            self._failed_crawls += 1
+                            self._record_failure(
+                                FailureCause.EMPTY_RESPONSE if not html
+                                else FailureCause.THIN_CONTENT
+                            )
+                            return None
+                
+                self._successful_crawls += 1
+                logger.info(f"✓ Successfully extracted {len(content)} chars from {current_url}")
+                
+                # Extract new links if not at max depth
+                if current_depth < self.max_depth:
+                    links = self._extract_links(soup, link_base, scope)
+                    
+                    next_depth = current_depth + 1
+                    new_links = [(link, next_depth) for link in links 
+                                if link not in self._visited]
+                    
+            except NotAPage as e:
+                # A download the page linked to (an installer, an archive): not
+                # content, and not the site failing. Never worth the browser.
+                logger.info(f"Skipping {current_url}: {e}")
+                if e.download and current_depth == 1:
+                    # The address the user gave (or a sitemap listed): if
+                    # nothing else is read, this is why.
+                    self._record_failure(FailureCause.NOT_A_PAGE)
+                return None
+            except BlockedHostError as e:
+                # A redirect pointed at an internal host — abort, don't retry or
+                # fall back to the browser (which would also reach it).
+                logger.warning(str(e))
+                self._failed_crawls += 1
+                self._record_failure(FailureCause.BLOCKED_HOST)
+                return None
+            except httpx.HTTPStatusError as e:
+                retry_count += 1
+                status_code = e.response.status_code
+                last_error = f"HTTP {status_code}: {e.response.reason_phrase}"
+                logger.warning(f"HTTP error on attempt {retry_count}/{self.max_retries} for {current_url}: {last_error}")
+                
+                # 401/403/429 are the shapes bot protection takes; they need the
+                # "add it manually" advice rather than "check the URL".
+                last_cause = FailureCause.BOT_BLOCKED if status_code in (401, 403, 429) else FailureCause.HTTP_ERROR
+
+                # Special handling for 403 Forbidden (bot detection)
+                if status_code == 403:
+                    logger.warning(f"⚠️  403 Forbidden - Server may be blocking bot requests")
+                    # Don't retry httpx for 403, go straight to Crawl4AI fallback
+                    retry_count = self.max_retries
+                elif retry_count < self.max_retries:
+                    # Exponential backoff for other errors
+                    sleep_time = 2 ** retry_count
+                    logger.info(f"Retrying in {sleep_time} seconds...")
+                    time.sleep(sleep_time)
+            except Exception as e:
+                retry_count += 1
+                last_cause, retry_is_useful, browser_may_help = self._classify_transport_error(e)
+                browser_can_help = browser_may_help
+                if isinstance(e, httpx.TimeoutException):
+                    last_error = f"Request timeout after {self.timeout}s"
+                    logger.warning(f"Timeout on attempt {retry_count}/{self.max_retries} for {current_url}")
+                else:
+                    last_error = f"{type(e).__name__}: {str(e)}"
+                    logger.error(
+                        f"Error on attempt {retry_count}/{self.max_retries} for {current_url}: {last_error}",
+                        exc_info=True,
+                    )
+
+                if not retry_is_useful:
+                    logger.info(f"Not retrying {current_url}: {last_cause} fails the same way every attempt")
+                    break
+
+                # Exponential backoff
+                if retry_count < self.max_retries:
+                    sleep_time = 2 ** retry_count
+                    logger.info(f"Retrying in {sleep_time} seconds...")
+                    time.sleep(sleep_time)
+        
+        # If all retries failed, try Crawl4AI fallback as last resort — but not
+        # when we never reached the host: Chromium shares our resolver and TCP
+        # stack, so it fails the same way after another browser launch.
+        if content is None and last_error and not browser_can_help:
+            self._failed_crawls += 1
+            self._record_failure(last_cause or FailureCause.CONNECTION)
+            logger.error(f"❌ {current_url} is unreachable ({last_error}); skipping the browser fallback")
+            return None
+
+        if content is None and last_error:
+            logger.warning(f"⚠️  All extraction attempts failed. Last error: {last_error}")
+            
+            # Try Crawl4AI fallback for HTTP errors (403, 429, etc.) and other failures
+            crawl4ai = get_crawl4ai_fallback(timeout=self.timeout, verify_ssl=self.verify_ssl)
+            
+            if crawl4ai.is_available:
+                logger.info(f"🔄 Attempting Crawl4AI fallback after HTTP/extraction failure: {current_url}")
+                logger.info(f"   Reason: {last_error}")
+                
+                try:
+                    # Note: fetch_with_browser returns (content, soup, screenshot)
+                    # We don't need screenshot for backend crawling, so ignore it
+                    crawl4ai_content, crawl4ai_soup, _ = crawl4ai.fetch_with_browser(current_url, take_screenshot=False)
+                    link_base = self._link_base(current_url, crawl4ai_soup, scope, current_url)
+                    
+                    if crawl4ai_content and len(crawl4ai_content) >= self.min_content_length:
+                        logger.info(f"✓ Crawl4AI successfully bypassed error and extracted {len(crawl4ai_content)} chars")
+                        content = crawl4ai_content
+                        soup = crawl4ai_soup if crawl4ai_soup else soup
+                        
+                        # Extract links if we got content
+                        if current_depth < self.max_depth and soup:
+                            links = self._extract_links(soup, link_base, scope)
+                            next_depth = current_depth + 1
+                            new_links = [(link, next_depth) for link in links 
+                                        if link not in self._visited]
+                        
+                        self._successful_crawls += 1
+                        page_end_time = time.time()
+                        page_duration = page_end_time - page_start_time
+                        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Completed crawling page {self._crawled_pages_count} with Crawl4AI (Time taken: {page_duration:.2f}s)")
+                        return (current_url, content, new_links)
+                    elif crawl4ai_soup:
+                        # Try to extract from crawl4ai soup
+                        content = self._extract_main_content(crawl4ai_soup, link_base, current_url)
+                        if content and len(content) >= self.min_content_length:
+                            logger.info(f"✓ Extracted {len(content)} chars from Crawl4AI HTML")
+                            soup = crawl4ai_soup
+                            
+                            # Extract links
+                            if current_depth < self.max_depth:
+                                links = self._extract_links(soup, link_base, scope)
+                                next_depth = current_depth + 1
+                                new_links = [(link, next_depth) for link in links 
+                                            if link not in self._visited]
+                            
+                            self._successful_crawls += 1
+                            page_end_time = time.time()
+                            page_duration = page_end_time - page_start_time
+                            logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Completed crawling page {self._crawled_pages_count} with Crawl4AI (Time taken: {page_duration:.2f}s)")
+                            return (current_url, content, new_links)
+                    
+                    logger.error(f"Crawl4AI also failed to extract content from {current_url}")
+                except Exception as crawl_error:
+                    logger.error(f"Crawl4AI fallback error: {str(crawl_error)}", exc_info=True)
+            else:
+                logger.warning(f"⚠️  Crawl4AI not available to retry failed request. Install with: pip install crawl4ai>=0.9")
+            
+            # Final failure
+            self._failed_crawls += 1
+            self._record_failure(last_cause or FailureCause.CONNECTION)
+            logger.error(f"❌ Failed to extract content from {current_url} after all attempts. Last error: {last_error}")
+            return None
+        
+        page_end_time = time.time()
+        page_duration = page_end_time - page_start_time
+        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Completed crawling page {self._crawled_pages_count} (Time taken: {page_duration:.2f}s)")
+        
+        return (current_url, content, new_links)
+
+    def crawl(self, url: str, starting_depth: int = 1, on_document_callback: Optional[Callable[[str, str], None]] = None, on_url_crawled_callback: Optional[Callable[[str], None]] = None) -> Dict[str, str]:
+        """
+        Enhanced crawl method with parallel processing and immediate vector DB insertion.
+        
+        :param url: The URL to crawl.
+        :param starting_depth: The starting depth level for the crawl.
+        :param on_document_callback: Callback function that receives (url, content) for immediate processing
+        :param on_url_crawled_callback: Callback function that receives (url) when a page is successfully crawled
+        :return: Dictionary of URLs and their corresponding content.
+        """
+        # Normalize URL to ensure it has a protocol
+        url = self._normalize_url(url)
+        # A www host with no address of its own falls back to the apex.
+        url = self._seed_with_resolvable_host(url)
+        
+        # Reset visited and urls_to_crawl for fresh crawl
+        self._visited = set()
+        self._urls_to_crawl = []
+        
+        # Reset crawling statistics
+        self._crawled_pages_count = 0
+        self._successful_crawls = 0
+        self._failed_crawls = 0
+        self._challenge_blocked = 0
+        self._failure_causes = {}
+
+        crawl_start_time = time.time()
+        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting parallel crawl of {url} with max_depth={self.max_depth}, max_links={self.max_links}, and max_workers={self.max_workers}")
+        
+        # Bound the crawl to the seed's own host by default — see crawl_scope.py.
+        scope = CrawlScope.for_seed(url, self.crawl_scope)
+        logger.info(f"Crawl scope for {url}: {scope.describe()}")
+
+        # Add starting URL with its depth to the queue
+        urls_to_process = [(url, starting_depth)]
+        logger.info(f"Added starting URL to crawl queue: {url} (depth: {starting_depth})")
+
+        crawler_result = self._run_crawl_queue(
+            urls_to_process, scope, on_document_callback, on_url_crawled_callback
+        )
+
+        # Log crawling summary
+        crawl_end_time = time.time()
+        crawl_duration = crawl_end_time - crawl_start_time
+        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Parallel crawl completed: {len(crawler_result)} pages crawled successfully")
+        logger.info(f"Crawling statistics: Total: {self._crawled_pages_count}, Successful: {self._successful_crawls}, Failed: {self._failed_crawls}")
+        logger.info(f"Total crawling time: {crawl_duration:.2f}s, Average time per page: {crawl_duration/max(1, self._crawled_pages_count):.2f}s")
+
+        return crawler_result
+
+    def _run_crawl_queue(
+        self,
+        urls_to_process: List[Tuple[str, int]],
+        scope: CrawlScope,
+        on_document_callback: Optional[Callable[[str, str], None]] = None,
+        on_url_crawled_callback: Optional[Callable[[str], None]] = None,
+    ) -> Dict[str, str]:
+        """Process a seed queue of (url, depth) in parallel until it drains or the
+        ``max_links`` cap is hit, extracting content per URL and enqueuing any new
+        links a page yields. Shared by website crawling (seeds one URL, follows
+        links) and sitemap crawling (seeds the listed pages, which yield no links).
+        """
+        crawler_result: Dict[str, str] = {}
+        urls_to_process = list(urls_to_process)
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Process URLs in batches until no more URLs or max_links reached
+            while urls_to_process and len(crawler_result) < self.max_links:
+                if self.out_of_time:
+                    logger.warning(f"Out of time: stopping with {len(urls_to_process)} link(s) not read")
+                    break
+                # Take a batch of URLs to process
+                batch_size = min(self.max_workers, len(urls_to_process))
+                current_batch = urls_to_process[:batch_size]
+                urls_to_process = urls_to_process[batch_size:]
+
+                # Submit all URLs in the current batch for parallel processing
+                future_to_url = {
+                    executor.submit(self._process_url, url_info, scope): url_info[0]
+                    for url_info in current_batch
+                }
+
+                # Process completed futures as they finish
+                for future in as_completed(future_to_url):
+                    url = future_to_url[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            processed_url, content, new_links = result
+
+                            # Add the content to our results
+                            crawler_result[processed_url] = content
+
+                            # Call the URL crawled callback first (for progress tracking)
+                            if on_url_crawled_callback:
+                                logger.debug(f"📞 Calling URL crawled callback for: {processed_url}")
+                                on_url_crawled_callback(processed_url)
+
+                            # Call the callback for immediate processing if provided
+                            if on_document_callback:
+                                on_document_callback(processed_url, content)
+
+                            # Add new links to the processing queue
+                            for new_link, depth in new_links:
+                                if new_link not in self._visited and (new_link, depth) not in urls_to_process:
+                                    urls_to_process.append((new_link, depth))
+
+                            # If we've reached max_links, break early
+                            if len(crawler_result) >= self.max_links:
+                                logger.info(f"Reached maximum number of links ({self.max_links}), stopping further crawling")
+                                break
+
+                    except Exception as exc:
+                        logger.error(f"URL {url} generated an exception: {exc}")
+                        self._failed_crawls += 1
+
+        return crawler_result
+
+    def _extract_links(
+        self, soup: BeautifulSoup, base_url: str, scope: Optional[CrawlScope] = None
+    ) -> List[str]:
+        """
+        Extract links from a BeautifulSoup object.
+
+        :param soup: The BeautifulSoup object.
+        :param base_url: The base URL to resolve relative URLs.
+        :param scope: Crawl boundary links must fall inside; defaults to this
+            reader's configured scope seeded at ``base_url``.
+        :return: A list of absolute URLs.
+        """
+        links = []
+        seen = set()
+        if scope is None:
+            scope = CrawlScope.for_seed(base_url, self.crawl_scope)
+        base_canonical = scope.canonical(self._canonical_url(base_url))
+
+        all_links = soup.find_all("a", href=True)
+
+        for link in all_links:
+            if not isinstance(link, Tag):
+                continue
+
+            href_str = str(link["href"])
+            # Drop mailto:/tel:/sms:/javascript:/data: hrefs before urljoin —
+            # it passes them through untouched, and they are not pages.
+            if not is_crawlable_url(href_str):
+                continue
+
+            full_url = urljoin(base_url, href_str)
+
+            if not isinstance(full_url, str):
+                continue
+
+            # Skip query-string URLs before canonicalizing (kept for simplicity).
+            if "?" in full_url:
+                continue
+
+            # Canonicalize (drop #fragment / trailing slash, put the seed's own
+            # www/bare spelling on the host) so page variants collapse to a
+            # single link and don't get crawled/stored twice.
+            full_url = scope.canonical(self._canonical_url(full_url))
+
+            # Filter out unwanted URLs
+            parsed_url = urlparse(full_url)
+
+            # Ignore self-links and already-collected duplicates
+            if full_url == base_canonical or full_url in seen:
+                continue
+
+            if (
+                scope.allows(full_url)
+                and not is_auth_path(full_url)
+                and not any(parsed_url.path.endswith(ext) for ext in [
+                    ".pdf", ".jpg", ".png", ".gif", ".zip", ".mp3", ".mp4", ".exe", ".dll"
+                ])
+                and not parsed_url.path.startswith("#")  # Skip anchors
+            ):
+                seen.add(full_url)
+                links.append(full_url)
+
+        logger.info(f"Extracted {len(links)} valid links from {base_url}")
+        return links
+
+    def _create_document_from_content(self, page_url: str, content: str, source_url: str, index: int) -> Document:
+        """
+        Create a Document object from page content with proper metadata.
+        Optionally summarizes content to reduce token usage.
+
+        :param page_url: The URL of the page
+        :param content: The page content
+        :param source_url: Original source URL
+        :param index: The document index
+        :return: Document object
+        """
+        # Extract page identifier without protocol and domain for ID
+        parsed_url = urlparse(page_url)
+        path = parsed_url.path
+
+        # Handle fragment identifiers (#section)
+        fragment = parsed_url.fragment
+        if fragment:
+            path = f"{path}#{fragment}"
+
+        # Clean up path for ID generation
+        if not path or path == "/":
+            path = "index"
+        else:
+            # Remove leading/trailing slashes and replace special chars
+            path = path.strip("/")
+            path = re.sub(r'[^\w\-]', '_', path)
+
+        # Summarize content if enabled to reduce token usage
+        original_length = len(content)
+        try:
+            summarizer = get_content_summarizer()
+            content = summarizer.summarize(content, page_url)
+            if len(content) < original_length:
+                logger.info(f"Content summarized: {original_length} -> {len(content)} chars ({100*len(content)/original_length:.1f}%)")
+        except Exception as e:
+            logger.error(f"Error during content summarization: {str(e)}")
+            # Continue with original content if summarization fails
+
+        # Create metadata with relevant information
+        metadata = {
+            "url": page_url,
+            "chunk": index,
+            "chunk_size": len(content),
+            "original_size": original_length,
+            **self._page_meta.pop(page_url, {}),
+        }
+
+        # Create document with content and metadata
+        document = Document(
+            content=content,
+            meta_data=metadata
+        )
+
+        # Set document ID and name
+        document.id = page_url
+        # Set name to full page URL for matching with knowledge_queue
+        document.name = source_url
+
+
+
+        return document
+
+    def read(
+        self,
+        url: str,
+        vector_db_callback: Optional[Callable[[Document], None]] = None,
+        url_crawled_callback: Optional[Callable[[str], None]] = None,
+        page_callback: Optional[Callable[[List[Document]], None]] = None,
+    ) -> List[Document]:
+        """
+        Read content from a URL, crawl related pages, and convert the content into Documents.
+
+        :param url: The URL to read from.
+        :param vector_db_callback: Optional callback given each document as it is created
+        :param url_crawled_callback: Optional callback called when each URL is successfully crawled
+        :param page_callback: Optional callback given each page's documents (its
+            chunks) as the page is read. They are handed over, not kept: with
+            it, read() returns an empty list and holds one page at a time.
+        :return: A list of Document objects.
+        """
+        # Normalize URL to ensure it has a protocol
+        url = self._normalize_url(url)
+        
+        # Get timestamp for tracking
+        start_time = time.time()
+        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting to read from {url} with parallel processing")
+        
+        documents = []
+        created = 0
+
+        # A page becomes one document per chunk (see app.knowledge.chunking);
+        # each is embedded on its own so the whole page is searchable.
+        def on_document_created(page_url: str, content: str):
+            nonlocal created
+            page = self._create_document_from_content(page_url, content, url, created + 1)
+            chunks = chunk_page(page)
+            created += len(chunks)
+            if page_callback:
+                page_callback(chunks)
+                return
+            for document in chunks:
+                documents.append(document)
+
+                # Call vector DB callback if provided
+                if vector_db_callback:
+                    try:
+                        vector_db_callback(document)
+                        logger.info(f"✓ Document {document.id} successfully sent to vector DB")
+                    except Exception as e:
+                        logger.error(f"Error sending document {document.id} to vector DB: {str(e)}")
+        
+        # Crawl website with the callback for immediate document processing
+        self.crawl(url, on_document_callback=on_document_created, on_url_crawled_callback=url_crawled_callback)
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Completed reading from {url} - Created {created} documents (Total time: {duration:.2f}s)")
+        
+        return documents 

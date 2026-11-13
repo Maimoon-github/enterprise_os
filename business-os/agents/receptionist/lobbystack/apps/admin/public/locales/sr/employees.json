@@ -1,0 +1,109 @@
+{
+  "page": {},
+  "table": {
+    "name": "Ime",
+    "phone": "Broj telefona",
+    "services": "Usluge",
+    "allServices": "Sve usluge",
+    "status": "Status",
+    "statuses": {
+      "working": "Radi",
+      "off": "Na odsustvu",
+      "no_services": "Ne može se zakazati"
+    },
+    "statusDetail": {
+      "until": "Do {{date}}",
+      "offFrom": "Odsustvo od {{date}}",
+      "noServices": "Nema izabranih usluga"
+    },
+    "statusTooltip": {
+      "timeOff": "Odsustvo: {{dates}}",
+      "noServices": "Izmenite zaposlenog i izaberite njegove usluge kako bi klijenti mogli da zakažu kod njega."
+    },
+    "added": "Dodato",
+    "emptyState": "Još nema zaposlenih.",
+    "actions": {
+      "moreOptions": "Više opcija",
+      "editEmployee": "Izmeni",
+      "deleteEmployee": "Obriši",
+      "deleteTitle": "Obrisati zaposlenog?",
+      "deleteDescription": "Zaposleni će biti trajno uklonjen sa vaše kontrolne table.",
+      "deleteConfirm": "Obriši",
+      "deleteCancel": "Otkaži",
+      "deleted": "Zaposleni je obrisan.",
+      "deleteFailed": "Brisanje zaposlenog nije uspelo."
+    }
+  },
+  "add": {
+    "button": "Dodaj zaposlenog",
+    "title": "Dodaj zaposlenog",
+    "description": "Sačuvajte podatke, usluge i raspored zaposlenog.",
+    "fields": {
+      "name": {
+        "label": "Ime",
+        "placeholder": "Marko Petrović",
+        "required": "Unesite ime zaposlenog."
+      },
+      "phone": {
+        "label": "Broj telefona",
+        "country": "Država",
+        "hint": "Opciono. Pozivaoci koji traže ovog zaposlenog prebacuju se na ovaj broj; bez njega dobijaju broj za prebacivanje poziva firme.",
+        "invalid": "Unesite ispravan broj telefona.",
+        "exists": "Zaposleni sa ovim brojem telefona već postoji.",
+        "trialLocked": "Tokom besplatne probe pozivi mogu da se prebace samo na mobilni osobe koja je preuzela probu.",
+        "countryUnsupported": "Agent još ne može da prebacuje pozive na brojeve u ovoj zemlji."
+      },
+      "services": {
+        "label": "Usluge",
+        "hint": "Klijenti mogu da zakažu kod ovog zaposlenog samo ove usluge.",
+        "placeholder": "Izaberite usluge",
+        "search": "Pretraži usluge...",
+        "selectAll": "Izaberi sve",
+        "unselectAll": "Poništi izbor",
+        "noMatches": "Nijedna usluga ne odgovara pretrazi.",
+        "required": "Izaberite bar jednu uslugu.",
+        "invalid": "Usluga koju ste izabrali je obrisana. Proverite listu i pokušajte ponovo.",
+        "empty": "Prvo dodajte uslugu, pa izaberite koje usluge ovaj zaposleni radi.",
+        "goToServices": "Idi na Usluge"
+      },
+      "hours": {
+        "label": "Isto radno vreme kao firma",
+        "hint": "Isključite da biste izabrali dane i sate kada ovaj zaposleni radi. Kod njega se zakazuje samo dok radi i dok je firma otvorena.",
+        "required": "Dodajte bar jedan radni dan."
+      },
+      "timeOff": {
+        "label": "Odsustvo",
+        "hint": "Opciono. Agent ne zakazuje kod ovog zaposlenog tih dana i kaže klijentima kada se vraća.",
+        "add": "Dodaj odsustvo",
+        "placeholder": "Izaberite prvi i poslednji dan",
+        "dates": "Datumi odsustva",
+        "remove": "Ukloni odsustvo",
+        "required": "Izaberite prvi i poslednji dan svakog odsustva.",
+        "invalid": "Odsustva ne mogu da se preklapaju niti da se završe u prošlosti."
+      }
+    },
+    "cancel": "Otkaži",
+    "save": "Dodaj",
+    "saving": "Čuvanje...",
+    "created": "Zaposleni je dodat.",
+    "failed": "Dodavanje zaposlenog nije uspelo."
+  },
+  "edit": {
+    "title": "Izmeni zaposlenog",
+    "description": "Ažurirajte podatke, usluge i raspored ovog zaposlenog.",
+    "save": "Sačuvaj",
+    "updated": "Zaposleni je ažuriran.",
+    "failed": "Ažuriranje zaposlenog nije uspelo."
+  },
+  "pagination": {
+    "rowsPerPage": "Redova po stranici",
+    "viewing": "Redovi {{start}}-{{end}} od {{total}}",
+    "viewingAll_one": "Prikazan {{count}} red",
+    "viewingAll_few": "Prikazana sva {{count}} reda",
+    "viewingAll_other": "Prikazano svih {{count}} redova",
+    "firstPage": "Idi na prvu stranicu",
+    "previousPage": "Idi na prethodnu stranicu",
+    "nextPage": "Idi na sledeću stranicu",
+    "lastPage": "Idi na poslednju stranicu"
+  }
+}

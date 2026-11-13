@@ -1,0 +1,155 @@
+// @vitest-environment jsdom
+import { StrictMode } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OnboardingPlanSurface } from "./onboarding-plan-surface";
+import { createRecordedBrowserTelemetry } from "@/lib/telemetry-testing";
+
+const route = vi.hoisted(() => ({ router: { push: vi.fn(), replace: vi.fn() } }));
+const telemetryRef = vi.hoisted(() => ({ current: null as ReturnType<typeof createRecordedBrowserTelemetry> | null }));
+vi.mock("@/components/product-analytics", () => ({ useTelemetry: () => telemetryRef.current!.telemetry }));
+vi.mock("next/navigation", () => ({ useRouter: () => route.router }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en" } }) }));
+vi.mock("./onboarding-plan-comparison", () => ({ OnboardingPlanComparison: () => null }));
+const clients: QueryClient[] = [];
+beforeEach(() => {
+  telemetryRef.current = createRecordedBrowserTelemetry();
+});
+afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; vi.useRealTimers(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
+function setup(monthlyOnly = false, refusal?: string, checkoutError = "Checkout failed", variant: "trial" | "paid" = "trial") {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } }); clients.push(client);
+  client.setQueryData(["businesses"], { businesses: [{ businessId: "business", active: true }] });
+  client.setQueryData(["billing", "business"], { checkoutAvailable: true, availableCheckoutPlans: ["pro"], availableCheckoutIntervals: { starter: [], pro: monthlyOnly ? ["monthly"] : ["monthly", "annual"] } });
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes("/api/onboarding/stage?")) return Response.json({ ok: true });
+    if (url === "/api/billing/checkout" && init?.method === "POST") return refusal ? Response.json({ error: "Refused", code: refusal }, { status: 409 }) : Response.json({ requestId: "new-checkout" });
+    if (url.includes("requestId=new-checkout")) return Response.json({ status: "error", checkoutUrl: null, error: checkoutError });
+    throw new Error(`Unexpected request ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<StrictMode><QueryClientProvider client={client}><OnboardingPlanSurface variant={variant} /></QueryClientProvider></StrictMode>);
+  return fetchMock;
+}
+// Starter, then Pro: both subscribe.
+const starter = () => screen.getAllByRole("button", { name: "plan.subscribe" })[0]!;
+const pro = () => screen.getAllByRole("button", { name: "plan.subscribe" })[1]!;
+describe("original onboarding plan behavior with asynchronous checkout", () => {
+  it("explains a checkout refused because another one is open", async () => {
+    setup(false, "checkout_in_progress");
+    await userEvent.click(pro());
+    expect(await screen.findByText("settings:billing.checkoutErrors.inProgress")).toBeTruthy();
+    expect(route.router.push).not.toHaveBeenCalled();
+  });
+  it("moves a workspace that already pays on from the trial plans to Home instead of a second checkout", async () => {
+    const fetchMock = setup(false, "subscription_active");
+    await userEvent.click(pro());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/onboarding/stage?businessId=business", expect.objectContaining({ body: JSON.stringify({ to: "complete" }) })));
+    await waitFor(() => expect(route.router.push).toHaveBeenCalledWith("/"));
+  });
+  it("moves a workspace that already pays on from the number step's plans to its number", async () => {
+    const fetchMock = setup(false, "subscription_active", undefined, "paid");
+    await userEvent.click(pro());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/onboarding/stage?businessId=business", expect.objectContaining({ body: JSON.stringify({ to: "phone_number" }) })));
+    await waitFor(() => expect(route.router.push).toHaveBeenCalledWith("/onboarding/number"));
+    expect(screen.queryByText("settings:billing.checkoutErrors.subscriptionActive")).toBeNull();
+  });
+  it.each(["annual", "monthly"])("starts Pro checkout with the selected %s interval and allows retry after provider failure", async interval => {
+    const fetchMock = setup();
+    if (interval === "monthly") await userEvent.click(screen.getByRole("tab", { name: "plan.billingInterval.monthly" }));
+    const button = pro();
+    await userEvent.click(button);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/billing/checkout", expect.objectContaining({ body: JSON.stringify({ businessId: "business", target: "pro", billingInterval: interval }) })));
+    telemetryRef.current!.expectEvent("web.onboarding.plan_selected", { businessId: "business", plan: "pro" });
+    telemetryRef.current!.expectEvent("web.onboarding.plan_checkout_started", { businessId: "business", plan: "pro" });
+    expect(await screen.findByText("Checkout failed")).toBeTruthy();
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  });
+  it("says payments are unavailable when a checkout waited out the provider outage", async () => {
+    setup(false, undefined, "provider_unavailable:503");
+    await userEvent.click(pro());
+    expect(await screen.findByText("settings:billing.toast.paymentsUnavailable")).toBeTruthy();
+  });
+  it("hides a provider's machine reason behind the generic message", async () => {
+    setup(false, undefined, "provider_rejected:422");
+    await userEvent.click(pro());
+    expect(await screen.findByText("plan.continueFailed")).toBeTruthy();
+  });
+  it("lets them pick again when the back button restores the page from cache", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    setup();
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? Response.json({ requestId: "new-checkout" })
+      : Response.json({ status: "ready", checkoutUrl: "https://checkout.example/session", error: null })));
+    const button = pro();
+    await userEvent.click(button);
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.example/session"));
+    expect(button.hasAttribute("disabled")).toBe(true);
+    const restored = new Event("pageshow");
+    Object.defineProperty(restored, "persisted", { value: true });
+    act(() => { window.dispatchEvent(restored); });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    expect(screen.getByRole("button", { name: "plan.trial.start" }).hasAttribute("disabled")).toBe(false);
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+  it("stops polling after a minute, says payments are unavailable, and returns to the plans", async () => {
+    setup();
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? Response.json({ requestId: "new-checkout" })
+      : Response.json({ status: "pending", checkoutUrl: null, error: null }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    fireEvent.click(pro());
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.getByRole("status").textContent).toBe("settings:billing.upgradeDialog.providerSlow");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(50_000); });
+    expect(screen.getByRole("alert").textContent).toContain("settings:billing.toast.paymentsUnavailable");
+    expect(screen.queryAllByRole("button", { name: "plan.subscribe" })[1] ?? null).toBeNull();
+    const polled = fetchMock.mock.calls.length;
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock.mock.calls.length).toBe(polled);
+
+    fireEvent.click(screen.getByRole("button", { name: "plan.backToPlans" }));
+    expect(pro()).toBeTruthy();
+    expect(fetchMock.mock.calls.length).toBe(polled);
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
+    expect((post[1] as RequestInit).signal).toBeUndefined();
+  });
+  it("goes on with the trial from its card, which needs no checkout", async () => {
+    const fetchMock = setup();
+    expect(screen.getByText("plan.trial.description")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "plan.trial.start" }));
+    telemetryRef.current!.expectEvent("web.onboarding.plan_selected", { businessId: "business", plan: "free_cloud" });
+    telemetryRef.current!.expectEvent("web.onboarding.trial_started", { businessId: "business" });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/onboarding/stage?businessId=business", expect.objectContaining({ body: JSON.stringify({ to: "complete" }) })));
+    await waitFor(() => expect(route.router.push).toHaveBeenCalledWith("/"));
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/billing/checkout")).toBe(false);
+  });
+  it("shows the trial, Starter and Pro after a trial number, with no Enterprise and nothing to close", () => {
+    setup();
+    expect(screen.getByRole("button", { name: "plan.trial.start" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "plan.subscribe" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Contact us" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /close/i })).toBeNull();
+  });
+  it("shows Starter, Pro and Enterprise when no trial is possible, with no Free card", () => {
+    setup(false, undefined, undefined, "paid");
+    expect(screen.queryByRole("button", { name: "plan.trial.start" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "plan.subscribe" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Contact us" })).toBeTruthy();
+  });
+  it("selects the only configured interval and disables unavailable plans", async () => {
+    setup(true);
+    await waitFor(() => expect(screen.getByRole("tab", { name: "plan.billingInterval.monthly" }).getAttribute("aria-selected")).toBe("true"));
+    expect(starter().hasAttribute("disabled")).toBe(true);
+    expect(pro().hasAttribute("disabled")).toBe(false);
+  });
+});

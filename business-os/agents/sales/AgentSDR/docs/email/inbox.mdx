@@ -1,0 +1,86 @@
+---
+title: "Email inbox"
+description: "Read and answer email replies in the Master Inbox, and use tasks and notes to keep track of follow-ups."
+icon: "inbox"
+---
+
+The Master Inbox is one place to read the email that arrives in all your connected mailboxes, instead of opening each Gmail account. It is where replies to your campaigns land, and it is how a reply gets from a mailbox into the AI CRM. Open it from **Email → Inbox**.
+
+<Info>
+The inbox fills only while [Google Workspace is connected with a Gmail Pub/Sub topic](/email/connect). Without the topic, sending works but incoming mail is not picked up.
+</Info>
+
+## What lands here
+
+When Gmail tells AgentSDR a mailbox has new mail, the message is stored in the inbox. Two kinds of sender are treated differently:
+
+- **Someone you have emailed in a campaign.** The message is stored here and also sent to the CRM as a reply from that person. That is what creates work in [Action required](/crm/action-required).
+- **Anyone else.** The message is stored here so you can see it, but it creates no CRM record and no CRM work.
+
+Two kinds of mail are handled before they reach the list:
+
+- **Delivery failure reports** (bounces) are not shown as replies. They mark the failed address as bounced and suppress it. See [Email campaigns](/email/campaigns). If a report cannot be read, it stays in the inbox so a person can look at it.
+- Messages from the mailbox itself are skipped.
+
+## Folders
+
+The tabs above the list are the folders. **Inbox**, **Replies** and **To approve** are always visible. The rest are under **More**.
+
+| Folder | What is in it |
+| --- | --- |
+| **Inbox** | Every email received. Its count is the number unread. |
+| **Replies** | Replies from leads, without out-of-office auto-replies. |
+| **To approve** | AI-drafted replies waiting for your review. |
+| **Important** | Messages you starred. |
+| **Out of office** | Auto-replies and out-of-office notices. |
+| **Sent** | Emails sent from your mailboxes. |
+| **Scheduled** | Emails queued to send. Opening one shows its text and says it was queued in the campaign; edit or cancel it from the campaign. |
+
+Search with **Search emails, leads**, or click **Filter** to narrow by lead, campaign, mailbox, lead status, status group (**Interested**, **Not interested**, **Wrong POC**, **Other**) and a time range (**All time**, **Today**, **Yesterday**, **Custom**). Click **Apply filters** to use your choices.
+
+## Read and reply
+
+Select a conversation to read the thread. Long quoted history is folded behind **Show quoted text**, and long runs of older messages are folded into "N earlier messages". The star on a message toggles **Mark as important**.
+
+To answer, click **Reply**. The composer has **To**, **Cc**, **Bcc** and **Subject** fields and basic formatting: bold, italic, a bullet list, highlight and links. The shortcut shown on the **Send** button is Command or Ctrl plus Enter.
+
+Replies are sent through the CRM, so they are recorded on the person's conversation. It goes out on that existing conversation, and recipients you type into **To**, **Cc** or **Bcc** are ignored. A reply is only possible for contacts that have an active email conversation in the CRM, which means people you emailed from a campaign. A sender who is not in the CRM can be read here but not answered from here.
+
+Press **Show details** for the side panel: the contact, their company, links, and, if they are in the CRM, their category, stage, sequence and when the next action is due. **Record** opens the full [CRM record](/crm/overview).
+
+## Replies in the CRM
+
+For people you have emailed, the reply is passed to the AI CRM. There it is classified, the person's outreach sequences stop, and a reply may be drafted for you.
+
+- The lead's email campaign status becomes **Replied** and their queued emails are removed, so no further follow-ups go out.
+- Any active LinkedIn or WhatsApp campaign enrollment for the same person is stopped too.
+- The reply appears in **Action required**, with a category such as interested, not interested or wrong person.
+- If the CRM drafts an answer, it shows in the thread as an **AI-drafted reply**. Click **Review draft**, edit it if you like, and click **Approve & send**. Choosing **Don't use draft** discards it and returns you to a blank reply. Drafts wait in the **To approve** folder.
+
+You can change the category from the contact panel to reclassify a reply. How categories, drafts and sequences behave is covered in [Action required](/crm/action-required) and [CRM sequences](/crm/sequences).
+
+## Tasks and notes
+
+Use the **Add** menu on a thread to create a **Task** or a **Note** about that lead. They are listed on two more pages, reached with the **Tasks** and **Notes** buttons at the top of the inbox.
+
+- **Tasks** are follow-ups to do. Each has a name and **Description**, can be filtered by **Pending** or **Done**, and has **Mark done** and **Reopen** actions.
+- **Notes** are things to remember about a lead, with a title and a **Description**.
+
+Both pages let you search, create new items, edit and delete them (deleting cannot be undone). Items you add from a thread show the lead's name in the list.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Action required" icon="list-checks" href="/crm/action-required">
+    Where replies become work to do.
+  </Card>
+  <Card title="Email campaigns" icon="send" href="/email/campaigns">
+    What stops a sequence when someone replies.
+  </Card>
+  <Card title="Connect email" icon="mail" href="/email/connect">
+    Mailboxes and the Pub/Sub topic.
+  </Card>
+  <Card title="CRM overview" icon="kanban" href="/crm/overview">
+    Records, pipeline and sequences.
+  </Card>
+</CardGroup>

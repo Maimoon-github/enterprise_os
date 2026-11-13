@@ -1,0 +1,385 @@
+{
+  "headers": {
+    "dashboardTitle": "Panel",
+    "dashboardDescription": "Compruebe si todo está listo para llamadas, mensajes y reservas."
+  },
+  "analyticsPage": {
+    "title": "Analíticas",
+    "description": "Revise las tendencias de actividad en llamadas, mensajes y reservas."
+  },
+  "home": {
+    "title": "Inicio",
+    "phone": {
+      "status": {
+        "ready": "Listo para su primera llamada",
+        "live": "Su agente está atendiendo llamadas",
+        "liveMany": "Sus agentes están atendiendo llamadas"
+      },
+      "answersFirst": {
+        "agent": "Su agente responde primero",
+        "team": "Su equipo responde primero",
+        "teamDuringHours": "Su equipo responde primero en horario de atención"
+      }
+    },
+    "download": "Descargar",
+    "liveCalls": "En vivo",
+    "tabs": {
+      "overview": "Resumen",
+      "analytics": "Analíticas",
+      "reports": "Informes",
+      "notifications": "Notificaciones"
+    },
+    "analytics": {
+      "chart": {
+        "title": "Resumen de actividad",
+        "description": "Llamadas y mensajes en su espacio de trabajo."
+      },
+      "cards": {
+        "calls": "Número de llamadas",
+        "messages": "Número de mensajes",
+        "appointments": "Citas reservadas",
+        "agentResponseTime": "Tiempo de respuesta del agente"
+      },
+      "controls": {
+        "dateRange": "Rango de fechas",
+        "granularity": "Intervalo de agrupación",
+        "more": "Más opciones",
+        "presetRange": "Período predefinido",
+        "granularities": {
+          "hourly": "Por hora",
+          "daily": "Diario",
+          "weekly": "Semanal",
+          "monthly": "Mensual",
+          "yearly": "Anual"
+        },
+        "presets": {
+          "today": "Hoy",
+          "yesterday": "Ayer",
+          "thisWeek": "Esta semana",
+          "thisMonth": "Este mes",
+          "lastMonth": "Mes pasado",
+          "last30": "Últimos 30 días",
+          "last3Months": "Últimos 3 meses",
+          "thisYear": "Este año",
+          "lastYear": "Año pasado",
+          "allTime": "Desde el inicio",
+          "custom": "Rango personalizado"
+        }
+      },
+      "metrics": {
+        "flat": "Sin cambios respecto al período anterior",
+        "percentUp": "+{{value}} % respecto al período anterior",
+        "percentDown": "-{{value}} % respecto al período anterior",
+        "durationUp": "+{{value}} respecto al período anterior",
+        "durationDown": "-{{value}} respecto al período anterior",
+        "pointsUp": "+{{value}} pts respecto al período anterior",
+        "pointsDown": "-{{value}} pts respecto al período anterior",
+        "noPreviousCalls": "Sin llamadas en el período anterior"
+      },
+      "outcomes": {
+        "title": "Resultados de llamadas",
+        "description": "Cómo terminaron las llamadas de esta semana.",
+        "labels": {
+          "completed": "Completadas",
+          "transferred": "Transferidas",
+          "live": "En vivo",
+          "missed": "Perdidas"
+        }
+      },
+      "channels": {
+        "title": "Canales",
+        "description": "Llamadas y mensajes por canal en las fechas elegidas.",
+        "labels": {
+          "other": "Otro"
+        }
+      },
+      "agents": {
+        "title": "Por agente",
+        "calls": "Llamadas",
+        "chats": "Chats",
+        "removed": "Eliminado"
+      },
+      "overview": {
+        "calls": {
+          "title": "Llamadas"
+        },
+        "today": {
+          "title": "Hoy",
+          "next": "Próxima a las {{time}}",
+          "none": "Nada más por hoy"
+        },
+        "appointments": {
+          "title": "Citas"
+        },
+        "averageDuration": {
+          "title": "Duración media"
+        }
+      }
+    },
+    "results": {
+      "bookedValue": "Valor reservado",
+      "timeSaved": "Tiempo ahorrado",
+      "withoutTransfer": "Llamadas sin transferir"
+    },
+    "metrics": {
+      "loading": "Cargando la comparación mensual...",
+      "calls": {
+        "title": "Llamadas"
+      },
+      "messages": {
+        "title": "Mensajes"
+      },
+      "contacts": {
+        "title": "Contactos"
+      }
+    },
+    "chart": {
+      "title": "Llamadas por mes"
+    },
+    "recentCalls": {
+      "title": "Llamadas recientes",
+      "durationValue": "{{value}} s"
+    },
+    "actionRequired": {
+      "title": "Acción requerida",
+      "description": "Seguimientos de clientes que aún necesitan a una persona.",
+      "titleWithContact": "{{message}} para {{name}}",
+      "urgent": "Urgente",
+      "emptyTitle": "No hay acciones pendientes",
+      "fields": {
+        "callback": "Devolver llamada",
+        "callbackWindow": "Horario preferido para devolver la llamada"
+      },
+      "kinds": {
+        "voice_message": "Devolver llamada",
+        "human_handoff": "Traspaso",
+        "other": "Abierto",
+        "cancellation": "Cancelación",
+        "reschedule": "Cambio de hora"
+      },
+      "appointment": "Cita: {{appointment}}",
+      "noAppointment": "Ninguna cita próxima coincide con esta solicitud. Revise la página Citas.",
+      "alreadyCancelled": "Esta cita ya está cancelada.",
+      "cancellationRequest": "Solicitud de cancelación",
+      "requested": "Solicitado: {{details}}",
+      "notes": "Notas: {{notes}}",
+      "rescheduleRequest": "Solicitud de cambio de hora",
+      "newTime": "Nueva hora: {{time}}",
+      "inboxLink": "Ver todo en la bandeja de entrada"
+    },
+    "upcoming": {
+      "title": "Próximas",
+      "appointmentsLink": "Ver todas las citas",
+      "description": "Las próximas citas del calendario.",
+      "unknownService": "Servicio desconocido",
+      "employee": "Empleado: {{name}}",
+      "emptyTitle": "No hay citas próximas",
+      "status": {
+        "booked": "Reservada",
+        "confirmed": "Confirmada"
+      },
+      "withStaff": "con {{staff}}"
+    }
+  },
+  "setup": {
+    "title": "Cree su primer espacio de trabajo",
+    "description": "Esto crea el espacio de trabajo, el perfil del agente y la primera instantánea que usa la voz.",
+    "businessName": "Nombre del negocio",
+    "slug": "Slug",
+    "timezone": "Zona horaria",
+    "businessType": "Tipo de negocio",
+    "placeholders": {
+      "businessName": "Clínica Familiar Maple",
+      "slug": "clinica-familiar-maple"
+    },
+    "businessTypes": {
+      "clinic": "Clínica",
+      "repair_shop": "Taller de reparación",
+      "salon": "Salón",
+      "service_company": "Empresa de servicios",
+      "other": "Otro"
+    },
+    "selectBusinessType": "Elija el tipo de negocio",
+    "create": "Crear espacio de trabajo",
+    "creating": "Creando...",
+    "created": "Espacio de trabajo creado. Se está actualizando la instantánea del agente.",
+    "failed": "No se pudo crear el espacio de trabajo."
+  },
+  "cards": {
+    "calls": {
+      "title": "Llamadas atendidas",
+      "footer": "La actividad entrante más reciente está en la bandeja de entrada."
+    },
+    "services": {
+      "title": "Servicios configurados",
+      "footer": "Los usan tanto el agente como el sistema de reservas."
+    },
+    "hours": {
+      "title": "Días de apertura definidos",
+      "footer": "El horario configurado tiene prioridad sobre los documentos."
+    },
+    "knowledge": {
+      "title": "Elementos de conocimiento",
+      "footer": "El conocimiento y los documentos mejoran las respuestas de la vista previa y por SMS."
+    },
+    "snapshot": "Instantánea {{version}}"
+  },
+  "quickActions": {
+    "title": "Acciones rápidas",
+    "description": "Mantenga {{businessName}} listo para llamadas, SMS y reservas.",
+    "configureProfile": "Configurar el perfil del agente",
+    "addKnowledge": "Añadir conocimiento y documentos",
+    "reviewInbox": "Revisar la bandeja de llamadas",
+    "readiness": "Estado de la configuración",
+    "servicesConfigured": "{{count}} servicios configurados",
+    "daysConfigured": "{{count}} días con horario de atención",
+    "knowledgeItems": "{{count}} elementos de conocimiento indexados",
+    "phoneNumbers": "{{count}} números de teléfono asignados",
+    "currentGreeting": "Saludo actual"
+  },
+  "nextSteps": {
+    "title": "Próximos pasos",
+    "description": "Ajuste el comportamiento del agente antes de recibir llamadas reales.",
+    "hours": "Defina el horario y los servicios para que las reservas propongan horarios reales.",
+    "transfer": "Añada reglas de transferencia y un número de respaldo antes de transferir llamadas urgentes.",
+    "snapshot": "Actualice la instantánea después de cambios importantes en sus políticas para que la voz los aplique rápido."
+  },
+  "activation": {
+    "hearIt": {
+      "title": "Escuche cómo responde su agente",
+      "description": "Llámelo desde su navegador y escuche cómo saluda a un cliente.",
+      "descriptionWithPages_one": "Ha leído {{count}} página de {{host}}. Llámelo y pregúntele algo que solo su negocio sabría.",
+      "descriptionWithPages_many": "Ha leído {{count}} páginas de {{host}}. Llámelo y pregúntele algo que solo su negocio sabría.",
+      "descriptionWithPages_other": "Ha leído {{count}} páginas de {{host}}. Llámelo y pregúntele algo que solo su negocio sabría.",
+      "cta": "Iniciar una llamada"
+    },
+    "claimNumber": {
+      "title": "Obtenga su número de teléfono",
+      "description": "Su plan incluye un número propio y aún no ha elegido uno. Elíjalo y el agente empezará a responder.",
+      "cta": "Elegir un número"
+    },
+    "freeTrial": {
+      "title": "Conteste sus llamadas perdidas gratis durante 14 días",
+      "description": "Elija un número local y desvíe a él las llamadas que no pueda contestar. No necesita tarjeta.",
+      "cta": "Elegir mi número"
+    },
+    "forwardTrial": {
+      "title": "Envíe sus llamadas perdidas al {{number}}",
+      "description": "Active el desvío de llamadas con su operador y las llamadas que no pueda contestar irán a su agente en lugar del buzón de voz.",
+      "cta": "Configurar el desvío"
+    },
+    "upgrade": {
+      "title": "Dé un número de teléfono a su agente",
+      "description": "Ya ha comprobado que funciona. Con un número propio puede atender a sus clientes reales, de día y de noche.",
+      "cta": "Elegir un plan"
+    }
+  },
+  "setupGuide": {
+    "title": "Primeros pasos",
+    "skip": "Omitir configuración",
+    "skipStep": "Omitir",
+    "finished": "Configuración completada.",
+    "description": "{{completed}} de {{total}} pasos de configuración completados.",
+    "lastCall": "Su llamada de prueba",
+    "lastCallDetails": "{{date}}, {{duration}}",
+    "readTranscript": "Leer la transcripción",
+    "callAgain": "Llamar de nuevo",
+    "steps": {
+      "fullScan": "Leer el resto de su sitio",
+      "sources": "Añadir más fuentes",
+      "hours": "Añadir su horario",
+      "testCall": "Escuchar a su agente",
+      "phoneNumber": "Conectar un número de teléfono",
+      "forwardCalls": "Desvíe sus llamadas",
+      "callNumber": "Llame a su número",
+      "forwardFromCurrent": "Conserve su número existente"
+    },
+    "stepDescriptions": {
+      "fullScan": "Su agente ha leído una parte de su sitio.",
+      "sources": "Suba sus políticas, preguntas frecuentes o precios.",
+      "hours": "Su agente reserva citas solo dentro de este horario.",
+      "testCall": "Pregúntele lo que más le preguntan quienes llaman.",
+      "phoneNumber": "Dé a su agente su propio número para atender a personas reales.",
+      "phoneNumberTrial": "Conteste sus llamadas perdidas gratis durante 14 días, sin tarjeta.",
+      "forwardCalls": "¿Conserva el número al que ya llaman sus clientes? Su agente también puede contestar en ese número. Opcional.",
+      "numberLost": "Su prueba gratuita terminó. Elija un plan para recuperar su número."
+    },
+    "stepActions": {
+      "fullScan": "Leer el resto",
+      "sources": "Subir documento",
+      "hours": "Añadir horario",
+      "testCall": "Iniciar una llamada",
+      "phoneNumber": "Elegir un número",
+      "callNumber": "Llamar al {{number}}",
+      "copyNumber": "Copiar número",
+      "numberCopied": "Copiado",
+      "forwardCalls": "Configurar el desvío",
+      "choosePlan": "Elegir un plan",
+      "tryAgain": "Reintentar"
+    },
+    "forwardingFrom": "Desvío desde el {{number}}",
+    "forwardingWorks": "El desvío funciona"
+  },
+  "forwarding": {
+    "title": "Desvíe sus llamadas al {{number}}",
+    "description": "Elija su operador.",
+    "modes": {
+      "missed": {
+        "label": "Llamadas perdidas",
+        "help": "Su teléfono suena primero. Si no contesta, su agente atiende."
+      },
+      "all": {
+        "label": "Todas las llamadas",
+        "help": "Su agente contesta cada llamada, y su teléfono no suena."
+      }
+    },
+    "carrier": {
+      "label": "Operador o sistema telefónico",
+      "placeholder": "Buscar operador",
+      "empty": "Ningún operador con ese nombre."
+    },
+    "groups": {
+      "usMobile": "Celular (EE. UU.)",
+      "caMobile": "Celular (Canadá)",
+      "landline": "Líneas fijas",
+      "voip": "Sistemas telefónicos para empresas",
+      "ukMobile": "Móviles del Reino Unido"
+    },
+    "code": {
+      "dial": "En el teléfono al que llaman sus clientes, marque este código:",
+      "call": "Pulse Llamar.",
+      "busy": "Para desviar también las llamadas que entran mientras habla, marque:",
+      "off": "Para desactivarlo después, marque {{code}}.",
+      "unreachable": "Para desviar también las llamadas cuando su teléfono está apagado o sin señal, marque:",
+      "enterNumber": "Cuando se lo pida, ingrese {{number}}."
+    },
+    "settings": {
+      "open": "En {{name}}, abra {{path}}.",
+      "missed": "Desvíe las llamadas sin respuesta al {{number}} y guarde.",
+      "all": "Desvíe todas las llamadas al {{number}} y guarde.",
+      "openPhone": "En su teléfono, abra {{path}}."
+    },
+    "notes": {
+      "planFeature": "Si el desvío no se activa, pida a {{name}} que agregue el desvío de llamadas a su plan.",
+      "iphone": "En un iPhone, desactive el Buzón de voz en vivo en los ajustes de Teléfono. Si no, contesta antes que su agente.",
+      "ringTime": "Si puede elegir el tiempo de timbre, de 15 a 20 segundos le dan unos cuatro timbres antes de que su agente conteste.",
+      "voicemail": "Si tiene el buzón de voz de {{name}}, pida a {{name}} que lo quite. Las llamadas perdidas no se pueden desviar mientras esté activo.",
+      "androidOnly": "Estos pasos son para teléfonos Android. En un iPhone, pida a {{name}} que lo active por usted.",
+      "adminOnly": "Solo un administrador de su cuenta de {{name}} puede cambiar esto.",
+      "verifyNumber": "{{name}} envía un código al {{number}} antes de desviar. Elija recibir el código por llamada y léalo en la transcripción de esa llamada, en la Bandeja de entrada."
+    },
+    "unsupported": {
+      "missed": "{{name}} no ofrece desvío solo para llamadas perdidas. Elija Todas las llamadas, o pida a {{name}} que desvíe las llamadas sin respuesta al {{number}}.",
+      "all": "{{name}} no indica cómo desviar todas las llamadas. Pida a {{name}} que desvíe sus llamadas al {{number}}."
+    },
+    "notListed": {
+      "missed": "¿Su operador no aparece? Pídale que desvíe las llamadas sin respuesta al {{number}}.",
+      "all": "¿Su operador no aparece? Pídale que desvíe todas sus llamadas al {{number}}."
+    },
+    "general": {
+      "missed": "En un móvil, abra los ajustes de llamadas del teléfono y desvíe las llamadas sin respuesta al {{number}}. En una línea fija o un sistema telefónico de empresa, pídaselo a su operador.",
+      "all": "En un móvil, abra los ajustes de llamadas del teléfono y desvíe todas las llamadas al {{number}}. En una línea fija o un sistema telefónico de empresa, pídaselo a su operador."
+    },
+    "itWorks": "Funciona"
+  }
+}

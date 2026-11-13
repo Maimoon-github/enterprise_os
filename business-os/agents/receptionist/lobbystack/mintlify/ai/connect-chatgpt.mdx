@@ -1,0 +1,77 @@
+---
+title: "Connect ChatGPT and OpenAI agents"
+description: "Add LobbyStack to ChatGPT as a plugin, or use it from Codex and the OpenAI Responses API."
+sidebarTitle: "ChatGPT"
+contentType: "How-to"
+---
+
+The server URL is `https://app.lobbystack.com/api/mcp`. Replace `app.lobbystack.com` with your own domain if you self-host. ChatGPT connects to it from the internet, so a self-hosted LobbyStack needs a public HTTPS address.
+
+See [MCP server](/ai/mcp) for the tools each permission unlocks.
+
+## ChatGPT
+
+ChatGPT connects custom MCP servers from its **Plugins** page on the web. On Business, Enterprise and Edu plans, ChatGPT can use every LobbyStack tool, including the ones that change data. On Pro, it can only use tools that read data. In a Business workspace, only admins and owners can add a custom server. Enterprise and Edu admins can give that permission to other members.
+
+<Steps>
+  <Step title="Add the server">
+    In ChatGPT, go to **Plugins**, click **+**, then **Add custom MCP server**. Name it `LobbyStack` and paste the server URL under **Connection**. You don't need to turn on developer mode first.
+  </Step>
+  <Step title="Choose OAuth">
+    Choose **OAuth** for authentication and leave any client ID and secret empty, because ChatGPT registers itself with LobbyStack. Read the risk warning, select **I understand and want to continue**, and click **Create as a plugin**.
+  </Step>
+  <Step title="Sign in and choose access">
+    ChatGPT opens LobbyStack. Sign in, pick the workspace, uncheck anything ChatGPT shouldn't do, and click **Allow access**.
+  </Step>
+  <Step title="Install the plugin">
+    Review the tools ChatGPT found, then install the plugin. In a new chat, type `@` and select LobbyStack.
+  </Step>
+</Steps>
+
+To disconnect, go to **Settings** > **API keys** in LobbyStack and click **Disconnect** next to ChatGPT under **MCP connections**.
+
+## OpenAI Responses API
+
+The Responses API calls remote MCP servers for you. Pass an API key in `headers`:
+
+```bash
+curl https://api.openai.com/v1/responses \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "model": "gpt-6-luna",
+    "tools": [{
+      "type": "mcp",
+      "server_label": "lobbystack",
+      "server_url": "https://app.lobbystack.com/api/mcp",
+      "headers": { "Authorization": "Bearer '"$LOBBYSTACK_API_KEY"'" },
+      "require_approval": "always"
+    }],
+    "input": "Who called yesterday and asked for a callback?"
+  }'
+```
+
+`require_approval: "always"` makes the API stop before each tool call so your code can confirm it. Loosen it only for keys with read scopes.
+
+## Codex
+
+The ChatGPT desktop app, the Codex CLI and the Codex IDE extension share one MCP configuration, so you add LobbyStack once. Add the server, then sign in:
+
+```bash
+codex mcp add lobbystack --url https://app.lobbystack.com/api/mcp
+codex mcp login lobbystack
+```
+
+`codex mcp login` opens LobbyStack in your browser. Sign in, pick the workspace, uncheck anything Codex shouldn't do, and click **Allow access**. Codex registers itself with LobbyStack, so you don't need a client ID or secret. Then ask Codex to call `get_business` to check the connection.
+
+### Codex with an API key
+
+To use an API key instead, add LobbyStack to `~/.codex/config.toml`. Codex reads the key from the environment variable you name:
+
+```toml ~/.codex/config.toml
+[mcp_servers.lobbystack]
+url = "https://app.lobbystack.com/api/mcp"
+bearer_token_env_var = "LOBBYSTACK_API_KEY"
+```
+
+Export `LOBBYSTACK_API_KEY` in your shell before you start Codex.

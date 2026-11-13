@@ -1,0 +1,210 @@
+/*
+Copyright 2024-2026 ChatterMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+import { ref, readonly, defineComponent, defineAsyncComponent, h } from 'vue'
+import type { Component } from 'vue'
+
+// Create a proper Vue component for the fallback
+const NotAvailableComponent = defineComponent({
+  name: 'NotAvailable',
+  setup() {
+    return () => h('div', 'Feature not available in open source version')
+  },
+})
+
+// Check for enterprise module
+const enterpriseModules = import.meta.glob([
+  '/src/modules/enterprise/views/SignupView.vue',
+  '/src/modules/enterprise/composables/useSubscriptionStore.ts',
+  '/src/modules/enterprise/router/guards/subscription.ts',
+])
+const hasEnterpriseModule = Object.keys(enterpriseModules).length > 0
+
+interface Plan {
+  type: string
+  name: string
+  [key: string]: any
+}
+
+interface SubscriptionPlan {
+  plan: Plan
+  message_count?: number
+  message_limit?: number
+  [key: string]: any
+}
+
+interface SubscriptionStore {
+  currentPlan: SubscriptionPlan | null
+  isLoadingPlan: boolean
+  isInTrial: boolean
+  trialDaysLeft: number
+  fetchCurrentPlan: () => Promise<void>
+  /** The plan catalog, once fetched (absent in the open-source build). */
+  availablePlans?: readonly Plan[]
+  fetchPlans?: () => Promise<void>
+}
+
+interface SubscriptionGuard {
+  subscriptionGuard: (to: any, from: any, next: any) => void
+}
+
+type EnterpriseModule = {
+  default?: Component
+  subscriptionStore?: SubscriptionStore
+  subscriptionGuard?: (to: any, from: any, next: any) => void
+  initShopifyApp?: () => any
+  getSessionToken?: (app: any) => Promise<string>
+  useShopifyIntegration?: (agentId: string) => any
+  setupService?: { getProgress: () => Promise<{ step: string; agent_id: string | null; widget_id: string | null }> }
+}
+
+// Create a mapping of module paths to their direct imports
+// These should be used with dynamic import() directly, not with glob
+const moduleImports = {
+  signupView: '/src/modules/enterprise/views/SignupView.vue',
+  subscriptionView: '/src/modules/enterprise/views/SubscriptionView.vue',
+  billingSetupView: '/src/modules/enterprise/views/BillingSetupView.vue',
+  subscriptionStore: '/src/modules/enterprise/composables/useSubscriptionStore.ts',
+  subscriptionGuard: '/src/modules/enterprise/router/guards/subscription.ts',
+  // Explore is retired (its route is commented out in router/index.ts)
+  // exploreView: '/src/modules/enterprise/views/ExploreView.vue',
+  shopifySessionTokenBounce: '/src/modules/enterprise/views/ShopifySessionTokenBouncePage.vue',
+  shopifyConnect: '/src/modules/enterprise/views/ShopifyConnectAccountView.vue',
+  shopifyAuthComplete: '/src/modules/enterprise/views/ShopifyAuthCompleteView.vue',
+  shopifyAgentSelection: '/src/modules/enterprise/views/ShopifyAgentSelectionView.vue',
+  shopifyAgentManagement: '/src/modules/enterprise/views/ShopifyAgentManagementView.vue',
+  shopifyInbox: '/src/modules/enterprise/views/ShopifyInboxView.vue',
+  shopifyPricing: '/src/modules/enterprise/views/ShopifyPricingView.vue',
+  shopifyCustomize: '/src/modules/enterprise/views/ShopifyCustomizeView.vue',
+  shopifyAppBridge: '/src/modules/enterprise/plugins/shopifyAppBridge.ts',
+  shopifyAppBridgeUtilities: '/src/modules/enterprise/plugins/shopifyAppBridgeUtilities.ts',
+  shopifyIntegration: '/src/modules/enterprise/composables/useShopifyIntegration.ts',
+  // Promo offer surfaces (render nothing in the open-source build)
+  promoSurfaces: '/src/modules/enterprise/components/promo/PromoSurfaces.vue',
+  promoHeaderPill: '/src/modules/enterprise/components/promo/PromoHeaderPill.vue',
+  promoUsageCard: '/src/modules/enterprise/components/promo/PromoUsageCard.vue',
+  promoGateNotice: '/src/modules/enterprise/components/promo/PromoGateNotice.vue',
+  promoLimitToast: '/src/modules/enterprise/components/promo/PromoLimitToast.vue',
+  // Connected channels on a plan without them: AI paused, inbox still on
+  channelsPausedNotice: '/src/modules/enterprise/components/promo/ChannelsPausedNotice.vue',
+  // Help button for the hosted support chat (renders nothing in open source)
+  supportChatButton: '/src/modules/enterprise/components/support/SupportChatButton.vue',
+  // "Contact us" to sales where a plan limit is reached (empty in OSS)
+  contactUsLink: '/src/modules/enterprise/components/support/ContactUsLink.vue',
+  // External apps driving channel conversations (settings page)
+  appIntegrationsView: '/src/modules/enterprise/views/AppIntegrationsView.vue',
+  // Personal access tokens for the CLI and API (settings page)
+  accessTokensView: '/src/modules/enterprise/views/AccessTokensView.vue',
+  // Setup progress: the "Finish setup" bar, where the widget is live, and the
+  // server-side step the wizard resumes at (nothing / null in open source)
+  setupProgressBar: '/src/modules/enterprise/components/setup/SetupProgressBar.vue',
+  widgetInstallStatus: '/src/modules/enterprise/components/setup/WidgetInstallStatus.vue',
+  // "Set this up from your AI coding tool" on the wizard's Create step (nothing in open source)
+  aiToolSetupNudge: '/src/modules/enterprise/components/setup/AiToolSetupNudge.vue',
+  setupService: '/src/modules/enterprise/utils/setupService.ts',
+  // The setup assistant docked beside the onboarding wizard (nothing in open source)
+  setupAssistant: '/src/modules/enterprise/components/setup/SetupAssistantDock.vue',
+}
+
+/** Renders nothing: the open-source stand-in for an enterprise-only surface. */
+const EmptyComponent = defineComponent({ name: 'EnterpriseEmpty', setup: () => () => null })
+
+// One glob for the whole module (a literal object per evaluation otherwise),
+// and one async-component definition per path for the life of the app.
+const allEnterpriseModules = import.meta.glob<EnterpriseModule>([
+  '/src/modules/enterprise/**/*.vue',
+  '/src/modules/enterprise/**/*.ts',
+  // Tests live in the enterprise repo too; they are not part of the app bundle.
+  '!/src/modules/enterprise/e2e/**',
+  '!/src/modules/enterprise/__tests__/**',
+])
+const asyncComponents = new Map<string, Component>()
+
+// Default subscription state
+const defaultSubscriptionState: SubscriptionStore = {
+  currentPlan: null,
+  isLoadingPlan: false,
+  isInTrial: false,
+  trialDaysLeft: 0,
+  fetchCurrentPlan: () => Promise.resolve(),
+}
+
+export const useEnterpriseFeatures = () => {
+  const subscriptionStore = ref<SubscriptionStore>(defaultSubscriptionState)
+
+  const modules = allEnterpriseModules
+
+  // Check if any enterprise modules exist
+  const hasEnterpriseModule = Object.keys(modules).length > 0
+
+  const loadModule = async (modulePath: string): Promise<EnterpriseModule | null> => {
+    if (!hasEnterpriseModule) {
+      return null
+    }
+
+    try {
+      if (modules[modulePath]) {
+        const module = await modules[modulePath]()
+        return module
+      }
+      return null
+    } catch (error) {
+      console.warn(`Failed to load enterprise module: ${modulePath}`, error)
+      return null
+    }
+  }
+
+  /**
+   * An enterprise component as an async component, or an empty one when the
+   * module is absent - so open-source templates can mount promo surfaces
+   * unconditionally without importing enterprise code.
+   */
+  const enterpriseComponent = (modulePath: string): Component => {
+    if (!hasEnterpriseModule || !modules[modulePath]) return EmptyComponent
+    let component = asyncComponents.get(modulePath)
+    if (!component) {
+      component = defineAsyncComponent(async () => {
+        const module = await loadModule(modulePath)
+        return module?.default ?? EmptyComponent
+      })
+      asyncComponents.set(modulePath, component)
+    }
+    return component
+  }
+
+  const initializeSubscriptionStore = async () => {
+    if (hasEnterpriseModule) {
+      try {
+        const module = await loadModule(moduleImports.subscriptionStore)
+        if (module?.subscriptionStore) {
+          subscriptionStore.value = module.subscriptionStore
+        }
+      } catch (error) {
+        console.warn('Enterprise subscription store not available:', error)
+      }
+    }
+  }
+
+  return {
+    hasEnterpriseModule,
+    subscriptionStore: readonly(subscriptionStore),
+    initializeSubscriptionStore,
+    loadModule,
+    moduleImports,
+    enterpriseComponent,
+    NotAvailableComponent,
+  }
+}

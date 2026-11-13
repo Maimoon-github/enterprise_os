@@ -1,0 +1,254 @@
+name: E2E
+
+# Playwright end-to-end tests (e2e/) against a native stack: a pgvector service
+# container, the backend, a production build of the dashboard and the fakes — the
+# same `stack.sh` path developers run locally. No secrets: runs on fork PRs too.
+#
+# On pull requests and main: the suite on Chromium (parallel, then the org-wide
+# specs serially). Nightly (and on demand) it also runs, as separate jobs:
+#   prod-like  Redis on and gunicorn (--preload) with 2 workers, as a scaled-out deployment runs
+#   browsers   the widget on Firefox, WebKit, Android and iPhone
+#   visual     widget screenshots (run by hand with update_snapshots to refresh them)
+#   upgrade    the last release's schema upgraded to HEAD equals a fresh install
+#   api-fuzz   every read endpoint fuzzed against the OpenAPI schema
+#   burst      150 widget page loads at once all get in, and the API never stalls
+# A failed nightly opens (or comments on) one "E2E nightly failed" issue.
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: Regenerate the visual baselines (download them from the run's artifacts and commit)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Per event, so a push to main never cancels the nightly run (same ref) or vice versa.
+  group: e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  E2E_PG_URL: postgresql://postgres:postgres@127.0.0.1:5432
+  E2E_PYTHON: python
+  # Env vars don't expand ~, so spell the path out (the setup action caches the same).
+  FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
+  MAILPIT_VERSION: v1.31.5
+
+jobs:
+  e2e:
+    name: Playwright (OSS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: [ '5432:5432' ]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/e2e-setup
+
+      - name: Lint and type-check the suite
+        working-directory: e2e
+        run: npm run lint && npm run typecheck
+
+      # The API types are generated from the backend's schema; a route or field
+      # change must regenerate them, so the suite's seeding can't silently drift.
+      - name: API types are up to date
+        working-directory: e2e
+        run: ./scripts/api-types.sh --check
+
+      - name: Fake LLM contract matches agno
+        working-directory: e2e
+        run: |
+          node services/fake-llm/server.ts --port 14010 &
+          FAKE_PID=$!
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:14010/health >/dev/null 2>&1 && break; sleep 1; done
+          (cd ../backend && PYTHONPATH=. ENV_FILE=../e2e/.env.e2e NO_ENTERPRISE=1 python ../e2e/services/fake-llm/contract_check.py)
+          kill $FAKE_PID
+          # Let it release port 14010 before the stack starts its own fake-llm.
+          wait $FAKE_PID || true
+
+      # Started up front (Playwright reuses it) so every service writes its log to
+      # e2e/.stack/, which failure diagnostics read and the artifact keeps.
+      - name: Start the stack
+        working-directory: e2e
+        run: ./scripts/stack.sh up
+
+      - name: Run e2e (parallel)
+        working-directory: e2e
+        run: npx playwright test --project=chromium --grep-invert @quarantine
+
+      - name: Run e2e (org-wide settings, serial)
+        working-directory: e2e
+        run: npx playwright test --project=org --workers=1 --pass-with-no-tests --grep-invert @quarantine
+
+      # Known-flaky tests (AUTHORING.md flake policy) still run, but never block.
+      - name: Run quarantined tests (non-blocking)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        working-directory: e2e
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-quarantine
+        run: npx playwright test --project=chromium --project=org --workers=1 --grep @quarantine --pass-with-no-tests --output=test-results-quarantine
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            e2e/playwright-report-quarantine/
+            e2e/test-results-quarantine/
+            e2e/.stack/*.log
+          retention-days: 14
+
+  nightly:
+    name: Nightly (${{ matrix.variant }})
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [ prod-like, shared-origin, browsers, visual, upgrade, api-fuzz, burst ]
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: [ '5432:5432' ]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: [ '6379:6379' ]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # upgrade-check.sh needs the release tags.
+          fetch-depth: ${{ matrix.variant == 'upgrade' && '0' || '1' }}
+
+      - uses: ./.github/actions/e2e-setup
+        with:
+          browsers: ${{ matrix.variant == 'browsers' && 'chromium firefox webkit' || 'chromium' }}
+
+      - name: Prod-like — Redis on, gunicorn with 2 workers
+        if: matrix.variant == 'prod-like'
+        working-directory: e2e
+        env:
+          E2E_REDIS_URL: redis://127.0.0.1:6379/0
+          E2E_BACKEND_WORKERS: '2'
+        run: |
+          ./scripts/stack.sh up
+          npx playwright test --project=chromium --grep-invert @quarantine --fail-on-flaky-tests
+          npx playwright test --project=org --workers=1 --pass-with-no-tests --grep-invert @quarantine --fail-on-flaky-tests
+
+      - name: Shared origin — the widget framed on the API's own origin, as a self-host without WIDGET_FRAME_URL
+        if: matrix.variant == 'shared-origin'
+        working-directory: e2e
+        env:
+          E2E_WIDGET_FRAME_URL: ''
+        run: |
+          ./scripts/stack.sh up
+          npx playwright test --project=chromium --grep-invert @quarantine --fail-on-flaky-tests
+
+      - name: Browsers — the widget on Firefox, WebKit, Android and iPhone
+        if: matrix.variant == 'browsers'
+        working-directory: e2e
+        env:
+          E2E_MORE_BROWSERS: '1'
+        run: |
+          ./scripts/stack.sh up
+          npx playwright test --project=widget-firefox --project=widget-webkit --project=widget-android --project=widget-iphone --grep-invert @quarantine --fail-on-flaky-tests
+
+      - name: Visual — widget screenshots
+        if: matrix.variant == 'visual'
+        working-directory: e2e
+        run: |
+          ./scripts/stack.sh up
+          npx playwright test --project=visual ${{ inputs.update_snapshots && '--update-snapshots' || '' }}
+
+      - name: Upgrade — last release to HEAD equals a fresh install
+        if: matrix.variant == 'upgrade'
+        working-directory: e2e
+        run: |
+          sudo apt-get install -y --no-install-recommends postgresql-client-16 >/dev/null
+          E2E_PG_DUMP=/usr/lib/postgresql/16/bin/pg_dump ./scripts/upgrade-check.sh
+
+      - name: API fuzz — every read endpoint against its schema
+        if: matrix.variant == 'api-fuzz'
+        working-directory: e2e
+        run: |
+          pip install schemathesis==4.31.0
+          ./scripts/stack.sh up
+          npx playwright test --project=setup
+          ./scripts/api-fuzz.sh
+
+      - name: Burst — widget page loads all at once against a fresh install
+        if: matrix.variant == 'burst'
+        working-directory: e2e
+        run: |
+          ./scripts/stack.sh up
+          node scripts/widget-burst.mjs 150
+
+      - name: Upload results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.variant }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+            e2e/specs/**/*-snapshots/
+            e2e/.stack/*.log
+          retention-days: 14
+
+  report-nightly-failure:
+    name: Report a failed nightly
+    needs: [ e2e, nightly ]
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the nightly-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="E2E nightly failed"
+          number="$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number')"
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --title "$title" --body "The nightly e2e run failed: $RUN_URL
+
+          One issue collects every red nightly; close it once the suite is green. See e2e/AUTHORING.md for the flake policy."
+          fi

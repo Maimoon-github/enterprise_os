@@ -1,0 +1,82 @@
+---
+title: "Introduction"
+description: "AgentSDR is an open-source, self-hosted AI SDR: find leads, reach them on email, LinkedIn and WhatsApp, and work every reply from one place."
+icon: "book-open"
+---
+
+<video src="/assets/video/agentsdr-film.mp4" controls />
+
+AgentSDR does the work of a sales development team. It stores the people you sell to, reaches them on email, LinkedIn and WhatsApp, and when they reply it reads the message, sorts it, drafts the next one and keeps follow-ups on time. You approve what goes out.
+
+Most outbound setups stitch together a lead database, an enrichment tool, an email sequencer, a LinkedIn tool, a dialer and a CRM, each with its own copy of your leads. AgentSDR keeps one lead record per person, so a reply on LinkedIn shows up in the same queue as everything else.
+
+## Who it is for
+
+- **Founders and small sales teams** who want outbound running without hiring an SDR team or paying for six tools.
+- **Revenue and growth teams** who want prospecting data, conversations and AI in their own database.
+- **Agencies and operators** who run outreach for several organizations from one deployment.
+
+## Open source, self-hosted, your keys
+
+AgentSDR is released under the MIT License. You run it yourself: one Next.js application on one PostgreSQL database, with no hosted service in the middle. Your leads, conversations and recordings stay in infrastructure you control.
+
+You bring your own accounts. Each organization connects its own Google Workspace, Unipile, Cloudflare R2, OpenRouter and enrichment keys inside the app, so there are no seats or per-contact fees from AgentSDR. You pay for your server and for the services you connect.
+
+## The loop
+
+<Steps>
+  <Step title="Find">
+    Import a CSV or spreadsheet, or build a list in Tables. Every person and company lands in one lead database.
+  </Step>
+  <Step title="Enrich">
+    Tables fills in emails, phone numbers and company data from the enrichment providers you connect, and AI columns research or write per row.
+  </Step>
+  <Step title="Reach">
+    Campaigns send from your own mailboxes, LinkedIn accounts and WhatsApp numbers, inside sending hours and daily limits that protect those accounts.
+  </Step>
+  <Step title="Reply">
+    Replies from every channel land in one queue. AI classifies each one, shows its reason and drafts an answer.
+  </Step>
+  <Step title="Close">
+    You review drafts, the pipeline moves, and Analytics shows which channels turn conversations into meetings and customers.
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/assets/screenshots/app/leads-people.png" alt="The Leads page on the People tab, listing people with their company, reach icons, outreach campaign and CRM state" />
+</Frame>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    From a running instance to your first reply.
+  </Card>
+  <Card title="Concepts" icon="lightbulb" href="/concepts">
+    Organizations, leads, channels and the rules that protect your accounts.
+  </Card>
+  <Card title="Leads" icon="users" href="/leads/overview">
+    People and companies, imports and custom fields.
+  </Card>
+  <Card title="Tables" icon="table" href="/tables/overview">
+    Build and enrich lists, with AI columns.
+  </Card>
+  <Card title="Email" icon="mail" href="/email/campaigns">
+    Sequences from your Google Workspace mailboxes.
+  </Card>
+  <Card title="LinkedIn" icon="linkedin" href="/linkedin/campaigns">
+    Connection requests and messages through Unipile.
+  </Card>
+  <Card title="WhatsApp" icon="message-circle" href="/whatsapp/campaigns">
+    Message campaigns and recorded calls.
+  </Card>
+  <Card title="AI CRM" icon="inbox" href="/crm/overview">
+    Classification, drafts, Action required and the pipeline.
+  </Card>
+  <Card title="Analytics" icon="chart-line" href="/analytics">
+    Replies, meetings and customers by channel.
+  </Card>
+  <Card title="Self-hosting" icon="server" href="/self-hosting">
+    Install AgentSDR and configure it.
+  </Card>
+</CardGroup>

@@ -1,0 +1,386 @@
+import { and, eq, gt, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { canVisitOnboardingStage, HOST_EMAIL_BRAND, normalizeInterfaceLocale, normalizeOnboardingStage, onboardingSteps, type InterfaceLocale, type OnboardingBusiness, type OnboardingStage, type PartnerAccessLevel } from "@lobbystack/shared";
+
+import { businesses, enqueueOutbox, numberTrials, onboardingNumberClaimEvents, phoneNumbers, withBusinessTransaction, type Database, type DatabaseTransaction } from "@lobbystack/db";
+
+import { requireBusinessAdmin } from "../authz";
+import { appBaseUrl } from "./appBaseUrl";
+import { loadEntitlement } from "./entitlement";
+import type { DomainContext } from "./context";
+import { attributeBusiness } from "./affiliates";
+import { businessShowsOnBrand, readBusinessAccess, type BrandScope } from "./businessAccess";
+import { businessGetsHostEmails } from "./hostEmails";
+import { marketingEmailRecipient } from "./marketingEmails";
+import { readActiveBusinessIdInTransaction } from "./tenancy";
+import { greetingName } from "./emailGreeting";
+import { schedulePlanReminderInTransaction } from "./planReminder";
+
+export { canVisitOnboardingStage, isOnboardingStage, normalizeOnboardingStage, onboardingSteps, resolveOnboardingRoute, type OnboardingBusiness, type OnboardingStage } from "@lobbystack/shared";
+
+/**
+ * What the owner wanted their agent to do first, as they answered at the goal
+ * step that onboarding no longer has. Nothing writes it now. The welcome email
+ * still reads an answer given before, so keep the values stable. The
+ * businesses_onboarding_goal_valid check constraint lists them too; a later
+ * release can drop both.
+ */
+export const ONBOARDING_GOALS = ["answer_calls", "book_appointments", "answer_website_visitors", "answer_instagram_messages"] as const;
+export type OnboardingGoal = (typeof ONBOARDING_GOALS)[number];
+
+export function isOnboardingGoal(value: unknown): value is OnboardingGoal {
+  return (ONBOARDING_GOALS as readonly unknown[]).includes(value);
+}
+
+// Owners give us their site first, pick a number next and hear their agent
+// last. Someone with no website answers the language question on the way. A
+// direct business has no phone step: verify_phone stays only for businesses
+// old code left there, which go on to the number.
+const transitions: Record<OnboardingStage, readonly OnboardingStage[]> = {
+  create_business: ["website"],
+  website: ["language", "phone_number"],
+  language: ["phone_number"],
+  verify_phone: ["phone_number", "attribution"],
+  phone_number: ["attribution"],
+  phone_number_claiming: ["phone_number", "attribution"],
+  attribution: ["meet"],
+  // A trial nobody pays for yet sees the plans last.
+  meet: ["complete", "choose_plan"],
+  choose_plan: ["complete"],
+  complete: [],
+};
+
+// A partner's business has no number step or attribution: the partner
+// gives it its numbers, and the host asks its owner neither question. The
+// owner still verifies their phone, because calls forward to it, then meets
+// their agent. At the activity level the partner sets the agent up, so the
+// phone finishes onboarding.
+const partnerTransitions: Record<OnboardingStage, readonly OnboardingStage[]> = {
+  ...transitions,
+  website: ["language", "verify_phone"],
+  language: ["verify_phone"],
+  verify_phone: ["meet"],
+  phone_number: ["meet"],
+  phone_number_claiming: ["meet"],
+  attribution: ["meet"],
+  meet: ["complete"],
+};
+const activityTransitions: Record<OnboardingStage, readonly OnboardingStage[]> = {
+  ...partnerTransitions,
+  verify_phone: ["complete"],
+  phone_number: ["complete"],
+  phone_number_claiming: ["complete"],
+  choose_plan: ["complete"],
+  attribution: ["complete"],
+};
+
+/**
+ * The stages at which the dashboard claims a business a new number, as
+ * app.reserve_trial_number_claim does: from the number step on. A partner's
+ * business has no number step, so its claims wait for its owner's onboarding.
+ */
+export const NUMBER_CLAIM_STAGES: readonly OnboardingStage[] = ["phone_number", "attribution", "meet", "choose_plan", "complete"];
+
+/**
+ * The stage a new business starts at, since creating it is done: its
+ * website, or its owner's phone for an activity-only partner business.
+ */
+export function firstOnboardingStage(business: OnboardingBusiness): OnboardingStage {
+  return onboardingSteps(business).find((stage) => stage !== "create_business")!;
+}
+
+export function isValidOnboardingTransition(from: OnboardingStage, to: OnboardingStage, business: { partnerId: string | null; accessLevel?: PartnerAccessLevel | undefined } = { partnerId: null }): boolean {
+  const allowed = !business.partnerId ? transitions : business.accessLevel === "activity" ? activityTransitions : partnerTransitions;
+  return allowed[from].includes(to);
+}
+
+// Prefer a membership the user can operate; fall back to the first active one.
+export function selectPreferredMembership<T extends { role: string }>(rows: readonly T[]): T | undefined {
+  return rows.find((row) => row.role !== "viewer") ?? rows[0];
+}
+
+/** Where the person stands in onboarding: the business, its stage, and the stages its owner goes through. */
+export type OnboardingState = { businessId: string | null; stage: OnboardingStage; steps: readonly OnboardingStage[] };
+
+// Null for a business the person can't open on this brand's domains.
+async function onboardingStateForBusiness(
+  tx: DatabaseTransaction,
+  input: { userId: string; businessId: string },
+  brand: BrandScope,
+): Promise<OnboardingState | null> {
+  const { businessId } = input;
+  await tx.execute(sql`select set_config('app.business_id', ${businessId}, true)`);
+  const business = (await tx.select({ onboardingStage: businesses.onboardingStage, partnerId: businesses.partnerId, accessLevel: businesses.partnerAccessLevel }).from(businesses).where(eq(businesses.id, businessId)).limit(1))[0];
+  if (!business || !businessShowsOnBrand(business.partnerId, brand)) return null;
+  // Onboarding is the owner's. A partner member who opened the business goes straight to its dashboard.
+  if ((await readBusinessAccess(tx, input))?.via === "partner") return { businessId, stage: "complete", steps: [] };
+  return { businessId, stage: normalizeOnboardingStage(business.onboardingStage, business), steps: onboardingSteps({ partnerId: business.partnerId, accessLevel: business.accessLevel }) };
+}
+
+/**
+ * Where the person stands in onboarding on this brand's domains: the business
+ * they work in there, its stage and the stages its owner goes through, or
+ * create_business when they have no business there. A partner's businesses
+ * count only on that partner's domains, and direct businesses only on the
+ * host's.
+ */
+export async function getActiveOnboardingState(
+  db: Database,
+  userId: string,
+  brand: BrandScope,
+): Promise<OnboardingState> {
+  return await withBusinessTransaction(db, { userId, actorType: "operator" }, async (tx) => {
+    const activeBusinessId = await readActiveBusinessIdInTransaction(tx, { userId, brand });
+    if (activeBusinessId) {
+      const active = await onboardingStateForBusiness(tx, { userId, businessId: activeBusinessId }, brand);
+      if (active) return active;
+    }
+    // The stored active business is missing, belongs to another brand, or its
+    // membership is no longer active (for example, removed after the legacy
+    // import), or the partner open that reached it expired. Fall back to an
+    // active membership, then an open, so onboarding still resolves a stage
+    // instead of dead-ending on create_business and looping on the first step.
+    const memberships = (await tx.execute<{ business_id: string; role: string; partner_id: string | null; access_via: string }>(sql`select business_id, role, partner_id, access_via from app.list_user_businesses(${userId})`)).rows.filter((row) => businessShowsOnBrand(row.partner_id, brand));
+    const preferred = selectPreferredMembership(memberships.filter((row) => row.access_via === "membership")) ?? selectPreferredMembership(memberships);
+    if (preferred) {
+      const fallback = await onboardingStateForBusiness(tx, { userId, businessId: String(preferred.business_id) }, brand);
+      if (fallback) return fallback;
+    }
+    return { businessId: null, stage: "create_business", steps: onboardingSteps(null) };
+  });
+}
+
+export async function advanceOnboardingStageInTransaction(
+  tx: DatabaseTransaction,
+  input: { userId: string; businessId: string; from: OnboardingStage; to: OnboardingStage; partnerId?: string | null; accessLevel?: PartnerAccessLevel | undefined },
+): Promise<void> {
+  await requireBusinessAdmin(tx, input);
+  await moveOnboardingStageInTransaction(tx, input);
+}
+
+/**
+ * Moves a business to the next onboarding stage. The caller has already
+ * checked who may do that. A direct business has no phone step, so a move
+ * there, from an old tab, goes to the number step instead. Every move into
+ * complete schedules the welcome email, whichever step it comes from, and a
+ * move into the plans schedules the reminder to choose one.
+ */
+export async function moveOnboardingStageInTransaction(
+  tx: DatabaseTransaction,
+  input: { businessId: string; from: OnboardingStage; to: OnboardingStage; partnerId?: string | null; accessLevel?: PartnerAccessLevel | undefined },
+): Promise<void> {
+  const to = input.to === "verify_phone" && !input.partnerId ? "phone_number" : input.to;
+  if (!isValidOnboardingTransition(input.from, to, { partnerId: input.partnerId ?? null, accessLevel: input.accessLevel })) {
+    throw new Error(`Invalid onboarding transition from ${input.from} to ${to}.`);
+  }
+  const changed = await tx.update(businesses)
+    .set({ onboardingStage: to, updatedAt: new Date() })
+    .where(and(eq(businesses.id, input.businessId), eq(businesses.onboardingStage, input.from)))
+    .returning({ id: businesses.id });
+  if (!changed.length) {
+    const error = new Error("The onboarding step is no longer current.") as Error & { status: number; code: string };
+    error.status = 409;
+    error.code = "onboarding_stage_conflict";
+    throw error;
+  }
+  if (to === "complete") await scheduleWelcomeEmailInTransaction(tx, input.businessId, new Date());
+  if (to === "choose_plan") await schedulePlanReminderInTransaction(tx, input.businessId, new Date());
+}
+
+/**
+ * Moves onboarding on and returns the stage it's on after. Leaving Meet your
+ * agent finishes onboarding, except that a direct cloud business on a trial
+ * nobody pays for yet sees the plans as its last step.
+ */
+export async function advanceOnboardingStage(
+  context: DomainContext,
+  input: { userId: string; businessId: string; to: OnboardingStage },
+): Promise<OnboardingStage> {
+  return await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx): Promise<OnboardingStage> => {
+    await requireBusinessAdmin(tx, input);
+    const current = (await tx.select({ onboardingStage: businesses.onboardingStage, partnerId: businesses.partnerId, accessLevel: businesses.partnerAccessLevel, attribution: businesses.onboardingAttribution, deploymentMode: businesses.deploymentMode }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1).for("update"))[0];
+    if (!current) throw new Error("Business onboarding state was not found.");
+    const currentStage = normalizeOnboardingStage(current.onboardingStage, current);
+    // Repair a legacy verification stage before reading or advancing it so the
+    // conditional stage write below still matches the persisted value.
+    if (currentStage !== current.onboardingStage) {
+      await tx.update(businesses)
+        .set({ onboardingStage: currentStage, updatedAt: new Date() })
+        .where(and(eq(businesses.id, input.businessId), eq(businesses.onboardingStage, current.onboardingStage)));
+    }
+    // Revisiting an earlier form must never move durable onboarding progress backwards.
+    const requested = input.to === "verify_phone" && !current.partnerId ? "phone_number" : input.to;
+    if (canVisitOnboardingStage(currentStage, requested)) return currentStage;
+    const to = currentStage === "meet" && requested === "complete" && !current.partnerId && current.deploymentMode === "cloud" && await trialAwaitsPlanInTransaction(tx, input.businessId) ? "choose_plan" : requested;
+    // The attribution question has no skip: only an answer moves past it.
+    if (currentStage === "attribution" && to === "meet" && !current.attribution?.trim()) throw attributionRequired();
+    // A direct cloud owner gets past the number with a number, or through the
+    // country fallback, which skipOnboardingNumber checks. A self-hosted
+    // business keeps its skip. While a number is being bought, only its
+    // purchase moves on (completeNumberProvisioning), or its failure goes back
+    // to picking one (failNumberProvisioning): moving on first would let the
+    // purchase fail and leave the business past the step with no number.
+    if (!current.partnerId && current.deploymentMode === "cloud" && to === "attribution" && (currentStage === "phone_number" || currentStage === "verify_phone" || currentStage === "phone_number_claiming")) throw numberRequired();
+    await advanceOnboardingStageInTransaction(tx, { ...input, to, from: currentStage, partnerId: current.partnerId, accessLevel: current.accessLevel });
+    return to;
+  });
+}
+
+/** Whether the business runs a number trial that nobody pays for yet, so the plans come before Home. */
+async function trialAwaitsPlanInTransaction(tx: DatabaseTransaction, businessId: string): Promise<boolean> {
+  const [trial] = await tx.select({ id: numberTrials.id }).from(numberTrials).where(and(eq(numberTrials.businessId, businessId), eq(numberTrials.status, "active"))).limit(1);
+  return Boolean(trial) && !(await loadEntitlement(tx, businessId)).live;
+}
+
+/** A direct cloud business can't move past the number step without one. */
+export function numberRequired(): Error {
+  return Object.assign(new Error("Pick a phone number to continue."), { status: 409, code: "number_required" });
+}
+
+function attributionRequired(): Error {
+  return Object.assign(new Error("Pick how you heard about us to continue."), { status: 400, code: "attribution_required" });
+}
+
+/**
+ * Saves how the owner heard about the host and moves on to Meet your agent.
+ * The step has no skip: on it, a request without a source is refused.
+ */
+export async function submitOnboardingAttribution(
+  context: DomainContext,
+  input: { userId: string; businessId: string; source?: string | null; referralCode?: string | null },
+): Promise<void> {
+  if (input.referralCode) {
+    // Attribute before the stage moves to complete, so a retry after a failed
+    // attribution still finds the "attribution" stage. Only that onboarding step
+    // attributes, so a finished business cannot be credited to a new referrer.
+    const stage = await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+      await requireBusinessAdmin(tx, input);
+      return (await tx.select({ onboardingStage: businesses.onboardingStage }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1))[0]?.onboardingStage;
+    });
+    // The operator transaction above proved business administration. Attribution
+    // runs separately as the system actor because the referrer's profile is not
+    // visible under the referred operator's RLS context. It is idempotent, so a
+    // retried submission cannot double count.
+    if (stage === "attribution") {
+      await attributeBusiness(context, { businessId: input.businessId, referredUserId: input.userId, referralCode: input.referralCode, source: "referral_link" });
+    }
+  }
+  await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessAdmin(tx, input);
+    // The step needs an answer to move on. Coming back from Meet your agent
+    // keeps the saved one and leaves the stage alone.
+    const source = input.source?.trim().slice(0, 120) || null;
+    const changed = await tx.update(businesses)
+      .set({ ...(source ? { onboardingAttribution: source } : {}), onboardingStage: sql`CASE WHEN ${businesses.onboardingStage} = 'attribution' THEN 'meet' ELSE ${businesses.onboardingStage} END`, updatedAt: new Date() })
+      .where(and(eq(businesses.id, input.businessId), inArray(businesses.onboardingStage, ["attribution", "meet", "complete"]), ...(source ? [] : [or(ne(businesses.onboardingStage, "attribution"), isNotNull(businesses.onboardingAttribution))])))
+      .returning({ id: businesses.id });
+    if (!changed.length && !source) {
+      const [business] = await tx.select({ stage: businesses.onboardingStage }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1);
+      if (business?.stage === "attribution") throw attributionRequired();
+    }
+    if (!changed.length) {
+      const error = new Error("Attribution cannot be submitted at this onboarding stage.") as Error & { status: number; code: string };
+      error.status = 409;
+      error.code = "onboarding_stage_conflict";
+      throw error;
+    }
+  });
+}
+
+/** The answer saved at the attribution step, so coming back to it shows what was picked. */
+export async function readOnboardingAttribution(context: DomainContext, input: { userId: string; businessId: string }): Promise<string | null> {
+  return await withBusinessTransaction(context.db, { ...input, actorType: "operator" }, async (tx) => {
+    await requireBusinessAdmin(tx, input);
+    return (await tx.select({ source: businesses.onboardingAttribution }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1))[0]?.source ?? null;
+  });
+}
+
+/**
+ * The welcome job's dedupe key. Earlier releases used
+ * `onboarding-welcome:{businessId}` and also scheduled it on the way to the
+ * plans, where the job skips for good, so a row under that key doesn't mean a
+ * welcome went out. Onboarding completes once, and the email the job queues
+ * keeps its own dedupe key, `onboarding-welcome:{businessId}:email`.
+ */
+export function welcomeEmailDedupeKey(businessId: string): string {
+  return `onboarding-welcome:${businessId}:complete`;
+}
+
+/** Schedules the welcome email when onboarding finishes. A partner's business never gets it. */
+export async function scheduleWelcomeEmailInTransaction(tx: DatabaseTransaction, businessId: string, completedAt: Date): Promise<void> {
+  if (!await businessGetsHostEmails(tx, businessId)) return;
+  // The dedupe key keeps a retried completion from sending a second welcome.
+  await enqueueOutbox(tx, {
+    topic: "onboarding.sendWelcome",
+    businessId,
+    aggregateType: "business",
+    aggregateId: businessId,
+    dedupeKey: welcomeEmailDedupeKey(businessId),
+    availableAt: completedAt,
+    payload: {},
+  });
+}
+
+/** How long the welcome waits for a number still being set up before it goes out without one. */
+const WELCOME_NUMBER_WAIT_MS = 15 * 60_000;
+/** How soon the worker looks again while it waits. */
+const WELCOME_RETRY_MS = 30_000;
+
+export type WelcomeEmailResult = { status: "queued" | "skipped" } | { status: "waiting"; retryAt: Date };
+
+const WELCOME_SUBJECTS: Record<InterfaceLocale, (firstName: string) => string> = {
+  en: (name) => (name ? `Welcome to LobbyStack, ${name}` : "Welcome to LobbyStack"),
+  fr: (name) => (name ? `Bienvenue chez LobbyStack, ${name}` : "Bienvenue chez LobbyStack"),
+  es: (name) => (name ? `Le damos la bienvenida a LobbyStack, ${name}` : "Le damos la bienvenida a LobbyStack"),
+  sr: (name) => (name ? `Dobro došli u LobbyStack, ${name}` : "Dobro došli u LobbyStack"),
+};
+
+/** Where the welcome email's button lands: Home, with the phone step open on its forwarding steps or its number picker. */
+function welcomeUrl(): string {
+  return `${appBaseUrl()}/?setup=phoneNumber`;
+}
+
+/**
+ * Queues the welcome email to the owner of a business that just finished
+ * onboarding, in their dashboard language. Its steps follow what they told
+ * onboarding: the goal they picked, and the number they took, if any. While a
+ * number they claimed is still being set up, it waits for it, so the email
+ * names it, for up to 15 minutes after the claim.
+ */
+export async function queueWelcomeEmail(context: DomainContext, input: { businessId: string; now?: Date }): Promise<WelcomeEmailResult> {
+  const now = input.now ?? new Date();
+  return await withBusinessTransaction(context.db, { businessId: input.businessId, actorType: "worker" }, async (tx): Promise<WelcomeEmailResult> => {
+    if (!await businessGetsHostEmails(tx, input.businessId)) return { status: "skipped" };
+    const result = await tx.execute<{ user_id: string; email: string; name: string | null; preferred_locale: string; business_name: string }>(
+      sql`select user_id, email, name, preferred_locale, business_name from app.resolve_onboarding_welcome_recipient(${input.businessId}::uuid)`,
+    );
+    const recipient = result.rows[0];
+    if (!recipient) return { status: "skipped" };
+    // An owner who unsubscribed from marketing emails gets no welcome. The worker checks again as it sends it.
+    if ((await marketingEmailRecipient(tx, recipient.email))?.unsubscribed) return { status: "skipped" };
+    const [business] = await tx.select({ goal: businesses.onboardingGoal }).from(businesses).where(eq(businesses.id, input.businessId)).limit(1);
+    const [number] = await tx.select({ e164: phoneNumbers.e164 }).from(phoneNumbers).where(and(eq(phoneNumbers.businessId, input.businessId), eq(phoneNumbers.status, "active"))).orderBy(phoneNumbers.createdAt).limit(1);
+    if (!number) {
+      const [claim] = await tx.select({ id: onboardingNumberClaimEvents.id }).from(onboardingNumberClaimEvents)
+        .where(and(eq(onboardingNumberClaimEvents.businessId, input.businessId), inArray(onboardingNumberClaimEvents.status, ["reserved", "provisioning"]), gt(onboardingNumberClaimEvents.reservedAt, new Date(now.getTime() - WELCOME_NUMBER_WAIT_MS)))).limit(1);
+      if (claim) return { status: "waiting", retryAt: new Date(now.getTime() + WELCOME_RETRY_MS) };
+    }
+    const locale = normalizeInterfaceLocale(recipient.preferred_locale) ?? "en";
+    const firstName = greetingName(recipient.name, recipient.email);
+    await enqueueOutbox(tx, {
+      topic: "email.send",
+      businessId: input.businessId,
+      aggregateType: "business",
+      aggregateId: input.businessId,
+      dedupeKey: `onboarding-welcome:${input.businessId}:email`,
+      payload: {
+        template: "welcome",
+        to: recipient.email,
+        subject: WELCOME_SUBJECTS[locale](firstName),
+        variables: { locale, firstName, businessName: recipient.business_name, goal: isOnboardingGoal(business?.goal) ? business.goal : "", number: number?.e164 ?? "", url: welcomeUrl() },
+        brand: HOST_EMAIL_BRAND,
+        replyTo: null,
+      },
+    });
+    return { status: "queued" };
+  });
+}

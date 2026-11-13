@@ -1,0 +1,182 @@
+---
+title: "Troubleshooting"
+description: "Real AgentSDR self-hosting failures with their exact messages: setup refusals, database connections, silent email, webhooks and scheduled jobs."
+icon: "life-buoy"
+---
+
+Find the message you see, then follow cause and fix. Messages are quoted exactly as the code prints them. For the first look at any problem, read the logs: `docker compose logs app` (or the Logs tab in Dokploy).
+
+## Database setup
+
+<AccordionGroup>
+  <Accordion title="This database already has tables (…). db:setup only initialises an empty database">
+    **Symptom:** `bun run db:setup` fails with `This database already has tables (…). db:setup only initialises an empty database; an existing install is upgraded with the migrations in scripts/.`
+
+    **Cause:** `db:setup` refuses any database that already contains tables in the `public` schema, so it can never overwrite an install.
+
+    **Fix:** For a first install, point `DATABASE_URL` at an empty database (create a new one). To upgrade an existing install, run the migrations instead: [Upgrading](/self-hosting/production#upgrading). The app's start-up setup passes `--if-empty`, which prints `Database already initialised — nothing to do.` and carries on.
+  </Accordion>
+  <Accordion title="agentsdr: database setup failed (see above); not starting.">
+    **Symptom:** the app container exits at start with `agentsdr: database setup failed (see above); not starting. Check DATABASE_URL, or set AGENTSDR_SKIP_DB_SETUP=true to skip this step.`
+
+    **Cause:** Before starting, the image creates the schema if the database is empty (and only reads the catalog otherwise). That step failed: the line above the message says why, usually an unreachable database, wrong `DATABASE_URL` or password, a TLS mismatch, or a server older than PostgreSQL 16.
+
+    **Fix:** Fix what the line above says and start again. Set `AGENTSDR_SKIP_DB_SETUP=true` to skip the step if you manage the schema yourself.
+  </Accordion>
+  <Accordion title="PostgreSQL 16 or newer is required (this server is N)">
+    **Cause:** `db:setup` checks the server version and refuses anything below 16.
+
+    **Fix:** Use PostgreSQL 16, 17 or 18. With Compose the bundled database is PostgreSQL 18; this error appears only with your own server.
+  </Accordion>
+  <Accordion title="DATABASE_URL is not set — copy .env.example to .env.local and fill it in">
+    **Cause:** The process cannot see `DATABASE_URL`. From source the file is `.env.local` in the repository root, and you must run the command from there. On Dokploy the variable is missing from the Environment tab or the app was not redeployed.
+
+    **Fix:** Set it and restart. With Compose the URL is built for you; this error means you are running outside Compose.
+  </Accordion>
+  <Accordion title="Set DATABASE_URL in .env to your PostgreSQL">
+    **Cause:** You enabled `docker-compose.external-db.yml` but did not set `DATABASE_URL`.
+
+    **Fix:** Put `DATABASE_URL` (and `DATABASE_SSL`) in `.env` next to `docker-compose.yml`. Set your secrets the same way (see [Docker Compose](/self-hosting/docker-compose)).
+  </Accordion>
+  <Accordion title="The app cannot connect: SSL / TLS errors">
+    **Cause:** The app connects with TLS unless `DATABASE_SSL=disable`. A database without TLS (a local one, Dokploy's Postgres) fails the handshake.
+
+    **Fix:** Set `DATABASE_SSL=disable` for a database without TLS. For a hosted database leave it unset or empty. Compose sets it for the bundled `db`.
+  </Accordion>
+  <Accordion title="Refusing to seed demo data">
+    **Symptom:** `bun run db:seed:demo` prints `Refusing to seed demo data: NODE_ENV=production.` or `Refusing to seed demo data into "host": it is not localhost/127.0.0.1. …`
+
+    **Cause:** The demo data is fictional and must not land in a real database.
+
+    **Fix:** Run it only against a local database, without `NODE_ENV=production`. Pass `--allow-remote` only if you are sure.
+  </Accordion>
+</AccordionGroup>
+
+## Database connections
+
+<AccordionGroup>
+  <Accordion title="remaining connection slots are reserved for roles with the SUPERUSER attribute">
+    **Symptom:** every page and every query fails at once.
+
+    **Cause:** PostgreSQL's `max_connections` is used up. It is shared by every deployment pointing at the server, and idle connections from other deployments count. A rolling deploy briefly runs two containers, each with its own pool of `DB_POOL_MAX` (default 8). This is capacity, not a code bug.
+
+    **Fix:** Check `select count(*) from pg_stat_activity` on the server, stop what is holding connections, lower `DB_POOL_MAX`, or raise the server's `max_connections`. Do not raise `DB_POOL_MAX` before checking.
+  </Accordion>
+</AccordionGroup>
+
+## Sign-in and sign-up email
+
+<AccordionGroup>
+  <Accordion title="The verification or invitation email never arrives">
+    **Cause:** Without `RESEND_API_KEY` nothing is sent. The log shows `[auth/email] RESEND_API_KEY is not set: verification, password-reset and invitation emails are written to this log instead of being sent. Set RESEND_API_KEY and AUTH_EMAIL_FROM before inviting anyone.` and the message itself as `[auth/email] (not sent — no RESEND_API_KEY) to=… subject="…"`.
+
+    **Fix:** Copy the link from `docker compose logs app`, or set `RESEND_API_KEY` and `AUTH_EMAIL_FROM` (an address on a domain verified in Resend) and restart. See [Resend](/integrations/resend). If both are set and mail still does not arrive, check the Resend dashboard for rejected sends and the domain's verification status.
+  </Accordion>
+  <Accordion title="This instance is invite-only: if … hasn't been invited, no account was created and no email will arrive">
+    **Cause:** `AUTH_SIGNUP` defaults to `invite-only`. After the first account, only an email address with a pending, unexpired invitation (they expire after 7 days) gets an account; anyone else gets the normal "check your email" response and nothing is created.
+
+    **Fix:** Invite the person from Settings, Members, and have them sign up with that exact address. For a public deployment set `AUTH_SIGNUP=open`. See [Who may sign up](/self-hosting/production#who-may-sign-up).
+  </Accordion>
+  <Accordion title="Everyone was signed out after a restart">
+    **Cause:** `BETTER_AUTH_SECRET` changed or is not set to the same value as before.
+
+    **Fix:** Restore the previous value. Keep it stable.
+  </Accordion>
+</AccordionGroup>
+
+## Secrets
+
+<AccordionGroup>
+  <Accordion title="INTEGRATION_CREDENTIALS_KEY must be configured before saving or reading integration credentials">
+    **Cause:** The variable is empty. Saving an integration needs it.
+
+    **Fix:** Set a 64-character secret (`openssl rand -hex 32`) and restart.
+  </Accordion>
+  <Accordion title="Stored integration credential is invalid">
+    **Cause:** A stored credential could not be decrypted, usually because `INTEGRATION_CREDENTIALS_KEY` differs from the key used when it was saved (changed, lost or different between instances).
+
+    **Fix:** Restore the original key. If it is lost, reconnect each integration. To change the key on purpose, re-encrypt with `bun run rotate:integration-credentials` (new key in `INTEGRATION_CREDENTIALS_KEY`, old in `LEGACY_INTEGRATION_CREDENTIALS_KEYS`).
+  </Accordion>
+  <Accordion title="UNSUBSCRIBE_SECRET is not configured">
+    **Cause:** Sending email builds a signed unsubscribe link and fails without the secret.
+
+    **Fix:** Set `UNSUBSCRIBE_SECRET` and restart. Changing it later breaks links in email already sent.
+  </Accordion>
+</AccordionGroup>
+
+## Sending and scheduled jobs
+
+<AccordionGroup>
+  <Accordion title="Emails are queued but nothing is sent">
+    **Cause:** The daily rollover never ran for your organization. It fills each mailbox's queue and resets daily counters; the in-process sender has nothing to send without it. Look for `[scheduler]` lines in the app log, and check the organization's **Time zone** and **New day starts at** in Settings, Organization, Defaults. Other causes: the app is not running with `NODE_ENV=production` (the sender runs only in production, so not under `bun run dev`), or `PAUSE_EMAIL_OUTBOUND` / `PEOPLE_MIGRATION_MODE` is on.
+
+    **Fix:** If the log shows `Table scheduled_job_runs is missing`, run the migration (next entry). If you set `INTERNAL_SCHEDULER=false`, check that your external cron calls the endpoints. To build the queue now, run it by hand (needs `OUTREACH_TICK_SECRET` set in the app): `curl -fsS -X POST -H "x-tick-secret: $OUTREACH_TICK_SECRET" "$APP/api/outreach/build-queue?force=1"`. See [Scheduled jobs](/self-hosting/production#scheduled-jobs).
+  </Accordion>
+  <Accordion title="[scheduler] Table scheduled_job_runs is missing">
+    **Symptom:** the app log has a loud `[scheduler] Table scheduled_job_runs is missing …` warning, and no scheduled jobs run (no queue is built, LinkedIn does not advance).
+
+    **Cause:** The install predates the in-app scheduler, and its database lacks the table that records each run. Until it exists the app runs no scheduled jobs in-process. The endpoints keep working as before.
+
+    **Fix:** Run the migration. With Docker Compose: `docker compose exec app agentsdr-entrypoint bun scripts/create-scheduled-job-runs.ts`. From source: `bun scripts/create-scheduled-job-runs.ts`. It is safe to re-run; the jobs start on their own afterwards.
+  </Accordion>
+  <Accordion title='{"error":"unauthorized"} (401) from a job endpoint'>
+    **Cause:** The secret sent does not match the app's. `OUTREACH_TICK_SECRET` or `CRON_SECRET` is unset in the app (both are optional, and unset they refuse every secret call), or the caller sends a different value. For `/api/linkedin/jobs/*` without a valid `Authorization: Bearer $CRON_SECRET` the request is treated as an ordinary browser call and redirected to sign-in or refused.
+
+    **Fix:** Use the same value in the app and the caller. Outreach endpoints take `x-tick-secret` (or `?secret=`); LinkedIn endpoints take `Authorization: Bearer`. After editing `.env` or `docker-compose.yml`, recreate the containers: `docker compose up -d`.
+  </Accordion>
+  <Accordion title="Unified People migration is in progress; campaign and outbound changes are temporarily paused.">
+    **Cause:** `PEOPLE_MIGRATION_MODE` or `PAUSE_CAMPAIGN_MUTATIONS` is on, so `POST`, `PUT`, `PATCH` and `DELETE` calls to campaign, LinkedIn job and mailbox routes answer 503, as an external cron would see. The in-app LinkedIn jobs and the daily rollover's Gmail-watch and LinkedIn-reset parts stop too.
+
+    **Fix:** Set them to `false` (or remove them) and restart. See [PAUSE switches](/self-hosting/production#pause-switches).
+  </Accordion>
+  <Accordion title="Gmail replies stop arriving after about a week">
+    **Cause:** Gmail push watches expire after about 7 days and the daily rollover that renews them did not run (see the scheduler entries above).
+
+    **Fix:** Check the app log for `[scheduler]` lines and `FAILED` runs. If you use an external cron, call `/api/outreach/mailboxes/watch` once a day. See [Gmail reply sync](/integrations/gmail-reply-sync).
+  </Accordion>
+  <Accordion title="Two copies of each email were sent">
+    **Cause:** The app runs more than one instance, or `/api/outreach/tick` is also scheduled. The outreach sender loop has no distributed lock.
+
+    **Fix:** Run exactly one app replica and do not schedule `/api/outreach/tick`.
+  </Accordion>
+</AccordionGroup>
+
+## Integrations and webhooks
+
+<AccordionGroup>
+  <Accordion title="… is not connected — connect it in Settings → …">
+    **Symptom:** a feature or page shows `Unipile is not connected — connect it in Settings → LinkedIn → Connection`, `Google Workspace is not connected — connect it in Settings → Email → Connection` or the Cloudflare R2 equivalent (`Settings → WhatsApp → Integrations`). API calls answer 409.
+
+    **Cause:** Integrations are per organization and stored in the database. There is no environment fallback, so putting keys in `.env` does nothing. The organization you are signed in to has not connected the service, or its stored credentials could not be read (see "Stored integration credential is invalid" above). Background jobs for that feature return early.
+
+    **Fix:** Open the named Settings page and connect the service. See [Integrations](/integrations).
+  </Accordion>
+  <Accordion title="Unipile webhooks are not registered on localhost">
+    **Symptom:** the Unipile settings show `… is a local address that Unipile's servers cannot reach. Webhooks are registered automatically once the app runs at its public address.` or `BETTER_AUTH_URL is not set, so there is no public address for Unipile to call.`
+
+    **Cause:** Unipile's servers cannot reach `localhost`, so registration is skipped.
+
+    **Fix:** Run the app at a public HTTPS address, set `BETTER_AUTH_URL` to it, and save the Unipile integration again. For local development use a tunnel and set `BETTER_AUTH_URL` to the tunnel address. See [Unipile](/integrations/unipile).
+  </Accordion>
+  <Accordion title="Links in email or Unipile redirects point to localhost">
+    **Cause:** `BETTER_AUTH_URL` is still `http://localhost:3000`, or unset and `NEXT_PUBLIC_APP_URL` (fixed at build time) is used.
+
+    **Fix:** Set `BETTER_AUTH_URL` to the public origin without a trailing slash and restart.
+  </Accordion>
+  <Accordion title="The WhatsApp recorder extension does not connect to my domain">
+    **Cause:** The extension only talks to AgentSDR addresses it knows.
+
+    **Fix:** Add your address in the extension's Options and reload the open AgentSDR tab. See [WhatsApp call recorder extension](/self-hosting/production#whatsapp-call-recorder-extension).
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Going to production" icon="rocket" href="/self-hosting/production">
+    The full go-live checklist.
+  </Card>
+  <Card title="Configuration reference" icon="sliders-horizontal" href="/configuration">
+    Every environment variable.
+  </Card>
+</CardGroup>

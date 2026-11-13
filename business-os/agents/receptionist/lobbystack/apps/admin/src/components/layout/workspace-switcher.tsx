@@ -1,0 +1,107 @@
+"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { useActiveBusiness } from "@/hooks/use-active-business";
+import { useBranding } from "@/components/branding-provider";
+import { SidebarTeamSkeleton } from "@/components/loading-skeletons";
+import { agentPathAfterBusinessSwitch } from "@/lib/agent-pages";
+import { rememberOnboardingReturn } from "@/lib/onboarding-return";
+import { recordPendingWorkspaceSwitch } from "@/lib/workspace-analytics";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { SidebarMenu, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
+export function WorkspaceSwitcher() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { t } = useTranslation("nav");
+  const { isMobile } = useSidebar();
+  const { businesses, business: active } = useActiveBusiness();
+  // A partner's domain makes no direct business: the partner creates its businesses from its console.
+  const { partner } = useBranding();
+  const [switching, setSwitching] = useState(false);
+
+  async function selectBusiness(businessId: string) {
+    if (businessId === active?.businessId) return;
+    setSwitching(true);
+    try {
+      const response = await fetch("/api/businesses/switch", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ businessId }),
+      });
+      if (!response.ok) throw new Error("Workspace switch failed.");
+      recordPendingWorkspaceSwitch(businessId, active?.businessId ?? businessId);
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "businesses" });
+      await queryClient.invalidateQueries({ queryKey: ["businesses"] });
+      // The old business's agent isn't in the new one, so an agent's page moves to the new default agent's.
+      const agentPath = agentPathAfterBusinessSwitch(window.location.pathname, window.location.search);
+      if (agentPath) router.replace(agentPath);
+      router.refresh();
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  if (businesses.isLoading) return <SidebarMenu className="group-data-[collapsible=icon]:hidden"><SidebarMenuItem><SidebarTeamSkeleton /></SidebarMenuItem></SidebarMenu>;
+
+  return (
+    <SidebarMenu className="group-data-[collapsible=icon]:hidden">
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Item
+                className="w-full gap-2 rounded-lg px-2 py-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[popup-open=true]:bg-sidebar-accent data-[popup-open=true]:text-sidebar-accent-foreground"
+                render={<button disabled={switching} type="button" />}
+                size="xs"
+              />
+            }
+          >
+            <ItemMedia><WorkspaceInitial name={active?.name} /></ItemMedia>
+            <ItemContent className="min-w-0">
+              <ItemTitle className="ph-mask block w-full truncate text-left">
+                {active?.name ?? t("sidebar.businessSlugFallback")}
+              </ItemTitle>
+            </ItemContent>
+            <ItemActions><ChevronsUpDown className="size-4 text-muted-foreground" /></ItemActions>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-56" side={isMobile ? "bottom" : "right"} sideOffset={4}>
+            <DropdownMenuGroup>
+              {(businesses.data?.businesses ?? []).map((business) => (
+                <DropdownMenuItem key={business.businessId} onClick={() => void selectBusiness(business.businessId)}>
+                  {business.businessId === active?.businessId ? <Check className="size-4" /> : <span className="size-4" />}
+                  <span className="ph-mask truncate">{business.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            {partner ? null : <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => rememberOnboardingReturn(active?.businessId)} render={<Link href="/onboarding/business?create=true" />}>
+                <Plus className="size-4" />
+                {t("sidebar.createBusiness")}
+              </DropdownMenuItem>
+            </>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+}
+
+/**
+ * The workspace's first letter, matching the account avatar in the sidebar
+ * footer, so the two account rows match.
+ */
+function WorkspaceInitial({ name }: { name: string | undefined }) {
+  return (
+    <Avatar aria-hidden="true" size="sm">
+      <AvatarFallback>{name?.trim().charAt(0).toUpperCase() || "?"}</AvatarFallback>
+    </Avatar>
+  );
+}

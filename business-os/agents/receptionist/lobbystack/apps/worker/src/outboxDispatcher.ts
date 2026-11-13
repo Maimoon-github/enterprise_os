@@ -1,0 +1,103 @@
+import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
+
+import { claimOutboxBatch, markOutboxFailed, markOutboxPublished, prunePublishedOutbox, type Database } from "@lobbystack/db";
+import { createQueue, enqueueJob, isKnownJobType, queueForJobType, type JobType } from "@lobbystack/jobs";
+import { outboxMessageSchema } from "@lobbystack/contracts";
+import { getMeter, redactOtelExceptionText } from "@lobbystack/telemetry/node";
+
+// Resolves early, without throwing, when the signal aborts.
+const waitForNextPoll = (signal: AbortSignal, delayMs: number) => sleep(delayMs, undefined, { signal }).catch(() => undefined);
+
+// A published row only guards against a producer enqueueing the same work twice,
+// and producers retry within minutes, so two weeks is plenty.
+const OUTBOX_RETENTION_MS = 14 * 86_400_000;
+const PRUNE_BATCH = 5_000;
+const PRUNE_INTERVAL_MS = 60 * 60_000;
+
+export class OutboxDispatcher {
+  private readonly dispatcherId = randomUUID();
+  private readonly dispatchFailures = getMeter("lobbystack-worker").createCounter("lobbystack.outbox.dispatch_failures");
+  private readonly deadLettered = getMeter("lobbystack-worker").createCounter("lobbystack.outbox.dead_lettered");
+  private readonly pollFailures = getMeter("lobbystack-worker").createCounter("lobbystack.outbox.poll_failures");
+  private readonly publishDuration = getMeter("lobbystack-worker").createHistogram("lobbystack.outbox.publish_duration_ms", { unit: "ms" });
+  private readonly published = getMeter("lobbystack-worker").createCounter("lobbystack.outbox.published");
+  private readonly publishAge = getMeter("lobbystack-worker").createHistogram("lobbystack.outbox.publish_age_ms", { unit: "ms" });
+  private nextPruneAt = 0;
+
+  constructor(private readonly db: Database, private readonly queues: Map<string, ReturnType<typeof createQueue>>) {}
+
+  async dispatchOnce(): Promise<number> {
+    // The dispatched failures below intentionally emit only OpenTelemetry
+    // counters, never the durable `ops.outbox.flush_failed` product event.
+    // This dispatcher connects as `lobbystack_dispatcher`, which has no INSERT
+    // grant on `product_events`, and a poll failure has no tenant to associate
+    // with. Writing the event here would require an unsafe grant or a
+    // null-business RLS bypass. See scripts/telemetry-registry-coverage.ts.
+    const rows = await claimOutboxBatch(this.db, { dispatcherId: this.dispatcherId, limit: 50 });
+    for (const row of rows) {
+      const started = performance.now();
+      let outcome = "success";
+      const topic = isKnownJobType(row.topic) ? row.topic : "unknown";
+      try {
+        const payload = outboxMessageSchema.parse({ id: row.id, topic: row.topic, businessId: row.businessId, aggregateType: row.aggregateType, aggregateId: row.aggregateId, dedupeKey: row.dedupeKey, payload: row.payload, trace: { ...(row.traceparent ? { traceparent: row.traceparent } : {}), ...(row.tracestate ? { tracestate: row.tracestate } : {}) } });
+        const type = payload.topic as JobType;
+        const queueName = queueForJobType[type];
+        const queue = queueName ? this.queues.get(queueName) : undefined;
+        if (!queue) {
+          throw new Error(`No queue configured for outbox topic ${payload.topic}.`);
+        }
+        await enqueueJob(queue, { type, businessId: payload.businessId ?? undefined, payload: payload.payload, trace: payload.trace, idempotencyKey: payload.dedupeKey });
+        // A false result means another dispatcher reclaimed the lease after ours
+        // expired. The job is already enqueued and consumers stay idempotent, but
+        // this dispatcher must not report the message as published.
+        if (!await markOutboxPublished(this.db, row)) {
+          outcome = "fenced";
+          continue;
+        }
+        this.published.add(1, { topic });
+        this.publishAge.record(Math.max(0, Date.now() - row.createdAt.getTime()), { topic });
+      } catch (error) {
+        outcome = "error";
+        const attributes = { "lobbystack.outbox.topic": row.topic };
+        const deadLettered = await markOutboxFailed(this.db, row, error, new Date(Date.now() + Math.min(300_000, 2 ** row.attempts * 1000)));
+        this.dispatchFailures.add(1, attributes);
+        if (deadLettered) {
+          this.deadLettered.add(1, attributes);
+        }
+      } finally {
+        this.publishDuration.record(performance.now() - started, { topic, outcome });
+      }
+    }
+    return rows.length;
+  }
+
+  // Runs only when the queue is idle, one batch at a time, so pruning never delays dispatch by more than one batch.
+  private async pruneWhenDue(): Promise<void> {
+    if (Date.now() < this.nextPruneAt) return;
+    // Set first so a failing prune waits for the next interval instead of failing every poll.
+    this.nextPruneAt = Date.now() + PRUNE_INTERVAL_MS;
+    const pruned = await prunePublishedOutbox(this.db, { publishedBefore: new Date(Date.now() - OUTBOX_RETENTION_MS), limit: PRUNE_BATCH });
+    // A full batch means more rows are due, so take the next batch on the next idle poll.
+    if (pruned === PRUNE_BATCH) this.nextPruneAt = 0;
+  }
+
+  async run(signal: AbortSignal): Promise<void> {
+    let consecutiveFailures = 0;
+    while (!signal.aborted) {
+      try {
+        const count = await this.dispatchOnce();
+        consecutiveFailures = 0;
+        if (count === 0) {
+          await this.pruneWhenDue();
+          await waitForNextPoll(signal, 500);
+        }
+      } catch (error) {
+        consecutiveFailures += 1;
+        this.pollFailures.add(1);
+        console.error("outbox dispatcher poll failed; retrying", redactOtelExceptionText(error instanceof Error ? error.message : String(error)));
+        await waitForNextPoll(signal, Math.min(5_000, 250 * 2 ** (consecutiveFailures - 1)));
+      }
+    }
+  }
+}

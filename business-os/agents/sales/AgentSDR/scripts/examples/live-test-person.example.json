@@ -1,0 +1,13 @@
+{
+  "_note": "Fictional values. Live provider tests need a real, publicly findable profile you are allowed to look up; copy this file to scripts/local/ and replace every value.",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "fullName": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "domain": "example.com",
+  "companyName": "Example Co",
+  "linkedinUrl": "https://www.linkedin.com/in/janedoe42",
+  "companyLinkedinUrl": "https://www.linkedin.com/company/example-co",
+  "jobTitle": "Founder",
+  "startDate": "2026-01-01"
+}

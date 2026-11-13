@@ -1,0 +1,395 @@
+{
+  "accessibility": {
+    "close": "Zatvori",
+    "toggleSidebar": "Prikaži/sakrij bočnu traku",
+    "skipToContent": "Pređi na glavni sadržaj",
+    "clearSearch": "Obriši pretragu"
+  },
+  "errors": {
+    "unexpected": "Nešto nije u redu. Pokušajte ponovo."
+  },
+  "loading": {
+    "title": "Učitavanje...",
+    "retry": "Ponovo učitaj",
+    "failed": "Neki prevodi nisu mogli da se učitaju.",
+    "description": "Sinhronizujemo Vaš radni prostor i podešavanja agenta."
+  },
+  "language": {
+    "label": "Jezik",
+    "ariaLabel": "Izaberite jezik kontrolne table",
+    "english": "English",
+    "french": "Français",
+    "spanish": "Español",
+    "serbian": "Srpski"
+  },
+  "callerLanguage": {
+    "en": "Engleski",
+    "fr": "Francuski",
+    "es": "Španski",
+    "sr": "Srpski",
+    "de": "Nemački",
+    "pt": "Portugalski (Brazil)",
+    "it": "Italijanski",
+    "nl": "Holandski",
+    "pl": "Poljski",
+    "tr": "Turski",
+    "vi": "Vijetnamski",
+    "tl": "Tagalog",
+    "sv": "Švedski",
+    "ru": "Ruski",
+    "uk": "Ukrajinski"
+  },
+  "phoneCountry": {
+    "search": "Pretraži zemlje ili pozivne brojeve",
+    "noResults": "Nijedna zemlja nije pronađena."
+  },
+  "badges": {
+    "live": "Uživo",
+    "configured": "Podešeno",
+    "active": "Aktivno",
+    "inactive": "Neaktivno",
+    "voice": "Glas",
+    "sms": "SMS"
+  },
+  "channels": {
+    "phoneCall": "Telefon",
+    "webCall": "Veb poziv",
+    "sms": "SMS",
+    "webChat": "Sajt",
+    "dashboard": "Kontrolna tabla",
+    "api": "API",
+    "instagram": "Instagram"
+  },
+  "contactFallback": {
+    "phoneCaller": "Pozivalac telefonom",
+    "instagramUser": "Korisnik Instagrama",
+    "webCaller": "Pozivalac preko veba",
+    "websiteVisitor": "Posetilac sajta",
+    "unknown": "Nepoznat kontakt"
+  },
+  "labels": {
+    "customer": "Klijent",
+    "receptionist": "Agent",
+    "prompt": "Prompt"
+  },
+  "aiPhoneNumber": {
+    "copy": "Kopiraj AI broj telefona",
+    "copied": "AI broj telefona je kopiran"
+  },
+  "errorBoundary": {
+    "title": "Nešto nije u redu",
+    "description": "Ponovo učitajte kontrolnu tablu i pokušajte još jednom. Greška je prijavljena.",
+    "reload": "Ponovo učitaj"
+  },
+  "feedback": {
+    "trigger": "Povratne informacije",
+    "title": "Pošaljite povratne informacije",
+    "description": "Recite nam šta bi poboljšalo ovu kontrolnu tablu.",
+    "label": "Poruka",
+    "placeholder": "Imate ideju kako da poboljšamo {{appName}}? Javite timu.",
+    "characterCount": "{{count}} / {{max}} znakova",
+    "helpText": "Potrebna Vam je pomoć?",
+    "helpCenter": "Centar za pomoć",
+    "contactLink": "Kontaktirajte nas",
+    "helpTextSeparator": "ili",
+    "docsLink": "pogledajte dokumentaciju.",
+    "submit": "Pošalji",
+    "toast": {
+      "sent": "Povratne informacije su poslate.",
+      "failed": "Nismo uspeli da sačuvamo povratne informacije."
+    }
+  },
+  "numberTrial": {
+    "outOfMinutes": "Potrošili ste minute. Pozivi sada idu na {{forwardTo}}.",
+    "stillAvailable": "{{number}} je i dalje dostupan. Pretplatite se sada da biste ga vratili.",
+    "getReceptionistBack": "Vrati mog agenta",
+    "getNumberBack": "Vrati moj broj",
+    "chip_one": "Besplatna proba · još {{count}} d",
+    "chip_few": "Besplatna proba · još {{count}} d",
+    "chip_other": "Besplatna proba · još {{count}} d",
+    "viewPlans": "Pogledajte pakete"
+  },
+  "testWindow": {
+    "orCall": "Ili pozovite",
+    "message": "Poruka",
+    "send": "Pošalji",
+    "sendFailed": "Poruka nije poslata. Pokušajte ponovo.",
+    "typing": "Agent piše"
+  },
+  "testCall": {
+    "trigger": "Probni poziv",
+    "start": "Započni poziv",
+    "connecting": "Povezivanje...",
+    "hangUp": "Prekini",
+    "upgrade": "Nadogradite paket",
+    "status": {
+      "idle": "Spremno kad i Vi",
+      "requesting_microphone": "Traži se pristup mikrofonu",
+      "connecting": "Povezivanje sa AI agentom",
+      "connected": "Uživo sa AI agentom",
+      "ending": "Završavanje poziva",
+      "ended": "Poziv je završen",
+      "error": "Poziv nije mogao da se započne"
+    },
+    "aria": {
+      "start": "Započni probni poziv",
+      "connecting": "Povezivanje probnog poziva",
+      "waitingForMicrophone": "Čeka se dozvola za mikrofon",
+      "end": "Završi probni poziv",
+      "endMuted": "Završi utišani probni poziv",
+      "ending": "Završavanje probnog poziva",
+      "retry": "Ponovi probni poziv"
+    },
+    "errors": {
+      "microphoneBlocked": "Pristup mikrofonu je blokiran.",
+      "microphoneNotFound": "Na ovom uređaju nije pronađen mikrofon.",
+      "microphoneInUse": "Mikrofon već koristi druga aplikacija.",
+      "gatewayTimeout": "Povezivanje poziva je trajalo predugo.",
+      "gatewayUnreachable": "Ova stranica ne može da se poveže sa servisom {{appName}} da bi započela poziv.",
+      "connectionDropped": "Glasovna veza je prekinuta.",
+      "browserNoMicrophone": "Ovaj pregledač ne podržava pozive preko mikrofona.",
+      "browserNoWebRtc": "Ovaj pregledač ne podržava glasovne pozive uživo.",
+      "businessNotFound": "Nismo pronašli ovaj radni prostor. Pređite na aktivan radni prostor i pokušajte ponovo.",
+      "rateLimited": "Započeto je previše probnih poziva. Pokušajte ponovo malo kasnije.",
+      "voiceLimitReached": "Ovaj radni prostor je potrošio minute razgovora za ovaj mesec.",
+      "unavailable": "Vaš AI agent trenutno nije dostupan.",
+      "generic": "Došlo je do greške pri pokretanju poziva."
+    }
+  },
+  "appointments": {
+    "title": "Termini",
+    "details": {
+      "employee": "Zaposleni",
+      "duration": "Trajanje",
+      "phone": "Telefon",
+      "email": "E-pošta",
+      "channel": "Zakazano putem",
+      "saveNotes": "Sačuvaj napomene",
+      "savingNotes": "Čuvanje…",
+      "notesSaved": "Napomene su sačuvane.",
+      "notesFailed": "Napomene nisu sačuvane."
+    },
+    "views": {
+      "list": "Lista",
+      "calendar": "Kalendar",
+      "label": "Prikaz"
+    },
+    "when": {
+      "label": "Prikaz",
+      "upcoming": "Predstojeći",
+      "past": "Prošli",
+      "pastEmpty": "Nema prošlih termina u poslednjih mesec dana."
+    },
+    "filter": {
+      "label": "Zaposleni",
+      "all": "Svi zaposleni"
+    },
+    "calendarView": {
+      "previous": "Prethodno",
+      "next": "Sledeće",
+      "today": "Danas",
+      "label": "Period",
+      "day": "Dan",
+      "week": "Nedelja",
+      "month": "Mesec",
+      "count_one": "{{count}} termin",
+      "count_few": "{{count}} termina",
+      "count_other": "{{count}} termina",
+      "more": "+{{count}} još",
+      "allDay": "Ceo dan",
+      "newAt": "Novi termin u {{time}}",
+      "block": "{{name}}, {{service}}, {{time}}",
+      "blockCancelled": "{{name}}, {{service}}, {{time}}, otkazano"
+    },
+    "timeOff": {
+      "action": "Odsustvo",
+      "title": "Dodaj odsustvo",
+      "editTitle": "Izmeni odsustvo",
+      "type": "Vrsta",
+      "business": "Ceo posao",
+      "employee": "Jedan zaposleni",
+      "employeeLabelField": "Zaposleni",
+      "employeePlaceholder": "Izaberite zaposlenog",
+      "noEmployees": "Još nema zaposlenih.",
+      "employeeRequired": "Izaberite zaposlenog.",
+      "name": "Naziv",
+      "namePlaceholder": "npr. Božić, Petak popodne",
+      "nameRequired": "Unesite naziv.",
+      "hours": "Sati",
+      "allDay": "Zatvoreno ceo dan",
+      "partDay": "Deo dana",
+      "startDate": "Datum početka",
+      "endDate": "Datum završetka",
+      "startTime": "Vreme početka",
+      "endTime": "Vreme završetka",
+      "endBeforeStart": "Izaberite kraj posle početka.",
+      "datesRequired": "Izaberite datum početka i završetka.",
+      "reason": "Razlog (nije obavezno)",
+      "save": "Sačuvaj",
+      "saving": "Čuvanje…",
+      "cancel": "Otkaži",
+      "delete": "Obriši",
+      "keep": "Zadrži",
+      "deleteTitle": "Obrisati odsustvo?",
+      "deleteDescription": "{{name}} nestaje iz kalendara i ti termini se ponovo mogu zakazati.",
+      "saved": "Odsustvo je sačuvano.",
+      "deleted": "Odsustvo je obrisano.",
+      "failed": "Odsustvo nije sačuvano.",
+      "overlap": "Ovo se preklapa sa drugim odsustvom.",
+      "invalid": "Proverite datume. Odsustvo ne može već biti prošlo niti se završiti za više od dve godine.",
+      "label": "Zatvoreno: {{name}}, {{time}}",
+      "employeeLabel": "{{employee}} odsutan: {{name}}, {{time}}",
+      "employeeTitle": "{{employee}}: {{name}}",
+      "picker": {
+        "hours": "Sati",
+        "minutes": "Minuti",
+        "period": "AM ili PM",
+        "hoursTitle": "HH",
+        "minutesTitle": "MM"
+      }
+    },
+    "chooseWorkspace": "Izaberite radni prostor da biste videli termine.",
+    "time": "Vreme",
+    "customer": "Klijent",
+    "service": "Usluga",
+    "staff": "Zaposleni",
+    "status": "Status",
+    "calendar": "Kalendar",
+    "loading": "Učitavanje termina…",
+    "unavailable": "Termini nisu dostupni.",
+    "empty": "Nema predstojećih termina.",
+    "statuses": {
+      "confirmed": "Potvrđeno",
+      "cancelled": "Otkazano",
+      "completed": "Završeno",
+      "no_show": "Nije se pojavio",
+      "pending": "Na čekanju",
+      "canceled": "Otkazano"
+    },
+    "calendarStates": {
+      "not_required": "Nije potrebno",
+      "pending": "Sinhronizacija u toku",
+      "synced": "Sinhronizovano",
+      "failed": "Sinhronizacija nije uspela",
+      "error": "Sinhronizacija nije uspela",
+      "cancelled": "Otkazano"
+    },
+    "actions": "Radnje",
+    "rowActions": "Radnje za {{time}}",
+    "cancel": {
+      "action": "Otkaži",
+      "actionLabel": "Otkaži termin: {{time}}",
+      "approve": "Odobri otkazivanje",
+      "title": "Otkazati ovaj termin?",
+      "description": "{{appointment}}. Uklonićemo ga iz povezanog kalendara i nećemo poslati podsetnik.",
+      "requestDescription": "{{appointment}}. Uklonićemo ga iz povezanog kalendara, nećemo poslati podsetnik i zatvorićemo zahtev.",
+      "confirm": "Otkaži",
+      "keep": "Zadrži",
+      "done": "Termin je otkazan",
+      "failed": "Nismo uspeli da otkažemo termin. Pokušajte ponovo.",
+      "summary": "{{service}} za {{name}}, {{time}}",
+      "summaryNoService": "Termin za {{name}}, {{time}}"
+    },
+    "reschedule": {
+      "approve": "Odobri pomeranje",
+      "title": "Pomeriti ovaj termin na {{time}}?",
+      "description": "{{appointment}} biće pomeren na {{time}}. Ažuriraćemo vaš povezani kalendar i podsetnik, i zatvoriti zahtev.",
+      "confirm": "Pomeri termin",
+      "keep": "Zadrži trenutno vreme",
+      "done": "Termin je pomeren.",
+      "failed": "Termin nije pomeren. Pokušajte ponovo.",
+      "unavailable": "To vreme više nije slobodno. Izaberite drugo vreme.",
+      "notReschedulable": "Ovaj termin ne može da se pomeri. Možda je otkazan.",
+      "passed": "Traženo vreme je prošlo."
+    },
+    "move": {
+      "action": "Pomeri",
+      "otherTime": "Drugo vreme",
+      "actionLabel": "Pomeri termin: {{time}}",
+      "title": "Pomeri termin",
+      "description": "{{appointment}}",
+      "requested": "Traženo: {{time}}",
+      "confirm": "Pomeri termin",
+      "moving": "Pomeranje termina...",
+      "keep": "Zadrži trenutno vreme",
+      "done": "Termin je pomeren",
+      "failed": "Nismo uspeli da pomerimo termin. Pokušajte ponovo.",
+      "taken": "To vreme više nije slobodno. Izaberite drugo."
+    },
+    "openings": {
+      "date": "Dan",
+      "times": "Slobodni termini",
+      "noTimes": "Nema slobodnih termina tog dana.",
+      "timesFailed": "Nismo uspeli da učitamo slobodne termine. Pokušajte ponovo.",
+      "chooseService": "Prvo izaberite uslugu."
+    },
+    "create": {
+      "action": "Novi termin",
+      "title": "Novi termin",
+      "contact": "Kontakt",
+      "contactSearch": "Pretražite po imenu ili telefonu",
+      "noContacts": "Nema kontakata sa brojem telefona.",
+      "contactsFailed": "Nismo uspeli da učitamo kontakte. Pokušajte ponovo.",
+      "contactRequired": "Izaberite kontakt.",
+      "newContact": "Novi kontakt",
+      "chooseContact": "Izaberite kontakt",
+      "name": "Ime",
+      "nameRequired": "Unesite ime.",
+      "phone": "Telefon",
+      "phoneCountry": "Država broja",
+      "phoneRequired": "Unesite broj telefona.",
+      "phoneInvalid": "Unesite ceo broj telefona.",
+      "service": "Usluga",
+      "servicePlaceholder": "Izaberite uslugu",
+      "serviceRequired": "Izaberite uslugu.",
+      "noServices": "Prvo dodajte uslugu.",
+      "servicesFailed": "Nismo uspeli da učitamo usluge. Pokušajte ponovo.",
+      "staff": "Zaposleni",
+      "anyone": "Bilo ko slobodan",
+      "timeRequired": "Izaberite vreme.",
+      "cancel": "Otkaži",
+      "confirm": "Zakaži termin",
+      "booking": "Zakazivanje...",
+      "done": "Termin je zakazan",
+      "failed": "Nismo uspeli da zakažemo termin. Pokušajte ponovo.",
+      "taken": "To vreme više nije slobodno. Izaberite drugo.",
+      "duration": "Trajanje (minuti)",
+      "durationInvalid": "Unesite od {{min}} do {{max}} minuta.",
+      "notes": "Napomene",
+      "notesHint": "Vidi ih vaš agent",
+      "internalNotes": "Interne napomene",
+      "internalNotesHint": "Samo za osoblje",
+      "notOpen": "Ovaj termin nije otvoren. Izaberite drugi.",
+      "timeOff": "Ovaj termin nije dostupan: {{name}}."
+    }
+  },
+  "abandonIntent": {
+    "title": "Pre nego što odete",
+    "description": "Dva kratka pitanja. Pomaže i jedan odgovor.",
+    "issue": {
+      "label": "Naišli ste na problem?",
+      "placeholder": "Opišite šta se desilo da bismo to ispravili."
+    },
+    "missing": {
+      "label": "Nešto Vam nedostaje?",
+      "placeholder": "Recite nam šta biste voleli da vidite."
+    },
+    "notNow": "Ne sada",
+    "submit": "Pošalji",
+    "sentTitle": "Hvala Vam",
+    "sentDescription": "Čitamo svaki odgovor.",
+    "close": "Zatvori"
+  },
+  "websiteImport": {
+    "runningTitle": "Čitanje sajta {{host}}",
+    "runningHint": "Pročitano stranica: {{imported}}, spremno za pitanja: {{indexed}}.",
+    "doneTitle": "Vaš agent je pročitao sajt {{host}}",
+    "doneHint_one": "{{count}} stranica je spremna za pitanja.",
+    "doneHint_few": "{{count}} stranice su spremne za pitanja.",
+    "doneHint_other": "{{count}} stranica je spremno za pitanja.",
+    "failedTitle": "Nismo uspeli da pročitamo sajt {{host}}",
+    "failedHint": "Unesite podatke o firmi ručno ili ponovo pokrenite uvoz sa kontrolne table.",
+    "inlineRunning": "Čitanje sajta {{host}}. Pročitano stranica: {{count}}",
+    "stalledTitle": "Nismo uspeli da završimo čitanje sajta {{host}}"
+  }
+}

@@ -1,0 +1,136 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { createI18nInstance, loadRouteNamespaces, missingNamespaces, setI18nAppName } from "./i18n";
+import { TranslationNetworkError, isTranslationNetworkError } from "./lib/translation-network-error";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("uses English when a lazy French bundle fails without changing locale", async () => {
+  const instance = createI18nInstance({ locale: "fr" });
+  const request = vi.fn(async (url: string) => url.includes("/fr/") ? new Response(null, { status: 404 }) : Response.json({ greeting: "Hello" }));
+  vi.stubGlobal("fetch", request);
+  await loadRouteNamespaces(instance, "fr", ["fixture"]);
+  expect(instance.t("greeting", { ns: "fixture" })).toBe("Hello");
+  expect(instance.language).toBe("fr");
+  expect(instance.hasResourceBundle("fr", "fixture")).toBe(false);
+  expect(missingNamespaces(instance, "fr", ["fixture"])).toEqual([]);
+  await loadRouteNamespaces(instance, "fr", ["fixture"]);
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it("allows retry when both languages fail and keeps server bundles offline", async () => {
+  const instance = createI18nInstance({ locale: "fr", resources: { auth: { greeting: "Bonjour" } } });
+  const request = vi.fn(async () => new Response(null, { status: 404 }));
+  vi.stubGlobal("fetch", request);
+  await loadRouteNamespaces(instance, "fr", ["auth"]);
+  expect(request).not.toHaveBeenCalled();
+  await expect(loadRouteNamespaces(instance, "fr", ["fixture"])).rejects.toThrow();
+  expect(missingNamespaces(instance, "fr", ["fixture"])).toEqual(["fixture"]);
+  request.mockImplementation(async () => Response.json({ greeting: "Bonjour" }));
+  await loadRouteNamespaces(instance, "fr", ["fixture"]);
+  expect(instance.t("greeting", { ns: "fixture" })).toBe("Bonjour");
+});
+
+it("still requests French when English was already loaded on an earlier route", async () => {
+  const instance = createI18nInstance({ locale: "en", resources: { fixture: { greeting: "Hello" } } });
+  const request = vi.fn(async () => Response.json({ greeting: "Bonjour" }));
+  vi.stubGlobal("fetch", request);
+  await loadRouteNamespaces(instance, "fr", ["fixture"]);
+  await instance.changeLanguage("fr");
+  expect(request).toHaveBeenCalledWith("/locales/fr/fixture.json?v=development");
+  expect(instance.t("greeting", { ns: "fixture" })).toBe("Bonjour");
+});
+
+it("keeps the namespaces that loaded when another one fails", async () => {
+  const instance = createI18nInstance({ locale: "en" });
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("/broken.json") ? new Response(null, { status: 503 }) : Response.json({ title: "Affiliate program" })));
+  await expect(loadRouteNamespaces(instance, "en", ["affiliate", "broken"])).rejects.toThrow("en/broken translations (HTTP 503)");
+  expect(instance.t("title", { ns: "affiliate" })).toBe("Affiliate program");
+  expect(missingNamespaces(instance, "en", ["affiliate", "broken"])).toEqual(["broken"]);
+});
+
+it("bypasses the HTTP cache when retrying", async () => {
+  const instance = createI18nInstance({ locale: "en" });
+  const request = vi.fn(async (..._args: unknown[]) => Response.json({ title: "Affiliate program" }));
+  vi.stubGlobal("fetch", request);
+  await loadRouteNamespaces(instance, "en", ["affiliate"], { revalidate: true });
+  expect(request).toHaveBeenCalledWith("/locales/en/affiliate.json?v=development", { cache: "reload" });
+});
+
+it("retries once with a fresh request when the connection drops", async () => {
+  vi.useFakeTimers();
+  try {
+    const instance = createI18nInstance({ locale: "en" });
+    const request = vi.fn(async (..._args: unknown[]) => Response.json({ title: "Affiliate program" }));
+    request.mockRejectedValueOnce(new TypeError("Load failed"));
+    vi.stubGlobal("fetch", request);
+    const load = loadRouteNamespaces(instance, "en", ["affiliate"]);
+    await vi.advanceTimersByTimeAsync(500);
+    await load;
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenLastCalledWith("/locales/en/affiliate.json?v=development", { cache: "reload" });
+    expect(instance.t("title", { ns: "affiliate" })).toBe("Affiliate program");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("marks a request that fails twice without a response as a network error", async () => {
+  vi.useFakeTimers();
+  try {
+    const instance = createI18nInstance({ locale: "en" });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Load failed"); }));
+    const load = loadRouteNamespaces(instance, "en", ["affiliate"]);
+    const outcome = expect(load).rejects.toBeInstanceOf(TranslationNetworkError);
+    await vi.advanceTimersByTimeAsync(500);
+    await outcome;
+    expect(missingNamespaces(instance, "en", ["affiliate"])).toEqual(["affiliate"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a French HTTP error reportable when the English fallback loses its connection", async () => {
+  vi.useFakeTimers();
+  try {
+    const instance = createI18nInstance({ locale: "fr" });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("/fr/")) return new Response(null, { status: 503 });
+      throw new TypeError("Load failed");
+    }));
+    const load = loadRouteNamespaces(instance, "fr", ["affiliate"]).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(500);
+    const error = await load;
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).message).toContain("fr/affiliate translations (HTTP 503)");
+    expect(isTranslationNetworkError(error)).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("treats a load as a network failure when both languages lose their connection", async () => {
+  vi.useFakeTimers();
+  try {
+    const instance = createI18nInstance({ locale: "fr" });
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Load failed"); }));
+    const load = loadRouteNamespaces(instance, "fr", ["affiliate"]).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(isTranslationNetworkError(await load)).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("names the deployment in every string and tells components when the name changes", () => {
+  const resources = { onboarding: { title: "How did you hear about {{appName}}?" } };
+  expect(createI18nInstance({ locale: "en", resources }).t("onboarding:title")).toBe("How did you hear about LobbyStack?");
+  const instance = createI18nInstance({ locale: "en", resources, appName: "Acme Desk" });
+  expect(instance.t("onboarding:title")).toBe("How did you hear about Acme Desk?");
+  const listener = vi.fn();
+  instance.on("appNameChanged", listener);
+  setI18nAppName(instance, "Hello Desk");
+  setI18nAppName(instance, "Hello Desk");
+  expect(listener).toHaveBeenCalledTimes(1);
+  expect(instance.t("onboarding:title")).toBe("How did you hear about Hello Desk?");
+  expect(instance.t("onboarding:title", { appName: "Other" })).toBe("How did you hear about Other?");
+});

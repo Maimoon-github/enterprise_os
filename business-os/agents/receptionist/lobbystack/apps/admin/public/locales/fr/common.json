@@ -1,0 +1,395 @@
+{
+  "accessibility": {
+    "close": "Fermer",
+    "toggleSidebar": "Afficher ou masquer la barre latérale",
+    "skipToContent": "Aller au contenu principal",
+    "clearSearch": "Effacer la recherche"
+  },
+  "errors": {
+    "unexpected": "Une erreur est survenue. Veuillez réessayer."
+  },
+  "loading": {
+    "title": "Chargement...",
+    "retry": "Réessayer le chargement",
+    "failed": "Certaines traductions n'ont pas pu être chargées.",
+    "description": "Synchronisation de votre espace et des réglages de l'agent."
+  },
+  "language": {
+    "label": "Langue",
+    "ariaLabel": "Choisir la langue du tableau de bord",
+    "english": "English",
+    "french": "Français",
+    "spanish": "Español",
+    "serbian": "Srpski"
+  },
+  "callerLanguage": {
+    "en": "Anglais",
+    "fr": "Français",
+    "es": "Espagnol",
+    "sr": "Serbe",
+    "de": "Allemand",
+    "pt": "Portugais (Brésil)",
+    "it": "Italien",
+    "nl": "Néerlandais",
+    "pl": "Polonais",
+    "tr": "Turc",
+    "vi": "Vietnamien",
+    "tl": "Tagalog",
+    "sv": "Suédois",
+    "ru": "Russe",
+    "uk": "Ukrainien"
+  },
+  "phoneCountry": {
+    "search": "Rechercher un pays ou un indicatif",
+    "noResults": "Aucun pays trouvé."
+  },
+  "badges": {
+    "live": "Actif",
+    "configured": "Configuré",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "voice": "Voix",
+    "sms": "SMS"
+  },
+  "channels": {
+    "phoneCall": "Téléphone",
+    "webCall": "Appel web",
+    "sms": "SMS",
+    "webChat": "Site web",
+    "dashboard": "Tableau de bord",
+    "api": "API",
+    "instagram": "Instagram"
+  },
+  "contactFallback": {
+    "phoneCaller": "Appelant par téléphone",
+    "instagramUser": "Utilisateur Instagram",
+    "webCaller": "Appelant web",
+    "websiteVisitor": "Visiteur du site",
+    "unknown": "Contact inconnu"
+  },
+  "labels": {
+    "customer": "Client",
+    "receptionist": "Agent",
+    "prompt": "Demande"
+  },
+  "aiPhoneNumber": {
+    "copy": "Copier le numéro de téléphone IA",
+    "copied": "Numéro de téléphone IA copié"
+  },
+  "errorBoundary": {
+    "title": "Une erreur est survenue",
+    "description": "Rechargez le tableau de bord et réessayez. L’erreur a été signalée.",
+    "reload": "Recharger"
+  },
+  "feedback": {
+    "trigger": "Feedback",
+    "title": "Envoyer un commentaire",
+    "description": "Dites-nous ce qui améliorerait ce tableau de bord.",
+    "label": "Message de feedback",
+    "placeholder": "Une idée pour améliorer {{appName}} ? Dites-le à l’équipe.",
+    "characterCount": "{{count}} / {{max}} caractères",
+    "helpText": "Besoin d’aide ?",
+    "helpCenter": "Centre d’aide",
+    "contactLink": "Contactez-nous",
+    "helpTextSeparator": "ou",
+    "docsLink": "consultez la doc.",
+    "submit": "Envoyer",
+    "toast": {
+      "sent": "Feedback envoyé.",
+      "failed": "Nous n’avons pas pu enregistrer ce feedback."
+    }
+  },
+  "numberTrial": {
+    "outOfMinutes": "Vos minutes sont épuisées. Les appels vont maintenant au {{forwardTo}}.",
+    "stillAvailable": "Le {{number}} est encore disponible. Abonnez-vous pour le récupérer.",
+    "getReceptionistBack": "Retrouver mon agent",
+    "getNumberBack": "Récupérer mon numéro",
+    "chip_one": "Essai gratuit · {{count}} j restant",
+    "chip_other": "Essai gratuit · {{count}} j restants",
+    "viewPlans": "Voir les forfaits",
+    "chip_many": "Essai gratuit · {{count}} j restants"
+  },
+  "testWindow": {
+    "orCall": "Ou appelez le",
+    "message": "Message",
+    "send": "Envoyer",
+    "sendFailed": "Message non envoyé. Réessayez.",
+    "typing": "L'agent écrit"
+  },
+  "testCall": {
+    "trigger": "Appel test",
+    "start": "Lancer l’appel",
+    "connecting": "Connexion...",
+    "hangUp": "Raccrocher",
+    "upgrade": "Changer de forfait",
+    "status": {
+      "idle": "Prêt quand vous l’êtes",
+      "requesting_microphone": "Demande d’accès au microphone",
+      "connecting": "Connexion à votre agent IA",
+      "connected": "En direct avec votre agent IA",
+      "ending": "Fin de l’appel",
+      "ended": "Appel terminé",
+      "error": "Impossible de démarrer l’appel"
+    },
+    "aria": {
+      "start": "Démarrer l’appel test",
+      "connecting": "Connexion de l’appel test",
+      "waitingForMicrophone": "En attente de l’autorisation du microphone",
+      "end": "Terminer l’appel test",
+      "endMuted": "Terminer l’appel test en mode muet",
+      "ending": "Fin de l’appel test",
+      "retry": "Réessayer l’appel test"
+    },
+    "errors": {
+      "microphoneBlocked": "L’accès au microphone a été refusé.",
+      "microphoneNotFound": "Aucun microphone n’a été trouvé sur cet appareil.",
+      "microphoneInUse": "Le microphone est déjà utilisé par une autre application.",
+      "gatewayTimeout": "L’appel a mis trop de temps à se connecter.",
+      "gatewayUnreachable": "Cette page ne peut pas joindre {{appName}} pour lancer l’appel.",
+      "connectionDropped": "La connexion vocale a été interrompue.",
+      "browserNoMicrophone": "Ce navigateur ne prend pas en charge les appels avec microphone.",
+      "browserNoWebRtc": "Ce navigateur ne prend pas en charge les appels vocaux en direct.",
+      "businessNotFound": "Nous ne trouvons pas cet espace de travail. Passez à un espace actif et réessayez.",
+      "rateLimited": "Trop d’appels test ont été lancés. Veuillez réessayer bientôt.",
+      "voiceLimitReached": "Cet espace de travail a utilisé ses minutes vocales de ce mois-ci.",
+      "unavailable": "Votre agent IA est indisponible pour le moment.",
+      "generic": "Une erreur est survenue au démarrage de l’appel."
+    }
+  },
+  "appointments": {
+    "title": "Rendez-vous",
+    "details": {
+      "employee": "Employé",
+      "duration": "Durée",
+      "phone": "Téléphone",
+      "email": "E-mail",
+      "channel": "Réservé via",
+      "saveNotes": "Enregistrer les notes",
+      "savingNotes": "Enregistrement…",
+      "notesSaved": "Notes enregistrées.",
+      "notesFailed": "Impossible d’enregistrer les notes."
+    },
+    "views": {
+      "list": "Liste",
+      "calendar": "Calendrier",
+      "label": "Affichage"
+    },
+    "when": {
+      "label": "Afficher",
+      "upcoming": "À venir",
+      "past": "Passés",
+      "pastEmpty": "Aucun rendez-vous passé au cours du dernier mois."
+    },
+    "filter": {
+      "label": "Employé",
+      "all": "Tous les employés"
+    },
+    "calendarView": {
+      "previous": "Précédent",
+      "next": "Suivant",
+      "today": "Aujourd'hui",
+      "label": "Période",
+      "day": "Jour",
+      "week": "Semaine",
+      "month": "Mois",
+      "count_one": "{{count}} rendez-vous",
+      "count_many": "{{count}} rendez-vous",
+      "count_other": "{{count}} rendez-vous",
+      "more": "+{{count}} de plus",
+      "allDay": "Toute la journée",
+      "newAt": "Nouveau rendez-vous à {{time}}",
+      "block": "{{name}}, {{service}}, {{time}}",
+      "blockCancelled": "{{name}}, {{service}}, {{time}}, annulé"
+    },
+    "timeOff": {
+      "action": "Congés",
+      "title": "Ajouter un congé",
+      "editTitle": "Modifier le congé",
+      "type": "Type",
+      "business": "Toute l’entreprise",
+      "employee": "Un employé",
+      "employeeLabelField": "Employé",
+      "employeePlaceholder": "Choisissez un employé",
+      "noEmployees": "Aucun employé pour l’instant.",
+      "employeeRequired": "Choisissez un employé.",
+      "name": "Nom",
+      "namePlaceholder": "ex. Noël, Vendredi après-midi",
+      "nameRequired": "Entrez un nom.",
+      "hours": "Heures",
+      "allDay": "Fermé toute la journée",
+      "partDay": "Une partie de la journée",
+      "startDate": "Date de début",
+      "endDate": "Date de fin",
+      "startTime": "Heure de début",
+      "endTime": "Heure de fin",
+      "endBeforeStart": "Choisissez une fin après le début.",
+      "datesRequired": "Choisissez une date de début et de fin.",
+      "reason": "Motif (facultatif)",
+      "save": "Enregistrer",
+      "saving": "Enregistrement…",
+      "cancel": "Annuler",
+      "delete": "Supprimer",
+      "keep": "Garder",
+      "deleteTitle": "Supprimer ce congé ?",
+      "deleteDescription": "{{name}} disparaît du calendrier et ces heures redeviennent réservables.",
+      "saved": "Congé enregistré.",
+      "deleted": "Congé supprimé.",
+      "failed": "Impossible d’enregistrer le congé.",
+      "overlap": "Ce congé chevauche un autre congé.",
+      "invalid": "Vérifiez les dates. Un congé ne peut pas être déjà passé ni finir dans plus de deux ans.",
+      "label": "Fermé : {{name}}, {{time}}",
+      "employeeLabel": "{{employee}} en congé : {{name}}, {{time}}",
+      "employeeTitle": "{{employee}} : {{name}}",
+      "picker": {
+        "hours": "Heures",
+        "minutes": "Minutes",
+        "period": "AM ou PM",
+        "hoursTitle": "HH",
+        "minutesTitle": "MM"
+      }
+    },
+    "chooseWorkspace": "Choisissez un espace pour consulter les rendez-vous.",
+    "time": "Heure",
+    "customer": "Client",
+    "service": "Service",
+    "staff": "Personnel",
+    "status": "Statut",
+    "calendar": "Calendrier",
+    "loading": "Chargement des rendez-vous…",
+    "unavailable": "Les rendez-vous sont indisponibles.",
+    "empty": "Aucun rendez-vous à venir.",
+    "statuses": {
+      "confirmed": "Confirmé",
+      "cancelled": "Annulé",
+      "completed": "Terminé",
+      "no_show": "Absent",
+      "pending": "En attente",
+      "canceled": "Annulé"
+    },
+    "calendarStates": {
+      "not_required": "Non requis",
+      "pending": "Synchronisation",
+      "synced": "Synchronisé",
+      "failed": "Échec de la synchronisation",
+      "error": "Échec de la synchronisation",
+      "cancelled": "Annulé"
+    },
+    "actions": "Actions",
+    "rowActions": "Actions pour {{time}}",
+    "cancel": {
+      "action": "Annuler",
+      "actionLabel": "Annuler le rendez-vous : {{time}}",
+      "approve": "Approuver l’annulation",
+      "title": "Annuler ce rendez-vous ?",
+      "description": "{{appointment}}. Nous le retirerons de votre calendrier connecté et n’enverrons pas son rappel.",
+      "requestDescription": "{{appointment}}. Nous le retirerons de votre calendrier connecté, n’enverrons pas son rappel et fermerons la demande.",
+      "confirm": "Annuler",
+      "keep": "Garder",
+      "done": "Rendez-vous annulé",
+      "failed": "Nous n’avons pas pu annuler le rendez-vous. Réessayez.",
+      "summary": "{{service}} pour {{name}} le {{time}}",
+      "summaryNoService": "Rendez-vous pour {{name}} le {{time}}"
+    },
+    "reschedule": {
+      "approve": "Approuver le report",
+      "title": "Déplacer ce rendez-vous au {{time}} ?",
+      "description": "{{appointment}} sera déplacé au {{time}}. Nous mettrons à jour votre calendrier connecté et son rappel, et fermerons la demande.",
+      "confirm": "Déplacer le rendez-vous",
+      "keep": "Garder l'horaire actuel",
+      "done": "Rendez-vous déplacé.",
+      "failed": "Impossible de déplacer le rendez-vous. Réessayez.",
+      "unavailable": "Cet horaire n'est plus disponible. Choisissez une autre heure.",
+      "notReschedulable": "Ce rendez-vous ne peut pas être déplacé. Il a peut-être été annulé.",
+      "passed": "L'heure demandée est passée."
+    },
+    "move": {
+      "action": "Déplacer",
+      "otherTime": "Autre heure",
+      "actionLabel": "Déplacer le rendez-vous : {{time}}",
+      "title": "Déplacer le rendez-vous",
+      "description": "{{appointment}}",
+      "requested": "Demandé : {{time}}",
+      "confirm": "Déplacer le rendez-vous",
+      "moving": "Déplacement du rendez-vous...",
+      "keep": "Garder l’heure actuelle",
+      "done": "Rendez-vous déplacé",
+      "failed": "Nous n’avons pas pu déplacer le rendez-vous. Réessayez.",
+      "taken": "Cette heure n’est plus libre. Choisissez-en une autre."
+    },
+    "openings": {
+      "date": "Jour",
+      "times": "Heures libres",
+      "noTimes": "Aucune heure libre ce jour-là.",
+      "timesFailed": "Nous n’avons pas pu charger les heures libres. Réessayez.",
+      "chooseService": "Choisissez d'abord un service."
+    },
+    "create": {
+      "action": "Nouveau rendez-vous",
+      "title": "Nouveau rendez-vous",
+      "contact": "Contact",
+      "contactSearch": "Rechercher par nom ou téléphone",
+      "noContacts": "Aucun contact avec un numéro de téléphone.",
+      "contactsFailed": "Nous n’avons pas pu charger les contacts. Réessayez.",
+      "contactRequired": "Choisissez un contact.",
+      "newContact": "Nouveau contact",
+      "chooseContact": "Choisir un contact",
+      "name": "Nom",
+      "nameRequired": "Saisissez un nom.",
+      "phone": "Téléphone",
+      "phoneCountry": "Pays du numéro",
+      "phoneRequired": "Saisissez un numéro de téléphone.",
+      "phoneInvalid": "Saisissez un numéro de téléphone complet.",
+      "service": "Service",
+      "servicePlaceholder": "Choisissez un service",
+      "serviceRequired": "Choisissez un service.",
+      "noServices": "Ajoutez d’abord un service.",
+      "servicesFailed": "Nous n’avons pas pu charger les services. Réessayez.",
+      "staff": "Employé",
+      "anyone": "Le premier disponible",
+      "timeRequired": "Choisissez une heure.",
+      "cancel": "Annuler",
+      "confirm": "Réserver le rendez-vous",
+      "booking": "Réservation...",
+      "done": "Rendez-vous réservé",
+      "failed": "Nous n’avons pas pu réserver le rendez-vous. Réessayez.",
+      "taken": "Cette heure n’est plus libre. Choisissez-en une autre.",
+      "duration": "Durée (minutes)",
+      "durationInvalid": "Entrez de {{min}} à {{max}} minutes.",
+      "notes": "Notes",
+      "notesHint": "Visibles par votre agent",
+      "internalNotes": "Notes internes",
+      "internalNotesHint": "Équipe seulement",
+      "notOpen": "Ce créneau n’est pas ouvert. Choisissez-en un autre.",
+      "timeOff": "Ce créneau n’est pas disponible : {{name}}."
+    }
+  },
+  "abandonIntent": {
+    "title": "Avant de partir",
+    "description": "Deux questions rapides. Une seule suffit.",
+    "issue": {
+      "label": "Un problème ?",
+      "placeholder": "Décrivez ce qui s'est passé pour qu'on le corrige."
+    },
+    "missing": {
+      "label": "Il manque quelque chose ?",
+      "placeholder": "Dites-nous ce que vous aimeriez voir ensuite."
+    },
+    "notNow": "Pas maintenant",
+    "submit": "Envoyer",
+    "sentTitle": "Merci",
+    "sentDescription": "Nous lisons chacun de ces messages.",
+    "close": "Fermer"
+  },
+  "websiteImport": {
+    "runningTitle": "Lecture de {{host}}",
+    "runningHint": "{{imported}} pages lues jusqu'ici, {{indexed}} prêtes à répondre.",
+    "doneTitle": "Votre agent a lu {{host}}",
+    "doneHint_one": "{{count}} page est prête à répondre.",
+    "doneHint_many": "{{count}} pages sont prêtes à répondre.",
+    "doneHint_other": "{{count}} pages sont prêtes à répondre.",
+    "failedTitle": "Nous n'avons pas pu lire {{host}}",
+    "failedHint": "Ajoutez vos informations à la main, ou relancez l'import depuis votre tableau de bord.",
+    "inlineRunning": "Lecture de {{host}}. Pages lues jusqu'ici : {{count}}",
+    "stalledTitle": "Nous n'avons pas pu finir de lire {{host}}"
+  }
+}

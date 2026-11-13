@@ -1,0 +1,164 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { getEmailAccount } from "@/__tests__/helpers";
+import { aiTranslateEmails } from "./translate-email";
+
+const { mockCreateGenerateObject, mockGenerateObject } = vi.hoisted(() => {
+  const mockGenerateObject = vi.fn();
+  const mockCreateGenerateObject = vi.fn(() => mockGenerateObject);
+  return { mockCreateGenerateObject, mockGenerateObject };
+});
+
+vi.mock("@/utils/llms", () => ({
+  createGenerateObject: mockCreateGenerateObject,
+}));
+
+vi.mock("@/utils/llms/model", () => ({
+  getModel: vi.fn(() => ({
+    provider: "openai",
+    modelName: "test-model",
+    model: {},
+    providerOptions: undefined,
+    fallbackModels: [],
+  })),
+}));
+
+describe("aiTranslateEmails", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns an empty array without calling the LLM when texts is empty", async () => {
+    const result = await aiTranslateEmails({
+      texts: [],
+      targetLanguage: "en",
+      emailAccount: getEmailAccount(),
+    });
+
+    expect(result).toEqual([]);
+    expect(mockCreateGenerateObject).not.toHaveBeenCalled();
+  });
+
+  it("returns empty strings without calling the LLM when every text is blank", async () => {
+    const result = await aiTranslateEmails({
+      texts: ["", "   ", "\n"],
+      targetLanguage: "es",
+      emailAccount: getEmailAccount(),
+    });
+
+    expect(result).toEqual([
+      { text: "", sourceLanguage: null },
+      { text: "", sourceLanguage: null },
+      { text: "", sourceLanguage: null },
+    ]);
+    expect(mockCreateGenerateObject).not.toHaveBeenCalled();
+  });
+
+  it("returns translations in the same order as the inputs", async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        translations: [
+          { text: "Hello", sourceLanguage: "es" },
+          { text: "World", sourceLanguage: "es" },
+        ],
+      },
+    });
+
+    const result = await aiTranslateEmails({
+      texts: ["Hola", "Mundo"],
+      targetLanguage: "en",
+      emailAccount: getEmailAccount(),
+    });
+
+    expect(result).toEqual([
+      { text: "Hello", sourceLanguage: "es" },
+      { text: "World", sourceLanguage: "es" },
+    ]);
+    expect(mockCreateGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "Translate email",
+        promptHardening: { trust: "untrusted", level: "compact" },
+      }),
+    );
+    expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringContaining("Target language (BCP 47): en"),
+      }),
+    );
+  });
+
+  it("hard-slices long texts without appending an ellipsis", async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        translations: [{ text: "ok", sourceLanguage: "en" }],
+      },
+    });
+
+    const longText = `${"a".repeat(30_000)}SHOULD_NOT_APPEAR`;
+
+    await aiTranslateEmails({
+      texts: [longText],
+      targetLanguage: "en",
+      emailAccount: getEmailAccount(),
+    });
+
+    const call = mockGenerateObject.mock.calls[0]?.[0] as { prompt: string };
+
+    expect(call.prompt).toContain("a".repeat(30_000));
+    expect(call.prompt).not.toContain("SHOULD_NOT_APPEAR");
+    expect(call.prompt).not.toContain(`${"a".repeat(30_000)}...`);
+  });
+
+  it("validates translation count without array-length JSON Schema constraints", async () => {
+    const translation = (text: string) => ({ text, sourceLanguage: "en" });
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        translations: ["one", "two", "three"].map(translation),
+      },
+    });
+
+    await aiTranslateEmails({
+      texts: ["a", "b", "c"],
+      targetLanguage: "en",
+      emailAccount: getEmailAccount(),
+    });
+
+    const { schema } = mockGenerateObject.mock.calls[0][0];
+    const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
+
+    expect(jsonSchema).not.toContain("minItems");
+    expect(jsonSchema).not.toContain("maxItems");
+    expect(
+      schema.safeParse({
+        translations: ["one", "two", "three"].map(translation),
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        translations: ["one", "two"].map(translation),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("reports blank inputs as untranslated even when the model tags them", async () => {
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        translations: [
+          { text: "Hello", sourceLanguage: "es" },
+          { text: "", sourceLanguage: "und" },
+        ],
+      },
+    });
+
+    const result = await aiTranslateEmails({
+      texts: ["Hola", "  "],
+      targetLanguage: "en",
+      emailAccount: getEmailAccount(),
+    });
+
+    expect(result).toEqual([
+      { text: "Hello", sourceLanguage: "es" },
+      { text: "", sourceLanguage: null },
+    ]);
+  });
+});

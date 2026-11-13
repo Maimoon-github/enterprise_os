@@ -1,0 +1,119 @@
+---
+title: "AI and HTTP columns"
+description: "Prompt a model for every row in a table, or call any web API per row, using values from your other columns."
+icon: "sparkles"
+---
+
+Two column types cover what the enrichment providers don't. **Use AI** sends a prompt to a language model for each row. **HTTP API** calls any web endpoint for each row and stores part of the response. Both can read other columns in the same row with `{{column}}` tokens.
+
+## Referencing other columns
+
+Wrap a column's key in double curly braces. A token that matches no column resolves to an empty value, so a missing first name becomes an empty string rather than a literal `{{firstName}}`.
+
+- In the AI prompt box, type `/` or `{{` to open a column picker. Pick a column and its key is inserted. Under the box the dialog lists each token and the column it points to, and warns about tokens that are not columns in this table because they would be sent blank.
+- In the HTTP column, tokens work in the URL, header values and request body.
+
+A column that reads other columns waits for them. With **Auto-run** on, it runs for a row once every column it references has a value, and again whenever one of them is edited. Formula columns are the exception: they are free, so they recompute on every change, including when an input is cleared. A table can't contain a loop where two columns depend on each other.
+
+## Use AI columns
+
+### Before you start
+
+AI columns run on your organization's own OpenRouter key (bring your own key). Connect OpenRouter and choose which models are allowed in [AI provider](/workspace/ai-provider). Until that's done the dialog shows "OpenRouter is not configured" and you can't save.
+
+Every AI column in an organization uses the connection chosen there. The model list in the dialog is the set of models you allowed, and models that don't support the chosen use case are filtered out.
+
+### Add one
+
+Click **Actions**, then **Use AI**.
+
+<Steps>
+  <Step title="Pick a use case">
+    **Web research** (the model can browse the internet), **Image generation**, or **Create or modify content** (most tasks, no internet access).
+  </Step>
+  <Step title="Pick a model">
+    Search the **Model** list. Your default model from AI provider is preselected when it fits the use case.
+  </Step>
+  <Step title="Write the prompt">
+    Describe the task and insert columns, for example: `For the person with linkedin url {{linkedin_url}}, find their current job title.` The prompt is required.
+  </Step>
+  <Step title="Define outputs">
+    Choose **Fields** to name each result you want (and its type: Text, Number, Checkbox, Date, URL, Email, Image or JSON), or **JSON Schema** to paste a schema and get the whole answer in one column. Every field you define becomes its own column. Image models return one image into one image column.
+  </Step>
+  <Step title="Add examples (optional)">
+    Show the model a few sample inputs and the response you expect. This pins down format and tone.
+  </Step>
+  <Step title="Set run settings and save">
+    Set **Auto-run**. Click **Save**, or **Save and run 10 rows** to test.
+  </Step>
+</Steps>
+
+### How it runs
+
+- The prompt is filled in for each row. If every column it references is empty, the row is marked skipped and no model call is made.
+- For **Fields** output, every field is required in the model's JSON answer, so a missing value shows as empty rather than the key being absent.
+- The AI column itself shows **Completed** or **No result**. The answers are in the output columns it created.
+- If you edit the column later, output columns that already exist are reused by name so their data survives. A field you remove leaves its column in place.
+- Each cell has a timeout of 30 seconds by default (`GRID_CELL_TIMEOUT_MS` on self-hosted servers). Failures retry up to 3 attempts; see [Tables](/tables/overview).
+
+### Cost
+
+Usage is billed by OpenRouter and your model providers on your own keys. AgentSDR doesn't compute a cost for AI columns. The figure shown in the dialog footer, such as "0 / row" for OpenRouter models, is only a display unit. Check your OpenRouter dashboard for real spend, and test on 10 rows first.
+
+<Note>
+An AI column that was created with an older, non-OpenRouter provider must be re-saved with an OpenRouter model and connection before it runs.
+</Note>
+
+## HTTP API columns
+
+Use an HTTP column to call an API that has no built-in provider, or your own endpoint. Click **Actions**, then **HTTP API**.
+
+| Field | What it does |
+| --- | --- |
+| **Method** | GET, POST, PUT or PATCH. |
+| **URL** | Required. Tokens are allowed, for example `https://api.example.com/people/{{email}}`. Must be `http` or `https` after substitution. Values taken from a cell are URL-encoded, so a cell holding `a&b` stays one value. |
+| **Headers** | Name and value pairs. Values can use tokens. |
+| **Request body** | Shown for methods other than GET. Tokens are allowed. If you don't set a Content-Type, `application/json` is used. With a JSON body, cell values are escaped for you: a quote inside a cell can't break the JSON, and a bare `{{token}}` holding text is sent as a quoted string. |
+| **Response path** | Optional dot path into a JSON response, such as `data.person.email`. Numbers pick array items, for example `results.0.email`. Leave it empty to store the whole response. |
+| **Credential env var** | The name of an environment variable that holds a secret. Only the name is stored, and it must start with `GRID_HTTP_SECRET_`. |
+| **Provider key** | An optional label recorded with each result. |
+| **Cost per call (cents)** | An optional flat cost you enter yourself. |
+
+Click **Save**, or **Save & run** to run it.
+
+### Secrets: Credential env var
+
+Never paste an API key into a header. Put it in an environment variable on the server, named with the `GRID_HTTP_SECRET_` prefix, and type that variable's **name** into **Credential env var**, for example `GRID_HTTP_SECRET_MY_VENDOR`. When the column runs, AgentSDR reads the variable and sends it as `Authorization: Bearer <secret>`. If the value already starts with `Bearer ` it is sent as is. If you set your own `Authorization` header, yours is kept.
+
+If the variable isn't set on the server, the cell fails with "Environment variable ... is not set on this server" and isn't retried.
+
+<Warning>
+The variable is read from the server's environment, not from your organization's saved integrations. On the hosted product you can only use variables the operator has set. When self-hosting, add the variable to your deployment (see [Configuration](/configuration)). Only variables starting with `GRID_HTTP_SECRET_` can be referenced; any other name, such as `DATABASE_URL`, is refused when you save the column. Still, anyone who can create HTTP columns can send those secrets to a URL they choose, so only set such variables for APIs your whole team may call.
+</Warning>
+
+### Which addresses can be called
+
+An HTTP column can't call private or internal addresses: loopback (`127.0.0.1`, `localhost`), private ranges (`10.x`, `172.16-31.x`, `192.168.x`), link-local and cloud metadata (`169.254.x`), carrier-grade NAT (`100.64-127.x`) and their IPv6 equivalents. The host name is resolved first and every address it returns is checked. Redirects are followed up to 3 times and each one is checked the same way; credentials and the request body are dropped if a redirect leaves the original site. A self-hoster who needs to reach an internal service can set `GRID_HTTP_ALLOW_PRIVATE=true`.
+
+### How results and errors behave
+
+- A response whose chosen path is empty counts as a miss, not an error.
+- A 4xx response, except 429, is treated as a configuration mistake and is **not** retried. For a GET, a 5xx response and timeouts are retried up to 3 attempts in total. POST, PUT and PATCH calls are never retried after a timeout, a 5xx or a network error, because the first attempt may already have taken effect; only a 429 is retried.
+- Response bodies stored for debugging are cut at 16 KB.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="AI provider" icon="cpu" href="/workspace/ai-provider">
+    Connect OpenRouter and choose the allowed models.
+  </Card>
+  <Card title="Enrichment providers" icon="zap" href="/tables/enrichment">
+    Built-in providers for emails, phones and company data.
+  </Card>
+  <Card title="Tables" icon="table" href="/tables/overview">
+    Runs, statuses and retries.
+  </Card>
+  <Card title="Configuration" icon="settings" href="/configuration">
+    Set environment variables when self-hosting.
+  </Card>
+</CardGroup>

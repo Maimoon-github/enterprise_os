@@ -1,0 +1,1322 @@
+{
+  "header": {
+    "title": "Configuración",
+    "description": "Gestione los datos de su cuenta y sus credenciales de inicio de sesión."
+  },
+  "layout": {
+    "businessDescription": "Gestione los datos de su cuenta y sus credenciales de inicio de sesión.",
+    "integrationsDescription": "Conecte sus herramientas y aplicaciones favoritas.",
+    "billingDescription": "Consulte su plan en la nube y la actividad reciente.",
+    "usageDescription": "Controle el uso en la nube, los límites del plan y cuándo se reinicia este período de facturación."
+  },
+  "sections": {
+    "business": "Equipo",
+    "phoneNumber": "Número de teléfono",
+    "appearance": "Preferencias",
+    "integrations": "Integraciones",
+    "billing": "Plan",
+    "subscription": "Facturación",
+    "usage": "Uso",
+    "notifications": "Notificaciones",
+    "widget": "Widget del sitio web",
+    "apiKeys": "Claves de API",
+    "partnerAccess": "Acceso del socio"
+  },
+  "widget": {
+    "title": "Widget del sitio web",
+    "description": "Permita que los visitantes de su sitio web chateen con su agente.",
+    "created": {
+      "title": "Su widget está listo",
+      "description": "Puede volver a copiar este código en cualquier momento desde la configuración del widget, más abajo.",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "copySnippet": "Copiar código",
+      "hint": "Pegue el código antes de la etiqueta </body> de su sitio web. El chat aparece en los sitios web que indicó.",
+      "done": "Listo"
+    },
+    "create": {
+      "title": "Agregar un widget",
+      "description": "Cada widget tiene su propio aspecto y su propia lista de sitios web.",
+      "action": "Crear widget"
+    },
+    "restricted": {
+      "title": "Todavía no puede agregar widgets",
+      "description": "El chat del sitio web está en acceso limitado. Sus widgets actuales siguen funcionando y puede editarlos o pausarlos."
+    },
+    "fields": {
+      "label": "Nombre",
+      "labelPlaceholder": "Sitio web principal",
+      "origins": "Sitios web",
+      "color": "Color de acento",
+      "position": "Posición",
+      "title": "Título",
+      "titlePlaceholder": "Chatee con nosotros",
+      "subtitle": "Subtítulo",
+      "subtitlePlaceholder": "Pregunte por horarios, precios o citas",
+      "greeting": "Primer mensaje",
+      "greetingPlaceholder": "Hola, ¿en qué podemos ayudarle hoy?",
+      "localeOverride": "Idioma",
+      "leadEnabled": "Pedir a los visitantes sus datos de contacto",
+      "requireEmail": "Exigir correo electrónico",
+      "requirePhone": "Exigir número de teléfono",
+      "showBeforeChat": "Preguntar antes de empezar el chat",
+      "liveChat": "Permitir que los visitantes chateen con su equipo",
+      "liveChatHint": "Cuando un visitante pide hablar con una persona durante el horario de atención, su equipo recibe una alerta y puede responder desde Mensajes. Si nadie se une en 3 minutos, el agente ofrece tomar un mensaje."
+    },
+    "positions": {
+      "bottomRight": "Abajo a la derecha",
+      "bottomLeft": "Abajo a la izquierda"
+    },
+    "locales": {
+      "visitor": "Usar el idioma del visitante",
+      "english": "Inglés",
+      "french": "Francés",
+      "spanish": "Español",
+      "serbian": "Serbio"
+    },
+    "leadCapture": {
+      "title": "Datos de contacto",
+      "enabled": "Activado"
+    },
+    "status": {
+      "active": "Activo",
+      "disabled": "En pausa",
+      "revoked": "Eliminado"
+    },
+    "keys": {
+      "title": "Sus widgets",
+      "fallbackBusiness": "Espacio de trabajo activo",
+      "refresh": "Actualizar",
+      "loading": "Cargando sus widgets…",
+      "unavailable": "No pudimos cargar sus widgets. Actualice la página para intentarlo de nuevo.",
+      "empty": "Todavía no hay widgets",
+      "untitled": "Widget sin nombre",
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "revoke": "Eliminar",
+      "revokeConfirm": "¿Eliminar este widget? El chat desaparecerá de todos los sitios web que lo usan.",
+      "save": "Guardar",
+      "saved": "Guardado",
+      "appearanceHint": "Los cambios de color y posición llegan a su sitio en unos dos minutos.",
+      "snippet": "Código para su sitio web",
+      "snippetCopied": "Código copiado",
+      "noSnippet": "No podemos mostrar el código de este widget antiguo. Agregue un widget nuevo para obtener un código que pueda copiar en cualquier momento.",
+      "lastUsed": "Última actividad: {{date}}"
+    }
+  },
+  "billing": {
+    "toast": {
+      "checkoutSuccess": "El pago se completó correctamente.",
+      "checkoutFailed": "No se pudo abrir el pago.",
+      "paymentsUnavailable": "El pago no está disponible temporalmente. Inténtelo de nuevo en unos minutos.",
+      "portalFailed": "No se pudo abrir el portal del cliente."
+    },
+    "pastDueBanner": {
+      "title": "Pago no realizado",
+      "description": "Su servicio sigue activo durante el período de gracia del pago. Actualice su método de pago para evitar una interrupción.",
+      "action": "Actualizar método de pago",
+      "openingPortal": "Abriendo facturación..."
+    },
+    "planLabels": {
+      "selfHost": "Autoalojado",
+      "freeCloud": "Free",
+      "freeCloudCard": "Plan Free",
+      "starter": "Starter",
+      "starterCard": "Plan Starter",
+      "pro": "Pro",
+      "proCard": "Plan Pro",
+      "enterprise": "Enterprise",
+      "enterpriseCard": "Plan Enterprise"
+    },
+    "subscriptionStates": {
+      "active": "Activa",
+      "trialing": "Prueba",
+      "past_due": "Pago vencido",
+      "canceled": "Cancelada",
+      "revoked": "Revocada",
+      "inactive": "Inactiva"
+    },
+    "actions": {
+      "upgradeToPro": "Cambiar a Pro",
+      "starter": {
+        "monthly": "Starter mensual",
+        "annual": "Starter anual"
+      },
+      "pro": {
+        "monthly": "Cambiar a Pro",
+        "annual": "Cambiar a Pro"
+      },
+      "manageBilling": "Gestionar facturación",
+      "manageSubscription": "Gestionar suscripción",
+      "openingCheckout": "Abriendo el pago...",
+      "openingPortal": "Abriendo el portal...",
+      "viewInvoice": "Ver factura",
+      "retry": "Reintentar",
+      "cancelPlan": "Cancelar el plan"
+    },
+    "currentPlan": {
+      "title": "Su plan",
+      "description": "La facturación del servicio en la nube solo se aplica a los espacios de trabajo en la nube. El autoalojamiento conserva el producto completo con sus propios proveedores.",
+      "planLabel": "Plan actual",
+      "monthlyChargeValue": "{{amount}}/mes",
+      "freeLabel": "Gratis",
+      "customPricing": "Precio y condiciones de uso personalizados.",
+      "includedNumberTitle": "Números del negocio incluidos",
+      "includedNumberValue": "{{count}} incluidos",
+      "customIncludedNumbers": "Personalizado según acuerdo",
+      "billingContactTitle": "Contacto de facturación",
+      "billingContactMissing": "Aún no hay un contacto de facturación registrado.",
+      "subscriptionStateTitle": "Suscripción",
+      "billingPeriod": "El período actual se reinicia el {{resetAt}}",
+      "selfHostNotice": "Los espacios de trabajo autoalojados usan sus propios proveedores. No se aplican límites de uso ni facturación.",
+      "enterpriseNotice": "El uso y los límites se rigen por su acuerdo empresarial.",
+      "proNotice": "El uso incluido se reinicia cada mes. El uso adicional se factura con la tarifa de excedente.",
+      "monthlySuffix": "/ mes",
+      "annualEffectiveSuffix": "/ mes, facturado anualmente",
+      "paygMonthlySuffix": "+ uso de pago por consumo",
+      "includedTitle": "Qué incluye:",
+      "includedStorageLabel": "almacenamiento",
+      "includedVoiceLabel": "minutos de voz",
+      "includedSmsLabel": "alertas por SMS",
+      "includedOutboundLabel": "intentos de transferencia",
+      "includedStorageCustom": "Almacenamiento personalizado",
+      "includedVoiceCustom": "Minutos de voz personalizados",
+      "includedSmsCustom": "SMS personalizados",
+      "includedOutboundCustom": "Transferencias personalizadas",
+      "includedStorage": "{{amount}} {{unit}} de almacenamiento"
+    },
+    "upgradeDialog": {
+      "title": "Cambiar de plan",
+      "description": "Elija el plan que mejor se adapte a su equipo.",
+      "providerSlow": "El proveedor de pagos está lento. Seguimos abriendo el pago...",
+      "close": "Cerrar",
+      "enterpriseSubject": "Plan Enterprise",
+      "billingIntervalLabel": "Periodicidad de facturación",
+      "annualDiscount": "Ahorre un 20 %",
+      "billingIntervals": {
+        "monthly": "Mensual",
+        "annual": "Anual"
+      },
+      "actions": {
+        "currentPlan": "Plan actual"
+      }
+    },
+    "usage": {
+      "title": "Uso incluido",
+      "allowanceTitle": "Uso de este mes",
+      "description": "Se reinicia el {{resetAt}}.",
+      "paygTitle": "Uso de pago por consumo",
+      "paygDescription": "Uso facturable adicional en este período. Se reinicia el {{resetAt}}.",
+      "knowledgeTitle": "Base de conocimiento",
+      "voiceTitle": "Minutos de voz",
+      "chatsTitle": "Chats",
+      "voiceValue": "{{minutes}} minutos usados",
+      "voiceRemaining": "{{minutes}} minutos restantes",
+      "alertSmsTitle": "Alertas por SMS",
+      "alertSmsValue": "{{formattedCount}} segmentos usados",
+      "alertSmsRemaining": "{{formattedCount}} segmentos restantes",
+      "outboundAttemptsTitle": "Intentos de transferencia",
+      "outboundAttemptsValue": "{{formattedCount}} intentos usados",
+      "outboundAttemptsRemaining": "{{formattedCount}} intentos restantes",
+      "overageEnabled": "El uso adicional se factura como excedente.",
+      "included": "Incluido",
+      "overage": "Excedente",
+      "used": "usado",
+      "remaining": "restante",
+      "of": "de",
+      "meteredSuffix": "(medido)",
+      "unlimited": "Ilimitado",
+      "blocked": "Límite alcanzado",
+      "blockedDescription": "Límite alcanzado: el uso queda en pausa hasta el próximo período.",
+      "overageCount": "{{count}} por encima del límite",
+      "overageCost": "≈ {{amount}} en excedentes",
+      "noOverages": "Sin excedentes: el uso tiene un tope fijo en el volumen incluido.",
+      "overIncludedSummary": "{{count}} {{unit}} por encima de lo incluido · <amount>≈ {{amount}}</amount> en excedentes",
+      "units": {
+        "voice": "min",
+        "outboundAttempts": "intentos",
+        "segments": "segmentos",
+        "storage": "MB",
+        "chats": "chats"
+      },
+      "unavailable": "Los datos de uso no están disponibles.",
+      "customAllowance": "{{used}} {{unit}} usados · Volumen personalizado",
+      "noLimit": "{{used}} {{unit}} usados · Sin límite",
+      "extraTitle": "Uso adicional",
+      "extraOnDescription": "Su agente sigue contestando después de su volumen incluido, y {{appName}} le cobra los minutos y chats adicionales.",
+      "extraOffDescription": "El uso adicional está desactivado. {{appName}} le cobra los minutos y chats adicionales que usó antes de que se desactivara."
+    },
+    "spendingCap": {
+      "title": "Límite de gasto mensual",
+      "placeholder": "25.00",
+      "amountLabel": "Límite de excedentes",
+      "noCap": "No hay ningún límite de gasto definido",
+      "currentSpend": "Gasto actual en excedentes",
+      "spendOfCap": "{{spend}} de {{cap}}",
+      "spendAtLeastOfCap": "Al menos {{spend}} de {{cap}}",
+      "reached": "Límite alcanzado: el nuevo uso que supere lo incluido queda en pausa.",
+      "adminOnly": "Solo los propietarios y administradores del espacio de trabajo pueden cambiar este límite.",
+      "save": "Guardar",
+      "saving": "Guardando...",
+      "update": "Actualizar",
+      "updating": "Actualizando...",
+      "remove": "Quitar límite",
+      "removing": "Quitando...",
+      "saved": "Límite mensual de excedentes guardado.",
+      "removed": "Límite mensual de excedentes eliminado.",
+      "invalidAmount": "Introduzca un importe en USD no negativo con dos decimales como máximo.",
+      "saveFailed": "No se pudo guardar el límite mensual de excedentes.",
+      "removeFailed": "No se pudo quitar el límite mensual de excedentes."
+    },
+    "transactions": {
+      "title": "Historial de transacciones",
+      "description": "Pedidos, reembolsos y cargos de configuración sincronizados desde Polar.",
+      "empty": "Aún no hay transacciones.",
+      "columns": {
+        "date": "Fecha",
+        "description": "Descripción",
+        "amount": "Importe",
+        "status": "Estado",
+        "invoice": "Factura"
+      },
+      "invoice": "Factura",
+      "refundedAmount": "Reembolsado: {{amount}}",
+      "statusLabels": {
+        "paid": "Pagado",
+        "pending": "Pendiente",
+        "refunded": "Reembolsado",
+        "partially_refunded": "Reembolso parcial"
+      },
+      "kindLabels": {
+        "order": "Pedido",
+        "refund": "Reembolso"
+      }
+    },
+    "checkoutErrors": {
+      "inProgress": "Ya hay un pago abierto para este espacio de trabajo. Termínelo o inicie uno nuevo dentro de 30 minutos.",
+      "subscriptionActive": "Este espacio de trabajo ya tiene un plan de pago. Para cambiarlo, use Gestionar suscripción en la página Plan."
+    },
+    "cancel": {
+      "title": "¿Cancelar su plan {{plan}}?",
+      "description": "Su plan sigue activo hasta el {{date}}. Después pasará al plan Free.",
+      "descriptionNoDate": "Su plan sigue activo hasta el final del período de facturación actual. Después pasará al plan Free.",
+      "reasonLabel": "¿Por qué cancela? (opcional)",
+      "reasons": {
+        "setup": "La configuración fue confusa o lenta",
+        "quality": "La calidad de la voz o de las llamadas",
+        "price": "El precio",
+        "missing_feature": "Falta una función",
+        "other": "Otra cosa"
+      },
+      "commentLabel": "Cuéntenos más (opcional)",
+      "keep": "Mantener mi plan",
+      "confirm": "Cancelar el plan",
+      "canceling": "Cancelando el plan...",
+      "failed": "No se pudo cancelar su plan. Inténtelo de nuevo o use Gestionar suscripción.",
+      "endsOn": "Su plan {{plan}} termina el {{date}}. Sigue activo hasta entonces."
+    },
+    "success": {
+      "received": {
+        "title": "Pago recibido",
+        "description": "Esta página se actualiza cuando su plan esté listo.",
+        "status": "Activando su plan..."
+      },
+      "missing": {
+        "title": "No encontramos este pago",
+        "description": "Abra la página de su plan para ver el plan que tiene.",
+        "action": "Ver mi plan"
+      },
+      "title": "Su plan {{plan}} está listo",
+      "unlocks": {
+        "voiceMinutes_one": "{{count}} minuto de voz al mes",
+        "voiceMinutes_many": "{{count}} minutos de voz al mes",
+        "voiceMinutes_other": "{{count}} minutos de voz al mes",
+        "numbers_one": "{{count}} número del negocio dedicado",
+        "numbers_many": "{{count}} números del negocio dedicados",
+        "numbers_other": "{{count}} números del negocio dedicados",
+        "alertSms_one": "{{count}} segmento de SMS de alerta al mes",
+        "alertSms_many": "{{count}} segmentos de SMS de alerta al mes",
+        "alertSms_other": "{{count}} segmentos de SMS de alerta al mes",
+        "transfers_one": "{{count}} intento de transferencia al mes",
+        "transfers_many": "{{count}} intentos de transferencia al mes",
+        "transfers_other": "{{count}} intentos de transferencia al mes"
+      },
+      "number": {
+        "label": "Su número",
+        "keep": "Este número es suyo.",
+        "choose": "Elegir su número"
+      },
+      "continue": "Continuar la configuración",
+      "dashboard": "Ir al panel"
+    },
+    "addOns": {
+      "title": "Complementos",
+      "active": "Activo",
+      "get": "Contratar complemento",
+      "checkoutFailed": "No se pudo abrir el pago. Inténtelo de nuevo.",
+      "extraNumbers": {
+        "title": "Números adicionales",
+        "description": "Dé a un agente su propio número.",
+        "price": "Desde {{price}} por número /mes",
+        "count_one": "{{count}} número adicional",
+        "count_other": "{{count}} números adicionales",
+        "count_many": "{{count}} números adicionales"
+      }
+    }
+  },
+  "subscription": {
+    "loadFailed": "No pudimos cargar su facturación. Actualice la página para intentarlo de nuevo.",
+    "outside": "{{appName}} le factura directamente. Consúlteles sobre su factura.",
+    "packageTitle": "Su paquete",
+    "minutes_one": "{{amount}} minuto",
+    "minutes_many": "{{amount}} minutos",
+    "minutes_other": "{{amount}} minutos",
+    "chats_one": "{{amount}} chat",
+    "chats_many": "{{amount}} chats",
+    "chats_other": "{{amount}} chats",
+    "allowance": "Cada mes incluye {{minutes}} y {{chats}}.",
+    "status": {
+      "awaiting_payment": "Su agente empieza a atender llamadas y chats en cuanto pague.",
+      "active": "Su suscripción está activa.",
+      "renews": "Su suscripción se renueva el {{date}}.",
+      "past_due": "Su último pago falló y lo volveremos a intentar. Actualice su tarjeta para que su agente siga atendiendo.",
+      "inactive": "Su suscripción terminó, así que su agente no atiende llamadas ni chats. Suscríbase de nuevo para reactivarlo."
+    },
+    "badge": {
+      "awaiting_payment": "Pago pendiente",
+      "active": "Activa",
+      "past_due": "Pago fallido",
+      "inactive": "Terminada"
+    },
+    "subscribe": "Suscribirse",
+    "manage": "Administrar facturación",
+    "opening": "Abriendo…",
+    "manageHint": "Actualice su tarjeta, descargue facturas o cancele su suscripción.",
+    "paid": "Recibimos su pago. Su agente empieza a atender en un momento.",
+    "errors": {
+      "portal": "El portal de facturación no está disponible en este momento. Consulte a {{appName}}.",
+      "checkout": "No pudimos abrir el pago. Inténtelo de nuevo.",
+      "unavailable": "{{appName}} no puede recibir pagos en este momento. Consúlteles sobre su factura."
+    }
+  },
+  "phoneNumber": {
+    "current": {
+      "label": "Número de teléfono actual",
+      "description": "Este es el número que usan las personas que llaman para comunicarse con su agente con IA.",
+      "empty": "Aún no tiene un número."
+    },
+    "reclaim": {
+      "title": "Este número se liberará el {{date}}",
+      "description": "Los planes gratuitos no incluyen un número del negocio dedicado. Cambie a Starter o Pro antes de esa fecha para conservar {{number}}.",
+      "upgradeCta": "Mejorar el plan para conservar este número",
+      "extraNumbersEnded": "El complemento Números adicionales terminó. Vuelva a contratarlo antes de esa fecha para conservar {{number}}."
+    },
+    "freeTrial": {
+      "description": "Todavía no tiene un número. Pruebe uno gratis durante 14 días.",
+      "cta": "Elegir mi número"
+    },
+    "requiresPaidPlan": {
+      "title": "Los números dedicados están en los planes de pago",
+      "description": "Cambie a Starter o Pro para obtener un número local del negocio al que puedan llamar sus clientes.",
+      "upgradeCta": "Ver planes"
+    },
+    "partnerTierRequired": {
+      "description": "El socio de este espacio de trabajo necesita pagar un nivel para agregar números de teléfono."
+    },
+    "partnerNumbersUnavailable": {
+      "description": "Los números de teléfono todavía no están disponibles para este espacio de trabajo."
+    },
+    "trialPhone": {
+      "title": "Verifique su número de móvil",
+      "description": "Durante la prueba de 14 días, el agente solo transfiere llamadas a este móvil.",
+      "fields": {
+        "mobileNumber": "Número de móvil",
+        "country": "País"
+      },
+      "hint": "Use un móvil que reciba SMS. Los números de internet no funcionan.",
+      "sendCode": "Enviarme un código",
+      "sending": "Enviando…",
+      "errors": {
+        "voip": "Use su número de móvil. Los números de internet no se pueden verificar.",
+        "notMobile": "Use un número de móvil que reciba SMS.",
+        "countryMismatch": "Este número no es del país que eligió.",
+        "invalidNumber": "Escriba un número de móvil válido.",
+        "rateLimited": "Demasiados códigos. Espere un momento y vuelva a intentarlo.",
+        "sendFailed": "No pudimos enviar el código. Inténtelo de nuevo."
+      },
+      "code": {
+        "sentTo": "Escriba el código de 6 dígitos que enviamos al {{phone}}.",
+        "label": "Código de verificación",
+        "checking": "Comprobando…",
+        "invalid_one": "Ese código no funcionó. Le queda {{count}} intento.",
+        "invalid_many": "Ese código no funcionó. Le quedan {{count}} intentos.",
+        "invalid_other": "Ese código no funcionó. Le quedan {{count}} intentos.",
+        "expired": "Este código caducó. Pida uno nuevo.",
+        "locked": "Demasiados intentos. Pida un código nuevo.",
+        "failed": "No pudimos comprobar el código. Inténtelo de nuevo.",
+        "resend": "Enviar un código nuevo",
+        "changeNumber": "Usar otro número"
+      }
+    },
+    "actions": {
+      "requestChange": "Solicitar cambio",
+      "getNumber": "Obtener número"
+    },
+    "dialog": {
+      "title": "Elija un nuevo número de teléfono",
+      "description": "Puede cambiar su número de teléfono una sola vez.",
+      "getNumberTitle": "Elija un número de teléfono",
+      "getNumberDescription": "Elija un número que las personas que llaman puedan usar para comunicarse con su agente con IA."
+    },
+    "picker": {
+      "countryLabel": "País",
+      "areaCodeLabel": "Código de área",
+      "areaCodePlaceholder": "Código de área",
+      "search": "Buscar",
+      "searching": "Buscando...",
+      "phoneNumberHeader": "Número de teléfono",
+      "select": "Seleccionar",
+      "claiming": "Conectando su nuevo número...",
+      "loadMore": "Cargar más",
+      "empty": "Ningún número coincide con esa búsqueda.",
+      "loadFailed": "No pudimos cargar los números en este momento.",
+      "searchFailed": "No pudimos buscar números en este momento.",
+      "claimFailed": "No pudimos reemplazar el número de teléfono. Inténtelo de nuevo.",
+      "unavailable": "Ese número se acaba de asignar. Elija otro de la lista actualizada."
+    },
+    "toast": {
+      "changed": "Número de teléfono cambiado. Su número anterior seguirá activo durante 30 días.",
+      "added": "Número de teléfono agregado."
+    },
+    "numbersUnavailable": "Los números de teléfono aún no están configurados en este panel. Pida a quien lo administra que conecte un proveedor de telefonía.",
+    "extra": {
+      "buy": "Comprar un número",
+      "select": "Comprar",
+      "monthly": "{{price}} al mes",
+      "confirmTitle": "¿Comprar el {{number}}?",
+      "confirmDescription": "Cuesta {{price}} al mes.",
+      "confirm": "Comprar número",
+      "cancel": "Cancelar",
+      "priceChanged": "El precio cambió. Busque de nuevo para verlo.",
+      "unavailable": "Este espacio de trabajo no puede comprar más números."
+    }
+  },
+  "appearance": {
+    "title": "Preferencias",
+    "description": "Defina el idioma del panel, el formato de hora y el tema.",
+    "save": "Actualizar preferencias",
+    "saved": "Preferencias de apariencia actualizadas.",
+    "language": {
+      "label": "Idioma del panel",
+      "description": "Elija el idioma que se usa en el panel.",
+      "saveFailed": "No pudimos guardar su preferencia de idioma. Inténtelo de nuevo."
+    },
+    "timeFormat": {
+      "label": "Formato de hora",
+      "description": "Elija entre el formato de 24 horas o AM/PM.",
+      "twentyFourHour": "24 horas",
+      "ampm": "AM/PM"
+    },
+    "theme": {
+      "label": "Tema",
+      "description": "Elija su tema visual preferido.",
+      "light": "Claro",
+      "lightDescription": "Superficies luminosas con contraste suave para trabajar de día.",
+      "dark": "Oscuro",
+      "darkDescription": "Superficies atenuadas que cansan menos la vista por la noche."
+    },
+    "telemetry": {
+      "label": "Compartir datos de telemetría",
+      "description": "Ayúdenos a mejorar {{appName}} compartiendo datos anónimos de uso y errores.",
+      "saveFailed": "No pudimos guardar su preferencia de telemetría. Inténtelo de nuevo."
+    }
+  },
+  "integrations": {
+    "permissions": {
+      "manageRequired": "Solo los propietarios y administradores del espacio de trabajo pueden gestionar las integraciones."
+    },
+    "actions": {
+      "connect": "Conectar",
+      "connected": "Conectado",
+      "settings": "Abrir configuración de la integración",
+      "manage": "Gestionar",
+      "setUp": "Configurar"
+    },
+    "providers": {
+      "google": "Sincronice las reservas con Google Calendar."
+    },
+    "google": {
+      "sheetTitle": "Google Calendar",
+      "sheetDescription": "Conecte un Google Calendar y elija qué calendario recibe las reservas.",
+      "privacyNoticeText": "Al conectar Google Calendar, {{appName}} puede leer la disponibilidad de su calendario y crear, actualizar o eliminar citas en el calendario que seleccione.",
+      "privacyPolicyLinkText": "Política de privacidad",
+      "staffLabel": "Miembro del equipo",
+      "selectStaff": "Elija un miembro del equipo",
+      "chooseStaffFirst": "Elija el miembro del equipo cuyo Google Calendar desea conectar.",
+      "connect": "Conectar Google",
+      "connecting": "Redirigiendo...",
+      "reconnect": "Volver a conectar",
+      "disconnect": "Desconectar",
+      "disconnecting": "Desconectando...",
+      "disconnectedSuccess": "Google Calendar desconectado.",
+      "disconnectFailed": "No se pudo desconectar Google Calendar.",
+      "disconnectConfirmTitle": "¿Desconectar Google Calendar?",
+      "disconnectConfirmDescription": "Se eliminará la conexión actual de Google Calendar para las reservas.",
+      "disconnectConfirm": "¿Confirmar?",
+      "disconnectConfirmAction": "Desconectar Google Calendar",
+      "disconnectCancel": "Cancelar",
+      "connectedSuccess": "Google Calendar se conectó correctamente.",
+      "connectFailed": "No se pudo completar la conexión con Google Calendar.",
+      "selectedCalendar": "Calendario seleccionado",
+      "noCalendarSelected": "Aún no hay ningún calendario seleccionado.",
+      "calendarLabel": "Calendario de Google",
+      "selectCalendar": "Elija un calendario",
+      "chooseCalendarFirst": "Elija un calendario de Google antes de guardar.",
+      "loadingCalendars": "Cargando calendarios...",
+      "refreshCalendars": "Actualizar",
+      "calendarSaved": "Calendario de Google seleccionado guardado.",
+      "calendarSaveFailed": "No se pudo guardar el calendario de Google seleccionado.",
+      "calendarListFailed": "No se pudieron cargar los calendarios de Google.",
+      "mappedConnections": "Conexiones de Google asignadas",
+      "mappedConnectionsDescription": "Cada conexión de Google pertenece a un miembro del equipo que acepta reservas.",
+      "unknownStaff": "Miembro del equipo desconocido",
+      "noConnections": "Aún no hay conexiones de Google Calendar.",
+      "notConnectedForStaff": "Este miembro del equipo aún no tiene un Google Calendar conectado.",
+      "notConnectedDescription": "Conecte Google Calendar para empezar a sincronizar las reservas.",
+      "noStaff": "Agregue un miembro del equipo que acepte reservas antes de conectar Google Calendar.",
+      "primaryCalendarLabel": "{{summary}} (Principal)",
+      "lastSyncState": "Estado de la última sincronización",
+      "lastSyncOk": "Correcto",
+      "syncNeedsAttention": "Requiere atención",
+      "discoveryFailed": "No se pudo verificar el acceso al calendario ni su sincronización. Vuelva a intentar la sincronización o vuelva a conectar su cuenta de Google."
+    },
+    "calcom": {
+      "sheetTitle": "Cal.com",
+      "sheetDescription": "Conecte su cuenta de Cal.com y elija el tipo de evento que reserva su agente.",
+      "connect": "Conectar Cal.com",
+      "reconnect": "Volver a conectar",
+      "disconnect": "Desconectar",
+      "connectedSuccess": "Cal.com está conectado. Elija el tipo de evento que se reservará.",
+      "connectFailed": "No se pudo conectar Cal.com. Inténtelo de nuevo.",
+      "disconnectedSuccess": "Cal.com desconectado.",
+      "eventTypeLabel": "Tipo de evento",
+      "selectEventType": "Elija un tipo de evento",
+      "eventTypeSaved": "Tipo de evento guardado.",
+      "refresh": "Actualizar",
+      "syncNeedsAttention": "Requiere atención",
+      "syncFailed": "Su agente no pudo terminar la sincronización con Cal.com y no ofrecerá horarios hasta que una sincronización funcione. Lo vuelve a intentar por sí solo, o puede hacer clic en Actualizar.",
+      "discoveryFailed": "Su agente no pudo acceder a su cuenta de Cal.com. Actualice o vuelva a conectar la cuenta.",
+      "warningsTitle": "Revise este tipo de evento en Cal.com",
+      "warnings": {
+        "missingLengths": "Agregue {{lengths}} minutos a las duraciones del tipo de evento. Mientras tanto, Cal.com reserva esos servicios con la duración predeterminada del tipo de evento.",
+        "smsReminders": "Desactive el flujo de SMS de este tipo de evento, o Cal.com enviará mensajes a quienes llaman además de los de su agente.",
+        "videoLocation": "Agregue «Número de teléfono del asistente» como ubicación de este tipo de evento. Mientras tanto, las reservas llevan un enlace de video en lugar del teléfono de la persona que llama.",
+        "narrowerAvailability": "Amplíe el horario del tipo de evento el {{days}} para que coincida con su horario de atención. Cal.com rechaza las reservas fuera de su horario."
+      }
+    },
+    "calendly": {
+      "sheetTitle": "Calendly",
+      "sheetDescription": "Conecte su cuenta de Calendly y elija el tipo de evento que reserva su agente.",
+      "connect": "Conectar Calendly",
+      "reconnect": "Reconectar",
+      "disconnect": "Desconectar",
+      "connectedSuccess": "Calendly conectado. Elija el tipo de evento que se reservará.",
+      "connectFailed": "No se pudo conectar Calendly. Inténtelo de nuevo.",
+      "connectNotAdmin": "Solo un propietario o administrador del negocio puede conectar Calendly.",
+      "disconnectedSuccess": "Calendly desconectado.",
+      "eventTypeLabel": "Tipo de evento",
+      "selectEventType": "Elija un tipo de evento",
+      "eventTypeSaved": "Tipo de evento guardado.",
+      "refresh": "Actualizar",
+      "syncNeedsAttention": "Requiere atención",
+      "syncFailed": "Su agente no pudo terminar de sincronizar con Calendly y no ofrecerá horarios hasta que una sincronización funcione. Lo reintenta por su cuenta, o puede hacer clic en Actualizar.",
+      "discoveryFailed": "Su agente no pudo acceder a su cuenta de Calendly. Actualice o vuelva a conectar la cuenta.",
+      "blockedOption": "{{name}} (no se puede reservar)",
+      "planRequiredTitle": "Se requiere un plan de pago",
+      "planRequired": "Calendly solo acepta reservas de otras aplicaciones en sus planes de pago. Cambie a Standard o superior y haga clic en Reconectar.",
+      "warningsTitle": "Revise este tipo de evento en Calendly",
+      "warnings": {
+        "requiredQuestions": "Haga que {{questions}} sea opcional o elija otro tipo de evento. Su agente no puede responder preguntas de opción obligatorias, así que Calendly rechaza todas las reservas.",
+        "missingLengths": "Sus servicios de {{lengths}} minutos no coinciden con este tipo de evento. Calendly los reserva con la duración del tipo de evento.",
+        "noDetailsQuestion": "Agregue una pregunta de texto a este tipo de evento. Hasta entonces, su equipo no verá el teléfono ni el correo de quien llama en Calendly.",
+        "videoLocation": "Este tipo de evento solo ofrece videollamadas, así que las reservas llevan un enlace de reunión. Agregue una ubicación física o telefónica para quienes llaman."
+      }
+    },
+    "cards": {
+      "google": {
+        "title": "Google Calendar",
+        "description": "Sincronice las reservas con un Google Calendar."
+      },
+      "calcom": {
+        "title": "Cal.com",
+        "description": "Reserve las citas en uno de sus tipos de evento de Cal.com."
+      },
+      "calendly": {
+        "title": "Calendly",
+        "description": "Reserve citas en uno de sus tipos de evento de Calendly."
+      },
+      "webhooks": {
+        "title": "Webhooks",
+        "description": "Envíe llamadas, reservas y mensajes a sus propias herramientas."
+      },
+      "zapier": {
+        "title": "Zapier",
+        "description": "Conecte llamadas, reservas y contactos con miles de aplicaciones."
+      }
+    },
+    "status": {
+      "connected": "Conectado",
+      "reconnectRequired": "Debe volver a conectar",
+      "syncing": "Sincronizando",
+      "notConnected": "Aún no conectado"
+    },
+    "summary": {
+      "title": "Resumen de sincronización del calendario",
+      "description": "Un vistazo rápido al funcionamiento de las integraciones.",
+      "connectedCalendars": "Calendarios conectados",
+      "openIssues": "Problemas de sincronización abiertos",
+      "syncedAppointments": "Citas sincronizadas"
+    },
+    "instagram": {
+      "connectedSuccess": "Instagram está conectado. Su agente ahora responde a los mensajes directos.",
+      "connectFailed": "No se pudo conectar Instagram. Inténtelo de nuevo.",
+      "accountInUse": "Esta cuenta de Instagram ya está conectada a otro espacio de trabajo.",
+      "permissionMissing": "Su agente necesita acceso a sus mensajes de Instagram. Vuelva a conectar Instagram y permita ese acceso.",
+      "reconnect": "Volver a conectar"
+    }
+  },
+  "profile": {
+    "title": "Perfil del agente",
+    "description": "Defina la voz, el tono, la política de reservas y las reglas de transferencia de su agente.",
+    "greeting": "Saludo",
+    "tone": "Tono",
+    "defaultCustomerLanguage": "Idioma predeterminado del cliente",
+    "businessSummary": "Resumen del negocio",
+    "bookingPolicy": "Política de reservas",
+    "transferMode": "Modo de transferencia",
+    "transferNumber": "Número de transferencia",
+    "voiceInstructions": "Instrucciones de voz",
+    "smsInstructions": "Instrucciones de SMS",
+    "selectDefaultLanguage": "Seleccione un idioma predeterminado",
+    "selectTransferMode": "Seleccione el modo de transferencia",
+    "transferModes": {
+      "never": "Nunca",
+      "always": "Siempre",
+      "on_request": "A pedido",
+      "on_urgent": "En casos urgentes",
+      "during_business_hours": "Durante el horario de atención"
+    },
+    "save": "Guardar perfil",
+    "saving": "Guardando...",
+    "saved": "Perfil del agente guardado.",
+    "placeholders": {
+      "transferNumber": "+1 555 123 4567"
+    }
+  },
+  "account": {
+    "loading": "Cargando su cuenta",
+    "passkeys": {
+      "title": "Llaves de acceso",
+      "description": "Inicie sesión con su huella, su rostro o el bloqueo del dispositivo, sin contraseña.",
+      "add": "Añadir una llave de acceso",
+      "empty": "Aún no ha añadido ninguna llave de acceso.",
+      "unnamed": "Llave de acceso",
+      "addedOn": "Añadida el {{date}}",
+      "added": "Llave de acceso añadida.",
+      "renamed": "Llave de acceso renombrada.",
+      "removed": "Llave de acceso eliminada.",
+      "remove": "Eliminar",
+      "removeTitle": "¿Eliminar esta llave de acceso?",
+      "removeDescription": "Ya no podrá iniciar sesión con {{name}}. Su contraseña sigue funcionando.",
+      "rename": {
+        "action": "Renombrar",
+        "title": "Renombrar la llave de acceso",
+        "description": "Elija un nombre que indique en qué dispositivo está.",
+        "label": "Nombre",
+        "placeholder": "P. ej.: Portátil del trabajo",
+        "save": "Guardar",
+        "required": "Introduzca un nombre."
+      },
+      "errors": {
+        "addFailed": "No pudimos añadir la llave de acceso. Inténtelo de nuevo.",
+        "wrongAddress": "Las llaves de acceso no están configuradas para esta dirección. Abra la aplicación en su dirección habitual y vuelva a intentarlo.",
+        "alreadyAdded": "Este dispositivo ya tiene una llave de acceso para su cuenta.",
+        "signInAgain": "Vuelva a iniciar sesión y añada una llave de acceso.",
+        "verifyEmail": "Verifique su correo y luego añada una llave de acceso.",
+        "renameFailed": "No pudimos renombrar la llave de acceso. Inténtelo de nuevo.",
+        "removeFailed": "No pudimos eliminar la llave de acceso. Inténtelo de nuevo.",
+        "loadFailed": "No pudimos cargar sus llaves de acceso."
+      }
+    },
+    "title": "Cuenta",
+    "actions": {
+      "change": "Cambiar",
+      "cancel": "Cancelar"
+    },
+    "businessName": {
+      "label": "Nombre del negocio",
+      "description": "Este es el nombre que aparece en todo el panel y en los datos del negocio que ven sus clientes.",
+      "placeholder": "Clínica Familiar Maple",
+      "save": "Guardar",
+      "saving": "Guardando...",
+      "saved": "Cambios guardados",
+      "required": "Introduzca el nombre de la empresa."
+    },
+    "changeEmail": {
+      "label": "Cambiar correo electrónico",
+      "description": "Correo electrónico que usa para iniciar sesión.",
+      "newEmailLabel": "Nuevo correo electrónico",
+      "newEmailPlaceholder": "nombre@example.com",
+      "save": "Enviar enlace de confirmación",
+      "title": "Correo electrónico",
+      "currentPasswordLabel": "Contraseña actual",
+      "currentEmail": "{{email}}",
+      "currentEmailLabel": "Correo electrónico actual",
+      "confirmationSent": "Enviamos un enlace de confirmación a {{email}}.",
+      "errors": {
+        "invalidPassword": "La contraseña actual es incorrecta.",
+        "alreadyExists": "Ya existe una cuenta con ese correo electrónico.",
+        "unchanged": "Introduzca un correo electrónico diferente.",
+        "noEmail": "Esta cuenta aún no tiene un correo electrónico configurado.",
+        "required": "Introduzca un nuevo correo electrónico.",
+        "invalid": "Introduzca un correo electrónico válido.",
+        "failed": "No pudimos enviar el enlace de confirmación. Inténtelo de nuevo."
+      }
+    },
+    "changePassword": {
+      "title": "Contraseña",
+      "label": "Cambiar contraseña",
+      "description": "Contraseña que usa para iniciar sesión.",
+      "dialogDescription": "Introduzca su contraseña actual y una nueva contraseña.",
+      "currentPasswordLabel": "Contraseña actual",
+      "newPasswordLabel": "Nueva contraseña",
+      "confirmPasswordLabel": "Confirmar nueva contraseña",
+      "save": "Guardar",
+      "saved": "Contraseña actualizada.",
+      "errors": {
+        "mismatch": "Las nuevas contraseñas no coinciden.",
+        "currentRequired": "Introduzca su contraseña actual.",
+        "newRequired": "Introduzca una nueva contraseña.",
+        "confirmRequired": "Confirme su nueva contraseña.",
+        "minimumLengthMissing": "Use al menos 8 caracteres.",
+        "numberMissing": "Incluya al menos un número.",
+        "specialCharacterMissing": "Incluya al menos un carácter especial.",
+        "unchanged": "Elija una contraseña distinta de la actual.",
+        "invalidCurrent": "La contraseña actual es incorrecta.",
+        "failed": "No se pudo actualizar la contraseña."
+      }
+    }
+  },
+  "workspaceTeam": {
+    "members": {
+      "title": "Miembros",
+      "table": {
+        "email": "Correo electrónico",
+        "role": "Rol"
+      },
+      "empty": "Aún no hay miembros.",
+      "noEmail": "Sin correo electrónico registrado",
+      "joinedOn": "Se unió el {{date}}",
+      "invitedOn": "Invitado el {{date}}",
+      "status": {
+        "pending": "Pendiente",
+        "handover": "Entrega el espacio de trabajo"
+      },
+      "actions": {
+        "moreOptions": "Más opciones",
+        "remove": "Quitar",
+        "cancelInvite": "Cancelar invitación"
+      },
+      "removeSuccess": "Miembro quitado.",
+      "removeFailed": "No pudimos quitar a ese miembro."
+    },
+    "roles": {
+      "admin": "Administrador",
+      "viewer": "Lector"
+    },
+    "invite": {
+      "action": "Invitar",
+      "title": "Invitar a un miembro del equipo",
+      "description": "Envíe una invitación por correo electrónico para unirse a este espacio de trabajo.",
+      "emailLabel": "Correo electrónico",
+      "emailPlaceholder": "colega@negocio.com",
+      "roleLabel": "Seleccione un rol",
+      "roles": {
+        "adminDescription": "Invitar y gestionar miembros del equipo, actualizar la configuración del espacio de trabajo y la facturación.",
+        "viewerDescription": "Ver llamadas, contactos y la actividad del panel sin hacer cambios."
+      },
+      "submit": "Enviar invitación",
+      "sending": "Enviando invitación...",
+      "sent": "Invitación enviada a {{email}}.",
+      "errors": {
+        "invalidEmail": "Introduzca un correo electrónico válido.",
+        "partnerMember": "{{email}} forma parte del equipo del socio de este espacio de trabajo. Trabaja aquí desde la consola de socios, así que no puede unirse al equipo.",
+        "failed": "No pudimos enviar esa invitación. Inténtelo de nuevo."
+      },
+      "emailRequired": "Introduzca una dirección de correo.",
+      "cancel": "Cancelar"
+    },
+    "pending": {
+      "resend": "Reenviar",
+      "revoke": "Revocar",
+      "resendSuccess": "Invitación reenviada.",
+      "resendFailed": "No pudimos reenviar esa invitación.",
+      "revokeSuccess": "Invitación revocada.",
+      "revokeFailed": "No pudimos revocar esa invitación."
+    },
+    "delete": {
+      "title": "Eliminar espacio de trabajo",
+      "description": "Borra todo su contenido y libera su número de teléfono.",
+      "action": "Eliminar espacio de trabajo",
+      "dialogTitle": "¿Eliminar {{name}}?",
+      "dialogDescription": "Se borran sus llamadas, contactos y ajustes, se libera su número y termina su plan. No se puede deshacer.",
+      "confirmLabel": "Escribe <name>{{name}}</name> para confirmar",
+      "submit": "Eliminar",
+      "deleting": "Eliminando...",
+      "errors": {
+        "failed": "No se pudo eliminar el espacio de trabajo. Inténtalo de nuevo.",
+        "numberInProgress": "Todavía se está configurando un número de teléfono para este espacio de trabajo. Inténtalo de nuevo en unos minutos.",
+        "billing": "La facturación no está disponible ahora, así que no se pudo terminar el plan de pago. Inténtalo más tarde."
+      },
+      "cancel": "Cancelar"
+    }
+  },
+  "hours": {
+    "title": "Horario de atención",
+    "description": "El horario estructurado tiene prioridad sobre los documentos y ayuda al agente a responder con fiabilidad las preguntas sobre disponibilidad.",
+    "save": "Guardar horario",
+    "saving": "Guardando...",
+    "leaveBlank": "Deje un día en blanco para marcarlo como cerrado.",
+    "saved": "Horario de atención guardado.",
+    "saveFailed": "No se pudo guardar el horario de atención.",
+    "invalidHours": "Horario no válido para {{day}}."
+  },
+  "services": {
+    "title": "Servicios",
+    "description": "Las definiciones de servicios alimentan la lógica de reservas y la instantánea del agente que escuchan las personas que llaman.",
+    "serviceName": "Nombre del servicio",
+    "englishLabel": "Etiqueta en inglés",
+    "frenchLabel": "Etiqueta en francés",
+    "slug": "Slug",
+    "durationMinutes": "Duración (minutos)",
+    "descriptionLabel": "Descripción",
+    "placeholders": {
+      "serviceName": "Consulta inicial",
+      "englishLabel": "Initial Consultation",
+      "frenchLabel": "Consultation initiale",
+      "description": "Una primera cita de 30 minutos."
+    },
+    "save": "Agregar servicio",
+    "update": "Actualizar servicio",
+    "cancelEdit": "Cancelar",
+    "edit": "Editar servicio",
+    "saving": "Guardando...",
+    "saved": "Servicio guardado.",
+    "noDescription": "Aún no hay descripción.",
+    "empty": "Aún no hay servicios configurados."
+  },
+  "phoneRouting": {
+    "title": "Enrutamiento de números de teléfono",
+    "description": "Asocie números de Twilio a este espacio de trabajo para que las llamadas en vivo y los SMS carguen la instantánea correcta del agente.",
+    "managedNumber": "Número gestionado",
+    "selectNumber": "Seleccione un número",
+    "addNewNumber": "Agregar nuevo número",
+    "e164Number": "Número E.164",
+    "twilioPhoneSid": "SID del teléfono de Twilio",
+    "status": "Estado",
+    "selectStatus": "Seleccione un estado",
+    "statuses": {
+      "active": "Activo",
+      "provisioning": "Aprovisionando",
+      "inactive": "Inactivo"
+    },
+    "voiceEnabled": "Voz activada",
+    "smsEnabled": "SMS activado",
+    "save": "Guardar enrutamiento",
+    "saveNew": "Agregar número",
+    "saving": "Guardando...",
+    "saved": "Enrutamiento del número guardado.",
+    "added": "Enrutamiento del número agregado.",
+    "saveFailed": "No se pudo guardar el enrutamiento del número.",
+    "currentMappings": "Asociaciones actuales",
+    "noSid": "Aún no hay ningún SID del teléfono de Twilio guardado.",
+    "empty": "Aún no hay números de Twilio asociados. Agregue el número activo que configuró en Twilio con el formato E.164 exacto."
+  },
+  "team": {
+    "title": "Equipo con reservas",
+    "description": "Las reservas solo funcionan para los servicios que tienen asignado al menos un miembro activo del equipo.",
+    "member": "Miembro del equipo",
+    "selectMember": "Seleccione un miembro del equipo",
+    "addNewMember": "Agregar nuevo miembro",
+    "name": "Nombre",
+    "timezone": "Zona horaria",
+    "transferNumber": "Número de transferencia",
+    "placeholders": {
+      "name": "Jordan Lee",
+      "timezone": "America/Toronto",
+      "transferNumber": "+15145550123"
+    },
+    "activeForBooking": "Disponible para reservas",
+    "save": "Guardar miembro",
+    "saveNew": "Agregar miembro",
+    "saving": "Guardando...",
+    "saved": "Miembro del equipo guardado.",
+    "added": "Miembro del equipo agregado.",
+    "saveFailed": "No se pudo guardar el miembro del equipo.",
+    "serviceAssignments": "Asignación de servicios",
+    "assignmentDescription": "Elija qué servicios puede reservar cada miembro del equipo por teléfono o SMS.",
+    "emptyStaff": "Agregue al menos un miembro del equipo antes de asignar servicios.",
+    "emptyServices": "Primero agregue servicios y luego vuelva aquí para habilitar sus reservas.",
+    "saveAssignments": "Guardar asignaciones",
+    "savingAssignments": "Guardando...",
+    "savedAssignments": "Asignación de servicios guardada.",
+    "saveAssignmentsFailed": "No se pudo guardar la asignación de servicios.",
+    "assignedServices": "{{count}} servicios"
+  },
+  "snapshot": {
+    "title": "Instantánea del agente",
+    "description": "Su agente carga este contexto del negocio una vez al comenzar cada llamada.",
+    "business": "Espacio de trabajo",
+    "timezone": "Zona horaria",
+    "transferPolicy": "Política de transferencia",
+    "services": "Servicios en la instantánea",
+    "knowledgeDigest": "Resumen del conocimiento",
+    "emptyDigest": "Aún no se ha generado ningún resumen. Agregue conocimiento o documentos para enriquecer al agente."
+  },
+  "nextSteps": {
+    "title": "Próximos pasos",
+    "description": "Ajuste el comportamiento del agente antes de dirigirle llamadas reales.",
+    "hours": "Defina el horario, los servicios y las asignaciones del equipo para que las reservas propongan horarios reales.",
+    "transfer": "Agregue reglas de transferencia y un número de respaldo antes de transferir llamadas urgentes.",
+    "snapshot": "Actualice la instantánea después de cambios importantes en sus políticas para que la voz los aplique rápido."
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "description": "Elija qué eventos le envían una alerta al teléfono o al correo electrónico.",
+    "actions": {
+      "testEmail": "Probar correo",
+      "testSms": "Probar SMS",
+      "testing": "Enviando..."
+    },
+    "toast": {
+      "saveFailed": "No se guardaron las preferencias de notificación.",
+      "smsUnavailable": "Verifique un número de teléfono antes de activar las notificaciones por SMS.",
+      "smsSenderUnavailable": "Configure un remitente de SMS de alerta antes de activar las notificaciones por SMS.",
+      "testEmailSent": "Correo de prueba enviado.",
+      "testSmsSent": "SMS de prueba enviado.",
+      "testFailed": "No se pudo enviar la notificación de prueba."
+    },
+    "sources": {
+      "title": "Canales",
+      "email": {
+        "title": "Correo electrónico",
+        "description": "Reciba alertas por correo electrónico."
+      },
+      "sms": {
+        "title": "SMS",
+        "description": "Reciba alertas por SMS.",
+        "senderMissingDescription": "No disponible. Este espacio de trabajo no tiene remitente de SMS de alertas."
+      }
+    },
+    "communication": {
+      "title": "Comunicación",
+      "eventColumn": "Evento"
+    },
+    "events": {
+      "callCompleted": {
+        "title": "Llamada contestada",
+        "description": "Cuando su agente termina una llamada, con su resumen."
+      },
+      "voiceMessage": {
+        "title": "Mensaje de voz recibido",
+        "description": "Cuando una persona deja un mensaje durante una llamada."
+      },
+      "pausedSms": {
+        "title": "Nuevo mensaje de texto",
+        "description": "Cuando un cliente envía un mensaje de texto al número de su negocio."
+      },
+      "smsFailed": {
+        "title": "Falló una notificación por SMS al cliente",
+        "description": "Cuando un SMS de confirmación o recordatorio de cita falla o no se entrega."
+      },
+      "calendarSync": {
+        "title": "Problema de sincronización del calendario",
+        "description": "Cuando una cita no se puede sincronizar con el calendario y requiere atención."
+      },
+      "transferFailed": {
+        "title": "Falló la transferencia de una llamada en vivo",
+        "description": "Cuando la IA intentó transferir una llamada a una persona, pero la transferencia no se completó."
+      },
+      "widgetChat": {
+        "title": "Nuevo mensaje del chat del sitio web",
+        "description": "Cuando un visitante envía un mensaje desde el widget de su sitio web. Recibe como máximo una alerta por conversación al día."
+      },
+      "liveChatRequest": {
+        "title": "Visitante que pide una persona",
+        "description": "Cuando un visitante de su sitio pide hablar con alguien de su equipo. Responda desde Mensajes en 3 minutos para unirse al chat."
+      },
+      "webhookDisabled": {
+        "title": "Endpoint de webhook desactivado",
+        "description": "Cuando {{appName}} deja de enviar eventos a un endpoint de webhook porque todas las entregas fallaron durante aproximadamente un día."
+      }
+    },
+    "systemIssues": {
+      "title": "Problemas del sistema"
+    },
+    "phoneVerification": {
+      "phone": {
+        "title": "Su número de móvil",
+        "consent": "Al enviar el código, acepta recibir alertas de LobbyStack por SMS. La frecuencia varía. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja, HELP para obtener ayuda."
+      },
+      "confirm": {
+        "title": "Activar alertas por SMS",
+        "consent": "Al activarlas, acepta recibir alertas de LobbyStack por SMS en su número verificado. La frecuencia varía. Pueden aplicarse tarifas de mensajes y datos. Responda STOP para darse de baja, HELP para obtener ayuda.",
+        "turnOn": "Activar"
+      },
+      "fields": {
+        "mobileNumber": "Número de móvil",
+        "country": "País"
+      },
+      "cancel": "Cancelar",
+      "sendCode": "Enviar código",
+      "sending": "Enviando código...",
+      "code": {
+        "title": "Introduzca el código",
+        "description": "Enviado al {{phone}}.",
+        "verifying": "Comprobando el código...",
+        "didntGet": "¿No lo recibió?",
+        "resend": "Reenviar",
+        "resending": "Reenviando...",
+        "changeNumber": "Usar otro número"
+      },
+      "errors": {
+        "invalidNumber": "Introduzca un número de móvil válido.",
+        "unreachable": "Las alertas llegan desde un número gratuito. Use un número de EE. UU. o Canadá.",
+        "senderMissing": "Este espacio de trabajo no tiene remitente de SMS de alertas.",
+        "cooldown": "Espere 30 segundos antes de pedir otro.",
+        "rateLimited": "Demasiados códigos. Vuelva a intentarlo en una hora.",
+        "sendFailed": "No se pudo enviar el código. Vuelva a intentarlo.",
+        "deliveryFailed": "No se pudo enviar un SMS a este número.",
+        "wrongCode": "Código incorrecto.",
+        "locked": "Demasiados códigos incorrectos. Pida uno nuevo.",
+        "expired": "El código caducó. Pida uno nuevo.",
+        "unavailable": "Este código ya no funciona. Pida uno nuevo.",
+        "checkFailed": "No se pudo comprobar el código. Vuelva a intentarlo."
+      }
+    },
+    "marketing": {
+      "title": "Correos de marketing",
+      "label": "Consejos y recordatorios",
+      "description": "Consejos de configuración y recordatorios para elegir un plan.",
+      "saveFailed": "No pudimos guardar su elección. Inténtelo de nuevo."
+    }
+  },
+  "secretReveal": {
+    "copy": "Copiar",
+    "copied": "Copiado"
+  },
+  "apiKeys": {
+    "title": "Claves de API",
+    "empty": "Aún no hay claves de API",
+    "createdOn": "Creada el {{date}}",
+    "lastUsed": "Último uso el {{date}}",
+    "neverUsed": "Nunca usada",
+    "createdBy": "Creada el {{date}} por {{name}}",
+    "revoked": "Revocada el {{date}}",
+    "restricted": {
+      "title": "Solo los propietarios y administradores pueden gestionar las claves de API",
+      "description": "Pida a un propietario o administrador de este espacio de trabajo que cree una clave para usted."
+    },
+    "create": {
+      "action": "Crear clave de API",
+      "title": "Crear una clave de API",
+      "description": "Dele a la clave un nombre que pueda reconocer y permita solo el acceso que necesita.",
+      "nameLabel": "Nombre",
+      "namePlaceholder": "Sincronización con el CRM",
+      "scopesLabel": "Acceso",
+      "nameRequired": "Introduzca un nombre.",
+      "scopesRequired": "Elija al menos un permiso.",
+      "cancel": "Cancelar",
+      "submit": "Crear clave",
+      "creating": "Creando…"
+    },
+    "created": {
+      "title": "{{name}} está lista",
+      "description": "Copie la clave y guárdela en un gestor de contraseñas o en la configuración de su herramienta.",
+      "warning": "No volverá a ver esta clave. Si la pierde, revóquela y cree una nueva.",
+      "done": "Listo"
+    },
+    "revoke": {
+      "action": "Revocar",
+      "title": "¿Revocar esta clave de API?",
+      "description": "Todo lo que use {{name}} dejará de funcionar de inmediato. Esta acción no se puede deshacer. {{appName}} también desactiva los webhooks que creó esta clave.",
+      "confirm": "Revocar clave",
+      "cancel": "Cancelar",
+      "done": "Clave de API revocada",
+      "failed": "No pudimos revocar la clave. Inténtelo de nuevo."
+    },
+    "update": {
+      "action": "Actualizar",
+      "title": "Actualizar {{name}}",
+      "description": "Cambie su nombre o su acceso. Conserva la misma clave, y las aplicaciones que la usan reciben el nuevo acceso en su próxima solicitud.",
+      "submit": "Guardar",
+      "saving": "Guardando…",
+      "cancel": "Cancelar",
+      "done": "Clave de API actualizada"
+    },
+    "scopes": {
+      "business_read": "Leer los datos, el horario, los servicios, y la configuración y las reglas del agente del negocio",
+      "business_write": "Actualizar los datos, el horario, los servicios, y la configuración y las reglas del agente del negocio, incluido el número al que se transfieren las llamadas",
+      "calls_read": "Leer llamadas, resúmenes y transcripciones",
+      "contacts_read": "Leer contactos",
+      "contacts_write": "Crear y actualizar contactos",
+      "appointments_read": "Leer citas y horarios disponibles",
+      "appointments_write": "Reservar, cancelar y reprogramar citas",
+      "messages_read": "Leer los mensajes que tomó el agente",
+      "knowledge_read": "Leer entradas de conocimiento, preguntas frecuentes, sitios web y archivos",
+      "knowledge_write": "Agregar, editar y eliminar entradas de conocimiento, preguntas frecuentes, sitios web y archivos",
+      "billing_manage": "Ver el plan, fijar el límite de gasto e iniciar pagos",
+      "phone_numbers_manage": "Buscar, comprar, reemplazar y liberar números de teléfono",
+      "team_manage": "Invitar y quitar miembros del equipo, cambiar roles y entregar el espacio de trabajo",
+      "webhooks_manage": "Crear y eliminar endpoints de webhook"
+    }
+  },
+  "webhooks": {
+    "title": "Webhooks",
+    "description": "{{appName}} envía un HTTPS POST a su URL cuando ocurre algo, como una llamada finalizada o una nueva reserva.",
+    "empty": "Aún no hay endpoints de webhook",
+    "enabledLabel": "Enviar eventos a este endpoint",
+    "restricted": {
+      "title": "Solo los propietarios y administradores pueden gestionar los webhooks",
+      "description": "Pida a un propietario o administrador de este espacio de trabajo que configure el webhook."
+    },
+    "status": {
+      "enabled": "Activado",
+      "disabled": "Desactivado"
+    },
+    "failing": {
+      "title": "Desactivamos este endpoint",
+      "description": "Todas las entregas fallaron durante aproximadamente un día. Corrija el endpoint y vuelva a activarlo. Use Reenviar en el registro de entregas para enviar los eventos perdidos."
+    },
+    "form": {
+      "urlLabel": "URL del endpoint",
+      "urlHint": "Use una dirección https:// a la que se pueda acceder desde internet.",
+      "descriptionLabel": "Descripción",
+      "descriptionPlaceholder": "Opcional, por ejemplo, sincronización con el CRM",
+      "eventsLabel": "Eventos que se enviarán",
+      "cancel": "Cancelar"
+    },
+    "events": {
+      "call_completed": "Una llamada terminó y su resumen está listo",
+      "appointment_booked": "Se reservó una cita",
+      "appointment_rescheduled": "Se cambió una cita a otro horario",
+      "appointment_cancelled": "Se canceló una cita",
+      "message_taken": "El agente tomó un mensaje para su equipo",
+      "contact_created": "Se agregó un nuevo contacto"
+    },
+    "create": {
+      "action": "Agregar endpoint",
+      "title": "Agregar un endpoint de webhook",
+      "description": "Elija adónde envía {{appName}} los eventos y qué eventos envía.",
+      "submit": "Agregar endpoint"
+    },
+    "edit": {
+      "action": "Editar",
+      "title": "Editar endpoint de webhook",
+      "description": "Los cambios se aplican al próximo evento que envíe {{appName}}.",
+      "submit": "Guardar"
+    },
+    "delete": {
+      "action": "Eliminar",
+      "title": "¿Eliminar este endpoint?",
+      "description": "{{appName}} dejará de enviar eventos a {{url}} y eliminará su registro de entregas.",
+      "confirm": "Eliminar endpoint",
+      "done": "Endpoint eliminado"
+    },
+    "rotate": {
+      "action": "Cambiar secreto",
+      "title": "¿Cambiar el secreto de firma?",
+      "description": "El secreto actual dejará de funcionar de inmediato. Actualice su endpoint con el nuevo secreto antes de que llegue el próximo evento.",
+      "confirm": "Cambiar secreto"
+    },
+    "secret": {
+      "createdTitle": "Endpoint agregado",
+      "rotatedTitle": "Nuevo secreto de firma",
+      "description": "Use este secreto para verificar el encabezado webhook-signature de cada solicitud.",
+      "warning": "No volverá a ver este secreto. Si lo pierde, cámbielo para obtener uno nuevo.",
+      "done": "Listo"
+    },
+    "test": {
+      "action": "Enviar evento de prueba",
+      "queued": "Evento de prueba en cola. Revise el registro de entregas."
+    },
+    "deliveries": {
+      "show": "Registro de entregas",
+      "hide": "Ocultar registro de entregas",
+      "empty": "Aún no hay entregas.",
+      "resend": "Reenviar",
+      "resent": "Evento en cola de nuevo",
+      "nextAttempt": "Próximo intento: {{time}}",
+      "columns": {
+        "event": "Evento",
+        "status": "Estado",
+        "response": "Respuesta",
+        "attempts": "Intentos",
+        "time": "Último intento",
+        "actions": "Acciones"
+      },
+      "status": {
+        "pending": "En cola",
+        "retrying": "Reintentando",
+        "succeeded": "Entregado",
+        "failed": "Fallido",
+        "skipped": "Omitido"
+      }
+    }
+  },
+  "connectedApps": {
+    "title": "Conexiones MCP",
+    "emptyTitle": "Aún no hay conexiones MCP",
+    "emptyDescription": "Para agregar una, agregue {{appName}} en la configuración del asistente e inicie sesión.",
+    "neverUsed": "Nunca usada",
+    "unnamed": "Aplicación sin nombre",
+    "connectedOn": "Conectada el {{date}}",
+    "connectedBy": "Conectada el {{date}} por {{name}}",
+    "lastUsed": "Último uso el {{date}}",
+    "revoke": {
+      "action": "Desconectar",
+      "title": "¿Desconectar {{name}}?",
+      "description": "{{name}} pierde el acceso a este espacio de trabajo de inmediato. Para volver a usarla, conéctela y apruebe el acceso otra vez.",
+      "confirm": "Desconectar",
+      "cancel": "Cancelar",
+      "done": "Aplicación desconectada",
+      "failed": "No pudimos desconectar la aplicación. Inténtelo de nuevo."
+    },
+    "scopes": {
+      "business_read": "Leer los datos, el horario, los servicios y el personal del negocio",
+      "business_write": "Actualizar los datos y el horario del negocio",
+      "calls_read": "Leer llamadas, resúmenes y transcripciones",
+      "contacts_read": "Leer contactos",
+      "contacts_write": "Crear y actualizar contactos",
+      "appointments_read": "Leer citas y horarios disponibles",
+      "appointments_write": "Reservar, cancelar y reprogramar citas",
+      "messages_read": "Leer los mensajes que tomó el agente",
+      "knowledge_write": "Agregar entradas de conocimiento y preguntas frecuentes"
+    }
+  },
+  "partnerAccess": {
+    "title": "Acceso del socio",
+    "description": "Cada vez que alguien del equipo de su socio abrió su panel para ayudarle, y cuándo salió.",
+    "empty": "Nadie del equipo de su socio ha abierto su panel todavía.",
+    "adminsOnly": "Solo los propietarios y administradores ven quién abrió el panel.",
+    "loadFailed": "No pudimos cargar esta lista. Inténtelo de nuevo.",
+    "someone": "Un miembro del equipo de {{partnerName}}",
+    "opened": "Abrió su panel",
+    "left": "Salió",
+    "columns": {
+      "who": "Quién",
+      "what": "Qué",
+      "when": "Cuándo"
+    }
+  }
+}

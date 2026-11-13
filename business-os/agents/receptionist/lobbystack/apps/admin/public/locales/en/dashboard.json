@@ -1,0 +1,384 @@
+{
+  "headers": {
+    "dashboardTitle": "Dashboard",
+    "dashboardDescription": "Track operational readiness for calls, messages, and booking."
+  },
+  "analyticsPage": {
+    "title": "Analytics",
+    "description": "Review engagement trends across calls, messages, and booking activity."
+  },
+  "home": {
+    "title": "Home",
+    "phone": {
+      "status": {
+        "ready": "Ready for your first call",
+        "live": "Your agent is taking calls",
+        "liveMany": "Your agents are taking calls"
+      },
+      "answersFirst": {
+        "agent": "Your agent answers first",
+        "team": "Your team answers first",
+        "teamDuringHours": "Your team answers first during business hours"
+      }
+    },
+    "download": "Download",
+    "liveCalls": "Live",
+    "tabs": {
+      "overview": "Overview",
+      "analytics": "Analytics",
+      "reports": "Reports",
+      "notifications": "Notifications"
+    },
+    "analytics": {
+      "chart": {
+        "title": "Engagement Overview",
+        "description": "Calls and messages across your workspace."
+      },
+      "cards": {
+        "calls": "Number of calls",
+        "messages": "Number of messages",
+        "appointments": "Appointments booked",
+        "agentResponseTime": "Agent response time"
+      },
+      "controls": {
+        "dateRange": "Date range",
+        "granularity": "Aggregation interval",
+        "more": "More options",
+        "presetRange": "Preset time frame",
+        "granularities": {
+          "hourly": "Hourly",
+          "daily": "Daily",
+          "weekly": "Weekly",
+          "monthly": "Monthly",
+          "yearly": "Yearly"
+        },
+        "presets": {
+          "today": "Today",
+          "yesterday": "Yesterday",
+          "thisWeek": "This Week",
+          "thisMonth": "This Month",
+          "lastMonth": "Last Month",
+          "last30": "Last 30 Days",
+          "last3Months": "Last 3 Months",
+          "thisYear": "This Year",
+          "lastYear": "Last Year",
+          "allTime": "All Time",
+          "custom": "Custom Range"
+        }
+      },
+      "metrics": {
+        "flat": "No change vs previous period",
+        "percentUp": "+{{value}}% vs previous period",
+        "percentDown": "-{{value}}% vs previous period",
+        "durationUp": "+{{value}} vs previous period",
+        "durationDown": "-{{value}} vs previous period",
+        "pointsUp": "+{{value}} pts vs previous period",
+        "pointsDown": "-{{value}} pts vs previous period",
+        "noPreviousCalls": "No calls in previous period"
+      },
+      "outcomes": {
+        "title": "Call Outcomes",
+        "description": "How this week's call volume resolved.",
+        "labels": {
+          "completed": "Completed",
+          "transferred": "Transferred",
+          "live": "Live",
+          "missed": "Missed"
+        }
+      },
+      "channels": {
+        "title": "Channels",
+        "description": "Calls and messages by channel for the selected dates.",
+        "labels": {
+          "other": "Other"
+        }
+      },
+      "agents": {
+        "title": "By agent",
+        "calls": "Calls",
+        "chats": "Chats",
+        "removed": "Removed"
+      },
+      "overview": {
+        "calls": {
+          "title": "Calls"
+        },
+        "today": {
+          "title": "Today",
+          "next": "Next at {{time}}",
+          "none": "Nothing else today"
+        },
+        "appointments": {
+          "title": "Appointments"
+        },
+        "averageDuration": {
+          "title": "Average duration"
+        }
+      }
+    },
+    "results": {
+      "bookedValue": "Booked value",
+      "timeSaved": "Time saved",
+      "withoutTransfer": "Calls without transfer"
+    },
+    "metrics": {
+      "loading": "Loading monthly comparison...",
+      "calls": {
+        "title": "Calls"
+      },
+      "messages": {
+        "title": "Messages"
+      },
+      "contacts": {
+        "title": "Contacts"
+      }
+    },
+    "chart": {
+      "title": "Calls per month"
+    },
+    "recentCalls": {
+      "title": "Recent Calls",
+      "durationValue": "{{value}} sec"
+    },
+    "actionRequired": {
+      "title": "Action required",
+      "description": "Customer follow-up tasks that still need a human.",
+      "titleWithContact": "{{message}} for {{name}}",
+      "urgent": "Urgent",
+      "emptyTitle": "No action required",
+      "fields": {
+        "callback": "Callback",
+        "callbackWindow": "Preferred callback"
+      },
+      "kinds": {
+        "voice_message": "Callback",
+        "human_handoff": "Handoff",
+        "other": "Open",
+        "cancellation": "Cancellation",
+        "reschedule": "Reschedule"
+      },
+      "appointment": "Appointment: {{appointment}}",
+      "noAppointment": "No upcoming appointment matches this request. Check the Appointments page.",
+      "alreadyCancelled": "This appointment is already cancelled.",
+      "cancellationRequest": "Cancellation request",
+      "requested": "Requested: {{details}}",
+      "notes": "Notes: {{notes}}",
+      "rescheduleRequest": "Reschedule request",
+      "newTime": "New time: {{time}}",
+      "inboxLink": "View all in the Inbox"
+    },
+    "upcoming": {
+      "title": "Upcoming",
+      "appointmentsLink": "View all appointments",
+      "description": "The next appointments on the calendar.",
+      "unknownService": "Unknown service",
+      "employee": "Employee: {{name}}",
+      "emptyTitle": "No upcoming appointments",
+      "status": {
+        "booked": "Booked",
+        "confirmed": "Confirmed"
+      },
+      "withStaff": "with {{staff}}"
+    }
+  },
+  "setup": {
+    "title": "Create your first workspace",
+    "description": "This sets up the workspace, agent profile, and the first snapshot used by voice.",
+    "businessName": "Business name",
+    "slug": "Slug",
+    "timezone": "Timezone",
+    "businessType": "Business type",
+    "placeholders": {
+      "businessName": "Maple Family Clinic",
+      "slug": "maple-family-clinic"
+    },
+    "businessTypes": {
+      "clinic": "Clinic",
+      "repair_shop": "Repair shop",
+      "salon": "Salon",
+      "service_company": "Service company",
+      "other": "Other"
+    },
+    "selectBusinessType": "Select business type",
+    "create": "Create workspace",
+    "creating": "Creating...",
+    "created": "Workspace created. The agent snapshot is refreshing now.",
+    "failed": "Failed to create workspace."
+  },
+  "cards": {
+    "calls": {
+      "title": "Calls handled",
+      "footer": "Latest inbound activity available in the inbox."
+    },
+    "services": {
+      "title": "Services configured",
+      "footer": "These feed both the agent and the booking engine."
+    },
+    "hours": {
+      "title": "Open days set",
+      "footer": "Structured hours stay authoritative over documents."
+    },
+    "knowledge": {
+      "title": "Knowledge items",
+      "footer": "Knowledge and documents strengthen preview and SMS responses."
+    },
+    "snapshot": "Snapshot {{version}}"
+  },
+  "quickActions": {
+    "title": "Quick actions",
+    "description": "Keep {{businessName}} ready for calls, SMS, and booking workflows.",
+    "configureProfile": "Configure agent profile",
+    "addKnowledge": "Add knowledge and documents",
+    "reviewInbox": "Review call inbox",
+    "readiness": "Setup readiness",
+    "servicesConfigured": "{{count}} services configured",
+    "daysConfigured": "{{count}} days with operating hours",
+    "knowledgeItems": "{{count}} knowledge items indexed",
+    "phoneNumbers": "{{count}} phone numbers mapped",
+    "currentGreeting": "Current greeting"
+  },
+  "nextSteps": {
+    "title": "What to do next",
+    "description": "Tighten the live agent behavior before you route real traffic.",
+    "hours": "Set hours and services so booking can suggest real times.",
+    "transfer": "Add transfer rules and a fallback number before handing off urgent calls.",
+    "snapshot": "Refresh your snapshot after major policy changes so voice picks them up quickly."
+  },
+  "activation": {
+    "hearIt": {
+      "title": "Hear your agent answer",
+      "description": "Call it from your browser and listen to how it greets a customer.",
+      "descriptionWithPages_one": "It has read {{count}} page of {{host}}. Call it and ask something only your business would know.",
+      "descriptionWithPages_other": "It has read {{count}} pages of {{host}}. Call it and ask something only your business would know.",
+      "cta": "Start a call"
+    },
+    "claimNumber": {
+      "title": "Claim your phone number",
+      "description": "Your plan includes a dedicated number and you have not picked one yet. Choose it and the agent starts answering.",
+      "cta": "Pick a number"
+    },
+    "freeTrial": {
+      "title": "Answer your missed calls free for 14 days",
+      "description": "Choose a local number, then forward the calls you can't pick up to it. No card needed.",
+      "cta": "Choose my number"
+    },
+    "forwardTrial": {
+      "title": "Send your missed calls to {{number}}",
+      "description": "Turn on call forwarding with your phone carrier, and the calls you can't pick up go to your agent instead of voicemail.",
+      "cta": "Set up forwarding"
+    },
+    "upgrade": {
+      "title": "Give your agent a phone number",
+      "description": "You have heard it work. A dedicated number lets it answer your real customers, day and night.",
+      "cta": "Choose a plan"
+    }
+  },
+  "setupGuide": {
+    "title": "Getting started",
+    "skip": "Skip setup",
+    "skipStep": "Skip",
+    "finished": "Setup complete.",
+    "description": "{{completed}} of {{total}} setup steps complete.",
+    "lastCall": "Your test call",
+    "lastCallDetails": "{{date}}, {{duration}}",
+    "readTranscript": "Read the transcript",
+    "callAgain": "Call it again",
+    "steps": {
+      "fullScan": "Read the rest of your site",
+      "sources": "Add more sources",
+      "hours": "Add opening hours",
+      "testCall": "Hear your agent",
+      "phoneNumber": "Connect a phone number",
+      "forwardCalls": "Forward your calls",
+      "callNumber": "Call your number",
+      "forwardFromCurrent": "Keep your existing number"
+    },
+    "stepDescriptions": {
+      "fullScan": "Your agent has read a sample of your site.",
+      "sources": "Upload your policies, FAQs or pricing.",
+      "hours": "Your agent books appointments only during these hours.",
+      "testCall": "Ask what your callers ask most.",
+      "phoneNumber": "Give your agent its own number to answer real callers.",
+      "phoneNumberTrial": "Answer your missed calls free for 14 days, no card needed.",
+      "forwardCalls": "Keeping the number your customers already call? Your agent can answer it too. Optional.",
+      "numberLost": "Your free trial ended. Choose a plan to get your number back."
+    },
+    "stepActions": {
+      "fullScan": "Read the rest",
+      "sources": "Upload document",
+      "hours": "Add hours",
+      "testCall": "Start a call",
+      "phoneNumber": "Choose a number",
+      "callNumber": "Call {{number}}",
+      "copyNumber": "Copy number",
+      "numberCopied": "Copied",
+      "forwardCalls": "Set up forwarding",
+      "choosePlan": "Choose a plan",
+      "tryAgain": "Try again"
+    },
+    "forwardingFrom": "Forwarding from {{number}}",
+    "forwardingWorks": "Forwarding works"
+  },
+  "forwarding": {
+    "title": "Forward your calls to {{number}}",
+    "description": "Pick your carrier.",
+    "modes": {
+      "missed": {
+        "label": "Calls you miss",
+        "help": "Your phone rings first. When you don't answer, your agent picks up."
+      },
+      "all": {
+        "label": "All calls",
+        "help": "Your agent answers every call, and your phone doesn't ring."
+      }
+    },
+    "carrier": {
+      "label": "Carrier or phone system",
+      "placeholder": "Search carriers",
+      "empty": "No carrier by that name."
+    },
+    "groups": {
+      "usMobile": "US mobile",
+      "caMobile": "Canadian mobile",
+      "landline": "Landlines",
+      "voip": "Business phone systems",
+      "ukMobile": "UK mobile"
+    },
+    "code": {
+      "dial": "On the phone your customers call, dial this code:",
+      "call": "Press Call.",
+      "busy": "To also forward calls that come in while you're on the phone, dial:",
+      "off": "To turn it off later, dial {{code}}.",
+      "unreachable": "To also forward calls when your phone is off or has no signal, dial:",
+      "enterNumber": "When asked, enter {{number}}."
+    },
+    "settings": {
+      "open": "In {{name}}, open {{path}}.",
+      "missed": "Forward unanswered calls to {{number}}, then save.",
+      "all": "Forward all calls to {{number}}, then save.",
+      "openPhone": "On your phone, open {{path}}."
+    },
+    "notes": {
+      "planFeature": "If forwarding doesn't turn on, ask {{name}} to add call forwarding to your plan.",
+      "iphone": "On an iPhone, turn off Live Voicemail in your Phone settings. Otherwise it picks up before your agent can.",
+      "ringTime": "If you can pick a ring time, 15 to 20 seconds gives you about four rings before your agent answers.",
+      "voicemail": "If you have {{name}} voicemail, ask {{name}} to remove it. Missed calls can't forward while it's on.",
+      "androidOnly": "These steps are for Android phones. On an iPhone, ask {{name}} to turn it on for you.",
+      "adminOnly": "Only an admin of your {{name}} account can change this.",
+      "verifyNumber": "{{name}} sends a code to {{number}} before it forwards. Choose to get the code by phone call, then read it in that call's transcript in the Inbox."
+    },
+    "unsupported": {
+      "missed": "{{name}} doesn't offer forwarding for missed calls only. Choose All calls, or ask {{name}} to forward unanswered calls to {{number}}.",
+      "all": "{{name}} doesn't list a way to forward all calls. Ask {{name}} to forward your calls to {{number}}."
+    },
+    "notListed": {
+      "missed": "Carrier not listed? Ask them to forward unanswered calls to {{number}}.",
+      "all": "Carrier not listed? Ask them to forward all your calls to {{number}}."
+    },
+    "general": {
+      "missed": "On a mobile, open your phone's call settings and forward unanswered calls to {{number}}. On a landline or business phone system, ask your carrier to do it.",
+      "all": "On a mobile, open your phone's call settings and forward all calls to {{number}}. On a landline or business phone system, ask your carrier to do it."
+    },
+    "itWorks": "It works"
+  }
+}
