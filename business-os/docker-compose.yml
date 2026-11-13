@@ -1,0 +1,4 @@
+# business-os — infrastructure entrypoint
+# Services: chief-of-staff, agents/*, shared/{knowledge,events,integrations}, dashboard
+version: "3.9"
+services: {}
